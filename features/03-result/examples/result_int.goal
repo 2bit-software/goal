@@ -1,0 +1,17 @@
+package num
+
+import (
+    "errors"
+    "strconv"
+)
+
+func parsePositive(s string) Result[int, error] {
+    n, err := strconv.Atoi(s)
+    if err != nil {
+        return Result.Err(err)
+    }
+    if n <= 0 {
+        return Result.Err(errors.New("not positive"))
+    }
+    return Result.Ok(n)
+}

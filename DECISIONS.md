@@ -264,3 +264,60 @@ Entry kinds:
   `Status.Active(a)`, so including the construction pass would risk mis-rewriting arm patterns.
   Omitting it keeps the two unambiguous. 01-enums already covers construction. Per-feature
   standalone makes this duplication/omission expected.
+
+---
+
+## 03-result — Result[T, error] (open-E keystone)
+
+### Construction/arms qualified: `Result.Ok(v)` / `Result.Err(e)`
+- **Kind:** decision
+- **Chose:** enum-qualified construction and match arms, `Result.Ok(...)` / `Result.Err(...)`.
+- **Over:** bare `Ok(...)` / `Err(...)` (spec §3.2 sample; the universal cross-language spelling and
+  what §7 names as conventional).
+- **Why:** user chose via AskUserQuestion — one uniform `Type.Variant(...)` construction rule across
+  all sum types (matches 01-enums `Status.Active(...)`). Bare was refused despite being the
+  convention §7 points at and despite spending a little conventional-name budget; the user preferred
+  cross-feature consistency. `Ok`/`Err` names themselves are kept (only the `Result.` qualifier is
+  added). **Revisit** if the conventional bare form is later preferred. (Note: this overrides the
+  spec sample's bare spelling — recorded under "Open against spec" as a no-semantics change.)
+
+### Type spelling always explicit: `Result[T, error]`
+- **Kind:** decision
+- **Chose:** both type arguments always written; no shorthand.
+- **Over:** a `Result[T]` shorthand defaulting E to `error`.
+- **Why:** user chose via AskUserQuestion. Matches the spec §3.2/§8.3 samples, keeps the error
+  channel visible in every signature, and adds no defaulting rule the spec didn't define (audit
+  guardrail: don't add unrequested features). Shorthand refused for introducing that magic and
+  hiding the error type.
+
+### Result return type lowers to NAMED Go returns `(__gop_ok T, __gop_err error)`
+- **Kind:** assumption
+- **Chose:** rewrite `func ... Result[T, error]` to named returns; `return Result.Err(e)` becomes
+  `return __gop_ok, e` (the named zero), `return Result.Ok(v)` becomes `return v, nil`.
+- **Over:** the spec §8.3 shape of unnamed `(T, error)` + a synthesized zero literal (`Config{}`);
+  also over injecting a `var __gop_zero T` at function top.
+- **Why:** a no-type-inference reference transpiler cannot pick the correct zero **literal**
+  (`Config{}` vs `0` vs `nil` vs …) from a bare type name, and a per-`Err`-return `var` would
+  collide when a function has multiple `Err` returns. Named returns give the zero for any T with no
+  literal and no declaration, and remain idiomatic Go. A checker-backed compiler with full type
+  info could emit the spec's literal form instead. **Revisit** when real type resolution exists.
+
+### Ok-binding-unused → discard the success value with `_`
+- **Kind:** assumption
+- **Chose:** at a match site, capture `__gop_v, __gop_err := call` only when the Ok arm uses its
+  binding; otherwise `_, __gop_err := call`. The error LHS is always `__gop_err` (the branch
+  discriminant).
+- **Over:** always binding `__gop_v` (risks an unused-variable compile error when the Ok arm ignores
+  the value).
+- **Why:** keeps generated Go compiling and clean. Mirrors 02-match's "emit the guard only when
+  used" discipline.
+
+### 03 transpiler scope: immediate open-E only; value-position match + stored Results deferred
+- **Kind:** assumption
+- **Chose:** handle Result whole-return signatures, `return Result.Ok/Err(...)`, and statement-
+  position `match` on a Result-returning call. Reject value-position Result `match` (`x := match`)
+  with a located message; do not handle stored Results.
+- **Over:** implementing the §8.7 stored-value sum-encoding fallback and value-position match now.
+- **Why:** the TODO scopes 03 to the open-E immediate keystone; §8.7 stored fallback and closed-E
+  are explicitly later (feature 06). The audit prompt says handle the immediate case and note the
+  fallback. Deferred forms fail loudly rather than miscompiling.

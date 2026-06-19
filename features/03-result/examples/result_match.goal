@@ -1,0 +1,32 @@
+package config
+
+import "errors"
+
+type Config struct {
+    Raw string
+}
+
+func parse(s string) Result[Config, error] {
+    if s == "" {
+        return Result.Err(errors.New("empty input"))
+    }
+    return Result.Ok(Config{Raw: s})
+}
+
+func run(c Config)   {}
+func report(e error) {}
+func done()          {}
+
+func handle(input string) {
+    match parse(input) {
+        Result.Ok(cfg) => run(cfg)
+        Result.Err(e) => report(e)
+    }
+}
+
+func handle2(input string) {
+    match parse(input) {
+        Result.Ok(cfg) => done()
+        Result.Err(e) => report(e)
+    }
+}

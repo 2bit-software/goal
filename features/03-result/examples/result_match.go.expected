@@ -1,0 +1,36 @@
+package config
+
+import "errors"
+
+type Config struct {
+	Raw string
+}
+
+func parse(s string) (__gop_ok Config, __gop_err error) {
+	if s == "" {
+		return __gop_ok, errors.New("empty input")
+	}
+	return Config{Raw: s}, nil
+}
+
+func run(c Config)   {}
+func report(e error) {}
+func done()          {}
+
+func handle(input string) {
+	__gop_v, __gop_err := parse(input)
+	if __gop_err != nil {
+		report(__gop_err)
+	} else {
+		run(__gop_v)
+	}
+}
+
+func handle2(input string) {
+	_, __gop_err := parse(input)
+	if __gop_err != nil {
+		report(__gop_err)
+	} else {
+		done()
+	}
+}

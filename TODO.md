@@ -64,7 +64,7 @@ Per-feature deliverables (every item):
     type); transpiler rejects it with a located message. `go test ./...` passes (4/4) and all four
     generated packages compile + `go vet` clean.
 
-- [ ] **03-result** — `Result[T, E]` as the error channel (open-`E` common case)
+- [x] **03-result** — `Result[T, E]` as the error channel (open-`E` common case)
   - Spec: §3.2, codegen §8.3
   - Deps: 01-enums, 02-match
   - Nail down: `Result[T, E]`, `Ok(...)` / `Err(...)` construction, `Result`-as-whole-return rule.
@@ -73,6 +73,16 @@ Per-feature deliverables (every item):
     `(T, error)`; `Ok(v)` → `(v, nil)`; `Err(e)` → `(zero, e)` (§8.3). Note the immediate-vs-
     stored fork (§8.7): stored `Result` value → sum encoding fallback; handle immediate for v1.
   - Note: must-use is the checker's job — not implemented here.
+  - **Done:** `features/03-result/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Chose
+    **qualified** `Result.Ok(...)` / `Result.Err(...)` (one uniform sum-type construction rule with
+    01-enums) and always-explicit `Result[T, error]` (no shorthand). Implements the §8.3 keystone:
+    return type → native `(T, error)`, `Ok(v)`→`(v, nil)`, `Err(e)`→`(__gop_ok, e)`, and a
+    statement-position `match` → the idiomatic `if __gop_err != nil { … } else { … }`. Zero value
+    handled via **named returns** (`(__gop_ok T, __gop_err error)`) since the no-checking transpiler
+    can't synthesize a type-correct zero literal; Ok-binding-unused discards with `_`. Value-position
+    Result match and stored Results (§8.7 sum fallback) are deferred with a located message; must-use
+    and the explicit-discard surface are the checker's job (not built). `go test ./...` passes (3/3)
+    and all three generated packages compile + `go vet` clean.
 
 - [ ] **04-option** — `Option[T]` / nil-safety
   - Spec: §3.6, codegen §8.4

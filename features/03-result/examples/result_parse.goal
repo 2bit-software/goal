@@ -1,0 +1,14 @@
+package config
+
+import "errors"
+
+type Config struct {
+    Raw string
+}
+
+func parse(s string) Result[Config, error] {
+    if s == "" {
+        return Result.Err(errors.New("empty input"))
+    }
+    return Result.Ok(Config{Raw: s})
+}
