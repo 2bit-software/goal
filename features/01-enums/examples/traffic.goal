@@ -1,0 +1,11 @@
+package traffic
+
+enum Light {
+    Red
+    Yellow
+    Green
+}
+
+func first() Light {
+    return Light.Red
+}

@@ -90,3 +90,103 @@ Entry kinds:
 - **Why:** a judgment call to keep each feature self-contained and testable; `.goal` extension
   picked to match the new name. **Revisit** if a different extension or layout is preferred before
   the loop generates all 11 features.
+
+---
+
+## 01-enums — closed sum types (real enums)
+
+### Payload field syntax: Rust/Swift named braces `Variant { field: Type }`
+- **Kind:** decision
+- **Chose:** brace block of `name: Type` fields (`Active { since: Time }`).
+- **Over:** Go-style named parens `Active(since Time)` (the spec §2.5 sample); positional tuple
+  `Active(Time)` (Rust tuple-variant / Scala / OCaml).
+- **Why:** user chose via AskUserQuestion. Lands on the Rust struct-variant / Swift
+  associated-value idiom; keeps field names (so construction can use labels), converting "which
+  positional field is which" into named access. Positional was refused for losing field names
+  (weaker at catching wrong-order errors); Go-parens was refused in favor of the visually distinct
+  brace form. Spec sample diverged from but lowers to the same §8.1 encoding.
+
+### Construction syntax: qualified call with labeled args `Status.Active(since: now())`
+- **Kind:** decision
+- **Chose:** enum-qualified, call syntax, labeled arguments.
+- **Over:** qualified composite literal `Status.Active{since: now()}` (Go literal shape);
+  unqualified call `Active(since: now())` (Rust/Swift post-import).
+- **Why:** user chose via AskUserQuestion. The `Status.` qualifier disambiguates same-named
+  variants across enums and ties the variant to its enum; labels catch wrong-argument-order.
+  Unqualified was refused (requires globally-unique variant names, loses the visual tie to the
+  enum). Composite-literal form was refused in favor of call-shape, though the §8.1 lowering
+  *is* a composite literal under the hood.
+
+### Variant separator: newline-separated, no trailing punctuation
+- **Kind:** decision
+- **Chose:** one variant per line, Go block-decl idiom.
+- **Over:** comma-separated (Rust/Swift enum idiom).
+- **Why:** user chose via AskUserQuestion. Lowest visual noise; avoids the "forgot/trailing comma"
+  error class Go deliberately omits from block declarations.
+
+### Sealed-interface form: `sealed interface NAME {}` + per-variant `implements NAME for T`
+- **Kind:** decision
+- **Chose:** the `sealed` keyword as the closedness marker for the standalone-type form, with the
+  variant set gathered from `implements` declarations (reusing feature 07's mechanism).
+- **Over:** union alias `sealed NAME = A | B | C` (TS/Scala 3 union); per-variant suffix
+  annotation `type A struct{...} implements NAME`. Also weighed (and refused): **dropping the
+  marker entirely** and inferring closedness from "all implementors are local."
+- **Why:** user confirmed `sealed` for now. The keyword is *not* redundant with `implements`:
+  `implements X for Y` only asserts Y satisfies X and says nothing about closedness; the same
+  `implements` is used for **open** contracts (feature 07's `implements io.Writer for JSONWriter`).
+  The `sealed` marker is the one bit that distinguishes an open contract (don't exhaustiveness-
+  check, allow outside implementors) from a closed enum (check, forbid them). Inference-from-
+  absence was refused as non-local and silently unsound (§2.2): adding a satisfier elsewhere breaks
+  exhaustiveness with no declared intent. Union-alias and suffix-annotation were refused to keep
+  one shared `implements` mechanism (§2.6) rather than introducing a second closedness spelling.
+  **Revisit** the keyword choice (`sealed` vs reusing `enum interface` vs `closed`) if preferred.
+
+### Same Go encoding for both forms (§8.1)
+- **Kind:** decision
+- **Chose:** single-block `enum` and `sealed interface` both lower to sealed interface + one struct
+  per variant + unexported `isNAME()` marker.
+- **Over:** giving the standalone-type form a distinct lowering.
+- **Why:** spec §8.1/§8.0 mandate one encoding ("the universal fallback"). Single-block synthesizes
+  `NAME_Variant` structs; the sealed form attaches the marker to the user's own standalone types.
+  No §8.7 immediate-vs-stored fork applies here — enums *are* the encoding that fork falls back to.
+
+### Type expressions and argument exprs passed through verbatim (no stdlib resolution)
+- **Kind:** assumption
+- **Chose:** the reference transpiler copies variant field types and construction argument
+  expressions as raw source text; it does not resolve names (e.g. it emits `Time`, not
+  `time.Time`).
+- **Over:** matching §8.1's sample exactly, which rewrote the bare `Time` to `time.Time`.
+- **Why:** name/stdlib resolution is a checker/resolver concern, out of scope for a no-checking
+  reference transpiler. The `status` example therefore declares `type Time = int64` locally so the
+  output is self-contained and compiles. **Revisit** when a shared front-end with real type
+  resolution exists.
+
+### Sealed-form variant types use plain Go struct syntax, constructed as plain Go literals
+- **Kind:** assumption
+- **Chose:** in the `sealed interface` form, standalone variant types are written as ordinary Go
+  `type T struct { Field Type }` and constructed as `T{...}` — the brace-named / labeled-call enum
+  sugar applies only to the single-block `enum` form.
+- **Over:** inventing a goal-specific struct-declaration syntax for standalone variants.
+- **Why:** general struct declaration is not this feature's to design (it is base-Go / touches
+  feature 08). The sealed form is the "I need real standalone types" escape hatch, so it speaks Go
+  for the type and its construction. Documented as a deliberate asymmetry in SYNTAX.md §1.3.
+  **Revisit** if a unified construction surface is wanted.
+
+### Reference transpiler: stdlib-only lexer (`text/scanner`), span-splice + `go/format`
+- **Kind:** assumption
+- **Chose:** lex with `text/scanner`, recognize only enum/sealed/implements/construction, splice
+  generated Go over those byte spans, pass everything else through, then `go/format` the whole.
+  No CLI framework, no third-party deps.
+- **Over:** a full Go-grammar parser via `go/parser` (rejects goal's non-Go tokens); a hand-written
+  recursive-descent parser for all of Go; using `urfave/cli` for the CLI.
+- **Why:** the prompt licenses a focused recognizer that passes the rest through; the per-feature
+  standalone decision forbids shared infra and favors zero deps. `go/parser` can't parse `enum`/
+  `since:`-labels. A scoped recognizer + `go/format` yields gofmt-clean output with minimal code.
+
+### No defensive `panic` emitted by this feature
+- **Kind:** assumption
+- **Chose:** enum declaration/construction emit no `panic("unreachable: ...")`.
+- **Over:** pre-emptively adding defensive panics.
+- **Why:** the erasure-with-defensive-panic rule (§8.0) applies only where the checker *proves a
+  point unreachable*; declaration/construction prove no unreachability. The first such point is
+  `match`'s exhaustive default (feature 02). Recorded so the absence is deliberate.

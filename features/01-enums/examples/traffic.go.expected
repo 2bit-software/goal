@@ -1,0 +1,15 @@
+package traffic
+
+type Light interface{ isLight() }
+
+type Light_Red struct{}
+type Light_Yellow struct{}
+type Light_Green struct{}
+
+func (Light_Red) isLight()    {}
+func (Light_Yellow) isLight() {}
+func (Light_Green) isLight()  {}
+
+func first() Light {
+	return Light(Light_Red{})
+}

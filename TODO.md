@@ -26,13 +26,20 @@ Per-feature deliverables (every item):
 
 ## Foundation
 
-- [ ] **01-enums** — Closed sum types (real enums)
+- [x] **01-enums** — Closed sum types (real enums)
   - Spec: §2, codegen §8.1
   - Deps: none (this is the spine)
   - Nail down: single-block declaration form **and** the optional sealed-interface form; variant
     payload syntax; construction syntax (`Status.Active(since: now())`); data-less variants.
   - Transpile to: sealed interface + one struct per variant + unexported `isStatus()` marker
     (§8.1). Both closedness forms target the **same** encoding.
+  - **Done:** `features/01-enums/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Chose
+    brace-named payloads `Active { since: Time }`, qualified labeled-call construction
+    `Status.Active(since: now())`, newline-separated variants, and `sealed interface` + per-variant
+    `implements` for the standalone form (`sealed` confirmed as the closedness marker — not
+    redundant with `implements`, which is closedness-agnostic). Both forms lower to the one §8.1
+    encoding. Transpiler is stdlib-only (`text/scanner` + span-splice + `go/format`);
+    `go test ./...` passes (3/3 examples) and all generated Go compiles.
 
 ## Tier 1 — error-catchers
 

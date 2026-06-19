@@ -1,0 +1,27 @@
+package status
+
+type Time = int64
+
+func now() Time { return 0 }
+
+type Status interface{ isStatus() }
+
+type Status_Pending struct{}
+type Status_Active struct {
+	Since Time
+}
+type Status_Cancelled struct {
+	Reason string
+	At     Time
+}
+
+func (Status_Pending) isStatus()   {}
+func (Status_Active) isStatus()    {}
+func (Status_Cancelled) isStatus() {}
+
+func examples() {
+	p := Status(Status_Pending{})
+	a := Status(Status_Active{Since: now()})
+	c := Status(Status_Cancelled{Reason: "timeout", At: now()})
+	_, _, _ = p, a, c
+}

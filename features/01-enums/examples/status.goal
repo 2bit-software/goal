@@ -1,0 +1,18 @@
+package status
+
+type Time = int64
+
+func now() Time { return 0 }
+
+enum Status {
+    Pending
+    Active { since: Time }
+    Cancelled { reason: string, at: Time }
+}
+
+func examples() {
+    p := Status.Pending
+    a := Status.Active(since: now())
+    c := Status.Cancelled(reason: "timeout", at: now())
+    _, _, _ = p, a, c
+}
