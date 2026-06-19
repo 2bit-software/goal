@@ -597,3 +597,51 @@ Entry kinds:
   (§4.2 "checker verifies the absence of effects… keep the definition simple and conservative");
   optimization is the deferred backend pass (§8.5). The reference transpiler's only job is valid
   goal → correct Go.
+
+---
+
+## 10-assert — runtime assertions
+
+### Message form: printf-style with a bare fallback
+- **Kind:** decision
+- **Chose:** `assert cond [, "fmt", args...]` — bare `assert cond` is valid (auto expr-text message
+  only); an optional printf-style format string + args appends a formatted explanation.
+- **Over:** "bare only" (no message argument ever); "single optional string message"
+  (`assert cond, "msg"`, no interpolation).
+- **Why:** user-selected via `AskUserQuestion`. The auto-included source expression text (§8.6)
+  already gives located feedback for free, so the bare form is the low-ceremony common case; the
+  printf form (Go's `t.Errorf` / Python `assert cond, msg` idiom) lets the failure interpolate the
+  offending values — the highest-information runtime failure — without spending familiarity budget
+  on novel punctuation. Single-string was subsumed by printf (a bare format string is a valid printf
+  call). Closes the §9 assert question.
+
+### Lowering: `if !(cond) { panic(...) }`; expr text quoted, never a format string
+- **Kind:** decision
+- **Chose:** bare → `panic(strconv.Quote("assertion failed: "+cond))`; message →
+  `panic(<quoted prefix> + fmt.Sprintf(<msg>))`. The condition text is always emitted via
+  `strconv.Quote` (a string literal), and the user format string is Sprintf'd separately and
+  concatenated.
+- **Over:** baking the expr text into the Sprintf format string (e.g.
+  `fmt.Sprintf("assertion failed: <expr>: <userfmt>", args...)`).
+- **Why:** §8.6's runtime-preserved lowering is `if !(cond) { panic("assertion failed: <expr>") }`.
+  Concatenating a quoted expr text instead of embedding it in the format string keeps a `%` in the
+  condition (e.g. `n%2 == 0`) from being misread as a printf verb — a real correctness trap the
+  worked examples exercise.
+
+### Inject `import "fmt"` when a message assert needs it
+- **Kind:** assumption
+- **Chose:** if any message-bearing assert is emitted and the file does not already import `"fmt"`,
+  insert `import "fmt"` after the `package` clause (detected by scanning for a `"fmt"` import token).
+- **Over:** requiring the source to pre-import fmt; always importing fmt.
+- **Why:** the printf lowering needs fmt, and real goal code shouldn't have to import it manually for
+  an assert message. Best-effort detection (a dot/named-alias fmt import could double-import) is
+  acceptable for the reference and stays gofmt-valid; the real frontend tightens it. Bare asserts
+  need no import.
+
+### Build-tag strip toggle reserved, not built (v1 always emits)
+- **Kind:** refusal
+- **Chose:** n/a (nothing built).
+- **Over:** implementing the §8.6 build-tag that strips asserts from release builds.
+- **Why:** NEXT-SESSION confirms stripping is not v1-critical. The reference always emits the
+  runtime check; the strip strategy is documented in TRANSPILE.md as reserved. Likewise the §4.3
+  statically-checkable assert subset and §5 contracts are reserved syntax, not built.

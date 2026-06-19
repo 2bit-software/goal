@@ -1,0 +1,8 @@
+package account
+
+// setAge uses the printf-style message form. The formatted explanation is
+// appended to the auto expr text, and the transpiler injects the fmt import the
+// lowering needs.
+func setAge(age int) {
+	assert age >= 0, "age must be non-negative, got %d", age
+}

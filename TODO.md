@@ -192,13 +192,22 @@ Per-feature deliverables (every item):
     before `func`. Does **not** verify effects or exploit purity (checker / later backend). `go test
     ./...` passes (3/3) and all three generated packages compile + `go vet` clean.
 
-- [ ] **10-assert** — Runtime asserts
+- [x] **10-assert** — Runtime asserts
   - Spec: §4.3, codegen §8.6
   - Deps: none
   - Nail down: `assert <expr>` statement; reserve (don't build) the static-checkable subset.
   - Transpile to: `if !(cond) { panic("assertion failed: <expr text>") }` including the source
     expression text (§8.6). Design the lowering toggleable via build tag (note it; v1 need not
     fully implement stripping).
+  - **Done:** `features/10-assert/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Resolved §9:
+    chose **printf-style message with a bare fallback** (`assert cond [, "fmt", args...]`) over
+    bare-only and single-string. **Runtime-preserved** lowering per §8.6: statement-bounded recognizer
+    → `if !(cond) { panic("assertion failed: <expr>"[ + ": " + fmt.Sprintf(msg)]) }`. Expr text is
+    always a quoted literal (never a format string) so a `%` in the condition is safe; message split
+    is on the first **top-level** comma (call commas skipped); `import "fmt"` injected when a message
+    assert needs it. Static-checkable subset, §5 contracts, and the build-tag strip toggle are
+    **reserved, not built** (v1 always emits). `go test ./...` passes (3/3) and all three generated
+    packages compile + `go vet` clean.
 
 - [ ] **11-doctests** — Runnable doctests
   - Spec: §4.1, codegen §8.6

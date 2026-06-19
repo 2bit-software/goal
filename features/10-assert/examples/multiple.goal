@@ -1,0 +1,21 @@
+package ranges
+
+// check mixes bare and message asserts. The second condition contains a call
+// with internal commas (clamp(lo, hi, n)) to show the message split only fires
+// on the top-level comma; the third has a `%` to show the expr text is a literal,
+// not a format string.
+func check(lo int, hi int, n int) {
+	assert lo <= hi
+	assert clamp(lo, hi, n) == n, "n=%d not in [%d, %d]", n, lo, hi
+	assert n%2 == 0
+}
+
+func clamp(lo int, hi int, n int) int {
+	if n < lo {
+		return lo
+	}
+	if n > hi {
+		return hi
+	}
+	return n
+}
