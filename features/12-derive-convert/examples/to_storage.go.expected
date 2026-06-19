@@ -1,0 +1,54 @@
+package conv
+
+// UUID and NullString are local stand-ins for puid.UUID / null.String so the
+// example compiles standalone (the surface goal would use those real types, and
+// Option[string] in place of the lowered *string — see SYNTAX.md).
+type UUID struct{ s string }
+
+func (u UUID) String() string { return u.s }
+
+type NullString struct {
+	Valid bool
+	Str   string
+}
+
+// --- registry: leaf conversions (feature 06 `from func`, generalized) ---
+func uuidToString(u UUID) string { return u.String() }
+
+func ptrToNull(o *string) NullString {
+	if o == nil {
+		return NullString{}
+	}
+	return NullString{Valid: true, Str: *o}
+}
+
+// --- the two layer structs ---
+type EventExecution struct {
+	ID         UUID
+	CustomerID UUID
+	Railroad   string
+	TraceID    *string
+}
+
+type StoredEvent struct {
+	ID         string
+	CustomerID string
+	Railroad   string
+	TraceID    NullString
+	ExternalID string
+	Audit      string
+}
+
+// --- derived conversion with exceptions ---
+// ExternalID has no same-named source -> explicit (verbatim) override; Audit is a
+// storage-only column with no source -> intentionally skipped with `_`; `...derive(e)`
+// fills ID, CustomerID, Railroad, TraceID via the registry.
+func toStorage(e EventExecution) StoredEvent {
+	var out StoredEvent
+	out.ExternalID = e.ID.String()
+	out.ID = uuidToString(e.ID)
+	out.CustomerID = uuidToString(e.CustomerID)
+	out.Railroad = e.Railroad
+	out.TraceID = ptrToNull(e.TraceID)
+	return out
+}

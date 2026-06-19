@@ -227,9 +227,48 @@ Per-feature deliverables (every item):
     running `go test`** on each example — the generated doctests execute and pass (the strongest
     proof of §4.1's "no silent non-run"); `go test ./...` passes (3/3) + vet clean.
 
+## Tier 3 — added post-audit (design exploration, this session)
+
+- [x] **12-derive-convert** — Type-directed, completeness-checked struct conversion
+  - Spec: **none** — originates from the design exploration in this session (audited the
+    `telegraph/public-api` 3-layer codebase + goverter usage), not a `goal-design-spec.md` section.
+    See `DECISIONS.md` §12 for the full rationale and the resolved design tensions.
+  - Deps: 01-enums, 02-match, 03-result, 04-option, 05-question-prop, 06-error-e, 08-no-zero-value,
+    10-assert (all done). Generalizes 06's `from func`; reuses Option (04), exhaustive `match` (02),
+    `Result`/`?` (03/05), `assert` (10), and the no-zero-value completeness posture (08).
+  - Nail down: (A) how a **derived conversion** is declared (bodyless, compiler-filled, completeness-
+    checked); (B) the **exception clause** syntax (ignore / rename / explicit per-field). The
+    conversion **registry** is in-scope `from func`s (06, generalized); enum mappings are `from func`
+    + exhaustive `match` (02).
+  - Three conversion tiers (all signature-encoded): **lossless-total** (`A→B`), **invariant-checked
+    total** (`A→B` with an internal `assert` — narrowing; loud-but-local, no `Result` ripple),
+    **recoverable-fallible** (`A→Result[B,E]`, propagated by `?`). Default tier for an ambiguous
+    narrowing = **assert-total**.
+  - Transpile to: ordinary field-by-field Go (the boring code you'd hand-write), conversions resolved
+    **target-directed** by `(source-field-type → target-field-type)` against the registry; **container
+    recursion** (`[]`, `map`, `Option`, nested struct) is a built-in deriver rule; `Option[T]↔*T` is a
+    built-in generic bridge; concrete-beats-generic on overlap. The reference transpiler EMITS the
+    derived Go and resolves conversions; full completeness *checking* is the checker's job (per the
+    audit's no-checking-yet constraint) — it defers unresolvable fields with a located message.
+  - Reserved, not built: user-facing generic `from func [A,B] where convert(A,B)`; refinement/range
+    types (would make narrowing compile-provable). `json.RawMessage` blobs stay first-class opaque
+    fields (a registered blob↔blob / blob↔string conversion) — the feature does **not** force typing
+    them.
+  - **Done:** `features/12-derive-convert/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`.
+    Chose **`derive func` (bodyless)** + partial-literal **`...derive(src)`** with **`_`** skip (via
+    `AskUserQuestion`); leaf registry is `from func` (06, generalized). Three signature-encoded tiers
+    (lossless / assert-total / Result-fallible); default narrowing = assert-total. Container recursion
+    (slices impl; map/Option/nested noted) is a built-in deriver rule; `Option[T]↔*T` built-in
+    generic; target-directed dispatch, concrete-beats-generic. Transpiler builds the registry, parses
+    structs (reuses 08), and emits `var out T` + field-by-field Go (registry-resolved, `__gop_`-
+    threaded errors, `make`+loop for slices); unresolvable fields **defer with a located error**
+    (never silent-zero). `go test ./...` passes (3/3), all generated packages compile + vet clean,
+    **and behavioral tests confirm correct values + error threading**. Reserved: user generics,
+    refinement types; blobs stay first-class opaque (per user pushback).
+
 ---
 
-**All 11 features audited.** The "one feature per iteration" loop is complete — there is no feature 12.
+**Features 01–11 audited (original spec). Feature 12 added post-audit from design exploration.**
 
 ---
 

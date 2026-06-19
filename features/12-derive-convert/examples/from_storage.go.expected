@@ -1,0 +1,51 @@
+package conv
+
+// Local stand-ins (see to_storage.goal / SYNTAX.md).
+type UUID struct{ s string }
+
+type StoredEvent struct {
+	ID         string
+	CustomerID string
+	Railroad   string
+}
+
+type EventExecution struct {
+	ID         UUID
+	CustomerID UUID
+	Railroad   string
+}
+
+// A tier-3 (recoverable) leaf conversion: an untrusted DB string may be malformed,
+// so it returns (UUID, error) — the lowered form of Result[UUID, error] (feature 03).
+func parseUUID(s string) (UUID, error) {
+	if s == "" {
+		return UUID{}, errEmptyUUID
+	}
+	return UUID{s: s}, nil
+}
+
+var errEmptyUUID = newErr("empty uuid")
+
+func newErr(msg string) error { return &convErr{msg} }
+
+type convErr struct{ msg string }
+
+func (e *convErr) Error() string { return e.msg }
+
+// Fully-derived, fallible: because parseUUID is fallible, fromStorage returns
+// (EventExecution, error) and the deriver threads the error.
+func fromStorage(s StoredEvent) (EventExecution, error) {
+	var out EventExecution
+	__gop_v0, err := parseUUID(s.ID)
+	if err != nil {
+		return out, err
+	}
+	out.ID = __gop_v0
+	__gop_v1, err := parseUUID(s.CustomerID)
+	if err != nil {
+		return out, err
+	}
+	out.CustomerID = __gop_v1
+	out.Railroad = s.Railroad
+	return out, nil
+}

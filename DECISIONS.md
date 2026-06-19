@@ -693,3 +693,109 @@ Entry kinds:
   feature (NEXT-SESSION flagged this). A Go-expression expected keeps the generated test trivially
   correct without a printing layer. The audit pins the **Go transpile path only**; goscript doctests
   are a separate workstream (§4.1, §9).
+
+---
+
+## 12-derive-convert — type-directed, completeness-checked conversion (post-audit)
+
+### Feature originates from design exploration, not the spec
+- **Kind:** decision
+- **Chose:** add feature 12 (beyond the original 11) based on auditing the `telegraph/public-api`
+  3-layer codebase + goverter usage during this session.
+- **Over:** leaving the audit at 11 features; or treating cross-layer conversion as out of scope.
+- **Why:** the audit showed conversion is a real, on-thesis friction (silent zero-value fields on a
+  forgotten mapping; goverter's stringly annotations; silent enum `default:` fallbacks; silent
+  int clamps). `goal-design-spec.md` is read-only (guardrail), so feature 12's "spec" is this ledger
+  + its SYNTAX/TRANSPILE docs. Recorded so the divergence from the spec-driven 01–11 is deliberate.
+
+### Key reframe: the value is type-directed conversion + completeness, NOT 1:1 field auto-mapping
+- **Kind:** decision
+- **Chose:** the feature centers on (a) a registry of type-pair conversions and (b) a
+  completeness-checked derived conversion.
+- **Over:** a "goverter-lite" feature whose pitch is auto-mapping same-named fields.
+- **Why:** the audit (patterns, pmk_upgrade, booking_request_history, configurable_execution) found
+  FREE 1:1 fields are the minority (~0–35%, often 0 at the persistence/view boundary) AND goverter
+  already maps them for free. ~75–85% of fields are non-trivial, but ~90% of those collapse to ~6
+  recurring type-pairs (UUID, three optionality reps, timestamps, int widths, JSON blobs, enums).
+  So the leverage is the type-pair layer + the completeness guarantee, not the field-name layer.
+
+### Syntax: `derive func` (bodyless) + partial-literal `...derive(src)` with `_` skip
+- **Kind:** decision
+- **Chose:** declaration `derive func NAME(src S) T`; bodyless = sugar for `{ return T{ ...derive(src) } }`;
+  exceptions via a returned partial literal where `Field: expr` overrides (verbatim), `Field: _`
+  skips, and `...derive(src)` fills the rest (completeness-checked).
+- **Over (Q1):** bodyless `from func` (no body ⇒ derive — implicit, collides with leaf bodies);
+  `convert A to B as name` (non-func-shaped statement).
+- **Over (Q2):** a clause block (`ignore`/`from`/`=`).
+- **Why:** user-selected via `AskUserQuestion`. `derive func` parallels the `from func`/`pure func`
+  modifier convention and is distinct from a bodied leaf; `...derive` is the exact parallel of
+  feature 08's `...defaults` (deriving IS complete construction), and `_` reuses goal's skip marker.
+  **Reconciliation:** the two picks (bodyless decl vs partial literal) are the same construct at two
+  ends of a spectrum; canonicalized as `{ return T{ ...derive(src) } }` (Go-shaped) rather than the
+  `= expr` shorthand shown in the Q2 preview, to keep func bodies Go-consistent.
+
+### Three conversion tiers; default narrowing = invariant-checked total (assert), not Result
+- **Kind:** decision
+- **Chose:** tiers encoded in the leaf's return type — lossless-total (`A→B`), invariant-checked
+  total (`A→B` with internal `assert`, feature 10), recoverable-fallible (`A→Result[B,E]`, feature
+  03/05, propagated by `?`). Default for an ambiguous narrowing (e.g. `int→int32`) = assert-total.
+- **Over:** always-checked (Result everywhere — viral friction); silently clamping (band-3 footgun,
+  refused); refinement/range types making narrowing compile-provable (too heavy — same trap §4.3
+  refused for static asserts).
+- **Why:** goal's three feedback bands — compile error > located runtime failure > silent wrong
+  value (refused). A value-dependent narrowing can't be band-1 generically, so the choice is panic
+  (assert: fatal-but-contained, total signature, no Result ripple) vs Result (recoverable-but-viral).
+  Author picks by the conversion's nature ("bug vs expected bad input"), once per type-pair. Default
+  assert-total because a silent-clamp replacement should fail loud-but-local unless explicitly opted
+  into Result. The audit's `safeIntToInt32` silent clamp is exactly the band-3 case being killed.
+
+### Generics: container recursion is a built-in deriver rule; user-facing generic `from` reserved
+- **Kind:** decision
+- **Chose:** `[]A→[]B`, `map[K]A→map[K]B`, `Option[A]→Option[B]`, and nested-struct conversion are a
+  built-in recursion rule of the deriver (the user writes only the leaf `A→B`). `Option[T]↔*T` is a
+  built-in unconstrained generic bridge. User-facing constrained generics
+  (`from func [A,B] where convert(A,B)`) are reserved, not built.
+- **Over:** requiring users to declare generic collection conversions; shipping full constrained
+  generics in v1.
+- **Why:** the audit showed the collection/nesting cases are real but few, and they decompose as
+  "apply the element conversion in a loop" — pure transpile-time monomorphization, which goal already
+  does. Making recursion a deriver built-in removes the need for the scary "a conversion A→B exists"
+  constraint (no Go analog) from the user surface entirely. `Option[T]↔*T` is unconstrained → trivial
+  Go generic. Reserve the constrained generic per §4.4 design-in-now/build-later.
+
+### Dispatch: target-directed, one canonical conversion per (A,B), concrete beats generic
+- **Kind:** decision
+- **Chose:** a conversion is selected by the (source-field-type → target-field-type) pair (target
+  known from the destination field). Registry holds one canonical conversion per ordered pair; a
+  site needing different behavior calls a named conversion explicitly. Concrete beats built-in
+  generic on overlap.
+- **Why:** target-directed dispatch makes `Option[string]→*string` (generic) vs `Option[string]→
+  null.String` (concrete) unambiguous; one-per-pair keeps `...derive` deterministic; concrete-beats-
+  generic is the familiar overload rule (Rust/Swift).
+
+### json.RawMessage blobs stay first-class opaque fields (do NOT force typing them)
+- **Kind:** refusal
+- **Chose:** n/a — explicitly NOT building blob-elimination pressure.
+- **Over:** pushing authors to model `json.RawMessage` payloads as typed structs.
+- **Why:** an opaque blob can be a legitimate modeling choice (genuinely heterogeneous/schemaless
+  data), and you can't distinguish "escape-hatch blob" from "legitimate blob" from outside. The
+  registry handles blobs via blob↔blob / blob↔string conversions; completeness checks structural
+  completeness of the conversion, never the blob's contents — which is correct scope, not a gap.
+  (Surfaced by user pushback during exploration: "it's ok to have a raw-JSON property … are we
+  going too far?" — yes, on that point.)
+
+### Reference transpiler scope (no full checker; lowered-form examples)
+- **Kind:** assumption
+- **Chose:** the transpiler builds the registry from `from func` signatures (strips `from`), parses
+  struct fields (reusing feature 08), and expands `derive func` to `var out T` + field-by-field
+  assignment (registry-resolved, target-directed), threading `?`/errors via `__gop_vN` for fallible
+  conversions and emitting a `make`+loop for slice recursion. Unresolvable fields are DEFERRED with a
+  located error (never silently zero). Examples use lowered Go forms (`(T,error)`, `*string`, local
+  UUID/NullString stand-ins) for standalone compilation.
+- **Over:** implementing full completeness/type checking here; depending on features 03/04 lowering.
+- **Why:** the audit's no-checking-yet constraint puts the totality proof in the checker; the
+  transpiler's job is valid goal → correct Go. Lowered-form examples keep the feature standalone (the
+  same self-containment discipline prior features used). map/Option/nested recursion follow the slice
+  rule and are noted but minimal in v1. Verified: `go test` passes (3/3), all generated packages
+  compile + vet clean, AND behavioral tests confirm the conversions produce correct values and thread
+  errors (empty ID → error).
