@@ -54,22 +54,37 @@ var Passes = []Pass{
 	{Name: "enums", Run: pass.Enums},
 }
 
+// Output is the set of files the front-end produces from one source: the lowered Go,
+// and an optional sibling `_test.go` extracted from doctests (empty when the source
+// has none). Doctests are a side output — the driver supports N outputs, not one.
+type Output struct {
+	Go   string
+	Test string
+}
+
 // Transpile lowers goal source to formatted Go by running every pass in order and
-// formatting once. The returned error names the failing pass, or reports the
+// formatting once, and separately extracts any doctests from the ORIGINAL source into
+// a sibling test file. The returned error names the failing pass, or reports the
 // generated Go alongside the gofmt error when the final source does not parse.
-func Transpile(src string) (string, error) {
+func Transpile(src string) (Output, error) {
 	tables := analyze.Build(src)
 	cur := src
 	for _, p := range Passes {
 		next, err := p.Run(cur, tables)
 		if err != nil {
-			return "", fmt.Errorf("pass %s: %w", p.Name, err)
+			return Output{}, fmt.Errorf("pass %s: %w", p.Name, err)
 		}
 		cur = next
 	}
 	formatted, err := format.Source([]byte(cur))
 	if err != nil {
-		return "", fmt.Errorf("generated Go did not parse: %w\n--- generated ---\n%s", err, cur)
+		return Output{}, fmt.Errorf("generated Go did not parse: %w\n--- generated ---\n%s", err, cur)
 	}
-	return string(formatted), nil
+	// Doctests read the untouched source: `///` comments are erased by the lexer the
+	// passes use, so extraction must run on the original text, not the lowered Go.
+	test, err := pass.Doctests(src)
+	if err != nil {
+		return Output{}, fmt.Errorf("doctests: %w", err)
+	}
+	return Output{Go: string(formatted), Test: test}, nil
 }

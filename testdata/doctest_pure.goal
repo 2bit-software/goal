@@ -1,0 +1,21 @@
+package mathx
+
+/// Squares an int.
+/// >>> square(3)
+/// 9
+pure func square(x int) int {
+    return x * x
+}
+
+/// Clamps x into [lo, hi].
+/// >>> clamp(5, 0, 3)
+/// 3
+func clamp(x int, lo int, hi int) int {
+    if x > hi {
+        return hi
+    }
+    if x < lo {
+        return lo
+    }
+    return x
+}

@@ -17,21 +17,38 @@ func main() {
 	}
 }
 
-// run transpiles the input named in args (or stdin when given "-") and writes Go to
-// out.
+// run transpiles the input named in args (or stdin when given "-") and writes the
+// lowered Go to out. With the -test flag it instead writes the doctest sidecar
+// `_test.go`, erroring if the input has no doctests.
 func run(args []string, stdin io.Reader, out io.Writer) error {
-	if len(args) != 1 {
-		return fmt.Errorf("usage: goalc <file.goal | ->")
+	testMode := false
+	var files []string
+	for _, a := range args {
+		if a == "-test" {
+			testMode = true
+			continue
+		}
+		files = append(files, a)
 	}
-	src, err := readInput(args[0], stdin)
+	if len(files) != 1 {
+		return fmt.Errorf("usage: goalc [-test] <file.goal | ->")
+	}
+	src, err := readInput(files[0], stdin)
 	if err != nil {
 		return fmt.Errorf("read input: %w", err)
 	}
-	goSrc, err := pipeline.Transpile(string(src))
+	result, err := pipeline.Transpile(string(src))
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprint(out, goSrc)
+	if testMode {
+		if result.Test == "" {
+			return fmt.Errorf("no doctests in input")
+		}
+		_, err = fmt.Fprint(out, result.Test)
+		return err
+	}
+	_, err = fmt.Fprint(out, result.Go)
 	return err
 }
 

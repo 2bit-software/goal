@@ -40,7 +40,7 @@ func TestTestdata(t *testing.T) {
 				t.Fatalf("read %s: %v", wantPath, err)
 			}
 			want := mustFormat(t, wantRaw)
-			gotFmt := mustFormat(t, []byte(got))
+			gotFmt := mustFormat(t, []byte(got.Go))
 			if gotFmt != want {
 				t.Errorf("output mismatch for %s\n--- got ---\n%s\n--- want ---\n%s", name, gotFmt, want)
 			}
@@ -84,11 +84,45 @@ func TestSingleFeatureRegression(t *testing.T) {
 				if err != nil {
 					t.Fatalf("read expected: %v", err)
 				}
-				if mustFormat(t, []byte(got)) != mustFormat(t, wantRaw) {
-					t.Errorf("output mismatch for %s\n--- got ---\n%s", name, got)
+				if mustFormat(t, []byte(got.Go)) != mustFormat(t, wantRaw) {
+					t.Errorf("output mismatch for %s\n--- got ---\n%s", name, got.Go)
 				}
 			})
 		}
+	}
+}
+
+// TestDoctests runs the feature-11 reference examples through the pipeline and
+// asserts the doctest side output (Output.Test) equals the expected `_test.go`. The
+// main Go output is the source verbatim, since `///` is a valid Go comment.
+func TestDoctests(t *testing.T) {
+	dir := filepath.Join("..", "..", "features", "11-doctests", "examples")
+	inputs, err := filepath.Glob(filepath.Join(dir, "*.goal"))
+	if err != nil {
+		t.Fatalf("glob %s: %v", dir, err)
+	}
+	for _, in := range inputs {
+		name := strings.TrimSuffix(filepath.Base(in), ".goal")
+		t.Run(name, func(t *testing.T) {
+			src, err := os.ReadFile(in)
+			if err != nil {
+				t.Fatalf("read %s: %v", in, err)
+			}
+			got, err := Transpile(string(src))
+			if err != nil {
+				t.Fatalf("transpile %s: %v", in, err)
+			}
+			if got.Test == "" {
+				t.Fatalf("expected doctest output for %s, got none", name)
+			}
+			wantRaw, err := os.ReadFile(strings.TrimSuffix(in, ".goal") + ".go.expected")
+			if err != nil {
+				t.Fatalf("read expected: %v", err)
+			}
+			if mustFormat(t, []byte(got.Test)) != mustFormat(t, wantRaw) {
+				t.Errorf("doctest mismatch for %s\n--- got ---\n%s", name, got.Test)
+			}
+		})
 	}
 }
 
