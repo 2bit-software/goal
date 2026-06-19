@@ -24,28 +24,7 @@ import (
 // offsets.
 func Question(src string, t *analyze.Tables) (string, error) {
 	toks := scan.Lex(src)
-
-	// Map the current (lowered) func body spans to their original modes by name.
-	type bodySpan struct {
-		lo, hi int
-		mode   analyze.Mode
-	}
-	var spans []bodySpan
-	for _, f := range scan.ScanFuncs(toks) {
-		sig, ok := t.FuncSignatures[f.Name]
-		if !ok {
-			continue
-		}
-		spans = append(spans, bodySpan{lo: toks[f.BodyOpen].Start, hi: toks[f.BodyClose].End, mode: sig.Mode})
-	}
-	modeAt := func(off int) analyze.Mode {
-		for _, s := range spans {
-			if off >= s.lo && off < s.hi {
-				return s.mode
-			}
-		}
-		return analyze.ModeNone
-	}
+	spans := funcSpans(toks, t)
 
 	var reps []scan.Replacement
 	optCounter := 0
@@ -54,6 +33,10 @@ func Question(src string, t *analyze.Tables) (string, error) {
 			continue
 		}
 		p := toks[q].Start
+		sig, _ := sigAt(spans, p)
+		if sig.Mode == analyze.ModeResultClosed {
+			continue // closed-E `?` is lowered by the closed-E pass
+		}
 		lineStart := strings.LastIndexByte(src[:p], '\n') + 1
 		name, rhs, ok := scan.SplitAssign(src[lineStart:p])
 		if !ok {
@@ -61,7 +44,7 @@ func Question(src string, t *analyze.Tables) (string, error) {
 		}
 		discard := name == "_"
 		var text string
-		switch modeAt(p) {
+		switch sig.Mode {
 		case analyze.ModeResult:
 			if discard {
 				text = fmt.Sprintf("if _, %s := %s; %s != nil {\nreturn %s, %s\n}", errName, rhs, errName, okName, errName)

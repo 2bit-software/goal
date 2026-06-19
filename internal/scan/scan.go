@@ -219,6 +219,21 @@ func NextNewline(src string, p int) int {
 	return len(src)
 }
 
+// LeadIdent returns the leading identifier of s (letters, digits, underscore from
+// the start), e.g. the callee name of a call expression `parse(x)` -> "parse".
+func LeadIdent(s string) string {
+	end := 0
+	for end < len(s) {
+		r := rune(s[end])
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			end++
+			continue
+		}
+		break
+	}
+	return s[:end]
+}
+
 // IsIdent reports whether s begins like a Go identifier (letter or underscore).
 func IsIdent(s string) bool {
 	if s == "" {

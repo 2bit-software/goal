@@ -1,0 +1,71 @@
+package app
+
+import "errors"
+
+type Result[T, E any] interface{ isResult() }
+type Ok[T, E any] struct{ Value T }
+type Err[T, E any] struct{ Value E }
+
+func (Ok[T, E]) isResult()  {}
+func (Err[T, E]) isResult() {}
+
+type DbError interface{ isDbError() }
+
+type DbError_NotFound struct {
+	Key string
+}
+type DbError_Timeout struct{}
+
+func (DbError_NotFound) isDbError() {}
+func (DbError_Timeout) isDbError()  {}
+
+type AppError interface{ isAppError() }
+
+type AppError_Db struct {
+	Cause DbError
+}
+
+func (AppError_Db) isAppError() {}
+
+type Row struct {
+	ID string
+}
+
+func dbToApp(e DbError) AppError {
+	return AppError(AppError_Db{Cause: e})
+}
+
+func fetch(key string) Result[Row, DbError] {
+	if key == "" {
+		return Err[Row, DbError]{Value: DbError(DbError_NotFound{Key: key})}
+	}
+	return Ok[Row, DbError]{Value: Row{ID: key}}
+}
+
+func load(key string) Result[Row, AppError] {
+	var r Row
+	switch __gop_e := fetch(key).(type) {
+	case Ok[Row, DbError]:
+		r = __gop_e.Value
+	case Err[Row, DbError]:
+		return Err[Row, AppError]{Value: dbToApp(__gop_e.Value)}
+	default:
+		panic("unreachable: non-exhaustive Result[Row, DbError] (compiler invariant violated)")
+	}
+	return Ok[Row, AppError]{Value: r}
+}
+
+func validate(s string) (__gop_ok string, __gop_err error) {
+	if s == "" {
+		return __gop_ok, errors.New("empty")
+	}
+	return s, nil
+}
+
+func process(s string) (__gop_ok string, __gop_err error) {
+	v, __gop_err := validate(s)
+	if __gop_err != nil {
+		return __gop_ok, __gop_err
+	}
+	return v, nil
+}

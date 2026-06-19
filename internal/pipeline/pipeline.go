@@ -30,10 +30,11 @@ type Pass struct {
 //  3. Defaults    — `...defaults` -> explicit per-field zero values.
 //  4. Result      — Result[T, error] signatures, Ok/Err returns, statement match.
 //  5. Option      — Option[T] -> *T, Some/None returns, statement match.
-//  6. Question     — `?` propagation, mode recovered by function name from the tables.
-//  7. Assert       — `assert` -> runtime `if !(cond) { panic(...) }`.
-//  8. Match        — enum `match` -> type-switch over the §8.1 encoding.
-//  9. Enums        — enum/sealed declarations -> encoding, variant constructions.
+//  6. Question     — open-E `?` / Option `?` (closed-E `?` is skipped for pass 7).
+//  7. ResultClosed — closed-E Result: sum constructors, `match`, `?`, From-conversion.
+//  8. Assert       — `assert` -> runtime `if !(cond) { panic(...) }`.
+//  9. Match        — enum `match` -> type-switch over the §8.1 encoding.
+// 10. Enums        — enum/sealed declarations -> encoding, variant constructions.
 //
 // The independent declaration/statement transforms (1-3, 7) touch disjoint
 // constructs and could run anywhere; they are grouped to mirror the spec's pass
@@ -49,6 +50,7 @@ var Passes = []Pass{
 	{Name: "result", Run: pass.Result},
 	{Name: "option", Run: pass.Option},
 	{Name: "question", Run: pass.Question},
+	{Name: "closed", Run: pass.ResultClosed},
 	{Name: "assert", Run: pass.Assert},
 	{Name: "match", Run: pass.Match},
 	{Name: "enums", Run: pass.Enums},

@@ -21,8 +21,12 @@ type Mode int
 const (
 	// ModeNone is a function that returns neither Result nor Option.
 	ModeNone Mode = iota
-	// ModeResult is a function returning Result[T, E].
+	// ModeResult is a function returning the open-E Result[T, error]: E is the
+	// builtin error, lowered to the native (T, error) tuple (feature 03).
 	ModeResult
+	// ModeResultClosed is a function returning a closed-E Result[T, E] where E is not
+	// error, lowered to the generic sum encoding Ok[T,E]/Err[T,E] (feature 06).
+	ModeResultClosed
 	// ModeOption is a function returning Option[T].
 	ModeOption
 )
@@ -78,6 +82,10 @@ type Tables struct {
 	// type expression (alias target / defined-type underlying). Read by the defaults
 	// pass to recover a field's zero value through alias chains.
 	TypeDecls map[string]string
+	// FromRegistry maps a (source error type, destination error type) pair to the
+	// `from func` that converts between them. Read by the closed-E pass to insert the
+	// From-conversion when `?` crosses error types, and by feature 12's derive.
+	FromRegistry map[[2]string]string
 }
 
 // Build analyzes the original source and returns the populated tables.
@@ -89,6 +97,7 @@ func Build(src string) *Tables {
 		Sealed:         map[string]bool{},
 		Structs:        map[string][]Field{},
 		TypeDecls:      map[string]string{},
+		FromRegistry:   map[[2]string]string{},
 	}
 	for _, f := range scan.ScanFuncs(toks) {
 		if f.Name == "" {
@@ -96,6 +105,7 @@ func Build(src string) *Tables {
 		}
 		t.FuncSignatures[f.Name] = analyzeSig(src, toks, f)
 	}
+	analyzeFromFuncs(src, toks, t)
 	for i := 0; i+1 < len(toks); i++ {
 		switch {
 		case toks[i].Text == "enum":
@@ -179,6 +189,29 @@ func indexOf(toks []scan.Token, from int, txt string) int {
 	return -1
 }
 
+// analyzeFromFuncs records each `from func NAME(p SRC) DST` conversion in the From
+// registry, keyed by (SRC, DST). The `from` modifier is stripped by the closed-E pass.
+func analyzeFromFuncs(src string, toks []scan.Token, t *Tables) {
+	for i := 0; i+1 < len(toks); i++ {
+		if toks[i].Text != "from" || toks[i+1].Text != "func" {
+			continue
+		}
+		fi := i + 1
+		bo := scan.FirstBodyBrace(toks, fi)
+		if bo < 0 {
+			continue
+		}
+		pc := scan.ParamsClose(toks, bo)
+		if pc < 0 || fi+3 >= pc {
+			continue
+		}
+		name := toks[fi+1].Text
+		srcType := strings.TrimSpace(src[toks[fi+3].End:toks[pc].Start])
+		dstType := strings.TrimSpace(src[toks[pc].End:toks[bo].Start])
+		t.FromRegistry[[2]string{srcType, dstType}] = name
+	}
+}
+
 // analyzeEnum parses `enum NAME { variant... }` starting at toks[i] == "enum".
 func analyzeEnum(src string, toks []scan.Token, i int) *Enum {
 	e := &Enum{
@@ -254,9 +287,13 @@ func analyzeSig(src string, toks []scan.Token, f scan.Func) FuncSig {
 		if comma < 0 {
 			return sig
 		}
-		sig.Mode = ModeResult
 		sig.T = strings.TrimSpace(src[toks[pc+3].Start:toks[comma].Start])
 		sig.E = strings.TrimSpace(src[toks[comma+1].Start:toks[rb].Start])
+		if sig.E == "error" {
+			sig.Mode = ModeResult // open-E: native (T, error)
+		} else {
+			sig.Mode = ModeResultClosed // closed-E: Ok[T,E]/Err[T,E] sum
+		}
 	case toks[pc+1].Text == "Option" && toks[pc+2].Text == "[":
 		rb := scan.MatchBracket(toks, pc+2)
 		sig.Mode = ModeOption

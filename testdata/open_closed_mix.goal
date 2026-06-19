@@ -1,0 +1,44 @@
+package app
+
+import "errors"
+
+enum DbError {
+    NotFound { key: string }
+    Timeout
+}
+
+enum AppError {
+    Db { cause: DbError }
+}
+
+type Row struct {
+    ID string
+}
+
+from func dbToApp(e DbError) AppError {
+    return AppError.Db(cause: e)
+}
+
+func fetch(key string) Result[Row, DbError] {
+    if key == "" {
+        return Result.Err(DbError.NotFound(key: key))
+    }
+    return Result.Ok(Row{ID: key})
+}
+
+func load(key string) Result[Row, AppError] {
+    r := fetch(key)?
+    return Result.Ok(r)
+}
+
+func validate(s string) Result[string, error] {
+    if s == "" {
+        return Result.Err(errors.New("empty"))
+    }
+    return Result.Ok(s)
+}
+
+func process(s string) Result[string, error] {
+    v := validate(s)?
+    return Result.Ok(v)
+}

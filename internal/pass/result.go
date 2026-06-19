@@ -16,11 +16,13 @@ import (
 // Scope is the immediate open-E case, exactly as feature 03's reference: value-
 // position Result match and Results stored as first-class values are deferred with a
 // located error. Closed-E (sum encoding) is a later pass.
-func Result(src string, _ *analyze.Tables) (string, error) {
+func Result(src string, t *analyze.Tables) (string, error) {
 	toks := scan.Lex(src)
+	spans := funcSpans(toks, t)
 	var reps []scan.Replacement
 
-	// Pass 1: rewrite `func ... Result[T, error] {` to named returns.
+	// Pass 1: rewrite `func ... Result[T, error] {` to named returns (open-E only;
+	// closed-E signatures stay, satisfied by the closed-E pass's generic preamble).
 	for i := range toks {
 		if toks[i].Text == "func" {
 			if rep, ok := rewriteResultSignature(src, toks, i); ok {
@@ -29,10 +31,15 @@ func Result(src string, _ *analyze.Tables) (string, error) {
 		}
 	}
 
-	// Pass 2: lower `return Result.Ok(X)` / `return Result.Err(X)`.
+	// Pass 2: lower `return Result.Ok(X)` / `return Result.Err(X)` in open-E
+	// functions. In a closed-E function these become the sum constructors instead, so
+	// they are left for the closed-E pass.
 	for i := 0; i+4 < len(toks); i++ {
 		if toks[i].Text == "return" && toks[i+1].Text == "Result" && toks[i+2].Text == "." &&
 			(toks[i+3].Text == "Ok" || toks[i+3].Text == "Err") && toks[i+4].Text == "(" {
+			if sig, _ := sigAt(spans, toks[i].Start); sig.Mode != analyze.ModeResult {
+				continue
+			}
 			closeIdx := scan.MatchParen(toks, i+4)
 			inner := strings.TrimSpace(src[toks[i+4].End:toks[closeIdx].Start])
 			var text string
@@ -47,10 +54,11 @@ func Result(src string, _ *analyze.Tables) (string, error) {
 	}
 
 	// Pass 3: lower statement-position `match call { Result.Ok/Err arms }`. Only
-	// matches whose arms are Result patterns are claimed here; Option/enum matches
-	// are left untouched for their own passes.
+	// matches whose arms are Result patterns AND whose scrutinee calls an open-E
+	// function are claimed here; closed-E Result matches, Option, and enum matches go
+	// to their own passes.
 	for i := 0; i < len(toks); i++ {
-		if toks[i].Text == "match" && scan.MatchQualifier(toks, i) == "Result" {
+		if toks[i].Text == "match" && scan.MatchQualifier(toks, i) == "Result" && !calleeIsClosed(src, toks, t, i) {
 			rep, next, err := lowerResultMatch(src, toks, i)
 			if err != nil {
 				return "", err
@@ -61,6 +69,17 @@ func Result(src string, _ *analyze.Tables) (string, error) {
 	}
 
 	return scan.Splice(src, 0, len(src), reps), nil
+}
+
+// calleeIsClosed reports whether the scrutinee of the match at mi is a direct call to
+// a closed-E Result function (so the open-E result pass should not claim it).
+func calleeIsClosed(src string, toks []scan.Token, t *analyze.Tables, mi int) bool {
+	bo := scan.MatchBodyBrace(toks, mi)
+	if bo < 0 {
+		return false
+	}
+	scrut := strings.TrimSpace(src[toks[mi].End:toks[bo].Start])
+	return t.FuncSignatures[scan.LeadIdent(scrut)].Mode == analyze.ModeResultClosed
 }
 
 // rewriteResultSignature rewrites a `func ... Result[T, error]` return type to named
@@ -84,8 +103,11 @@ func rewriteResultSignature(src string, toks []scan.Token, fi int) (scan.Replace
 	if comma < 0 {
 		return scan.Replacement{}, false
 	}
-	t := strings.TrimSpace(src[toks[pc+3].Start:toks[comma].Start])
-	text := fmt.Sprintf("(%s %s, %s error)", okName, t, errName)
+	if e := strings.TrimSpace(src[toks[comma+1].Start:toks[rb].Start]); e != "error" {
+		return scan.Replacement{}, false // closed-E signature stays as-is
+	}
+	tType := strings.TrimSpace(src[toks[pc+3].Start:toks[comma].Start])
+	text := fmt.Sprintf("(%s %s, %s error)", okName, tType, errName)
 	return scan.Replacement{Start: toks[pc+1].Start, End: toks[rb].End, Text: text}, true
 }
 
