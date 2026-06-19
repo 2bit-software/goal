@@ -1,0 +1,18 @@
+package users
+
+type ID int
+
+type User struct {
+    Name string
+}
+
+func find(id ID) Option[User] {
+    return Option.None
+}
+
+func exists(id ID) bool {
+    match find(id) {
+        Option.Some(u) => return true
+        Option.None => return false
+    }
+}

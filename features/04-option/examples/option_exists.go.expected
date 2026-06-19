@@ -1,0 +1,19 @@
+package users
+
+type ID int
+
+type User struct {
+	Name string
+}
+
+func find(id ID) *User {
+	return nil
+}
+
+func exists(id ID) bool {
+	if __gop_o := find(id); __gop_o != nil {
+		return true
+	} else {
+		return false
+	}
+}

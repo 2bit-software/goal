@@ -321,3 +321,59 @@ Entry kinds:
 - **Why:** the TODO scopes 03 to the open-E immediate keystone; §8.7 stored fallback and closed-E
   are explicitly later (feature 06). The audit prompt says handle the immediate case and note the
   fallback. Deferred forms fail loudly rather than miscompiling.
+
+---
+
+## 04-option — Option[T] / nil-safety (pointer strategy)
+
+### Type spelling: `Option[T]` (not `T?`)
+- **Kind:** decision
+- **Chose:** Go-generics bracket `Option[T]`, single type arg always explicit.
+- **Over:** postfix `T?` optional sugar (Swift/Kotlin/TypeScript/C#).
+- **Why:** user chose via AskUserQuestion. Consistent with `Result[T, error]` (one uniform `Sum[...]`
+  spelling) and the spec §3.6/§8.4 samples. `T?` was refused to keep `?` reserved exclusively for
+  propagation (feature 05, `expr?`) — using the same glyph for an optional *type* and a propagating
+  *expression* is conceptually overloaded, and the spec keeps them separate. **Revisit** if `T?` is
+  later preferred.
+
+### Construction/arms qualified: `Option.Some(v)` / `Option.None`
+- **Kind:** decision
+- **Chose:** qualified construction and match arms.
+- **Over:** bare `Some(v)` / `None` (spec §3.6 sample; the universal spelling §7 names conventional).
+- **Why:** user chose via AskUserQuestion — one uniform `Type.Variant(...)` rule across all sum types
+  (matches 01-enums `Status.Active`, 03-result `Result.Ok`). Bare refused for cross-feature
+  inconsistency despite being the convention §7 points at. `Some`/`None` names kept; only the
+  `Option.` qualifier added. (Overrides the spec sample's bare spelling — see "Open against spec".)
+
+### `Option.Some(v)`: `&v` for a bare identifier, box through a temp otherwise
+- **Kind:** assumption
+- **Chose:** `return Option.Some(v)` → `return &v` when `v` is a single identifier (addressable,
+  matching §8.4's `Some(u) -> &u`); otherwise `__gop_some := v; return &__gop_some`.
+- **Over:** always emitting `&v` (illegal Go for literals/calls/index exprs — `&5`, `&f()`); always
+  boxing (correct but noisier for the common `Some(u)` case).
+- **Why:** Go forbids taking the address of a non-addressable expression, so a literal/call/index
+  payload must be boxed through a temp (the idiomatic `v := …; &v`); a bare identifier can be
+  addressed directly for cleaner output that matches the spec. Boxing also gives the Option its own
+  copy (no aliasing). Edge: a single *constant* identifier isn't addressable and would still emit
+  `&c` (rare); noted as a known limitation. The temp name `__gop_some` is shared (distinct `Some`
+  returns sit in distinct branches/scopes).
+
+### Option match: deref alias `x := *__gop_o` only when the Some binding is used
+- **Kind:** assumption
+- **Chose:** in the `Some` (non-nil) branch emit `x := *__gop_o` only if the arm uses `x`; otherwise
+  omit it. `Some` → the `if` branch, `None` → `else`, regardless of source order.
+- **Over:** always emitting the deref alias (unused-variable error when the Some arm ignores the
+  value).
+- **Why:** keeps generated Go compiling and clean; mirrors the "emit the binding only when used"
+  discipline from 02/03. `__gop_o` is always used (the nil-test), so no guard needed there.
+
+### 04 transpiler scope: immediate pointer strategy only
+- **Kind:** assumption
+- **Chose:** handle `Option[T]` types, `return Option.Some/None`, and statement-position `match` on
+  an Option. Reject value-position Option `match` (`x := match`) with a located message; do not
+  specially handle stored Options.
+- **Over:** implementing value-position match and an explicit stored/value-type sum encoding now.
+- **Why:** the TODO scopes 04 to the immediate case with the same fork as Result; §8.4's
+  non-allocating sum encoding for value types and §8.7 stored handling are later. The pointer rep
+  `*T` is itself storable, so basic stored Options would still compile, but full handling is
+  deferred. Deferred forms fail loudly rather than miscompiling.

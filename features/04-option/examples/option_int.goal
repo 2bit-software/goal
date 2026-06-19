@@ -1,0 +1,8 @@
+package num
+
+func first(xs []int) Option[int] {
+    if len(xs) == 0 {
+        return Option.None
+    }
+    return Option.Some(xs[0])
+}

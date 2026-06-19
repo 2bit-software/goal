@@ -1,0 +1,29 @@
+package users
+
+type ID int
+
+type User struct {
+    Name string
+}
+
+func lookup(id ID) (User, bool) {
+    return User{}, false
+}
+
+func find(id ID) Option[User] {
+    u, ok := lookup(id)
+    if !ok {
+        return Option.None
+    }
+    return Option.Some(u)
+}
+
+func greet(u User) {}
+func prompt()      {}
+
+func handle(id ID) {
+    match find(id) {
+        Option.Some(u) => greet(u)
+        Option.None => prompt()
+    }
+}

@@ -1,0 +1,9 @@
+package num
+
+func first(xs []int) *int {
+	if len(xs) == 0 {
+		return nil
+	}
+	__gop_some := xs[0]
+	return &__gop_some
+}

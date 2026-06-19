@@ -1,0 +1,31 @@
+package users
+
+type ID int
+
+type User struct {
+	Name string
+}
+
+func lookup(id ID) (User, bool) {
+	return User{}, false
+}
+
+func find(id ID) *User {
+	u, ok := lookup(id)
+	if !ok {
+		return nil
+	}
+	return &u
+}
+
+func greet(u User) {}
+func prompt()      {}
+
+func handle(id ID) {
+	if __gop_o := find(id); __gop_o != nil {
+		u := *__gop_o
+		greet(u)
+	} else {
+		prompt()
+	}
+}

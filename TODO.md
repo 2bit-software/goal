@@ -84,7 +84,7 @@ Per-feature deliverables (every item):
     and the explicit-discard surface are the checker's job (not built). `go test ./...` passes (3/3)
     and all three generated packages compile + `go vet` clean.
 
-- [ ] **04-option** — `Option[T]` / nil-safety
+- [x] **04-option** — `Option[T]` / nil-safety
   - Spec: §3.6, codegen §8.4
   - Deps: 01-enums, 02-match
   - Nail down: `Option[T]`, `Some(...)` / `None`, the requirement that it be destructured via
@@ -92,6 +92,15 @@ Per-feature deliverables (every item):
   - Transpile to: pointer strategy for reference types (`None`→`nil`, `Some(u)`→`&u`, access via
     proven nil-check, §8.4); value types (`Option[int]`) box to `*int` for v1 (sum encoding is a
     later optimization). Same immediate-vs-stored fork as `Result`.
+  - **Done:** `features/04-option/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Chose
+    `Option[T]` bracket (not `T?`, keeping `?` for propagation) and qualified
+    `Option.Some(...)` / `Option.None` (uniform with enums/Result). Implements the §8.4 pointer
+    strategy: `Option[T]`→`*T`, `Option.None`→`nil`, `Option.Some(v)`→`&v` (bare ident) or a boxed
+    temp otherwise, and `match`→`if __gop_o := …; __gop_o != nil { x := *__gop_o; … } else { … }`.
+    Value types box to `*int` (v1); the Some deref alias is emitted only when the binding is used.
+    Value-position Option match and stored Options deferred with a located message; must-use is the
+    checker's job. `go test ./...` passes (3/3) and all three generated packages compile + `go vet`
+    clean.
 
 - [ ] **05-question-prop** — `?` propagation
   - Spec: §3.7, codegen §8.3
