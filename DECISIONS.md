@@ -427,3 +427,59 @@ Entry kinds:
   per-feature-standalone rule expects this). Closed-E `?` + From-conversion is feature 06 (§3.7
   fast-follow); inline `?` and stored values are deferred. Deferred/unsupported `?` forms fail with a
   located message rather than miscompiling.
+
+---
+
+## 06-error-e — closed error type E (sum encoding + From)
+
+### §9 From-conversion shape: `from func` modifier
+- **Kind:** decision
+- **Chose:** declare the `?`-conversion as `from func name(e Src) Dst { ... }` — an ordinary function
+  with a `from` modifier; `?` auto-invokes it, resolved by its (Src)->Dst signature. `from` erases.
+- **Over:** a dedicated `from Src to Dst { ... }` block (more novel); an unmarked function discovered
+  by signature (zero syntax but implicit/magic and ambiguous if multiple match).
+- **Why:** user chose via AskUserQuestion, weighing "obvious / not too foreign / explicit." The
+  modifier is the same shape as `pure func` (feature 09), so it's consistent and Go-shaped; the
+  marker keeps it explicit (the conversion `?` reaches for is on the page), and `from` lands on
+  Rust's `From`. The dedicated block was refused as the most foreign; signature-discovery refused as
+  implicit/ambiguous. Open-E `?` needs no conversion — same `?` mechanism, with/without a conversion
+  step (§3.3 line-to-protect). **Revisit** if a different conversion surface is later preferred.
+
+### Closed-E uses no new construction/match/? syntax (one knob = E only)
+- **Kind:** decision
+- **Chose:** a closed error enum is just an `enum` used as the `E` of `Result[T, E]`; `Result.Ok/Err`,
+  `match`, `?` are unchanged from 01-05. Open↔closed differ only in whether E is `error` or an enum.
+- **Over:** any closed-specific construction/match/propagation syntax.
+- **Why:** §3.3's one-mechanism-one-knob is the explicit line to protect — a second error system
+  would break lint-as-policy. Reuses existing surface entirely.
+
+### Closed-E Result encoding: injected generic `Result[T,E any]` + `Ok`/`Err`
+- **Kind:** assumption
+- **Chose:** inject one generic sum encoding (`type Result[T, E any] interface{ isResult() }`, generic
+  `Ok[T,E]`/`Err[T,E]` structs with the marker) once per file; the `Result[T, E]` return type stays
+  as written; construction/match/? use `Ok[T,E]`/`Err[T,E]`.
+- **Over:** per-instantiation monomorphized types (`Ok_Config_ParseError`, …, §8.3 sketch style);
+  an `any`-typed non-generic `Ok`/`Err` (loses payload typing).
+- **Why:** the generic encoding keeps the signature unchanged and the output clean, and Go's type
+  switch accepts concrete `case Ok[Config, ParseError]:`. Monomorphized names are verbose; `any`
+  loses the typed payload the §8.1 encoding intends. Unused type param `E` in `Ok[T,E]` is legal Go.
+  A real front-end with type resolution could choose either; this is the reference choice.
+
+### T, E resolved from signatures; match/? scrutinee must be a direct call
+- **Kind:** assumption
+- **Chose:** construction takes (T, E) from the enclosing function's Result return; `match`/`?` take
+  the callee's (T, E) from its signature (scrutinee must be a direct call `f(args)`) and the `?`
+  early-return type from the enclosing function.
+- **Over:** full type inference of arbitrary scrutinee expressions.
+- **Why:** the reference transpiler has no type system; signatures are the only types it can read.
+  The immediate case (match/? on a direct call) is what §8.3 targets. Stored Results, value-position
+  match, and nested `Err`-variant patterns are out of scope and noted.
+
+### Flat Ok/Err match only (nested error-variant patterns deferred)
+- **Kind:** assumption
+- **Chose:** `match` on a closed-E Result handles flat `Result.Ok(x)` / `Result.Err(e)`; to branch on
+  the error enum's variants, compose `match e { ... }` (feature 02).
+- **Over:** supporting the spec §3.3 nested form `Err(BadKey(k))` directly.
+- **Why:** flat + composition covers the same ground and keeps the match lowering tractable; nested
+  destructuring is an explicit later extension. Recorded so the divergence from the spec sample is
+  deliberate (see SYNTAX.md "Open against spec").

@@ -1,0 +1,42 @@
+package parse
+
+type Result[T, E any] interface{ isResult() }
+type Ok[T, E any] struct{ Value T }
+type Err[T, E any] struct{ Value E }
+
+func (Ok[T, E]) isResult()  {}
+func (Err[T, E]) isResult() {}
+
+type ParseError interface{ isParseError() }
+
+type ParseError_Empty struct{}
+type ParseError_BadKey struct {
+	Key string
+}
+
+func (ParseError_Empty) isParseError()  {}
+func (ParseError_BadKey) isParseError() {}
+
+type Config struct {
+	Raw string
+}
+
+func parse(s string) Result[Config, ParseError] {
+	if s == "" {
+		return Err[Config, ParseError]{Value: ParseError(ParseError_Empty{})}
+	}
+	return Ok[Config, ParseError]{Value: Config{Raw: s}}
+}
+
+func loadFirst(a string) Result[Config, ParseError] {
+	var cfg Config
+	switch __gop_e := parse(a).(type) {
+	case Ok[Config, ParseError]:
+		cfg = __gop_e.Value
+	case Err[Config, ParseError]:
+		return Err[Config, ParseError]{Value: __gop_e.Value}
+	default:
+		panic("unreachable: non-exhaustive Result[Config, ParseError] (compiler invariant violated)")
+	}
+	return Ok[Config, ParseError]{Value: cfg}
+}

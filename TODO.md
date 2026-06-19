@@ -119,7 +119,7 @@ Per-feature deliverables (every item):
     Closed-E `?`, inline `?`, and stored values deferred with a located message. `go test ./...`
     passes (3/3) and all three generated packages compile + `go vet` clean.
 
-- [ ] **06-error-e** — Error type `E`: open *and* closed, one mechanism
+- [x] **06-error-e** — Error type `E`: open *and* closed, one mechanism
   - Spec: §3.3, codegen §8.3 (closed-`E` fork)
   - Deps: 03-result, 05-question-prop
   - Nail down: closed error enum as `E` (e.g. `enum ParseError { ... }`); the **one-mechanism-
@@ -128,6 +128,16 @@ Per-feature deliverables (every item):
   - Transpile to: closed-`E` `Result` → **sum encoding** (not native tuple); `?` over closed `E`
     → type-switch-and-return with a `From`-conversion call in the `Err` arm (§8.3).
   - Note: lint-level open-vs-closed *policy* is not a transpile concern; only the two lowerings are.
+  - **Done:** `features/06-error-e/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Closed `E`
+    is just an `enum` used as the `Result` error type — **no new construction/match/`?` syntax** (the
+    one-knob constraint). Resolved §9: the `From`-conversion is a **`from func`** modifier (same shape
+    as `pure func`; `?` auto-invokes it by `(Src)→Dst` signature; `from` erases). Lowering is the
+    §8.1 **sum encoding** (injected generic `Result[T,E any]` + `Ok`/`Err`): construction →
+    `Ok[T,E]{Value: …}`/`Err[T,E]{…}`, `match` → type-switch with defensive panic default, `?` →
+    type-switch-and-return with the `from func` call in the `Err` arm when caller/callee error types
+    differ. T,E resolved from signatures (scrutinee must be a direct call). Flat Ok/Err match (nested
+    `Err`-variant patterns deferred to composing `match e {…}`). `go test ./...` passes (3/3) and all
+    three generated packages compile + `go vet` clean.
 
 - [ ] **07-implements** — Explicit `implements`
   - Spec: §3.4, codegen §8.5

@@ -1,0 +1,27 @@
+package parse
+
+enum ParseError {
+    Empty
+    BadKey { key: string }
+}
+
+type Config struct {
+    Raw string
+}
+
+func parse(s string) Result[Config, ParseError] {
+    if s == "" {
+        return Result.Err(ParseError.Empty)
+    }
+    return Result.Ok(Config{Raw: s})
+}
+
+func run(c Config)        {}
+func report(e ParseError) {}
+
+func handle(input string) {
+    match parse(input) {
+        Result.Ok(cfg) => run(cfg)
+        Result.Err(e) => report(e)
+    }
+}
