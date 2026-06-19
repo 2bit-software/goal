@@ -510,3 +510,55 @@ Entry kinds:
   X then), so the receiver scan keeps the emitted Go compiling for both cases. Emitting nothing would
   drop the self-verifying property §8.5 values. The assertion's own compilation is the shadow of the
   checker's proof — a fortunate consequence (a wrong signature makes Go reject the assertion).
+
+---
+
+## 08-no-zero-value — required-field struct construction
+
+### Explicit-defaults form spelled `...defaults`
+- **Kind:** decision
+- **Chose:** `...defaults` as the trailing explicit-defaults element ("set every unlisted field to
+  its zero/default").
+- **Over:** `_` (rest marker, reusing goal's `_` discard/rest convention); a bare `default` member;
+  Rust's `..Default` struct-update tail.
+- **Why:** user-selected via `AskUserQuestion`. `...defaults` leans on Go's existing `...` (spread)
+  reading and names the intent ("defaults") so it is greppable. Refused `_` because `_` elsewhere
+  in goal means "discard / don't care," which mismatches "give me the documented defaults"; refused
+  bare `default` because it costs a new contextual keyword and reads like a field named `default`;
+  refused `..Default` because `..` appears nowhere else in goal and `Default` implies a Default
+  typeclass the language does not have. Closes the §9 "explicit-defaults form" open question.
+
+### "Defaults" = Go zero values written explicitly; no per-field declared-default syntax
+- **Kind:** decision
+- **Chose:** `...defaults` fills each unset field with its *type's zero value*, emitted explicitly
+  (`""`/`false`/`0`/`nil`, `T{}` for a named struct).
+- **Over:** introducing a per-field declared-default syntax (e.g. `name string = "anon"`).
+- **Why:** the spec frames the hatch as "I really do want **zero/defaults**" (§3.5) and §8.5 says it
+  "lowers to explicit per-field default values." The spec defines **no** field-default declaration
+  form, so inventing one would add a feature beyond the audit's scope ("Do NOT add features"). A
+  declared-default facility is flagged in SYNTAX.md as a possible separate additive feature.
+
+### Field zero recovered syntactically from the declared type (no type system)
+- **Kind:** assumption
+- **Chose:** `zeroLit` maps declared type text → zero: `*T`/`[]T`/`map`/`chan`/`func`/`interface`/
+  `any`/`error` → `nil`; `[N]T` → `[N]T{}`; `string`→`""`; `bool`→`false`; numerics→`0`; in-file
+  `type X struct` → `X{}`; in-file `type X interface` → `nil`; in-file alias/defined type → resolve
+  underlying and recurse; unknown out-of-file named type → `T{}` (best-effort).
+- **Over:** real type inference / resolving imported types.
+- **Why:** the reference transpiler has no type system; declared types in the file are the only
+  types it can read. Untyped constants (`0`/`""`/`false`) are assignable to defined types, so
+  `type Role int` defaults correctly to `0`. The one unsafe spot — an out-of-file named *interface*
+  wanting `nil` but getting `T{}` — is not syntactically recoverable, so it is deferred and noted
+  rather than guessed. Field-type forms with internal spaces (func/chan-with-space) and grouped
+  `type ( … )` decls are out of scope.
+
+### Transpiler does not reject incomplete literals (checker's job)
+- **Kind:** decision
+- **Chose:** complete struct literals pass through verbatim; the transpiler only expands
+  `...defaults`. It does not reject missing fields, verify field names, or judge whether a default
+  is semantically valid (e.g. an enum field, which has no safe zero, expands mechanically to the
+  encoding's `nil`).
+- **Over:** implementing field-completeness validation in the reference transpiler.
+- **Why:** field-completeness is the erased static guarantee (§8.5: the feature "only ever rejected
+  source") and per the audit's "NO error checking yet" constraint, checking is the checker's job.
+  The transpiler's sole job is valid goal → the correct Go.

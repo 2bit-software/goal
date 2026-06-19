@@ -1,0 +1,20 @@
+package users
+
+type Role int
+
+const (
+	RoleMember Role = iota
+	RoleAdmin
+)
+
+type User struct {
+	name  string
+	email string
+	role  Role
+	admin bool
+}
+
+// newAdmin sets every field explicitly — a complete literal passes through verbatim.
+func newAdmin() User {
+	return User{name: "root", email: "root@x", role: RoleAdmin, admin: true}
+}

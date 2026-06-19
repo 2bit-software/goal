@@ -1,0 +1,22 @@
+package users
+
+type Role int
+
+const (
+	RoleMember Role = iota
+	RoleAdmin
+)
+
+type User struct {
+	name   string
+	email  string
+	role   Role
+	active bool
+	logins int
+}
+
+// newMember sets the no-default fields (name, role) explicitly and opts the rest
+// into their zero values with `...defaults`.
+func newMember(name string) User {
+	return User{name: name, role: RoleMember, ...defaults}
+}

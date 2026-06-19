@@ -156,7 +156,7 @@ Per-feature deliverables (every item):
     and all three generated packages compile + `go vet` clean (the assertion compiling *is* the
     self-verifying proof).
 
-- [ ] **08-no-zero-value** — Required-field struct construction
+- [x] **08-no-zero-value** — Required-field struct construction
   - Spec: §3.5, codegen §8.5
   - Deps: 01-enums (for default-valued enum fields in examples)
   - Nail down: all fields required on construction (default, not opt-in); the explicit-defaults
@@ -165,6 +165,16 @@ Per-feature deliverables (every item):
     fields present; `...defaults` lowers to explicit per-field default values (§8.5). The
     reference transpiler passes complete literals through and expands the defaults form; it does
     **not** reject incomplete literals (checker's job).
+  - **Done:** `features/08-no-zero-value/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`.
+    Resolved §9: chose **`...defaults`** as the explicit-defaults form (over `_`, bare `default`,
+    `..Default`) — names the intent + leans on Go's `...` reading. Field-completeness is the
+    **erased** static guarantee, so complete literals pass through **verbatim** (generates nothing
+    extra); the only rewrite is expanding `...defaults` to explicit per-field zeros, recovered
+    syntactically from each declared type (`nil`/`""`/`false`/`0`, `T{}` for a named struct;
+    in-file alias/defined types resolved). "Defaults" = Go zero values written explicitly; **no**
+    per-field declared-default syntax invented (spec defines none). Transpiler does **not** reject
+    incomplete literals or judge default appropriateness (checker's job). `go test ./...` passes
+    (3/3) and all three generated packages compile + `go vet` clean.
 
 ## Tier 1.5 / Tier 2 — supporting
 

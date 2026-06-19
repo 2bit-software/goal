@@ -1,0 +1,25 @@
+package config
+
+type Addr struct {
+	host string
+	port int
+}
+
+type Name = string
+
+type Settings struct {
+	primary  Addr
+	fallback *Addr
+	meta     Addr
+	tags     []string
+	env      map[string]string
+	label    Name
+	retries  int
+}
+
+// defaultSettings sets primary explicitly; `...defaults` fills the rest with the
+// zero recovered from each declared type: pointer/slice/map -> nil, the named
+// struct Addr -> Addr{}, the string alias Name -> "", int -> 0.
+func defaultSettings() Settings {
+	return Settings{primary: Addr{host: "localhost", port: 8080}, fallback: nil, meta: Addr{}, tags: nil, env: nil, label: "", retries: 0}
+}
