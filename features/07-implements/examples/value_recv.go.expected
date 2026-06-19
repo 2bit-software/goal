@@ -1,0 +1,16 @@
+package shapes
+
+type Stringer interface {
+	String() string
+}
+
+type Point struct {
+	X int
+	Y int
+}
+
+var _ Stringer = Point{}
+
+func (p Point) String() string {
+	return "point"
+}

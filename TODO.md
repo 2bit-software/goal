@@ -139,7 +139,7 @@ Per-feature deliverables (every item):
     `Err`-variant patterns deferred to composing `match e {…}`). `go test ./...` passes (3/3) and all
     three generated packages compile + `go vet` clean.
 
-- [ ] **07-implements** — Explicit `implements`
+- [x] **07-implements** — Explicit `implements`
   - Spec: §3.4, codegen §8.5
   - Deps: none (additive)
   - Nail down: `implements io.Writer for JSONWriter` (or annotation form) — additive assertion,
@@ -147,6 +147,14 @@ Per-feature deliverables (every item):
   - Transpile to: **erased** (Go's structural typing satisfies it). Optionally emit the free
     `var _ io.Writer = JSONWriter{}` assertion (recommended, §8.5). The reference transpiler emits
     this assertion; it does **not** verify the methods exist (checker's job).
+  - **Done:** `features/07-implements/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Surface
+    `implements X for T` inherited from feature 01 (no new question — re-litigating a settled
+    choice). Lowering per §8.5: erase the assertion, emit the free `var _ X = T{}` (or
+    `var _ X = (*T)(nil)` when `T` has a pointer-receiver method, detected by scanning receivers, so
+    the assertion compiles either way). Same `implements` surface, two lowerings: sealed interface
+    (01) → marker method; ordinary interface (here) → erased assertion. `go test ./...` passes (3/3)
+    and all three generated packages compile + `go vet` clean (the assertion compiling *is* the
+    self-verifying proof).
 
 - [ ] **08-no-zero-value** — Required-field struct construction
   - Spec: §3.5, codegen §8.5

@@ -483,3 +483,30 @@ Entry kinds:
 - **Why:** flat + composition covers the same ground and keeps the match lowering tractable; nested
   destructuring is an explicit later extension. Recorded so the divergence from the spec sample is
   deliberate (see SYNTAX.md "Open against spec").
+
+---
+
+## 07-implements — explicit interface assertion
+
+### Surface inherited from feature 01: `implements X for T` (no new question)
+- **Kind:** decision
+- **Chose:** reuse the `implements X for T` standalone declaration form (pinned in feature 01) for
+  the general additive assertion over any interface; did not open a new syntax question.
+- **Over:** re-asking `implements X for T` vs a type-suffix annotation (`type T struct{…} implements
+  X`) — the §3.4 "could equally be an annotation" alternative.
+- **Why:** the user already chose the standalone form over the suffix annotation in feature 01 (Q4,
+  sealed-interface form). Re-asking would re-litigate a settled choice. One `implements` spelling
+  serves both roles (sealed-enum membership and ordinary-interface assertion), per §2/§3.4's shared
+  capability. **Revisit** only if the user wants to reconsider the form globally.
+
+### Emit the assertion; value form `T{}` vs pointer form `(*T)(nil)` by receiver scan
+- **Kind:** assumption
+- **Chose:** lower `implements X for T` to `var _ X = T{}`, or to `var _ X = (*T)(nil)` if any method
+  of `T` in the file uses a pointer receiver. The reference transpiler emits the assertion but does
+  not verify the methods (checker's job).
+- **Over:** always emitting `T{}` (spec §8.5's literal form); emitting nothing (pure erasure).
+- **Why:** §8.5 recommends emitting the free assertion, and the TODO says the reference transpiler
+  emits it. Always-`T{}` would fail to compile for pointer-receiver method sets (only `*T` satisfies
+  X then), so the receiver scan keeps the emitted Go compiling for both cases. Emitting nothing would
+  drop the self-verifying property §8.5 values. The assertion's own compilation is the shadow of the
+  checker's proof — a fortunate consequence (a wrong signature makes Go reject the assertion).

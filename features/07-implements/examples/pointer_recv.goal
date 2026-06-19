@@ -1,0 +1,15 @@
+package shapes
+
+type Resetter interface {
+    Reset()
+}
+
+type Counter struct {
+    n int
+}
+
+implements Resetter for Counter
+
+func (c *Counter) Reset() {
+    c.n = 0
+}

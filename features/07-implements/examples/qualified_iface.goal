@@ -1,0 +1,11 @@
+package writers
+
+import "io"
+
+type Discard struct{}
+
+implements io.Writer for Discard
+
+func (Discard) Write(p []byte) (int, error) {
+    return len(p), nil
+}
