@@ -82,10 +82,17 @@ type Tables struct {
 	// type expression (alias target / defined-type underlying). Read by the defaults
 	// pass to recover a field's zero value through alias chains.
 	TypeDecls map[string]string
-	// FromRegistry maps a (source error type, destination error type) pair to the
-	// `from func` that converts between them. Read by the closed-E pass to insert the
-	// From-conversion when `?` crosses error types, and by feature 12's derive.
-	FromRegistry map[[2]string]string
+	// FromRegistry maps a (source type, target type) pair to the `from func` that
+	// converts between them. Read by the closed-E pass for the `?` From-conversion
+	// (error types) and by the derive pass for field-by-field conversion (any types).
+	FromRegistry map[[2]string]ConvEntry
+}
+
+// ConvEntry is one `from func` conversion: its name and whether it is fallible (the
+// return type is `(T, error)` rather than a bare T).
+type ConvEntry struct {
+	Name     string
+	Fallible bool
 }
 
 // Build analyzes the original source and returns the populated tables.
@@ -97,7 +104,7 @@ func Build(src string) *Tables {
 		Sealed:         map[string]bool{},
 		Structs:        map[string][]Field{},
 		TypeDecls:      map[string]string{},
-		FromRegistry:   map[[2]string]string{},
+		FromRegistry:   map[[2]string]ConvEntry{},
 	}
 	for _, f := range scan.ScanFuncs(toks) {
 		if f.Name == "" {
@@ -189,27 +196,45 @@ func indexOf(toks []scan.Token, from int, txt string) int {
 	return -1
 }
 
-// analyzeFromFuncs records each `from func NAME(p SRC) DST` conversion in the From
-// registry, keyed by (SRC, DST). The `from` modifier is stripped by the closed-E pass.
+// analyzeFromFuncs records each `from func NAME(p SRC) RET` conversion in the From
+// registry, keyed by (SRC, target). The target and fallibility are read from RET via
+// parseReturn, so a fallible `(T, error)` leaf keys by T. A forward scan from the
+// parameter list handles both a bare return type (feature 06) and a parenthesized
+// `(T, error)` (feature 12). The `from` modifier is stripped by the derive pass.
 func analyzeFromFuncs(src string, toks []scan.Token, t *Tables) {
-	for i := 0; i+1 < len(toks); i++ {
+	for i := 0; i+2 < len(toks); i++ {
 		if toks[i].Text != "from" || toks[i+1].Text != "func" {
 			continue
 		}
-		fi := i + 1
-		bo := scan.FirstBodyBrace(toks, fi)
-		if bo < 0 {
+		open := indexOf(toks, i+2, "(")
+		if open < 0 {
 			continue
 		}
-		pc := scan.ParamsClose(toks, bo)
-		if pc < 0 || fi+3 >= pc {
-			continue
-		}
-		name := toks[fi+1].Text
-		srcType := strings.TrimSpace(src[toks[fi+3].End:toks[pc].Start])
-		dstType := strings.TrimSpace(src[toks[pc].End:toks[bo].Start])
-		t.FromRegistry[[2]string{srcType, dstType}] = name
+		closeP := scan.MatchParen(toks, open)
+		srcType := strings.TrimSpace(src[toks[open+1].End:toks[closeP].Start])
+		retType := strings.TrimSpace(src[toks[closeP].End:firstBraceAfter(src, toks[closeP].End)])
+		tgt, fallible := parseReturn(retType)
+		t.FromRegistry[[2]string{srcType, tgt}] = ConvEntry{Name: toks[i+2].Text, Fallible: fallible}
 	}
+}
+
+// parseReturn splits a function return type into its target type and whether it is
+// fallible: `(T, error)` -> (T, true); a bare `T` -> (T, false).
+func parseReturn(ret string) (tgt string, fallible bool) {
+	ret = strings.TrimSpace(ret)
+	if strings.HasPrefix(ret, "(") && strings.HasSuffix(ret, ")") {
+		first, _, _ := strings.Cut(ret[1:len(ret)-1], ",")
+		return strings.TrimSpace(first), true
+	}
+	return ret, false
+}
+
+// firstBraceAfter returns the offset of the first "{" at or after offset, or len(src).
+func firstBraceAfter(src string, offset int) int {
+	if b := strings.IndexByte(src[offset:], '{'); b >= 0 {
+		return offset + b
+	}
+	return len(src)
 }
 
 // analyzeEnum parses `enum NAME { variant... }` starting at toks[i] == "enum".

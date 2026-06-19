@@ -1,0 +1,89 @@
+package app
+
+type Result[T, E any] interface{ isResult() }
+type Ok[T, E any] struct{ Value T }
+type Err[T, E any] struct{ Value E }
+
+func (Ok[T, E]) isResult()  {}
+func (Err[T, E]) isResult() {}
+
+type ParseError interface{ isParseError() }
+
+type ParseError_Empty struct{}
+
+func (ParseError_Empty) isParseError() {}
+
+type AppError interface{ isAppError() }
+
+type AppError_Wrapped struct {
+	Cause ParseError
+}
+
+func (AppError_Wrapped) isAppError() {}
+
+type Config struct {
+	Raw string
+}
+
+type ID struct {
+	v string
+}
+
+type Raw struct {
+	Name string
+	Key  string
+}
+
+type Typed struct {
+	Name string
+	Key  ID
+}
+
+var errBad = newErr("bad id")
+
+func newErr(m string) error { return &convErr{m} }
+
+type convErr struct {
+	m string
+}
+
+func (x *convErr) Error() string { return x.m }
+
+func toApp(e ParseError) AppError {
+	return AppError(AppError_Wrapped{Cause: e})
+}
+
+func parseID(s string) (ID, error) {
+	if s == "" {
+		return ID{}, errBad
+	}
+	return ID{v: s}, nil
+}
+
+func parse(s string) Result[Config, ParseError] {
+	return Ok[Config, ParseError]{Value: Config{Raw: s}}
+}
+
+func load(s string) Result[Config, AppError] {
+	var cfg Config
+	switch __gop_e := parse(s).(type) {
+	case Ok[Config, ParseError]:
+		cfg = __gop_e.Value
+	case Err[Config, ParseError]:
+		return Err[Config, AppError]{Value: toApp(__gop_e.Value)}
+	default:
+		panic("unreachable: non-exhaustive Result[Config, ParseError] (compiler invariant violated)")
+	}
+	return Ok[Config, AppError]{Value: cfg}
+}
+
+func toTyped(r Raw) (Typed, error) {
+	var out Typed
+	out.Name = r.Name
+	__gop_v0, err := parseID(r.Key)
+	if err != nil {
+		return out, err
+	}
+	out.Key = __gop_v0
+	return out, nil
+}

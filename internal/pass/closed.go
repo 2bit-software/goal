@@ -46,13 +46,8 @@ func ResultClosed(src string, t *analyze.Tables) (string, error) {
 	off := injectOffset(src, toks)
 	reps = append(reps, scan.Replacement{Start: off, End: off, Text: "\n" + resultPreamble + "\n"})
 
-	// Strip the `from ` modifier from each `from func` (the conversion is an ordinary
-	// Go function; the registry was built by analyze).
-	for i := 0; i+1 < len(toks); i++ {
-		if toks[i].Text == "from" && toks[i+1].Text == "func" {
-			reps = append(reps, scan.Replacement{Start: toks[i].Start, End: toks[i+1].Start, Text: ""})
-		}
-	}
+	// (The `from` modifier is stripped by the derive pass, which owns every
+	// `from func` leaf — error conversions here and any-type conversions for derive.)
 
 	// Closed-E Result match -> type switch on Ok/Err. Record the spans so the
 	// constructor rewrite below skips Result.Ok/Err patterns inside a match.
@@ -156,7 +151,7 @@ func lowerClosedQuestions(src string, toks []scan.Token, t *analyze.Tables, span
 			if !found {
 				return nil, fmt.Errorf("no `from func` conversion declared for %s -> %s (required to `?` across closed error types)", callee.E, caller.E)
 			}
-			errValue = fmt.Sprintf("%s(%s.Value)", conv, evar)
+			errValue = fmt.Sprintf("%s(%s.Value)", conv.Name, evar)
 		}
 		var b strings.Builder
 		fmt.Fprintf(&b, "var %s %s\n", name, callee.T)

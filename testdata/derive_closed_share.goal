@@ -1,0 +1,59 @@
+package app
+
+enum ParseError {
+    Empty
+}
+
+enum AppError {
+    Wrapped { cause: ParseError }
+}
+
+type Config struct {
+    Raw string
+}
+
+type ID struct {
+    v string
+}
+
+type Raw struct {
+    Name string
+    Key  string
+}
+
+type Typed struct {
+    Name string
+    Key  ID
+}
+
+var errBad = newErr("bad id")
+
+func newErr(m string) error { return &convErr{m} }
+
+type convErr struct {
+    m string
+}
+
+func (x *convErr) Error() string { return x.m }
+
+from func toApp(e ParseError) AppError {
+    return AppError.Wrapped(cause: e)
+}
+
+from func parseID(s string) (ID, error) {
+    if s == "" {
+        return ID{}, errBad
+    }
+    return ID{v: s}, nil
+}
+
+func parse(s string) Result[Config, ParseError] {
+    return Result.Ok(Config{Raw: s})
+}
+
+func load(s string) Result[Config, AppError] {
+    cfg := parse(s)?
+    return Result.Ok(cfg)
+}
+
+derive func toTyped(r Raw) (Typed, error)
