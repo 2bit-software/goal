@@ -187,11 +187,15 @@ func parseResultArms(toks []scan.Token, lo, hi int) []resultArm {
 	return arms
 }
 
-// patternStart finds where the pattern ending just before the arrow at eqIdx begins.
+// patternStart finds where the arm pattern ending just before the arrow at eqIdx
+// begins, from the token immediately before the arrow. It is shared by every
+// qualified match (Result/Option/enum): `Qual.Variant`, `Qual.Variant(binding)`, and
+// the bare `_` rest arm.
 func patternStart(toks []scan.Token, eqIdx int) int {
 	j := eqIdx - 1
-	if toks[j].Text == ")" {
-		// Result . Variant ( binding ) — walk back to "(" then to "Result".
+	switch toks[j].Text {
+	case ")":
+		// Qual . Variant ( binding ) — walk back to "(" then to the qualifier.
 		depth := 0
 		k := j
 		for ; k >= 0; k-- {
@@ -206,9 +210,12 @@ func patternStart(toks []scan.Token, eqIdx int) int {
 			}
 		}
 		return k - 3
+	case "_":
+		return j
+	default:
+		// Qual . Variant
+		return j - 2
 	}
-	// Result . Variant
-	return j - 2
 }
 
 // parseResultPattern reads `Result . Variant ( binding )` starting at start.

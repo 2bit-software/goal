@@ -54,6 +54,8 @@ func TestTestdata(t *testing.T) {
 // single-feature behavior the standalone transpilers had.
 func TestSingleFeatureRegression(t *testing.T) {
 	dirs := []string{
+		filepath.Join("..", "..", "features", "01-enums", "examples"),
+		filepath.Join("..", "..", "features", "02-match", "examples"),
 		filepath.Join("..", "..", "features", "03-result", "examples"),
 		filepath.Join("..", "..", "features", "04-option", "examples"),
 		filepath.Join("..", "..", "features", "05-question-prop", "examples"),

@@ -1,0 +1,48 @@
+package app
+
+import "errors"
+
+type Time = int64
+
+type Event interface{ isEvent() }
+
+type Event_Login struct {
+	User string
+}
+type Event_Logout struct {
+	User string
+	At   Time
+}
+type Event_Failure struct {
+	Reason string
+}
+
+func (Event_Login) isEvent()   {}
+func (Event_Logout) isEvent()  {}
+func (Event_Failure) isEvent() {}
+
+func classify(code int) (__gop_ok Event, __gop_err error) {
+	if code < 0 {
+		return __gop_ok, errors.New("bad code")
+	}
+	return Event(Event_Login{User: "alice"}), nil
+}
+
+func describe(code int) (__gop_ok string, __gop_err error) {
+	ev, __gop_err := classify(code)
+	if __gop_err != nil {
+		return __gop_ok, __gop_err
+	}
+	var label string
+	switch __gop_v := ev.(type) {
+	case Event_Login:
+		label = __gop_v.User
+	case Event_Logout:
+		label = __gop_v.User
+	case Event_Failure:
+		label = __gop_v.Reason
+	default:
+		panic("unreachable: non-exhaustive Event (compiler invariant violated)")
+	}
+	return label, nil
+}

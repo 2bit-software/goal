@@ -35,6 +35,28 @@ type FuncSig struct {
 	E    string // error type (the E in Result[T, E]); "" for Option/none
 }
 
+// Field is one variant field: the goal field name (lowercase) and its type
+// expression captured verbatim from source.
+type Field struct {
+	Name string
+	Type string
+}
+
+// Variant is one enum variant; Fields is empty for a data-less variant.
+type Variant struct {
+	Name   string
+	Fields []Field
+}
+
+// Enum is a closed sum type: its variants plus name/field membership sets the match
+// and construction lowering consult.
+type Enum struct {
+	Name     string
+	Variants []Variant
+	VSet     map[string]bool            // variant-name set
+	FieldSet map[string]map[string]bool // variant -> its field-name set
+}
+
 // Tables holds every name-keyed table the passes consult. It is built once from the
 // original source and never mutated by a pass.
 type Tables struct {
@@ -42,19 +64,99 @@ type Tables struct {
 	// that have already lowered a signature (Result -> named returns, Option -> *T)
 	// can no longer read the original mode from the source, so they recover it here.
 	FuncSignatures map[string]FuncSig
+	// Enums maps an enum type name to its analyzed variants. Read by the enums pass
+	// (encoding + construction) and the match pass (field-access exporting).
+	Enums map[string]*Enum
+	// Sealed is the set of interface names declared `sealed interface`. It
+	// disambiguates `implements I for T`: a marker method when I is sealed (feature
+	// 01), versus a compile-time assertion otherwise (feature 07).
+	Sealed map[string]bool
 }
 
 // Build analyzes the original source and returns the populated tables.
 func Build(src string) *Tables {
 	toks := scan.Lex(src)
-	t := &Tables{FuncSignatures: map[string]FuncSig{}}
+	t := &Tables{
+		FuncSignatures: map[string]FuncSig{},
+		Enums:          map[string]*Enum{},
+		Sealed:         map[string]bool{},
+	}
 	for _, f := range scan.ScanFuncs(toks) {
 		if f.Name == "" {
 			continue
 		}
 		t.FuncSignatures[f.Name] = analyzeSig(src, toks, f)
 	}
+	for i := 0; i+1 < len(toks); i++ {
+		switch {
+		case toks[i].Text == "enum":
+			e := analyzeEnum(src, toks, i)
+			t.Enums[e.Name] = e
+		case toks[i].Text == "sealed" && toks[i+1].Text == "interface" && i+2 < len(toks):
+			t.Sealed[toks[i+2].Text] = true
+		}
+	}
 	return t
+}
+
+// analyzeEnum parses `enum NAME { variant... }` starting at toks[i] == "enum".
+func analyzeEnum(src string, toks []scan.Token, i int) *Enum {
+	e := &Enum{
+		Name:     toks[i+1].Text,
+		VSet:     map[string]bool{},
+		FieldSet: map[string]map[string]bool{},
+	}
+	k := i + 3 // step past `enum NAME {`
+	for k < len(toks) && toks[k].Text != "}" {
+		vname := toks[k].Text
+		k++
+		var fields []Field
+		if k < len(toks) && toks[k].Text == "{" {
+			fields, k = parseFields(src, toks, k+1)
+			k++ // consume the variant's closing "}"
+		}
+		e.Variants = append(e.Variants, Variant{Name: vname, Fields: fields})
+		e.VSet[vname] = true
+		set := map[string]bool{}
+		for _, f := range fields {
+			set[f.Name] = true
+		}
+		e.FieldSet[vname] = set
+	}
+	return e
+}
+
+// parseFields parses `name: Type, name: Type` up to the closing "}", starting at the
+// first field name. Type expressions are captured verbatim, honoring nested
+// () [] {} so map/func/struct/slice types survive intact.
+func parseFields(src string, toks []scan.Token, k int) ([]Field, int) {
+	var fields []Field
+	for k < len(toks) && toks[k].Text != "}" {
+		name := toks[k].Text
+		k += 2 // skip name and ":"
+		typeStart := toks[k].Start
+		typeEnd := toks[k].End
+		depth := 0
+		for k < len(toks) {
+			t := toks[k]
+			if depth == 0 && (t.Text == "," || t.Text == "}") {
+				break
+			}
+			switch t.Text {
+			case "(", "[", "{":
+				depth++
+			case ")", "]", "}":
+				depth--
+			}
+			typeEnd = t.End
+			k++
+		}
+		fields = append(fields, Field{Name: name, Type: strings.TrimSpace(src[typeStart:typeEnd])})
+		if k < len(toks) && toks[k].Text == "," {
+			k++
+		}
+	}
+	return fields, k
 }
 
 // analyzeSig reads the return mode and type parameters of one function from its

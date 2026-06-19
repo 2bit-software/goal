@@ -25,13 +25,21 @@ type Pass struct {
 
 // Passes is the ordered front-end pipeline.
 //
-//  1. Result  — Result[T, error] signatures, Ok/Err returns, statement-position match.
-//  2. Option  — Option[T] -> *T, Some/None returns.
-//  3. Question — `?` propagation, mode recovered by function name from the tables.
+//  1. Result   — Result[T, error] signatures, Ok/Err returns, statement Result match.
+//  2. Option   — Option[T] -> *T, Some/None returns, statement Option match.
+//  3. Question  — `?` propagation, mode recovered by function name from the tables.
+//  4. Match     — enum `match` -> type-switch over the §8.1 encoding.
+//  5. Enums     — enum/sealed declarations -> encoding, variant constructions.
+//
+// Match precedes Enums: a variant construction and an enum match pattern share the
+// surface `Enum.Variant(...)`, so the match pass must consume the patterns before the
+// enums pass rewrites the remaining (genuine) constructions.
 var Passes = []Pass{
 	{Name: "result", Run: pass.Result},
 	{Name: "option", Run: pass.Option},
 	{Name: "question", Run: pass.Question},
+	{Name: "match", Run: pass.Match},
+	{Name: "enums", Run: pass.Enums},
 }
 
 // Transpile lowers goal source to formatted Go by running every pass in order and

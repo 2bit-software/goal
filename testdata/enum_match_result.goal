@@ -1,0 +1,28 @@
+package app
+
+import "errors"
+
+type Time = int64
+
+enum Event {
+    Login { user: string }
+    Logout { user: string, at: Time }
+    Failure { reason: string }
+}
+
+func classify(code int) Result[Event, error] {
+    if code < 0 {
+        return Result.Err(errors.New("bad code"))
+    }
+    return Result.Ok(Event.Login(user: "alice"))
+}
+
+func describe(code int) Result[string, error] {
+    ev := classify(code)?
+    var label string = match ev {
+        Event.Login(l) => l.user
+        Event.Logout(o) => o.user
+        Event.Failure(f) => f.reason
+    }
+    return Result.Ok(label)
+}
