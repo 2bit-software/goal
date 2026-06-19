@@ -178,12 +178,19 @@ Per-feature deliverables (every item):
 
 ## Tier 1.5 / Tier 2 — supporting
 
-- [ ] **09-pure** — Lightweight `pure` annotation
+- [x] **09-pure** — Lightweight `pure` annotation
   - Spec: §4.2, codegen §8.5
   - Deps: none (additive)
   - Nail down: `pure func ...` marker. *Not* a granular effect system.
   - Transpile to: **erased** to a plain `func` (§8.5). The reference transpiler strips the `pure`
     keyword; it does **not** check for effects (checker's job).
+  - **Done:** `features/09-pure/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. **No syntax
+    question** — `pure func` is given by §4.2 and inherits the settled `[modifier] func` slot from
+    06's `from func`; not a §9 item (confirmed & proceeded, like 07). Pure **erasure**: strip the
+    `pure ` prefix before `func` (free funcs and methods) via the same span-splice as 06's `from`
+    stripping; everything else passes through verbatim. Contextual keyword — only matched directly
+    before `func`. Does **not** verify effects or exploit purity (checker / later backend). `go test
+    ./...` passes (3/3) and all three generated packages compile + `go vet` clean.
 
 - [ ] **10-assert** — Runtime asserts
   - Spec: §4.3, codegen §8.6

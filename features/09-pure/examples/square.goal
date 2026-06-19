@@ -1,0 +1,7 @@
+package mathx
+
+// square has no side effects; the `pure` marker is checked by the goal checker
+// and then erased — the emitted Go is a plain func.
+pure func square(x int) int {
+	return x * x
+}

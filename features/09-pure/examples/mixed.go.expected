@@ -1,0 +1,19 @@
+package store
+
+import "fmt"
+
+// total is pure: it only reads its argument and returns a value.
+func total(prices []int) int {
+	sum := 0
+	for _, p := range prices {
+		sum += p
+	}
+	return sum
+}
+
+// report is an ordinary (impure) func — it performs I/O. The `pure` marker is
+// absent, so nothing is stripped here; a pure func is freely callable from
+// impure code.
+func report(prices []int) {
+	fmt.Println(total(prices))
+}

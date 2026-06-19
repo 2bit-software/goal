@@ -562,3 +562,38 @@ Entry kinds:
 - **Why:** field-completeness is the erased static guarantee (§8.5: the feature "only ever rejected
   source") and per the audit's "NO error checking yet" constraint, checking is the checker's job.
   The transpiler's sole job is valid goal → the correct Go.
+
+---
+
+## 09-pure — lightweight `pure` annotation
+
+### No syntax question raised — `pure func` inherited from spec + the `from func` precedent
+- **Kind:** decision
+- **Chose:** use `pure func` (modifier before `func`) as given by §4.2, without raising an
+  `AskUserQuestion`.
+- **Over:** opening a syntax question (e.g. an attribute/annotation form like `@pure`, a trailing
+  marker, or a doc-comment directive).
+- **Why:** the spelling is fixed by the §4.2 sample and is identical in shape to feature 06's
+  `from func` modifier — the "modifier-before-`func`" slot is already a settled convention.
+  `pure` is not a §9 open question. Re-asking would re-litigate a settled choice (same reasoning as
+  07-implements reusing `implements X for T`). The feature owns no construction/control-flow surface.
+
+### `pure` is pure erasure — strip the modifier, emit a plain `func`
+- **Kind:** decision
+- **Chose:** lower `pure func …` to `func …` (delete the `pure ` prefix), passing the body and
+  everything else through verbatim. Same span-splice technique as 06's `from` stripping.
+- **Over:** emitting any marker/annotation in the Go output (e.g. a `//go:` directive or a wrapper).
+- **Why:** §8.5 says `pure` is "erased to a plain `func`." Go has no runtime notion of purity, the
+  guarantee is checked upstream, and the optional purity-exploiting optimizations (memoization /
+  reordering / parallelization) are a later backend pass, not a codegen requirement.
+
+### Effect verification and purity exploitation are out of scope (checker / later backend)
+- **Kind:** assumption
+- **Chose:** the reference transpiler does NOT verify that a `pure` body is effect-free, and does NOT
+  exploit purity for optimization. `pure` is matched only when directly before `func` (contextual
+  keyword); elsewhere it is an ordinary identifier, untouched.
+- **Over:** defining a conservative v1 "effect" set and checking it here.
+- **Why:** the audit's NO-checking-yet constraint puts effect verification in the checker workstream
+  (§4.2 "checker verifies the absence of effects… keep the definition simple and conservative");
+  optimization is the deferred backend pass (§8.5). The reference transpiler's only job is valid
+  goal → correct Go.
