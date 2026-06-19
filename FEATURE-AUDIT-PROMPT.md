@@ -131,7 +131,43 @@ passing is the definition of "the reference transpiler works."
 
 ---
 
-## Step 4 — Close out
+## Step 4 — Record decisions in the running ledger (`DECISIONS.md`)
+
+Maintain `DECISIONS.md` at the repo root as the **single running tally** of every choice made
+across the whole project — not just the user-facing syntax picks. Append this feature's entries
+under a `## <NN-name>` section (create it if missing). Three kinds of entry, each only when it
+actually applies:
+
+1. **Decisions (options weighed).** Anything where real alternatives existed: the chosen option,
+   the options **refused**, and the **why** for both. This includes the `AskUserQuestion` syntax
+   choices (record the rejected candidates from the prompt), transpile-strategy forks, and any
+   design call you made while building the transpiler. Mirror the spec's own "Refused / denied"
+   discipline — name the refused option *and* its justification so it stays refused.
+2. **Assumptions (no discussion happened).** Anything you decided **on your own** that wasn't
+   explicitly discussed with the user or fixed by the spec — naming, file layout, a default you
+   picked to keep moving, an interpretation of an ambiguous spec passage. Flag these clearly as
+   assumptions so the user can veto them later. **This is the category most easily skipped — do
+   not skip it.** If you made a judgment call, it goes here.
+3. **Refusals without a chosen alternative.** Options considered and rejected outright, with the
+   reason — even if nothing replaced them.
+
+Entry format (keep it scannable — one short block each):
+
+```
+### <decision/assumption title>
+- **Kind:** decision | assumption | refusal
+- **Chose:** <what, or "n/a" for a pure refusal>
+- **Over:** <refused option(s)>
+- **Why:** <the justification; if none exists yet, write "no justification yet — revisit">
+```
+
+If a later feature **revisits or overturns** an earlier entry, don't delete the old one — add a
+new entry that references it ("supersedes <title> in <NN-name> because …"). The ledger is history,
+not just current state.
+
+---
+
+## Step 5 — Close out
 
 1. **Verify it runs.** From `features/<NN-name>/transpiler/`, the tests pass. Report the result
    honestly — if a case is unhandled or a test fails, say so in the TODO note; do not claim done.
@@ -142,15 +178,15 @@ passing is the definition of "the reference transpiler works."
 
 ---
 
-## Step 5 — Commit the turn's work
+## Step 6 — Commit the turn's work
 
 At the **end of every iteration**, commit what you produced before stopping. This keeps each
 feature's audit as its own reviewable, revertible unit of history.
 
 - Use the **`/commit-message` (commit) skill** to author the message — never run `git commit`
   directly. Prefer the `zombiekit` git tool for staging/committing.
-- Stage only this turn's artifacts (the feature's `features/<NN-name>/` files and the `TODO.md`
-  checkbox update). One commit per feature.
+- Stage only this turn's artifacts (the feature's `features/<NN-name>/` files, the `TODO.md`
+  checkbox update, and the new `DECISIONS.md` entries). One commit per feature.
 - If the turn produced no committable change (e.g. you only asked the user a syntax question and
   are awaiting their answer), skip the commit and say so — don't make empty commits.
 

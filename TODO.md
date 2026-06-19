@@ -19,6 +19,8 @@ Per-feature deliverables (every item):
 - `features/<NN-name>/TRANSPILE.md` — input→Go pairs + lowering rules + erasure/preservation
 - `features/<NN-name>/transpiler/` — standalone Go transpiler + passing `transpile_test.go`
 - `features/<NN-name>/examples/` — `*.goal` / `*.go.expected` pairs
+- `DECISIONS.md` — append this feature's decisions, refused options (+why), and any undiscussed
+  assumptions to the running ledger (root-level, shared across all features)
 
 ---
 
