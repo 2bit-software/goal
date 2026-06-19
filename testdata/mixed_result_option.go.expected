@@ -1,0 +1,60 @@
+package app
+
+import "errors"
+
+type User struct {
+	ID   string
+	Name string
+}
+
+func lookup(id string) (__gop_ok User, __gop_err error) {
+	if id == "" {
+		return __gop_ok, errors.New("empty id")
+	}
+	return User{ID: id, Name: "n"}, nil
+}
+
+func cache(id string) *User {
+	if id == "x" {
+		__gop_some := User{ID: id, Name: "cached"}
+		return &__gop_some
+	}
+	return nil
+}
+
+func describe(id string) (__gop_ok string, __gop_err error) {
+	u, __gop_err := lookup(id)
+	if __gop_err != nil {
+		return __gop_ok, __gop_err
+	}
+	return u.Name, nil
+}
+
+func firstName(id string) *string {
+	__gop_o1 := cache(id)
+	if __gop_o1 == nil {
+		return nil
+	}
+	u := *__gop_o1
+	__gop_some := u.Name
+	return &__gop_some
+}
+
+func handle(id string) {
+	__gop_v, __gop_err := lookup(id)
+	if __gop_err != nil {
+		fail(__gop_err)
+	} else {
+		report(__gop_v.Name)
+	}
+	if __gop_o := cache(id); __gop_o != nil {
+		u := *__gop_o
+		report(u.Name)
+	} else {
+		done()
+	}
+}
+
+func report(s string) {}
+func fail(e error)    {}
+func done()           {}

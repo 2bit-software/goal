@@ -1,0 +1,47 @@
+package app
+
+import "errors"
+
+type User struct {
+    ID   string
+    Name string
+}
+
+func lookup(id string) Result[User, error] {
+    if id == "" {
+        return Result.Err(errors.New("empty id"))
+    }
+    return Result.Ok(User{ID: id, Name: "n"})
+}
+
+func cache(id string) Option[User] {
+    if id == "x" {
+        return Option.Some(User{ID: id, Name: "cached"})
+    }
+    return Option.None
+}
+
+func describe(id string) Result[string, error] {
+    u := lookup(id)?
+    return Result.Ok(u.Name)
+}
+
+func firstName(id string) Option[string] {
+    u := cache(id)?
+    return Option.Some(u.Name)
+}
+
+func handle(id string) {
+    match lookup(id) {
+        Result.Ok(u) => report(u.Name)
+        Result.Err(e) => fail(e)
+    }
+    match cache(id) {
+        Option.Some(u) => report(u.Name)
+        Option.None => done()
+    }
+}
+
+func report(s string) {}
+func fail(e error)    {}
+func done()           {}

@@ -1,0 +1,29 @@
+package app
+
+import "errors"
+
+type User struct {
+    ID   string
+    Name string
+}
+
+type Page struct {
+    Title string
+}
+
+func lookup(id string) Result[User, error] {
+    if id == "" {
+        return Result.Err(errors.New("empty id"))
+    }
+    return Result.Ok(User{ID: id, Name: "n"})
+}
+
+func render(u User) Result[Page, error] {
+    return Result.Ok(Page{Title: u.Name})
+}
+
+func handler(id string) Result[Page, error] {
+    u := lookup(id)?
+    p := render(u)?
+    return Result.Ok(p)
+}
