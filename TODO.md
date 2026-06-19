@@ -209,7 +209,7 @@ Per-feature deliverables (every item):
     **reserved, not built** (v1 always emits). `go test ./...` passes (3/3) and all three generated
     packages compile + `go vet` clean.
 
-- [ ] **11-doctests** — Runnable doctests
+- [x] **11-doctests** — Runnable doctests
   - Spec: §4.1, codegen §8.6
   - Deps: none
   - Nail down: doctest form in doc comments (`/// >>> add(2, 3)` / expected-output line); the hard
@@ -217,6 +217,19 @@ Per-feature deliverables (every item):
   - Transpile to: generated `_test.go` files running under `go test` (§8.6). The reference
     transpiler extracts doctests from comments and emits `func TestDoctest_...`. (goscript's own
     runner is out of scope — Go transpile path only.)
+  - **Done:** `features/11-doctests/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Chose
+    **`///` triple-slash** marker + **expected-on-next-line** form (`>>> expr` / result), both via
+    `AskUserQuestion` (over `//` doc comments and inline `==`). Reads doc comments **from source**
+    (lexer skips them); extracts each `>>> expr`/expected pair attached to the free func below it and
+    emits a generated `_test.go` with `TestDoctest_<fn>_<n>` → §8.6 `got/want` comparison. Returns
+    the generated test file (the feature's product); original code passes through (`///` is valid
+    Go). Expected is a Go expression; methods/multi-line/goscript runner deferred. **Verified by
+    running `go test`** on each example — the generated doctests execute and pass (the strongest
+    proof of §4.1's "no silent non-run"); `go test ./...` passes (3/3) + vet clean.
+
+---
+
+**All 11 features audited.** The "one feature per iteration" loop is complete — there is no feature 12.
 
 ---
 

@@ -1,0 +1,13 @@
+package calc
+
+/// half returns x/2. This block is plain prose with no `>>>` line, so it
+/// generates no test — a doc comment without a doctest is just documentation.
+func half(x int) int {
+	return x / 2
+}
+
+/// >>> double(21)
+/// 42
+func double(x int) int {
+	return x * 2
+}

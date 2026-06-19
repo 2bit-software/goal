@@ -1,0 +1,8 @@
+package mathx
+
+/// Adds two ints.
+/// >>> add(2, 3)
+/// 5
+func add(a int, b int) int {
+	return a + b
+}

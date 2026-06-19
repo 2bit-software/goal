@@ -645,3 +645,51 @@ Entry kinds:
 - **Why:** NEXT-SESSION confirms stripping is not v1-critical. The reference always emits the
   runtime check; the strip strategy is documented in TRANSPILE.md as reserved. Likewise the §4.3
   statically-checkable assert subset and §5 contracts are reserved syntax, not built.
+
+---
+
+## 11-doctests — runnable doctests
+
+### Doctest marker: `///` triple-slash doc lines
+- **Kind:** decision
+- **Chose:** `///` doc lines carry doctests (the spec sample's form).
+- **Over:** reusing standard Go `//` doc comments with a `>>>` line.
+- **Why:** user-selected via `AskUserQuestion`. `///` visually flags doctest-bearing docs and never
+  collides with ordinary `//` comments, so a stray `>>>` in prose can't accidentally become a test.
+  Small deliberate familiarity spend (Rust/C# idiom; Go uses only `//`), justified because doctests
+  are the top feedback band. Bonus: `///` is itself a valid Go line comment, so the original source
+  compiles untouched.
+
+### Expectation form: expected value on the next line
+- **Kind:** decision
+- **Chose:** `>>> <expr>` followed by an expected-output line (Python/Rust doctest transcript).
+- **Over:** inline equality `>>> add(2, 3) == 5`.
+- **Why:** user-selected. Reads like a REPL transcript and lowers directly to §8.6's
+  `got := <expr>; want := <expected>; if got != want { t.Errorf(...) }` shape.
+
+### Emit a generated `_test.go`; `transpile()` returns that test file
+- **Kind:** decision
+- **Chose:** extract doctests into a generated `<base>_doctest_test.go` that runs under `go test`;
+  the reference `transpile()` returns that test file (the feature's product), and each
+  `*.go.expected` holds the generated test file. The original code file is unchanged (doc comments
+  are valid Go and pass through).
+- **Over:** inlining checks into the code path; transforming the code file; a bespoke runner.
+- **Why:** §8.6 specifies generated `_test.go` under `go test` — the idiomatic free runner that makes
+  §4.1's "no way to silently not-run" true by construction. The two-output model is inherent to the
+  feature; returning the test file keeps the shared single-output test harness unchanged while
+  asserting the only interesting artifact. Verified by actually running `go test` on each example —
+  the doctests execute and pass.
+
+### Comments read from source, not tokens; expected is a Go expression; free funcs only
+- **Kind:** assumption
+- **Chose:** scan the raw source string for `///` blocks (the lexer skips comments); the expected
+  line is a Go expression/literal lowered to `want := <expected>`; comparison is `!=`; doctests
+  attach to the free function declared immediately below the block. Methods, multi-line expected
+  output, non-comparable results (would need `reflect.DeepEqual`), and goscript's own runner are
+  out of scope.
+- **Over:** Python-style bare printed output (needs a value-print/parse layer); supporting methods
+  and multi-line output in v1.
+- **Why:** comments are invisible to the token stream, so source scanning is required for this
+  feature (NEXT-SESSION flagged this). A Go-expression expected keeps the generated test trivially
+  correct without a printing layer. The audit pins the **Go transpile path only**; goscript doctests
+  are a separate workstream (§4.1, §9).

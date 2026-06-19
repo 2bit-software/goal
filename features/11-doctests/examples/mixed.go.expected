@@ -1,0 +1,11 @@
+package calc
+
+import "testing"
+
+func TestDoctest_double_1(t *testing.T) {
+	got := double(21)
+	want := 42
+	if got != want {
+		t.Errorf("doctest double: got %v, want %v", got, want)
+	}
+}

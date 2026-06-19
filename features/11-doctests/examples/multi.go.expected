@@ -1,0 +1,19 @@
+package strs
+
+import "testing"
+
+func TestDoctest_repeat_1(t *testing.T) {
+	got := repeat("ab", 2)
+	want := "abab"
+	if got != want {
+		t.Errorf("doctest repeat: got %v, want %v", got, want)
+	}
+}
+
+func TestDoctest_repeat_2(t *testing.T) {
+	got := repeat("x", 3)
+	want := "xxx"
+	if got != want {
+		t.Errorf("doctest repeat: got %v, want %v", got, want)
+	}
+}
