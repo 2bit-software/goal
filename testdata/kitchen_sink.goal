@@ -1,0 +1,63 @@
+package app
+
+import "errors"
+
+type Role int
+
+type User struct {
+    name   string
+    role   Role
+    active bool
+}
+
+sealed interface Shape {}
+
+type Circle struct {
+    r float64
+}
+
+implements Shape for Circle
+
+type Stringer interface {
+    String() string
+}
+
+type Tag struct {
+    v string
+}
+
+implements Stringer for Tag
+
+func (t Tag) String() string {
+    return t.v
+}
+
+enum State {
+    Idle
+    Running { pid: int }
+}
+
+pure func square(x int) int {
+    return x * x
+}
+
+func makeUser(name string, age int) Result[User, error] {
+    assert age >= 0, "negative age: %d", age
+    if name == "" {
+        return Result.Err(errors.New("empty name"))
+    }
+    return Result.Ok(User{name: name, ...defaults})
+}
+
+func register(name string, age int) Result[User, error] {
+    u := makeUser(name, age)?
+    return Result.Ok(u)
+}
+
+func describe(s State) string {
+    var label string = match s {
+        State.Idle => "idle"
+        State.Running(r) => "running"
+    }
+    return label
+}

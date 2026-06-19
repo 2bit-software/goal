@@ -1,0 +1,80 @@
+package app
+
+import "fmt"
+
+import "errors"
+
+type Role int
+
+type User struct {
+	name   string
+	role   Role
+	active bool
+}
+
+type Shape interface{ isShape() }
+
+type Circle struct {
+	r float64
+}
+
+func (Circle) isShape() {}
+
+type Stringer interface {
+	String() string
+}
+
+type Tag struct {
+	v string
+}
+
+var _ Stringer = Tag{}
+
+func (t Tag) String() string {
+	return t.v
+}
+
+type State interface{ isState() }
+
+type State_Idle struct{}
+type State_Running struct {
+	Pid int
+}
+
+func (State_Idle) isState()    {}
+func (State_Running) isState() {}
+
+func square(x int) int {
+	return x * x
+}
+
+func makeUser(name string, age int) (__gop_ok User, __gop_err error) {
+	if !(age >= 0) {
+		panic("assertion failed: age >= 0: " + fmt.Sprintf("negative age: %d", age))
+	}
+	if name == "" {
+		return __gop_ok, errors.New("empty name")
+	}
+	return User{name: name, role: 0, active: false}, nil
+}
+
+func register(name string, age int) (__gop_ok User, __gop_err error) {
+	u, __gop_err := makeUser(name, age)
+	if __gop_err != nil {
+		return __gop_ok, __gop_err
+	}
+	return u, nil
+}
+
+func describe(s State) string {
+	var label string
+	switch s.(type) {
+	case State_Idle:
+		label = "idle"
+	case State_Running:
+		label = "running"
+	default:
+		panic("unreachable: non-exhaustive State (compiler invariant violated)")
+	}
+	return label
+}

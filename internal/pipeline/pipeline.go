@@ -25,19 +25,31 @@ type Pass struct {
 
 // Passes is the ordered front-end pipeline.
 //
-//  1. Result   — Result[T, error] signatures, Ok/Err returns, statement Result match.
-//  2. Option   — Option[T] -> *T, Some/None returns, statement Option match.
-//  3. Question  — `?` propagation, mode recovered by function name from the tables.
-//  4. Match     — enum `match` -> type-switch over the §8.1 encoding.
-//  5. Enums     — enum/sealed declarations -> encoding, variant constructions.
+//  1. Pure       — strip the `pure func` modifier.
+//  2. Implements  — `implements X for T` (non-sealed) -> compile-time assertion.
+//  3. Defaults    — `...defaults` -> explicit per-field zero values.
+//  4. Result      — Result[T, error] signatures, Ok/Err returns, statement match.
+//  5. Option      — Option[T] -> *T, Some/None returns, statement match.
+//  6. Question     — `?` propagation, mode recovered by function name from the tables.
+//  7. Assert       — `assert` -> runtime `if !(cond) { panic(...) }`.
+//  8. Match        — enum `match` -> type-switch over the §8.1 encoding.
+//  9. Enums        — enum/sealed declarations -> encoding, variant constructions.
 //
-// Match precedes Enums: a variant construction and an enum match pattern share the
-// surface `Enum.Variant(...)`, so the match pass must consume the patterns before the
-// enums pass rewrites the remaining (genuine) constructions.
+// The independent declaration/statement transforms (1-3, 7) touch disjoint
+// constructs and could run anywhere; they are grouped to mirror the spec's pass
+// order. Match precedes Enums: a variant construction and an enum match pattern share
+// the surface `Enum.Variant(...)`, so the match pass must consume the patterns before
+// the enums pass rewrites the remaining (genuine) constructions. Implements (non-
+// sealed) and Enums (sealed marker) partition `implements X for T` by sealedness, so
+// their order relative to each other does not matter.
 var Passes = []Pass{
+	{Name: "pure", Run: pass.Pure},
+	{Name: "implements", Run: pass.Implements},
+	{Name: "defaults", Run: pass.Defaults},
 	{Name: "result", Run: pass.Result},
 	{Name: "option", Run: pass.Option},
 	{Name: "question", Run: pass.Question},
+	{Name: "assert", Run: pass.Assert},
 	{Name: "match", Run: pass.Match},
 	{Name: "enums", Run: pass.Enums},
 }

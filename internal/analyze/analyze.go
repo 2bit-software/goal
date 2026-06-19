@@ -71,6 +71,13 @@ type Tables struct {
 	// disambiguates `implements I for T`: a marker method when I is sealed (feature
 	// 01), versus a compile-time assertion otherwise (feature 07).
 	Sealed map[string]bool
+	// Structs maps a `type X struct {…}` name to its ordered fields. Read by the
+	// defaults pass (`...defaults` expansion) and feature 12's derive.
+	Structs map[string][]Field
+	// TypeDecls maps a type name to its underlying form: "struct", "interface", or a
+	// type expression (alias target / defined-type underlying). Read by the defaults
+	// pass to recover a field's zero value through alias chains.
+	TypeDecls map[string]string
 }
 
 // Build analyzes the original source and returns the populated tables.
@@ -80,6 +87,8 @@ func Build(src string) *Tables {
 		FuncSignatures: map[string]FuncSig{},
 		Enums:          map[string]*Enum{},
 		Sealed:         map[string]bool{},
+		Structs:        map[string][]Field{},
+		TypeDecls:      map[string]string{},
 	}
 	for _, f := range scan.ScanFuncs(toks) {
 		if f.Name == "" {
@@ -96,7 +105,78 @@ func Build(src string) *Tables {
 			t.Sealed[toks[i+2].Text] = true
 		}
 	}
+	analyzeTypeDecls(src, toks, t)
 	return t
+}
+
+// analyzeTypeDecls scans top-level `type` declarations, populating Structs (ordered
+// fields of every `type X struct {…}`) and TypeDecls (name -> underlying form).
+func analyzeTypeDecls(src string, toks []scan.Token, t *Tables) {
+	for i := 0; i+2 < len(toks); i++ {
+		if toks[i].Text != "type" || !scan.IsIdent(toks[i+1].Text) {
+			continue
+		}
+		name := toks[i+1].Text
+		switch toks[i+2].Text {
+		case "=":
+			t.TypeDecls[name] = restOfLine(src, toks[i+3].Start)
+		case "struct":
+			t.TypeDecls[name] = "struct"
+			open := indexOf(toks, i+2, "{")
+			if open >= 0 {
+				closeIdx := scan.MatchBrace(toks, open)
+				t.Structs[name] = parseStructBody(src[toks[open].End:toks[closeIdx].Start])
+			}
+		case "interface":
+			t.TypeDecls[name] = "interface"
+		default:
+			t.TypeDecls[name] = restOfLine(src, toks[i+2].Start)
+		}
+	}
+}
+
+// parseStructBody parses the text between a struct's braces into ordered fields. One
+// field per line (or `;`-separated); `a, b int` yields two fields.
+func parseStructBody(body string) []Field {
+	var fields []Field
+	for _, raw := range strings.FieldsFunc(body, func(r rune) bool { return r == '\n' || r == ';' }) {
+		line := raw
+		if c := strings.Index(line, "//"); c >= 0 {
+			line = line[:c]
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue // blank, or an embedded type (unsupported here) — skip
+		}
+		typ := parts[len(parts)-1]
+		for _, nm := range parts[:len(parts)-1] {
+			nm = strings.TrimSuffix(nm, ",")
+			if nm != "" {
+				fields = append(fields, Field{Name: nm, Type: typ})
+			}
+		}
+	}
+	return fields
+}
+
+// restOfLine returns the source from offset to the next newline, trimmed and with a
+// leading "=" stripped so an alias `type X = Y` yields just `Y`.
+func restOfLine(src string, offset int) string {
+	end := len(src)
+	if nl := strings.IndexByte(src[offset:], '\n'); nl >= 0 {
+		end = offset + nl
+	}
+	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(src[offset:end]), "="))
+}
+
+// indexOf returns the index of the first token with text txt at or after `from`.
+func indexOf(toks []scan.Token, from int, txt string) int {
+	for k := from; k < len(toks); k++ {
+		if toks[k].Text == txt {
+			return k
+		}
+	}
+	return -1
 }
 
 // analyzeEnum parses `enum NAME { variant... }` starting at toks[i] == "enum".

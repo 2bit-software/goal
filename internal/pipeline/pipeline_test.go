@@ -59,6 +59,10 @@ func TestSingleFeatureRegression(t *testing.T) {
 		filepath.Join("..", "..", "features", "03-result", "examples"),
 		filepath.Join("..", "..", "features", "04-option", "examples"),
 		filepath.Join("..", "..", "features", "05-question-prop", "examples"),
+		filepath.Join("..", "..", "features", "07-implements", "examples"),
+		filepath.Join("..", "..", "features", "08-no-zero-value", "examples"),
+		filepath.Join("..", "..", "features", "09-pure", "examples"),
+		filepath.Join("..", "..", "features", "10-assert", "examples"),
 	}
 	for _, dir := range dirs {
 		inputs, err := filepath.Glob(filepath.Join(dir, "*.goal"))

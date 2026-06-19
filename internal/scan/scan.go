@@ -184,6 +184,41 @@ func TopLevelComma(toks []Token, openIdx, closeIdx int) int {
 	return -1
 }
 
+// BaseType strips a leading "*" and any "pkg." qualifier, yielding the bare type
+// name (used to look up a local type or receiver type).
+func BaseType(t string) string {
+	t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
+	if i := strings.LastIndexByte(t, '.'); i >= 0 {
+		t = t[i+1:]
+	}
+	return t
+}
+
+// IsLineStart reports whether everything between the previous newline and byte
+// offset p is whitespace — i.e. the token at p begins a statement (so a keyword like
+// `assert` is the statement keyword, not an identifier used mid-expression).
+func IsLineStart(src string, p int) bool {
+	for k := p - 1; k >= 0; k-- {
+		switch src[k] {
+		case '\n':
+			return true
+		case ' ', '\t':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// NextNewline returns the offset of the next '\n' at or after p, or len(src).
+func NextNewline(src string, p int) int {
+	if nl := strings.IndexByte(src[p:], '\n'); nl >= 0 {
+		return p + nl
+	}
+	return len(src)
+}
+
 // IsIdent reports whether s begins like a Go identifier (letter or underscore).
 func IsIdent(s string) bool {
 	if s == "" {
