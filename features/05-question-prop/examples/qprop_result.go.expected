@@ -1,0 +1,25 @@
+package config
+
+type Config struct {
+	Raw string
+}
+
+func readFile(p string) (__gop_ok []byte, __gop_err error) {
+	return []byte(p), nil
+}
+
+func parse(raw []byte) (__gop_ok Config, __gop_err error) {
+	return Config{Raw: string(raw)}, nil
+}
+
+func loadConfig(p string) (__gop_ok Config, __gop_err error) {
+	raw, __gop_err := readFile(p)
+	if __gop_err != nil {
+		return __gop_ok, __gop_err
+	}
+	cfg, __gop_err := parse(raw)
+	if __gop_err != nil {
+		return __gop_ok, __gop_err
+	}
+	return cfg, nil
+}

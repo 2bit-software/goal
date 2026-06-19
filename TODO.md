@@ -102,13 +102,22 @@ Per-feature deliverables (every item):
     checker's job. `go test ./...` passes (3/3) and all three generated packages compile + `go vet`
     clean.
 
-- [ ] **05-question-prop** — `?` propagation
+- [x] **05-question-prop** — `?` propagation
   - Spec: §3.7, codegen §8.3
   - Deps: 03-result, 04-option
   - Nail down: postfix `?` on `Result` and `Option`; early-return-the-`Err`/`None`, else unwrap.
   - Transpile to: **open-`E` only for v1** — `x := f()?` → `x, err := f(); if err != nil { return
     zero, err }` (the idiomatic `if err != nil` the model knows). `Option` `?` → nil-check early
     return. Closed-`E` `?` needs `From`-conversion → defer to feature 06 / mark unsupported here.
+  - **Done:** `features/05-question-prop/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Chose
+    **`?` always on the RHS of an assignment** — `name := expr?` keeps the value, `_ := expr?`
+    discards it (propagate failure only); no bare `expr?` (explicit/consistent with the `_`-discard
+    marker). Mode (Result vs Option) is the enclosing function's return type. Lowering matches §8.3:
+    Result `?` → `name, __gop_err := expr; if __gop_err != nil { return __gop_ok, __gop_err }`
+    (named returns from 03); Option `?` → `__gop_oN := expr; if __gop_oN == nil { return nil };
+    name := *__gop_oN`; discard → if-init form. Composes the 03/04 signature+construction lowerings.
+    Closed-E `?`, inline `?`, and stored values deferred with a located message. `go test ./...`
+    passes (3/3) and all three generated packages compile + `go vet` clean.
 
 - [ ] **06-error-e** — Error type `E`: open *and* closed, one mechanism
   - Spec: §3.3, codegen §8.3 (closed-`E` fork)

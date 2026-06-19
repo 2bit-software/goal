@@ -1,0 +1,27 @@
+package users
+
+type User struct {
+	Name string
+}
+
+func find(name string) *User {
+	return nil
+}
+
+func parent(name string) *User {
+	return nil
+}
+
+func grandparent(name string) *User {
+	__gop_o1 := find(name)
+	if __gop_o1 == nil {
+		return nil
+	}
+	u := *__gop_o1
+	__gop_o2 := parent(u.Name)
+	if __gop_o2 == nil {
+		return nil
+	}
+	p := *__gop_o2
+	return &p
+}

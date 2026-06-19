@@ -1,0 +1,19 @@
+package users
+
+type User struct {
+    Name string
+}
+
+func find(name string) Option[User] {
+    return Option.None
+}
+
+func parent(name string) Option[User] {
+    return Option.None
+}
+
+func grandparent(name string) Option[User] {
+    u := find(name)?
+    p := parent(u.Name)?
+    return Option.Some(p)
+}

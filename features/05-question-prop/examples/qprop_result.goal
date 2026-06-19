@@ -1,0 +1,19 @@
+package config
+
+type Config struct {
+    Raw string
+}
+
+func readFile(p string) Result[[]byte, error] {
+    return Result.Ok([]byte(p))
+}
+
+func parse(raw []byte) Result[Config, error] {
+    return Result.Ok(Config{Raw: string(raw)})
+}
+
+func loadConfig(p string) Result[Config, error] {
+    raw := readFile(p)?
+    cfg := parse(raw)?
+    return Result.Ok(cfg)
+}

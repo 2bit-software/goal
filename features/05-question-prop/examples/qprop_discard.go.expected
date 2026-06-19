@@ -1,0 +1,12 @@
+package io
+
+func flush() (__gop_ok int, __gop_err error) {
+	return 0, nil
+}
+
+func sync() (__gop_ok int, __gop_err error) {
+	if _, __gop_err := flush(); __gop_err != nil {
+		return __gop_ok, __gop_err
+	}
+	return 1, nil
+}

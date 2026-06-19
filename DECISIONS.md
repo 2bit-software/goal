@@ -377,3 +377,53 @@ Entry kinds:
   non-allocating sum encoding for value types and §8.7 stored handling are later. The pointer rep
   `*T` is itself storable, so basic stored Options would still compile, but full handling is
   deferred. Deferred forms fail loudly rather than miscompiling.
+
+---
+
+## 05-question-prop — `?` propagation (open-E)
+
+### `?` is always the RHS of an assignment; discard via `_ := expr?`
+- **Kind:** decision
+- **Chose:** `?` may appear only as `name := expr?` (keep the value) or `_ := expr?` (discard it,
+  propagate only the failure). No bare `expr?` statement.
+- **Over:** also allowing a bare `expr?` statement (implicit discard of the success value, the
+  Rust/Swift form).
+- **Why:** user chose via AskUserQuestion, explicitly for explicitness + consistency. goal already
+  uses `_` as the single deliberate-discard marker (match rest-arm §3.1, must-use opt-out §3.2);
+  requiring `_ := expr?` makes any discard visible and gives `?` one uniform `lhs := expr?` shape.
+  Bare `expr?` was refused as inconsistent with that discipline (silent drop of the unwrapped value).
+  Note: the failure (`Err`/`None`) is never silently dropped either way — `?` propagates it; only
+  the benign success value is what `_` makes explicit.
+
+### `?` propagation mode comes from the enclosing function's return type
+- **Kind:** assumption
+- **Chose:** a `?` in a `Result[_, error]` function is Result-mode (`return __gop_ok, __gop_err`); in
+  an `Option[_]` function it is Option-mode (`return nil`). The transpiler maps each `?` to its
+  enclosing function by source offset.
+- **Over:** inferring the operand's type to decide mode (needs type inference the transpiler lacks).
+- **Why:** `?` early-returns the *same kind* the enclosing function returns (the failure must have a
+  compatible channel), so the return type determines the mode without any operand type inference.
+  Matches Rust/Swift. A `?` outside a Result/Option function is a located error.
+
+### Reuse `__gop_err` across Result `?`; fresh `__gop_oN` per Option `?`
+- **Kind:** assumption
+- **Chose:** Result `name := expr?` emits `name, __gop_err := expr` (reusing the named-return
+  `__gop_err`, valid because `name` is new); the discard form uses an if-init to scope `__gop_err`.
+  Option `?` uses a monotonic `__gop_o1`, `__gop_o2`, … per occurrence.
+- **Over:** unique error temps per Result `?`; reusing one `__gop_o` for Option (which would
+  redeclare with `:=`).
+- **Why:** Go's `:=` redeclaration rule lets `name, __gop_err :=` reuse `__gop_err` when `name` is
+  new (the spec's `cfg, err := ...` pattern), but an Option `__gop_o := ...` with no new LHS var
+  would be an error on repeat — so Option temps must be unique. Keeps all generated Go compiling.
+
+### 05 transpiler scope: open-E `?` at statement level; bundles the 03/04 lowerings it needs
+- **Kind:** assumption
+- **Chose:** the standalone 05 transpiler lowers Result signatures + `return Result.Ok/Err`, Option
+  `[T]` types + `return Option.Some/None`, and the `?` operator (statement-level, open-E). It does
+  not handle inline `?` (`g(f()?)`), closed-E `?`, or stored Result/Option.
+- **Over:** a minimal `?`-only transpiler (couldn't produce compilable output without the
+  Result/Option forms) or implementing inline/closed-E `?` now.
+- **Why:** `?` composes 03 and 04, so the standalone transpiler must duplicate those lowerings (the
+  per-feature-standalone rule expects this). Closed-E `?` + From-conversion is feature 06 (§3.7
+  fast-follow); inline `?` and stored values are deferred. Deferred/unsupported `?` forms fail with a
+  located message rather than miscompiling.
