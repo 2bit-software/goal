@@ -1,0 +1,18 @@
+package status
+
+type Time = int64
+
+enum Status {
+    Pending
+    Active { since: Time }
+    Cancelled { reason: string, at: Time }
+}
+
+func describe(s Status) string {
+    var d string = match s {
+        Status.Pending => "pending"
+        Status.Active(a) => "active"
+        Status.Cancelled(c) => c.reason
+    }
+    return d
+}

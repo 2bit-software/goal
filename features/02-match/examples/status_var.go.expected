@@ -1,0 +1,33 @@
+package status
+
+type Time = int64
+
+type Status interface{ isStatus() }
+
+type Status_Pending struct{}
+type Status_Active struct {
+	Since Time
+}
+type Status_Cancelled struct {
+	Reason string
+	At     Time
+}
+
+func (Status_Pending) isStatus()   {}
+func (Status_Active) isStatus()    {}
+func (Status_Cancelled) isStatus() {}
+
+func describe(s Status) string {
+	var d string
+	switch __gop_v := s.(type) {
+	case Status_Pending:
+		d = "pending"
+	case Status_Active:
+		d = "active"
+	case Status_Cancelled:
+		d = __gop_v.Reason
+	default:
+		panic("unreachable: non-exhaustive Status (compiler invariant violated)")
+	}
+	return d
+}

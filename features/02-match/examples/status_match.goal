@@ -1,0 +1,21 @@
+package status
+
+type Time = int64
+
+func startOnboarding()           {}
+func render(t Time)              {}
+func logEvent(reason string, at Time) {}
+
+enum Status {
+    Pending
+    Active { since: Time }
+    Cancelled { reason: string, at: Time }
+}
+
+func handle(s Status) {
+    match s {
+        Status.Pending => startOnboarding()
+        Status.Active(a) => render(a.since)
+        Status.Cancelled(c) => logEvent(c.reason, c.at)
+    }
+}

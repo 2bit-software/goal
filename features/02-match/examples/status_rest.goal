@@ -1,0 +1,19 @@
+package status
+
+type Time = int64
+
+func render(t Time)    {}
+func showPlaceholder() {}
+
+enum Status {
+    Pending
+    Active { since: Time }
+    Cancelled { reason: string, at: Time }
+}
+
+func handle2(s Status) {
+    match s {
+        Status.Active(a) => render(a.since)
+        _ => showPlaceholder()
+    }
+}

@@ -1,0 +1,30 @@
+package status
+
+type Time = int64
+
+func render(t Time)    {}
+func showPlaceholder() {}
+
+type Status interface{ isStatus() }
+
+type Status_Pending struct{}
+type Status_Active struct {
+	Since Time
+}
+type Status_Cancelled struct {
+	Reason string
+	At     Time
+}
+
+func (Status_Pending) isStatus()   {}
+func (Status_Active) isStatus()    {}
+func (Status_Cancelled) isStatus() {}
+
+func handle2(s Status) {
+	switch __gop_v := s.(type) {
+	case Status_Active:
+		render(__gop_v.Since)
+	default:
+		showPlaceholder()
+	}
+}

@@ -190,3 +190,77 @@ Entry kinds:
 - **Why:** the erasure-with-defensive-panic rule (§8.0) applies only where the checker *proves a
   point unreachable*; declaration/construction prove no unreachability. The first such point is
   `match`'s exhaustive default (feature 02). Recorded so the absence is deliberate.
+
+---
+
+## 02-match — pattern matching with exhaustiveness
+
+### Payload binding: bind-the-value `Status.Active(a) => a.since`
+- **Kind:** decision
+- **Chose:** bind the narrowed variant to one name, read fields off it (`a.since`).
+- **Over:** struct destructure `Active { since }` (Rust struct-variant pattern, consistent with the
+  01-enums braced declaration); positional bind `Active(since, at)` (Rust tuple-variant / spec §3.1
+  sample).
+- **Why:** user chose via AskUserQuestion. Lands on Go's own type-switch idiom (`case T: v.Field`),
+  the lowest-familiarity-spend binding form, and lowers cleanly to `__gop_v.Field`. Positional was
+  refused for reintroducing the field-order dependence the braced payload removed. Struct-destructure
+  was refused despite mirroring the declaration — the user preferred the Go-shaped value binding.
+
+### Variant reference in arms: qualified `Status.Active`
+- **Kind:** decision
+- **Chose:** enum-qualified variant in patterns.
+- **Over:** bare `Active` (spec §3.1 sample; scrutinee type is known so it is unambiguous).
+- **Why:** user chose via AskUserQuestion — consistency with the qualified construction form
+  `Status.Active(...)` from 01-enums, and the enum stays visible at the match site. Bare was refused
+  for surface inconsistency with construction, despite being terser.
+
+### `match` is one unified construct (statement + expression)
+- **Kind:** decision
+- **Chose:** a single `match` usable in statement position and in value position
+  (`x := match`, `return match`, `var x T = match`).
+- **Over:** statement-only `match` with a pre-declared `var` assigned inside arms.
+- **Why:** user chose via AskUserQuestion. Lands on Rust expression-match; spec §8.2 already defines
+  the value-position lowering (`var x T` + per-arm assignment, no IIFE). Statement-only was refused
+  for losing value-returning match and forcing a mutable two-step on the user.
+
+### Switch-coexistence (§9): plain `switch` on a closed enum is a compile error
+- **Kind:** decision
+- **Chose:** reject plain `switch` on a closed-enum value with a located error redirecting to
+  `match` (listing the variants); plain `switch` stays legal on non-enum types.
+- **Over:** allow-but-unchecked (plain `switch` compiles, no exhaustiveness); allow-only-with-
+  explicit-`default`.
+- **Why:** user chose via AskUserQuestion; matches spec §3.1 "option 3" and "Refused: plain switch
+  on a closed enum." Allow-but-unchecked was refused as exactly the reflex-`switch` failure §3.1
+  warns about (model reaches for `switch`, silently loses exhaustiveness). Require-`default` was
+  refused because a present `default:` is what defeats exhaustiveness, so it legitimizes the reflex.
+  Enforcement is the checker's job; the reference transpiler does not transform plain `switch`.
+
+### `__gop_v` guard variable emitted only when a binding is used
+- **Kind:** assumption
+- **Chose:** emit `switch __gop_v := s.(type)` only if some arm references its binding; otherwise
+  `switch s.(type)` with no guard.
+- **Over:** always declaring the guard (spec §8.2 always shows `v :=`).
+- **Why:** an always-declared but never-used type-switch guard risks an unused-variable complaint
+  and adds noise. Gating on use keeps the output clean and compilable. `__gop_v` follows the §8
+  hygiene prefix (spec used bare `v`; renamed for collision-safety).
+
+### Reference transpiler defers the untyped `name := match` value form
+- **Kind:** assumption
+- **Chose:** the transpiler handles statement, `return match`, and `var name T = match`; it rejects
+  `name := match` with a located message pointing to the typed forms.
+- **Over:** implementing lightweight type inference to recover the result type for `:=`.
+- **Why:** `:=` lowers identically to the typed `var` case but needs the result type, which only the
+  checker's inference provides; inferring it here would be ad-hoc and out of scope for a no-checking
+  reference transpiler (audit prompt: handle the immediate case, note the fallback). `name := match`
+  remains fully valid goal *surface* (documented in SYNTAX.md); only the reference lowering defers.
+
+### 02 transpiler omits enum *construction* (only declaration + match)
+- **Kind:** assumption
+- **Chose:** the standalone 02 transpiler lowers `enum` declarations (reused §8.1 path) and `match`,
+  but not `Status.Active(...)` construction.
+- **Over:** copying 01's construction rewrite too.
+- **Why:** match examples take the scrutinee as a parameter, so no construction is needed; and a
+  qualified arm pattern `Status.Active(a)` is lexically identical to a construction
+  `Status.Active(a)`, so including the construction pass would risk mis-rewriting arm patterns.
+  Omitting it keeps the two unambiguous. 01-enums already covers construction. Per-feature
+  standalone makes this duplication/omission expected.

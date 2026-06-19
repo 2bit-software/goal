@@ -1,0 +1,35 @@
+package status
+
+type Time = int64
+
+func startOnboarding()                {}
+func render(t Time)                   {}
+func logEvent(reason string, at Time) {}
+
+type Status interface{ isStatus() }
+
+type Status_Pending struct{}
+type Status_Active struct {
+	Since Time
+}
+type Status_Cancelled struct {
+	Reason string
+	At     Time
+}
+
+func (Status_Pending) isStatus()   {}
+func (Status_Active) isStatus()    {}
+func (Status_Cancelled) isStatus() {}
+
+func handle(s Status) {
+	switch __gop_v := s.(type) {
+	case Status_Pending:
+		startOnboarding()
+	case Status_Active:
+		render(__gop_v.Since)
+	case Status_Cancelled:
+		logEvent(__gop_v.Reason, __gop_v.At)
+	default:
+		panic("unreachable: non-exhaustive Status (compiler invariant violated)")
+	}
+}

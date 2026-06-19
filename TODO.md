@@ -43,7 +43,7 @@ Per-feature deliverables (every item):
 
 ## Tier 1 — error-catchers
 
-- [ ] **02-match** — Pattern-matching `match` with exhaustiveness
+- [x] **02-match** — Pattern-matching `match` with exhaustiveness
   - Spec: §3.1, codegen §8.2
   - Deps: 01-enums
   - Nail down: `match { ... }` with `=>` arms, in-arm payload binding, deliberate `_` rest-arm.
@@ -54,6 +54,15 @@ Per-feature deliverables (every item):
     Expression-position `match` → `var x T` before the switch + assignment per arm (no IIFE).
   - Note: exhaustiveness is the checker's job — the reference transpiler **assumes** input is
     exhaustive and just emits the panic-default. No checking.
+  - **Done:** `features/02-match/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Chose
+    bind-the-value `Status.Active(a) => a.since`, qualified variants, and a unified
+    statement/expression `match`. Resolved switch-coexistence: plain `switch` on a closed enum is a
+    **compile error** redirecting to `match` (checker-enforced; transpiler passes plain `switch`
+    through). Lowering matches §8.2 exactly — type-switch, payload→`__gop_v.Field`, panic-default for
+    exhaustive vs real `default` for `_`, `return`/`var x T` value positions (no IIFE). Untyped
+    `x := match` is valid surface but its lowering is **deferred** (needs the checker's inferred
+    type); transpiler rejects it with a located message. `go test ./...` passes (4/4) and all four
+    generated packages compile + `go vet` clean.
 
 - [ ] **03-result** — `Result[T, E]` as the error channel (open-`E` common case)
   - Spec: §3.2, codegen §8.3
