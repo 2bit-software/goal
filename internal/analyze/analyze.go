@@ -101,6 +101,15 @@ type Tables struct {
 	// (value- and pointer-receiver alike), name + normalized signature. Read by the
 	// implements check to decide whether a type satisfies an interface's obligation.
 	Methods map[string][]Method
+
+	// SuppressResultPrelude tells the closed-E Result pass NOT to inject the generic
+	// Ok[T,E]/Err[T,E] preamble inline. The package transpile driver sets it so the
+	// prelude is emitted once per package (a single goal_prelude.go) instead of once per
+	// file; single-file Transpile leaves it false and the pass injects inline exactly as
+	// before. This is a deliberate driver directive — the one field on Tables that is not
+	// a name-keyed source fact — kept here so it threads through the existing pass
+	// signature without widening it.
+	SuppressResultPrelude bool
 }
 
 // ConvEntry is one `from func` conversion: its name and whether it is fallible (the

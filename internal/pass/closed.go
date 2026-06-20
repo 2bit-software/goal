@@ -8,13 +8,28 @@ import (
 	"goal/internal/scan"
 )
 
-// the injected generic sum encoding for closed-E Results (spec §8.1 / §8.3 fork).
-const resultPreamble = `type Result[T, E any] interface{ isResult() }
+// ResultPreamble is the generic sum encoding for closed-E Results (spec §8.1 / §8.3
+// fork) that a closed-E program needs in scope. The closed pass injects it inline for a
+// single-file transpile; the package driver emits it once per package (see
+// NeedsResultPrelude and analyze.Tables.SuppressResultPrelude).
+const ResultPreamble = `type Result[T, E any] interface{ isResult() }
 type Ok[T, E any] struct{ Value T }
 type Err[T, E any] struct{ Value E }
 
 func (Ok[T, E]) isResult()  {}
 func (Err[T, E]) isResult() {}`
+
+// NeedsResultPrelude reports whether any function in the tables returns a closed-E
+// Result, i.e. whether the program needs ResultPreamble in scope. The package driver
+// uses it to decide whether to emit goal_prelude.go once for the package.
+func NeedsResultPrelude(t *analyze.Tables) bool {
+	for _, sig := range t.FuncSignatures {
+		if sig.Mode == analyze.ModeResultClosed {
+			return true
+		}
+	}
+	return false
+}
 
 // ResultClosed lowers closed-E Results — a Result[T, E] whose E is not error (feature
 // 06). Such a Result is the §8.1 sum (Ok[T,E]/Err[T,E]), not the open-E native tuple:
@@ -31,20 +46,18 @@ func ResultClosed(src string, t *analyze.Tables) (string, error) {
 	toks := scan.Lex(src)
 	spans := funcSpans(toks, t)
 
-	hasClosed := false
-	for _, sig := range t.FuncSignatures {
-		if sig.Mode == analyze.ModeResultClosed {
-			hasClosed = true
-			break
-		}
-	}
-	if !hasClosed {
+	if !NeedsResultPrelude(t) {
 		return src, nil
 	}
 
 	var reps []scan.Replacement
-	off := injectOffset(src, toks)
-	reps = append(reps, scan.Replacement{Start: off, End: off, Text: "\n" + resultPreamble + "\n"})
+	// Inject the generic sum encoding inline, unless the package driver has taken
+	// responsibility for emitting it once (SuppressResultPrelude). Either way the
+	// construction/match/`?` rewrites below still run.
+	if !t.SuppressResultPrelude {
+		off := injectOffset(src, toks)
+		reps = append(reps, scan.Replacement{Start: off, End: off, Text: "\n" + ResultPreamble + "\n"})
+	}
 
 	// (The `from` modifier is stripped by the derive pass, which owns every
 	// `from func` leaf — error conversions here and any-type conversions for derive.)

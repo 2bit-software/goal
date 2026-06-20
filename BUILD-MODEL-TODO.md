@@ -132,11 +132,15 @@ testdata, record decisions in `DECISIONS.md`, verify (`go vet ./...`, `go test -
     last-merged-wins, deterministic via path-sorted input; genuine dup-decls left to the Go
     compiler. 4 tests incl. cross-file enum resolution + last-wins; vet clean. DECISIONS Phase A §U2.
 
-- [ ] **U3 — Shared prelude relocation.** Move `resultPreamble` out of `closed.go`'s per-file
+- [x] **U3 — Shared prelude relocation.** Move `resultPreamble` out of `closed.go`'s per-file
   injection into a single package-level emission (`goal_prelude.go` or runtime import). The
   `closed` pass stops emitting the type block; the package driver emits it once iff any file in
   the package uses closed-E Result. Keep per-file import injection unchanged. *Depends on
   SPIKE-2, U2.*
+  - **Done:** exported `pass.ResultPreamble` + `pass.NeedsResultPrelude(t)`; inline injection now
+    gated by `analyze.Tables.SuppressResultPrelude` (the construction/match/`?` rewrites always
+    run). Single-file output byte-identical — full regression suite green. U4 sets the flag and
+    emits one `goal_prelude.go`. 3 gate tests; vet clean. DECISIONS Phase A §U3.
 
 - [ ] **U4 — Package transpile driver.** Transpile every file in a package with the merged
   tables (U2) + single prelude (U3); write `.go` outputs. Extends `pipeline.Transpile` (single

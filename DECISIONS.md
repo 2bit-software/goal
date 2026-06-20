@@ -1293,3 +1293,25 @@ spikes are in `BUILD-MODEL-TODO.md`. Decisions accrue here per unit.
   diverging from it; deferring to the Go toolchain matches the build model's lean-on-Go thesis. A
   pre-emptive located "same name in two files" diagnostic is a possible later refinement (noted in
   BUILD-MODEL-TODO open decisions), not needed for correctness now.
+
+### U3 — shared prelude relocation (suppressible inline injection)
+- **Kind:** decision
+- **Chose:** the closed-E pass still injects `ResultPreamble` (now exported) inline by default, but
+  skips it when `analyze.Tables.SuppressResultPrelude` is set — the construction/`match`/`?` rewrites
+  always run regardless. Added `pass.NeedsResultPrelude(t)` so a driver can decide whether the
+  package needs the prelude at all. Single-file `Transpile` never sets the flag, so its output is
+  byte-identical (the full regression suite passes unchanged); the U4 package driver will set the
+  flag and emit one `goal_prelude.go` per package instead of one preamble per file.
+- **Why:** suppression at the existing injection site is the minimal output-preserving change — it
+  avoids moving injection into the driver (which would shift the prelude past later-injected imports
+  like assert's `fmt` and churn the golden files). The flag threads through the unchanged
+  `Run(src, t)` pass signature instead of widening it.
+
+### U3 — the suppression flag lives on `analyze.Tables`
+- **Kind:** assumption
+- **Chose:** `SuppressResultPrelude` is a field on `Tables`, explicitly documented as the one field
+  that is a driver directive rather than a name-keyed source fact.
+- **Over:** alternatives were a second `ResultClosedNoPrelude` pass entry (would fork the
+  `pipeline.Passes` list for package mode) or a package-level variable (hidden global state). The
+  flag is the least-surprising way to thread a per-build directive through the fixed pass signature;
+  the slight grain-violation is called out in the field doc so it isn't mistaken for source analysis.
