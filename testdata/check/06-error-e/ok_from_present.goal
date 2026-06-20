@@ -1,0 +1,30 @@
+package app
+
+// Clean: `?` propagates ParseError into an AppError-returning function, and a
+// `from func toApp(e ParseError) AppError` is registered for exactly that pair, so
+// From-totality holds. No markers: any Error fails this case.
+
+enum ParseError {
+    Empty
+}
+
+enum AppError {
+    Wrapped { cause: ParseError }
+}
+
+type Config struct {
+    Raw string
+}
+
+func parse(s string) Result[Config, ParseError] {
+    return Result.Ok(Config{Raw: s})
+}
+
+from func toApp(e ParseError) AppError {
+    return AppError.Wrapped(cause: e)
+}
+
+func load(s string) Result[Config, AppError] {
+    cfg := parse(s)?
+    return Result.Ok(cfg)
+}

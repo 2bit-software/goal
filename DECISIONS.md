@@ -534,6 +534,39 @@ Entry kinds:
   destructuring is an explicit later extension. Recorded so the divergence from the spec sample is
   deliberate (see SYNTAX.md "Open against spec").
 
+### (checker) Defer-boundary: closedness on `Result.Err(E.Variant)`; From-totality on direct-call `?`
+- **Kind:** decision
+- **Chose:** the `internal/check/closed.go` slot proves two things lexically. (1) *Closedness:* every
+  `Result.Err(X)` inside a closed-E function — `Result.Err(E.Variant)` or `E.Variant(payload…)` — must
+  name a variant of *that function's* declared error enum E (`Tables.Enums[E].VSet`). A foreign enum is
+  `err-outside-closed-enum`; a bad variant name is `unknown-error-variant`. (2) *From-totality:* every
+  `?` in a closed-E function whose direct-call callee returns a *different* closed E must have a
+  registered `from func` (`Tables.FromRegistry[[2]string{callee.E, caller.E}]`); a missing one is
+  `missing-from-conversion`. Each diagnostic is located at the offending construct (the `?` token / the
+  `Result` of `Result.Err`).
+- **Over:** flow-tracking an `Err` value or a propagated error type through assignments and calls;
+  resolving non-direct-call scrutinees.
+- **Why:** mirrors exactly what the closed pass (`lowerClosedQuestions`/`lowerClosedCtors`) resolves
+  lexically — caller E from the enclosing function span, callee E from the callee's signature, the Err
+  value read directly at the construction site. That is the in-scope set the front-end already lowers
+  (§8.3: match/? scrutinee is a direct call); a false "closed/total" is worse than an honest deferral.
+- **Defers (located Warning, no Error):** a `?` whose callee is not an in-file closed-E Result function
+  (out-of-package or non-direct-call scrutinee) → `unresolved-question-error`; a closed-E function whose
+  error enum E is not declared in this file → `unresolved-error-enum`; a `Result.Err(X)` whose X is not
+  a lexically-resolvable `E.Variant` construction (a bound var, a call, a larger expression) →
+  `unresolved-err-value`. These are the points where the concrete error type genuinely needs type
+  resolution; deferred to the planned `go/types` workstream, not faked here.
+
+### (checker) No `analyze.Tables` extension for 06
+- **Kind:** assumption
+- **Chose:** read closedness/From-totality entirely from existing tables — `FuncSignatures` (Mode +
+  T/E), `FromRegistry`, and `Enums[E].VSet`. The per-function body spans the closed pass uses
+  (`funcSpans`/`sigAt`) are not importable from `check`, so the slot re-derives them locally
+  (`closedSpans`/`sigAtOffset` over `scan.ScanFuncs`).
+- **Over:** adding a precomputed `?`-site or Err-site index to the tables.
+- **Why:** the facts already exist name-keyed; the only thing missing was the offset→enclosing-sig map,
+  which is a trivial re-scan (same logic the pass package keeps private). Keeps the tables minimal.
+
 ---
 
 ## 07-implements — explicit interface assertion

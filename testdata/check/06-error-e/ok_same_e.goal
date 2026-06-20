@@ -1,0 +1,25 @@
+package parse
+
+// Clean: `?` propagates ParseError into another ParseError-returning function (same E,
+// no conversion needed), and every Result.Err names a real ParseError variant. No
+// markers: any Error fails this case.
+
+enum ParseError {
+    Empty
+}
+
+type Config struct {
+    Raw string
+}
+
+func parse(s string) Result[Config, ParseError] {
+    if s == "" {
+        return Result.Err(ParseError.Empty)
+    }
+    return Result.Ok(Config{Raw: s})
+}
+
+func loadFirst(a string) Result[Config, ParseError] {
+    cfg := parse(a)?
+    return Result.Ok(cfg)
+}

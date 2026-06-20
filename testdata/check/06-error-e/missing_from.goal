@@ -1,0 +1,25 @@
+package app
+
+// `?` propagates ParseError into an AppError-returning function, but no `from func`
+// converts ParseError -> AppError. The From-conversion is missing: an Error.
+
+enum ParseError {
+    Empty
+}
+
+enum AppError {
+    Boom
+}
+
+type Config struct {
+    Raw string
+}
+
+func parse(s string) Result[Config, ParseError] {
+    return Result.Ok(Config{Raw: s})
+}
+
+func load(s string) Result[Config, AppError] {
+    cfg := parse(s)? // want "no `from func` converts `ParseError` to `AppError`"
+    return Result.Ok(cfg)
+}

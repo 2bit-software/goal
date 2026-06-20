@@ -1,0 +1,23 @@
+package app
+
+// The function's error enum is ParseError, but it returns Result.Err of an OtherError
+// variant: the error side escapes the closed enum. An Error.
+
+enum ParseError {
+    Empty
+}
+
+enum OtherError {
+    Nope
+}
+
+type Config struct {
+    Raw string
+}
+
+func parse(s string) Result[Config, ParseError] {
+    if s == "" {
+        return Result.Err(OtherError.Nope) // want "escapes the closed error type"
+    }
+    return Result.Ok(Config{Raw: s})
+}

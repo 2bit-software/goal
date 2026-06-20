@@ -1,0 +1,19 @@
+package app
+
+// Deferral: the `?` scrutinee `external(s)` is not a known in-file closed-E Result
+// function, so the propagated error enum can't be read lexically. The checker defers
+// (a located Warning, `unresolved-question-error`) rather than assert a missing
+// conversion — no Error must fire here.
+
+enum AppError {
+    Boom
+}
+
+type Config struct {
+    Raw string
+}
+
+func load(s string) Result[Config, AppError] {
+    cfg := external(s)?
+    return Result.Ok(cfg)
+}

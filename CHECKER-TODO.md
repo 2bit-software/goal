@@ -70,7 +70,7 @@ Order is by self-containment / value: the most local, inference-free guarantees 
     signatures could false-mismatch in principle — needs `go/types`; the in-file cases here don't hit
     it and cross-package cases are deferred. See `DECISIONS.md` §07 (checker).
 
-- [ ] **06-error-e** — closedness & From-totality
+- [x] **06-error-e** — closedness & From-totality
   - Slot: `internal/check/closed.go` (`checkClosed`). Testdata: `testdata/check/06-error-e/`.
   - Guarantee: closed-E `Result[T, E]` stays closed (Err values are E variants) and every
     `?` across error types has a registered `from func`; a missing conversion is an **Error**.
@@ -78,6 +78,17 @@ Order is by self-containment / value: the most local, inference-free guarantees 
   - Reuse: `Tables.FuncSignatures` (ModeResultClosed, T/E); `Tables.FromRegistry`;
     `Tables.Enums[E].VSet`; closed pass `?`/function pairing.
   - Deps: none (independent of 03). Defer: propagated error type unresolvable at `?` → Warning.
+  - **Done:** covers (1) **closedness** — every `Result.Err(E.Variant)`/`E.Variant(payload…)` inside a
+    closed-E function must name a variant of *that function's* error enum E: a foreign enum is Error
+    `err-outside-closed-enum`, a non-variant name is Error `unknown-error-variant`; and (2)
+    **From-totality** — a `?` whose in-file direct-call callee returns a *different* closed E needs a
+    registered `from func`, else Error `missing-from-conversion` (same E passes through). Located at the
+    `?` token / the `Result` of `Result.Err`. Deferred (located Warning): `?` callee not an in-file
+    closed-E Result func → `unresolved-question-error`; closed-E func whose E isn't an in-file enum →
+    `unresolved-error-enum`; `Result.Err(X)` whose X isn't a lexical `E.Variant` (bound var/call/larger
+    expr) → `unresolved-err-value`. No `analyze.Tables` extension — used `FuncSignatures` +
+    `FromRegistry` + `Enums[E].VSet`; per-function spans re-derived locally (closed pass's `funcSpans`
+    is private). See `DECISIONS.md` §06 (checker).
 
 - [ ] **12-derive-convert** — conversion totality
   - Slot: `internal/check/convert.go` (`checkConvert`). Testdata: `testdata/check/12-derive-convert/`.

@@ -1,0 +1,17 @@
+package app
+
+// Deferral: `Result.Err(e)` returns a bound variable, not a lexically-resolvable
+// `ParseError.Variant` construction, so its concrete error type can't be read here. The
+// checker defers (a located Warning, `unresolved-err-value`) — no Error must fire.
+
+enum ParseError {
+    Empty
+}
+
+type Config struct {
+    Raw string
+}
+
+func rewrap(e ParseError) Result[Config, ParseError] {
+    return Result.Err(e)
+}

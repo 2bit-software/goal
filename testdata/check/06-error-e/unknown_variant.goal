@@ -1,0 +1,20 @@
+package app
+
+// The error enum is right (ParseError) but the named variant `Missing` is not one of
+// its variants. An Error.
+
+enum ParseError {
+    Empty
+    BadKey { key: string }
+}
+
+type Config struct {
+    Raw string
+}
+
+func parse(s string) Result[Config, ParseError] {
+    if s == "" {
+        return Result.Err(ParseError.Missing) // want "not a variant of enum `ParseError`"
+    }
+    return Result.Ok(Config{Raw: s})
+}
