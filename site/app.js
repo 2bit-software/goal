@@ -118,7 +118,9 @@ function highlightActive(anchor) {
 
 function renderFeature(feat) {
   state.current = feat;
-  state.outputTab = feat.outputKind;
+  // An "error" feature has no Go/test pane — its output is a located compile error,
+  // shown in the (single) result tab. Drive the pane off the "go" slot in that case.
+  state.outputTab = feat.outputKind === "error" ? "go" : feat.outputKind;
   state.lastResult = null; // drop any previous feature's run output
   const main = document.getElementById("content");
   main.innerHTML = "";
@@ -169,7 +171,12 @@ function renderFeature(feat) {
   resPanel.appendChild(resHead);
   const out = el("pre", "output", "result-output");
   out.id = "result-output";
-  renderOutput(out, { go: feat.outputKind === "go" ? feat.expected : "", test: feat.outputKind === "test" ? feat.expected : "", error: "", seed: true });
+  renderOutput(out, {
+    go: feat.outputKind === "go" ? feat.expected : "",
+    test: feat.outputKind === "test" ? feat.expected : "",
+    error: feat.outputKind === "error" ? feat.expected : "",
+    seed: true,
+  });
   resPanel.appendChild(out);
   grid.appendChild(resPanel);
 
@@ -197,13 +204,14 @@ function buildOutputTabs(feat) {
       const data = state.lastResult || {
         go: feat.outputKind === "go" ? feat.expected : "",
         test: feat.outputKind === "test" ? feat.expected : "",
+        error: feat.outputKind === "error" ? feat.expected : "",
         seed: !state.lastResult,
       };
       renderOutput(document.getElementById("result-output"), data);
     });
     return t;
   };
-  wrap.appendChild(tabFor("go", "transpiled Go"));
+  wrap.appendChild(tabFor("go", feat.outputKind === "error" ? "rejected" : "transpiled Go"));
   // A doctest feature always has a _test.go; others get the tab once a run shows one.
   if (feat.outputKind === "test" || (last && last.test)) {
     wrap.appendChild(tabFor("test", "generated _test.go"));

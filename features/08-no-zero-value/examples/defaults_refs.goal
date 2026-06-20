@@ -17,9 +17,15 @@ type Settings struct {
 	retries  int
 }
 
-// defaultSettings sets primary explicitly; `...defaults` fills the rest with the
-// zero recovered from each declared type: pointer/slice/map -> nil, the named
-// struct Addr -> Addr{}, the string alias Name -> "", int -> 0.
+// defaultSettings sets the fields whose zero is *unsafe* explicitly — a *Addr (nil
+// derefs) and a map (nil panics on write) cannot be filled by `...defaults`. The rest
+// have safe zeros, so `...defaults` recovers them: the named struct Addr -> Addr{}, the
+// slice -> nil, the string alias Name -> "", int -> 0.
 func defaultSettings() Settings {
-	return Settings{primary: Addr{host: "localhost", port: 8080}, ...defaults}
+	return Settings{
+		primary:  Addr{host: "localhost", port: 8080},
+		fallback: nil,
+		env:      map[string]string{},
+		...defaults,
+	}
 }

@@ -175,8 +175,16 @@ Per-feature deliverables (every item):
     syntactically from each declared type (`nil`/`""`/`false`/`0`, `T{}` for a named struct;
     in-file alias/defined types resolved). "Defaults" = Go zero values written explicitly; **no**
     per-field declared-default syntax invented (spec defines none). Transpiler does **not** reject
-    incomplete literals or judge default appropriateness (checker's job). `go test ./...` passes
+    incomplete literals (checker's job). `go test ./...` passes
     (3/3) and all three generated packages compile + `go vet` clean.
+  - **Follow-up (done):** `...defaults` now **rejects unsafe / no-safe-zero fields** with a located
+    error instead of silently filling them — `nil` map/pointer/chan/func, method interfaces, and
+    `enum`/sealed sum types (no valid variant). Safe zeros (primitives, structs, nil slices, `error`,
+    `any`, int-backed enums) still fill. Type-directed, scoped to defaulted fields; `Option[T]` is the
+    escape for an optional reference. Implemented in `internal/pass/defaults.go` (via
+    `analyze.Sealed`/`Enums`) and the standalone transpiler; tests in `internal/pass/defaults_test.go`
+    + `transpiler/rejects_test.go`; playground error demo ("Rejecting an unsafe default"). See the
+    `DECISIONS.md` entry and updated §3.5.
 
 ## Tier 1.5 / Tier 2 — supporting
 

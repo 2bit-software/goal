@@ -466,7 +466,16 @@ u := User{ name: "a", email: "b@c", ...defaults }
   real divergence from Go. We accept it because it's high-value pure error-catching on a named
   Go footgun, and we make it a default deliberately.
 - Provide a low-ceremony explicit-defaults form so the common "I really do want zero/defaults"
-  case isn't painful (or the model routes around the whole feature).
+  case isn't painful (or the model routes around the whole feature). **Resolved:** `...defaults`.
+- **`...defaults` fills only *safe* zeros; an unsafe zero is a located error.** The escape hatch
+  must not silently reintroduce the very footgun this feature closes. A field whose zero is a latent
+  hazard — `nil` map (panics on write), `nil` pointer (panics on deref), `nil` chan/func, a
+  method-bearing named interface, or a sum type with no valid variant — is rejected with a located
+  diagnostic; the author sets it explicitly, or reaches for `Option[T]` (§3.6) for a genuinely
+  optional reference. Safe zeros (primitives, structs, nil slices, `error`) still fill silently. This
+  is deliberately **narrow**: it classifies *defaulted* fields by type, not all values, so pervasive
+  nil-elimination across every pointer (§3.6 / deferred §5) is unaffected. See
+  `features/08-no-zero-value/` (SYNTAX/TRANSPILE) and `DECISIONS.md`.
 
 ---
 
@@ -975,8 +984,10 @@ stored `Result` produces wrong Go. See §9 open questions.
 - **`E` lint default** (§3.3): ship open-default, run the experiment, decide whether to flip.
 - **`From`-style conversion** (§3.7): design and schedule as the fast-follow after open-error
   `?`.
-- **Explicit-defaults form** (§3.5): exact syntax for "set the rest to defaults" so strict
-  construction isn't painful.
+- **Explicit-defaults form** (§3.5): ~~exact syntax for "set the rest to defaults" so strict
+  construction isn't painful.~~ **Resolved:** `...defaults` (a trailing keyword-spread element),
+  which fills safe zeros and *rejects* fields whose zero is unsafe (see §3.5). See
+  `features/08-no-zero-value/`.
 - **Doctest form for goscript** (§4.1): depends on who authors scripts; revisit.
 - **goscript restriction diff** (§1.1): enumerate exactly what goscript removes and which
   capabilities it gates (concurrency via ungranted capability, etc.).

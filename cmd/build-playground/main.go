@@ -101,10 +101,11 @@ type Feature struct {
 
 var (
 	headingRe   = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
-	goalFenceRe = regexp.MustCompile("^```goal(?:\\s+(.*))?$")
-	goFenceRe   = regexp.MustCompile("^```go\\b")
-	anyFenceRe  = regexp.MustCompile("^```")
-	nameAttrRe  = regexp.MustCompile(`name=(\S+)`)
+	goalFenceRe  = regexp.MustCompile("^```goal(?:\\s+(.*))?$")
+	goFenceRe    = regexp.MustCompile("^```go\\b")
+	errorFenceRe = regexp.MustCompile("^```error\\b")
+	anyFenceRe   = regexp.MustCompile("^```")
+	nameAttrRe   = regexp.MustCompile(`name=(\S+)`)
 )
 
 // parse walks the doc as a sequence of heading-delimited sections. A section that
@@ -211,14 +212,21 @@ func parseFeature(sec section) (Feature, error) {
 	if err != nil {
 		return Feature{}, err
 	}
-	expected, afterGo, err := readGoBlock(sec.body, afterSource)
+	expected, blockKind, afterGo, err := readOutputBlock(sec.body, afterSource)
 	if err != nil {
 		return Feature{}, err
 	}
 
+	// The output block is either a "Transpiles to" go block or a "Rejected with"
+	// error block (a feature whose example is a located compile error, e.g. an
+	// unsafe `...defaults`). A go block with doctests yields a _test.go instead.
 	outputKind := "go"
 	expectedLabel := "transpiled Go"
-	if strings.Contains(source, "/// >>>") {
+	switch {
+	case blockKind == "error":
+		outputKind = "error"
+		expectedLabel = "rejected"
+	case strings.Contains(source, "/// >>>"):
 		outputKind = "test"
 		expectedLabel = "generated _test.go"
 	}
@@ -279,26 +287,51 @@ func readGoalExample(body []string, start int) (source, name string, next int, e
 	return "", "", -1, fmt.Errorf("unterminated goal block")
 }
 
-func readGoBlock(body []string, from int) (expected string, next int, err error) {
+// readOutputBlock reads the feature's locked output: the first fenced block at or
+// after `from` that is either a "Transpiles to" go block (kind "go") or a "Rejected
+// with" error block (kind "error", holding the exact located compile error).
+func readOutputBlock(body []string, from int) (expected, kind string, next int, err error) {
 	for i := from; i < len(body); i++ {
-		if goFenceRe.MatchString(body[i]) {
-			var code []string
-			for j := i + 1; j < len(body); j++ {
-				if anyFenceRe.MatchString(body[j]) {
-					return strings.Join(code, "\n"), j + 1, nil
-				}
-				code = append(code, body[j])
-			}
-			return "", -1, fmt.Errorf("unterminated go block")
+		switch {
+		case goFenceRe.MatchString(body[i]):
+			exp, n, e := readFenceBody(body, i)
+			return exp, "go", n, e
+		case errorFenceRe.MatchString(body[i]):
+			exp, n, e := readFenceBody(body, i)
+			return exp, "error", n, e
 		}
 	}
-	return "", -1, fmt.Errorf("no \"Transpiles to\" go block found")
+	return "", "", -1, fmt.Errorf("no \"Transpiles to\" go block or \"Rejected with\" error block found")
 }
 
-// verify re-transpiles source and asserts the result matches the doc's locked
-// block, so the manifest cannot drift from the transpiler.
+// readFenceBody returns the lines inside the fenced block opening at body[openIdx]
+// and the index just past its closing fence.
+func readFenceBody(body []string, openIdx int) (string, int, error) {
+	var code []string
+	for j := openIdx + 1; j < len(body); j++ {
+		if anyFenceRe.MatchString(body[j]) {
+			return strings.Join(code, "\n"), j + 1, nil
+		}
+		code = append(code, body[j])
+	}
+	return "", -1, fmt.Errorf("unterminated output block")
+}
+
+// verify re-transpiles source and asserts the result matches the doc's locked block,
+// so the manifest cannot drift from the transpiler. For an error feature it asserts
+// the transpile fails with exactly the locked message.
 func verify(source, expected, kind string) error {
 	res, err := pipeline.Transpile(source)
+	if kind == "error" {
+		if err == nil {
+			return fmt.Errorf("expected transpile to be rejected, but it succeeded:\n%s", res.Go)
+		}
+		if strings.TrimRight(err.Error(), "\n") != strings.TrimRight(expected, "\n") {
+			return fmt.Errorf("doc error does not match live transpiler\n--- doc ---\n%s\n--- live ---\n%s",
+				expected, err.Error())
+		}
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("live transpile failed: %w", err)
 	}

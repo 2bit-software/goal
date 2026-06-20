@@ -34,6 +34,23 @@ for (const cat of manifest.categories) {
   for (const feat of cat.features) {
     total++;
     const res = globalThis.goalTranspile(feat.source);
+    // An "error" feature is a located compile error: assert the wasm rejects it with
+    // exactly the seed message. Every other feature must transpile cleanly.
+    if (feat.outputKind === "error") {
+      if (!res.error) {
+        failed++;
+        console.error(`✗ ${feat.title} — expected rejection, but transpile succeeded`);
+        continue;
+      }
+      if (trim(res.error) !== trim(feat.expected)) {
+        failed++;
+        console.error(`✗ ${feat.title} — error does not match seed`);
+        console.error(`  --- seed ---\n${indent(trim(feat.expected))}\n  --- wasm ---\n${indent(trim(res.error))}\n`);
+        continue;
+      }
+      console.log(`✓ ${feat.title}`);
+      continue;
+    }
     if (res.error) {
       failed++;
       console.error(`✗ ${feat.title} — transpile error:\n${res.error}\n`);

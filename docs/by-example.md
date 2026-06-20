@@ -685,8 +685,40 @@ func newAdmin() User {
 ```
 
 **Lowers to:** a complete literal passes through verbatim; a `...defaults` literal
-expands to explicit per-field zero values (e.g. `User{name: name, role: 0, active: false}`).
-The guarantee is a checker concern — the emitted Go is ordinary.
+expands its safe fields to explicit per-field zero values (e.g. `User{name: name, role: 0,
+active: false}`) and *rejects* any field whose zero is unsafe (see below). The completeness
+guarantee is a checker concern — the emitted Go is ordinary.
+
+## Rejecting an unsafe default
+
+`...defaults` only fills fields whose zero value is *safe*. A field whose zero is a latent
+hazard — a `nil` map (panics on write), a `nil` pointer (panics on deref), a `nil` channel or
+func, or a sum type with no valid variant — is a **located compile error**, not a silent zero.
+Set such a field explicitly, or use `Option[T]` for a genuinely-optional reference.
+
+```goal name=defaults_unsafe.goal
+package cache
+
+type Store struct {
+	name    string
+	entries map[string]int
+}
+
+func newStore(name string) Store {
+	return Store{name: name, ...defaults}
+}
+```
+
+Rejected with:
+
+```error
+pass defaults: `...defaults` at 9:27 cannot default field `entries` of type `map[string]int`: a nil map panics on write — set it explicitly (e.g. `map[string]int{}`)
+```
+
+**Why:** a `nil` map reads fine but panics the moment something writes to it — exactly the
+silent zero-value footgun this feature exists to close. `entries` has no safe default, so
+construction must name it (`entries: map[string]int{}`); the genuinely-safe fields can still
+ride `...defaults`.
 
 # Runtime & test feedback
 

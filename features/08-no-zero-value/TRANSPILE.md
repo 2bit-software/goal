@@ -11,6 +11,12 @@ Governing contract: §8.5 (pure-erasure features) and §8.0 (erasure-with-defens
 - **Rewritten (surface-only sugar):** the `...defaults` escape hatch. It is not a runtime construct —
   it expands at transpile time into explicit per-field zero values so the emitted Go literal is
   complete. After expansion there is no trace of `...defaults` in the Go.
+- **Rejected (static guarantee, in this pass):** an `...defaults` that would fill a field whose zero
+  is *unsafe* — a `nil` map/pointer/chan/func, a method-bearing named interface, or a sum type with
+  no valid variant. Rather than emit the hazardous zero, the pass raises a **located** compile error.
+  This is the one piece of checking the defaults pass performs itself (rather than erasing): an
+  unsafe zero is precisely the silent-zero footgun the feature exists to close, so it cannot be
+  allowed to slip back in through the escape hatch.
 - **Preserved (runtime):** nothing. There is no runtime behavior to preserve and no point where the
   checker proves unreachability, so **no defensive `panic` is emitted** by this feature.
 
@@ -44,15 +50,30 @@ with its type's zero, in declared order, where `...defaults` stood.
 
 ### 3. `...defaults` over reference and named types
 
+A field whose zero is unsafe (`fallback *Addr` derefs to a panic, `env map[…]` panics on write) must
+be set explicitly; `...defaults` then fills only the safe remainder.
+
 ```goal
-return Settings{ primary: Addr{ host: "localhost", port: 8080 }, ...defaults }
+return Settings{ primary: Addr{host: "localhost", port: 8080}, fallback: nil, env: map[string]string{}, ...defaults }
 ```
 ```go
-return Settings{primary: Addr{host: "localhost", port: 8080}, fallback: nil, meta: Addr{}, tags: nil, env: nil, label: "", retries: 0}
+return Settings{primary: Addr{host: "localhost", port: 8080}, fallback: nil, env: map[string]string{}, meta: Addr{}, tags: nil, label: "", retries: 0}
 ```
 
-`fallback` (`*Addr`), `tags` (`[]string`), `env` (`map[string]string`) → `nil`; `meta` (named struct
-`Addr`) → `Addr{}`; `label` (alias `Name = string`) → `""`; `retries` (`int`) → `0`.
+`meta` (named struct `Addr`) → `Addr{}`; `tags` (`[]string`) → `nil` (a nil slice is safe); `label`
+(alias `Name = string`) → `""`; `retries` (`int`) → `0`.
+
+### 4. `...defaults` over an unsafe field → located rejection
+
+```goal
+return Store{ name: name, ...defaults }   // entries is a map[string]int
+```
+```
+pass defaults: `...defaults` at L:C cannot default field `entries` of type `map[string]int`: a nil map panics on write — set it explicitly (e.g. `map[string]int{}`)
+```
+
+A `nil` map reads fine but panics on write, so it has no safe zero. The pass reports the first
+offending field (named, with its type and the `...defaults` position) instead of expanding it.
 
 ## Lowering rules
 
@@ -71,9 +92,32 @@ other bytes through.
    type name.
 3. **Find the already-set fields.** Within that literal's own brace depth, every `IDENT :` is a
    present key.
-4. **Expand.** For each declared field **not** present, in declared order, emit `name: <zero>` where
-   `<zero>` is `zeroLit(type)`. Replace the `...defaults` span with the comma-joined entries (gofmt
-   then normalizes layout). If no fields are unset, `...defaults` expands to nothing.
+4. **Classify, then expand.** For each declared field **not** present, in declared order:
+   `zeroSafety(type)` first asks whether the field's zero is safe to fill. If not (a `nil`
+   map/pointer/chan/func, a method-bearing named interface, or a sum type with no valid variant),
+   the pass returns a **located** error naming that field — reporting the first offender. Otherwise
+   it emits `name: <zero>` where `<zero>` is `zeroLit(type)`. Replace the `...defaults` span with the
+   comma-joined entries (gofmt then normalizes layout). If no fields are unset, `...defaults` expands
+   to nothing.
+
+### `zeroSafety(type)` — which zeros `...defaults` refuses
+
+A field's zero is *unsafe* when normal use of the value panics, deadlocks, or no valid value exists.
+`zeroSafety` mirrors `zeroLit`'s traversal (prefix checks, then alias/named resolution).
+
+| Declared type form | Verdict |
+| --- | --- |
+| `*T` pointer | **reject** — nil derefs panic (use `Option[T]`, or set explicitly) |
+| `map[K]V` | **reject** — a nil map panics on write |
+| `chan …` | **reject** — nil send/recv blocks forever |
+| `func …` | **reject** — calling a nil func panics |
+| named `enum` / sealed interface (sum type) | **reject** — no valid zero variant |
+| method-bearing named `interface{…}` | **reject** — a nil method call panics |
+| `string`/`bool`/numeric, `[N]T`, named struct | allow — the zero is a usable value |
+| `[]T` slice | allow — a nil slice is safe (`range`/`len`/`append` all work) |
+| `error`, `any`, bare `interface{}` | allow — nil error is success; bare any has no methods |
+| `type Role int` (int-backed enum) | allow — resolves to `int`; zero is a real variant |
+| unknown named type (no local decl) | allow — assumed struct-like, as `zeroLit` does |
 
 ### `zeroLit(type)` — the type → zero mapping
 
@@ -102,15 +146,24 @@ type → zero table above.
 
 No temporaries are synthesized, so the `__gop_` prefix is not needed here.
 
-## Scope / not-checked (the checker's job, not built)
+## Scope
 
-- **Does not reject incomplete literals.** A literal missing a field passes through unchanged;
-  flagging it is the checker's located error. The reference transpiler assumes well-formed input.
+- **Unsafe-default rejection is performed here** (see `zeroSafety` above): an `...defaults` that
+  would fill an unsafe or no-safe-zero field is a located error. This is the one check the pass does
+  rather than erases, because an unsafe zero reaching codegen is the exact footgun the feature
+  closes. The classification is type-directed; it does **not** inspect explicitly-written values, so
+  an author who writes `env: nil` (or any explicit value) for an unsafe field is taken at their word.
+
+Still the **checker's job, not built here**:
+
+- **Does not reject incomplete literals.** A literal missing a field (with no `...defaults`) passes
+  through unchanged; flagging it is the checker's located error. The reference transpiler assumes
+  well-formed input.
 - **Does not verify field names** in a literal against the struct declaration.
-- **Does not judge default appropriateness.** Defaulting an enum-typed field (a closed sum type has
-  no safe zero) is a *semantic* error the checker rejects; here it mechanically expands to the
-  encoding's zero (`nil` for a sealed interface). Examples set enum fields explicitly.
-- **Unknown named types** (declared in another package, not visible in the file) default to `T{}`.
-  That is correct for a struct but wrong for an out-of-package interface (which wants `nil`) — not
-  recoverable without a type system, so it is deferred rather than guessed-around. In-file types are
-  always resolved correctly.
+- **Unknown named types** (declared in another package, not visible in the file) default to `T{}` and
+  are classified *safe*. That is correct for a struct but cannot distinguish an out-of-package
+  interface (which wants `nil` and could be unsafe) — not recoverable without a type system, so it is
+  deferred rather than guessed-around. In-file types are always resolved correctly.
+- **The standalone reference transpiler has no `enum`/`sealed` table**, so it recognizes a sum type's
+  no-safe-zero only when the field's type resolves to a named `interface`. The real pipeline pass
+  consults `analyze.Sealed`/`analyze.Enums` and rejects both `enum` and sealed-interface sum fields.

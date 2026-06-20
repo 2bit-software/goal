@@ -97,12 +97,50 @@ type Settings struct {
 }
 
 func defaultSettings() Settings {
-    return Settings{ primary: Addr{ host: "localhost", port: 8080 }, ...defaults }
+    return Settings{
+        primary:  Addr{ host: "localhost", port: 8080 },
+        fallback: nil,
+        env:      map[string]string{},
+        ...defaults,
+    }
 }
 ```
 
-`...defaults` recovers each unset field's zero from its declared type: pointer / slice / map → `nil`,
-the named struct `Addr` → `Addr{}`, the string alias `Name` → `""`, `int` → `0`.
+`fallback` (`*Addr`) and `env` (`map[…]`) have **unsafe** zeros, so they are set explicitly (see
+below). `...defaults` recovers each remaining field's zero from its declared type: the named struct
+`Addr` → `Addr{}`, the slice `tags` → `nil` (a nil slice is safe), the string alias `Name` → `""`,
+`int` → `0`.
+
+## Unsafe defaults are rejected
+
+`...defaults` only fills a field whose zero value is **safe** — usable as-is. A field whose zero is a
+latent hazard is a **located compile error** instead, converting the silent-zero footgun into a
+diagnostic even inside the escape hatch. A zero is *unsafe* when normal use panics, deadlocks, or no
+valid value exists:
+
+| Field type | Verdict | Why |
+| --- | --- | --- |
+| `*T` pointer | **reject** | nil derefs panic — use `Option[T]` for an optional value, or set it explicitly |
+| `map[K]V` | **reject** | a nil map panics on write |
+| `chan …` | **reject** | nil send/recv blocks forever |
+| `func …` | **reject** | calling a nil func panics |
+| `enum` / sealed-interface sum type | **reject** | no valid zero variant |
+| method-bearing named `interface{…}` | **reject** | a nil method call panics |
+| primitives, `[N]T`, named struct | allow | the zero is a usable value |
+| `[]T` slice | allow | a nil slice is safe (`range`/`len`/`append` all work) |
+| `error`, `any`, bare `interface{}` | allow | a nil `error` is success; bare `any` has no methods |
+| `type Role int` (int-backed enum) | allow | resolves to `int`; its zero is a real variant |
+
+The escape for a genuinely-optional reference is `Option[T]` (feature 04), not a nil pointer ridden in
+on `...defaults`. The check is **type-directed and scoped to the fields `...defaults` fills**: an
+author who writes a field explicitly — even `fallback: nil` — has made a deliberate choice and is
+taken at their word.
+
+A rejected literal reports the first offending field, with its type and the `...defaults` position:
+
+```
+`...defaults` at 9:27 cannot default field `entries` of type `map[string]int`: a nil map panics on write — set it explicitly (e.g. `map[string]int{}`)
+```
 
 ## Rationale, tied to the two principles
 
@@ -133,8 +171,13 @@ the named struct `Addr` → `Addr{}`, the string alias `Name` → `""`, `int` �
   introduce one — `...defaults` fills each unset field with its *type's zero value*, spelled
   explicitly. A declared-default facility would be a separate, additive feature; flagged here rather
   than invented (per "Do NOT add features").
-- **Enum-typed fields have no safe default.** A closed sum type (feature 01) has no zero variant, so
-  `...defaults` defaulting an enum field is a *semantic* error the checker should reject. The
-  reference transpiler does no checking, so it mechanically expands such a field to the encoding's
-  zero (`nil` for the sealed-interface form) — noted in `TRANSPILE.md` as a checker responsibility,
-  not a transpiler one. Examples therefore always set enum fields explicitly.
+- **Unsafe / no-safe-zero fields are rejected by the defaults pass.** A closed sum type (feature 01)
+  has no zero variant, and several reference-type zeros (`nil` map/pointer/chan/func, method
+  interface) are latent runtime hazards. `...defaults` defaulting such a field is now a **located
+  error from the pass itself** (see "Unsafe defaults are rejected" above and `TRANSPILE.md`), not a
+  silent expansion — the one bit of checking this pass performs rather than erases, because letting
+  an unsafe zero through the escape hatch would reopen the exact footgun the feature closes. This
+  goes slightly beyond the original §3.5 framing ("`...defaults` = zero values"), narrowly: it
+  rejects *unsafe* zeros while still filling safe ones, and stays scoped to defaulted fields —
+  pervasive nil-elimination across all pointers remains the deferred §5 decision. Decided with the
+  user; rationale in `DECISIONS.md`.

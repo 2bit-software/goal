@@ -94,6 +94,15 @@ func transpile(src string) (string, error) {
 			if present[f.name] {
 				continue
 			}
+			// `...defaults` only fills fields whose zero is safe. A field whose zero is
+			// a latent hazard (nil map/pointer/chan/func, or a nil method-interface /
+			// sum type with no valid variant) is a located compile error, not a silent
+			// zero — set it explicitly, or use Option[T] for an optional reference.
+			if reason := zeroSafety(f.typ, decls, 0); reason != "" {
+				line, col := lineCol(src, spanStart)
+				return "", fmt.Errorf("`...defaults` at %d:%d cannot default field `%s` of type `%s`: %s",
+					line, col, f.name, f.typ, reason)
+			}
 			entries = append(entries, fmt.Sprintf("%s: %s", f.name, zeroLit(f.typ, decls, 0)))
 		}
 		reps = append(reps, replacement{spanStart, spanEnd, strings.Join(entries, ", ")})
@@ -250,6 +259,70 @@ func zeroLit(typ string, decls map[string]string, depth int) string {
 	// zero. (A named interface from another package would want `nil`; not
 	// recoverable without a type system — out of scope, noted in TRANSPILE.md.)
 	return typ + "{}"
+}
+
+// zeroSafety reports why a field of type typ has no safe zero to fill via `...defaults`,
+// or "" when its zero is safe. Mirrors zeroLit's traversal: a usable zero (primitive,
+// struct, array, nil slice, `error`, bare interface) is safe; a nil zero that panics or
+// deadlocks on normal use (pointer, map, chan, func, a method-bearing named interface)
+// is rejected. depth guards alias chains. (The standalone reference transpiler has no
+// `enum`/`sealed` table; a sum type's sealed interface surfaces here as a named
+// `interface` and is rejected on that path.)
+func zeroSafety(typ string, decls map[string]string, depth int) string {
+	typ = strings.TrimSpace(typ)
+	switch {
+	case strings.HasPrefix(typ, "*"):
+		return "a nil pointer has no safe zero — set it explicitly, or use Option[T] for an optional value"
+	case strings.HasPrefix(typ, "map["):
+		return "a nil map panics on write — set it explicitly (e.g. `" + typ + "{}`)"
+	case strings.HasPrefix(typ, "chan"):
+		return "a nil channel blocks forever — set it explicitly"
+	case strings.HasPrefix(typ, "func"):
+		return "a nil func panics when called — set it explicitly"
+	case strings.HasPrefix(typ, "interface"):
+		if strings.TrimSpace(typ[len("interface"):]) == "{}" {
+			return ""
+		}
+		return "a nil interface has no safe zero — set it explicitly"
+	case typ == "any", typ == "error":
+		return ""
+	case strings.HasPrefix(typ, "[]"):
+		return "" // a nil slice is safe: range/len/append all work on it
+	case strings.HasPrefix(typ, "["):
+		return "" // array: composite zero is a usable value
+	}
+	switch typ {
+	case "string", "bool",
+		"int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+		"byte", "rune", "float32", "float64", "complex64", "complex128":
+		return ""
+	}
+	if depth < 8 {
+		if under, ok := decls[baseType(typ)]; ok {
+			switch under {
+			case "struct":
+				return ""
+			case "interface":
+				return "a nil interface has no safe zero — set it explicitly"
+			default:
+				return zeroSafety(under, decls, depth+1)
+			}
+		}
+	}
+	// Unknown external named type: assume struct-like (as zeroLit does) — treat as safe.
+	return ""
+}
+
+// lineCol converts a byte offset into 1-based line and column numbers for a located
+// diagnostic.
+func lineCol(src string, off int) (line, col int) {
+	if off > len(src) {
+		off = len(src)
+	}
+	line = 1 + strings.Count(src[:off], "\n")
+	col = off - (strings.LastIndexByte(src[:off], '\n') + 1) + 1
+	return line, col
 }
 
 // restOfLine returns the source from offset to the next newline, trimmed (and with

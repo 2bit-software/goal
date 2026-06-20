@@ -553,16 +553,41 @@ Entry kinds:
   rather than guessed. Field-type forms with internal spaces (func/chan-with-space) and grouped
   `type ( … )` decls are out of scope.
 
+### `...defaults` rejects unsafe / no-safe-zero fields (located error)
+- **Kind:** decision
+- **Chose:** `...defaults` fills a field only when its zero is *safe* (usable as-is). When a defaulted
+  field's zero is *unsafe* — `nil` map (panics on write), `nil` pointer (panics on deref), `nil`
+  chan/func, a method-bearing named interface, or a sum type with no valid variant — the defaults
+  pass raises a **located** compile error naming the first offending field. Safe zeros still fill
+  silently: primitives, named structs, `[N]T`, **nil slices** (`range`/`len`/`append` all work),
+  `error` (nil = success), `any`/bare `interface{}`, and int-backed `type Role int`. The check is
+  **type-directed and scoped to defaulted fields only** — an explicitly-written value (even
+  `x: nil`) is taken at the author's word.
+- **Over:** (a) the original "`...defaults` = plain Go zero values, no judgement" behavior — rejected
+  because it lets the escape hatch silently reintroduce the exact silent-zero footgun the feature
+  exists to close; (b) the broader "reject every nil-valued zero" — rejected because nil slices and
+  nil `error` are *safe, usable* values and flagging them would force noise (`tags: []string{}`) with
+  no safety gain; (c) auto-allocating safe defaults (e.g. empty maps) — rejected because it makes
+  `...defaults` mean something other than "zeros" and hides the decision the feature works to surface;
+  (d) pervasive nil-elimination across all pointers — out of scope, still the deferred §5 decision.
+- **Why:** user-driven ("the *goal* is to reject anything unsafe; all zero-valued pointers should be
+  rejected"). The escape for a genuinely-optional reference is `Option[T]` (§3.6), which the language
+  already ships — so "I want maybe-absent" has a safe home and "I just didn't set it" is what
+  `...defaults` now refuses. Goes slightly beyond §3.5's "`...defaults` = zero values" framing,
+  narrowly and deliberately (rejects *unsafe* zeros, fills safe ones). Implemented in both the real
+  pipeline pass (`internal/pass/defaults.go`, via `analyze.Sealed`/`Enums`/`TypeDecls`) and the
+  standalone reference transpiler; surfaced as a playground error demo. See SYNTAX/TRANSPILE.
+
 ### Transpiler does not reject incomplete literals (checker's job)
 - **Kind:** decision
 - **Chose:** complete struct literals pass through verbatim; the transpiler only expands
-  `...defaults`. It does not reject missing fields, verify field names, or judge whether a default
-  is semantically valid (e.g. an enum field, which has no safe zero, expands mechanically to the
-  encoding's `nil`).
+  `...defaults` (and now rejects unsafe defaults, above). It still does **not** reject missing fields
+  or verify field names against the struct declaration.
 - **Over:** implementing field-completeness validation in the reference transpiler.
 - **Why:** field-completeness is the erased static guarantee (§8.5: the feature "only ever rejected
-  source") and per the audit's "NO error checking yet" constraint, checking is the checker's job.
-  The transpiler's sole job is valid goal → the correct Go.
+  source") and per the audit's "NO error checking yet" constraint, that check is the checker's job.
+  (Unsafe-default rejection is the one exception the pass owns, because an unsafe zero reaching
+  codegen — unlike a merely-incomplete literal the checker will catch — would defeat the feature.)
 
 ---
 
