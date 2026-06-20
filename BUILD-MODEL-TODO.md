@@ -123,10 +123,14 @@ testdata, record decisions in `DECISIONS.md`, verify (`go vet ./...`, `go test -
     Enforces one-package-per-directory; skips `testdata`/hidden/`_` dirs. 6 tests pass; vet clean.
     Cross-package goal imports deferred (DECISIONS Phase A §U1).
 
-- [ ] **U2 — Cross-file table merge.** `analyze.BuildPackage([]File) *Tables` (or a `Merge`)
+- [x] **U2 — Cross-file table merge.** `analyze.BuildPackage([]File) *Tables` (or a `Merge`)
   that unions per-file tables; define and test the collision rule (union; document last-wins vs.
   duplicate-detection, deferring genuine dup-decls to the Go compiler). Prove a cross-file
   reference (enum in A, match in B) resolves. *Depends on SPIKE-2.*
+  - **Done:** `analyze.BuildPackage([]string)` + `Tables.Merge` (`maps.Copy` union over every
+    name-keyed map), `newTables()` constructor extracted from `Build`. Collision rule:
+    last-merged-wins, deterministic via path-sorted input; genuine dup-decls left to the Go
+    compiler. 4 tests incl. cross-file enum resolution + last-wins; vet clean. DECISIONS Phase A §U2.
 
 - [ ] **U3 — Shared prelude relocation.** Move `resultPreamble` out of `closed.go`'s per-file
   injection into a single package-level emission (`goal_prelude.go` or runtime import). The

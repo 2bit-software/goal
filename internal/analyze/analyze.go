@@ -10,6 +10,7 @@
 package analyze
 
 import (
+	"maps"
 	"strings"
 
 	"goal/internal/scan"
@@ -121,9 +122,9 @@ type Method struct {
 }
 
 // Build analyzes the original source and returns the populated tables.
-func Build(src string) *Tables {
-	toks := scan.Lex(src)
-	t := &Tables{
+// newTables returns an empty Tables with every name-keyed map initialized.
+func newTables() *Tables {
+	return &Tables{
 		FuncSignatures: map[string]FuncSig{},
 		Enums:          map[string]*Enum{},
 		Sealed:         map[string]bool{},
@@ -134,6 +135,11 @@ func Build(src string) *Tables {
 		EmbeddedIfaces: map[string][]string{},
 		Methods:        map[string][]Method{},
 	}
+}
+
+func Build(src string) *Tables {
+	toks := scan.Lex(src)
+	t := newTables()
 	for _, f := range scan.ScanFuncs(toks) {
 		if f.Name == "" {
 			continue
@@ -153,6 +159,38 @@ func Build(src string) *Tables {
 	}
 	analyzeTypeDecls(src, toks, t)
 	return t
+}
+
+// BuildPackage builds one set of name-keyed tables for a whole package by analyzing
+// each file's source independently and unioning the results. Because the tables are
+// position-free and keyed by symbol name, the union lets a pass running over one file
+// resolve symbols — enums, structs, `from func`s, signatures — declared in any sibling
+// file, with no file needing another's text. Pass sources in a stable order (e.g.
+// project.Discover's path-sorted files) so the merge is deterministic.
+func BuildPackage(srcs []string) *Tables {
+	t := newTables()
+	for _, src := range srcs {
+		t.Merge(Build(src))
+	}
+	return t
+}
+
+// Merge unions o into t: every name-keyed entry from o is copied in. On a key present
+// in both, o wins (last-merged-wins) — callers supply sources in a stable order, so
+// this is deterministic. A genuine duplicate declaration (the same function or type
+// name in two files) is a Go redeclaration error the Go compiler reports; analyze does
+// not re-implement that check, it just keeps the last definition so lowering can
+// proceed and the real error surfaces at `go build`.
+func (t *Tables) Merge(o *Tables) {
+	maps.Copy(t.FuncSignatures, o.FuncSignatures)
+	maps.Copy(t.Enums, o.Enums)
+	maps.Copy(t.Sealed, o.Sealed)
+	maps.Copy(t.Structs, o.Structs)
+	maps.Copy(t.TypeDecls, o.TypeDecls)
+	maps.Copy(t.FromRegistry, o.FromRegistry)
+	maps.Copy(t.Interfaces, o.Interfaces)
+	maps.Copy(t.EmbeddedIfaces, o.EmbeddedIfaces)
+	maps.Copy(t.Methods, o.Methods)
 }
 
 // analyzeTypeDecls scans top-level `type` declarations, populating Structs (ordered

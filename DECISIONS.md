@@ -1270,3 +1270,26 @@ spikes are in `BUILD-MODEL-TODO.md`. Decisions accrue here per unit.
 - **Over:** could have modeled an import graph now, but the common case is single-package multi-file
   and the cross-package resolution rules (visibility, import paths) deserve their own unit rather
   than being guessed here.
+
+### U2 — cross-file table merge (`analyze.BuildPackage` / `Tables.Merge`)
+- **Kind:** decision
+- **Chose:** `BuildPackage([]string)` analyzes each file with the existing `Build` and unions the
+  per-file `Tables` via `Tables.Merge`, which `maps.Copy`s every name-keyed map. Because the tables
+  are position-free and name-keyed, the union is sufficient for a pass over one file to resolve
+  symbols declared in a sibling file (proven by SPIKE-2 and `TestBuildPackageResolvesCrossFileEnum`).
+  Refactored the map init out of `Build` into a shared `newTables()` constructor.
+- **Why:** the union is the entire cross-file resolution mechanism the thesis predicted — no offset
+  bookkeeping, no second analysis path. `maps.Copy` keeps it terse and sidesteps the map-loop lint.
+
+### U2 — collision rule: last-merged-wins, Go compiler backstops dup-decls
+- **Kind:** decision
+- **Chose:** on a name present in two files, the later source wins (`maps.Copy` overwrite).
+  `BuildPackage` processes sources in caller order, and `project.Discover` sorts files by path, so
+  the outcome is deterministic. `Merge` does **not** detect or report a genuine duplicate
+  declaration (same func/type name in two files) — that is a Go redeclaration the Go compiler
+  reports at `go build`; analyze keeps the last definition so lowering can proceed and the real
+  error surfaces downstream.
+- **Why:** re-implementing Go's dup-decl detection here would duplicate the compiler and risk
+  diverging from it; deferring to the Go toolchain matches the build model's lean-on-Go thesis. A
+  pre-emptive located "same name in two files" diagnostic is a possible later refinement (noted in
+  BUILD-MODEL-TODO open decisions), not needed for correctness now.
