@@ -142,14 +142,15 @@ Per-feature deliverables (every item):
 - [x] **07-implements** — Explicit `implements`
   - Spec: §3.4, codegen §8.5
   - Deps: none (additive)
-  - Nail down: `implements io.Writer for JSONWriter` (or annotation form) — additive assertion,
-    **not** nominal typing; structural satisfaction stays the default.
+  - Nail down: `type JSONWriter struct implements io.Writer { … }` (inline clause) — additive
+    assertion, **not** nominal typing; structural satisfaction stays the default.
   - Transpile to: **erased** (Go's structural typing satisfies it). Optionally emit the free
     `var _ io.Writer = JSONWriter{}` assertion (recommended, §8.5). The reference transpiler emits
     this assertion; it does **not** verify the methods exist (checker's job).
   - **Done:** `features/07-implements/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Surface
-    `implements X for T` inherited from feature 01 (no new question — re-litigating a settled
-    choice). Lowering per §8.5: erase the assertion, emit the free `var _ X = T{}` (or
+    is the inline `type T struct implements X { … }` clause, shared with feature 01 (revised from the
+    earlier standalone `implements X for T`; see DECISIONS). Lowering per §8.5: strip the clause and
+    emit the free `var _ X = T{}` (or
     `var _ X = (*T)(nil)` when `T` has a pointer-receiver method, detected by scanning receivers, so
     the assertion compiles either way). Same `implements` surface, two lowerings: sealed interface
     (01) → marker method; ordinary interface (here) → erased assertion. `go test ./...` passes (3/3)

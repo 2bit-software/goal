@@ -4,11 +4,9 @@ type Resetter interface {
     Reset()
 }
 
-type Counter struct {
+type Counter struct implements Resetter {
     n int
 }
-
-implements Resetter for Counter
 
 func (c *Counter) Reset() {
     c.n = 0

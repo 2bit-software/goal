@@ -1,12 +1,13 @@
 // Package main is a standalone reference transpiler for goal feature 07-implements:
-// explicit `implements X for T` — a struct declaring it satisfies (at least)
-// interface X. The assertion is checked at the declaration site by the goal checker
-// and then ERASED (§3.4, §8.5); the only generated Go is the free, runtime-cost-free
-// compile-time assertion `var _ X = T{}` (recommended by §8.5), which keeps the output
-// self-verifying and documents intent.
+// the inline `implements` clause on a struct — `type T struct implements X, Y { … }` —
+// a struct declaring it satisfies (at least) interfaces X and Y. The assertion is
+// checked at the declaration site by the goal checker and then ERASED (§3.4, §8.5); the
+// only generated Go is the free, runtime-cost-free compile-time assertion
+// `var _ X = T{}` (recommended by §8.5), which keeps the output self-verifying and
+// documents intent.
 //
-// The `implements X for T` surface was pinned in feature 01 (the sealed-interface
-// form); this feature reuses it for the general additive assertion over any interface.
+// Only struct types carry the clause today; extending it to any concrete type (as Go
+// allows, e.g. `type Celsius float64 implements Stringer`) is future work.
 //
 // Scope: the reference transpiler EMITS the assertion; it does NOT verify the methods
 // exist or match (the checker's job). If T's methods use a pointer receiver, the
@@ -49,7 +50,8 @@ type replacement struct {
 	text       string
 }
 
-// transpile lowers `implements X for T` to the §8.5 compile-time assertion.
+// transpile lowers a struct's inline `implements` clause to the §8.5 compile-time
+// assertion, emitted just after the struct's closing brace.
 func transpile(src string) (string, error) {
 	toks := lex(src)
 
@@ -57,34 +59,50 @@ func transpile(src string) (string, error) {
 	// assertion can address the type correctly (only *T satisfies X then).
 	pointerRecv := scanPointerReceivers(toks)
 
-	// Pass 2: replace each `implements X for T` declaration with the assertion.
+	// Pass 2: for each `type T struct implements X, Y { … }`, strip the clause and emit
+	// one assertion per interface after the struct.
 	var reps []replacement
-	for i := range toks {
-		if toks[i].text != "implements" {
+	for i := 0; i+2 < len(toks); i++ {
+		if toks[i].text != "type" || !isIdent(toks[i+1].text) || toks[i+2].text != "struct" {
 			continue
 		}
-		j := i + 1
-		for j < len(toks) && toks[j].text != "for" {
-			j++
+		name := toks[i+1].text
+		open := -1
+		for k := i + 3; k < len(toks); k++ {
+			if toks[k].text == "{" {
+				open = k
+				break
+			}
 		}
-		if j >= len(toks) {
+		if open < 0 {
 			continue
 		}
-		iface := strings.TrimSpace(src[toks[i].end:toks[j].start])
-		lineEnd := len(src)
-		if nl := strings.IndexByte(src[toks[j].end:], '\n'); nl >= 0 {
-			lineEnd = toks[j].end + nl
+		imp := -1
+		for k := i + 3; k < open; k++ {
+			if toks[k].text == "implements" {
+				imp = k
+				break
+			}
 		}
-		typ := strings.TrimSpace(src[toks[j].end:lineEnd])
-		base := baseType(typ)
+		if imp < 0 {
+			continue // a plain struct with no implements clause
+		}
+		closeIdx := matchBrace(toks, open)
 
-		var assertion string
-		if pointerRecv[base] {
-			assertion = fmt.Sprintf("var _ %s = (*%s)(nil)", iface, base)
-		} else {
-			assertion = fmt.Sprintf("var _ %s = %s{}", iface, typ)
+		var b strings.Builder
+		for _, iface := range splitInterfaces(src[toks[imp].end:toks[open].start]) {
+			if pointerRecv[name] {
+				fmt.Fprintf(&b, "var _ %s = (*%s)(nil)", iface, name)
+			} else {
+				fmt.Fprintf(&b, "var _ %s = %s{}", iface, name)
+			}
+			b.WriteByte('\n')
 		}
-		reps = append(reps, replacement{toks[i].start, lineEnd, assertion})
+		if b.Len() == 0 {
+			continue
+		}
+		reps = append(reps, replacement{toks[i+2].end, toks[open].start, " "})
+		reps = append(reps, replacement{toks[closeIdx].end, toks[closeIdx].end, "\n\n" + b.String()})
 	}
 
 	out := splice(src, reps)
@@ -121,14 +139,16 @@ func scanPointerReceivers(toks []token) map[string]bool {
 	return set
 }
 
-// baseType strips a leading `*` and any `pkg.` qualifier, yielding the receiver type
-// name to look up (the implemented type is always local, hence unqualified).
-func baseType(t string) string {
-	t = strings.TrimSpace(strings.TrimPrefix(t, "*"))
-	if i := strings.LastIndexByte(t, '.'); i >= 0 {
-		t = t[i+1:]
+// splitInterfaces splits a clause's comma-separated interface list into trimmed names,
+// dropping empties. Qualified names (`io.Writer`) survive intact — they carry no comma.
+func splitInterfaces(s string) []string {
+	var out []string
+	for part := range strings.SplitSeq(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
 	}
-	return t
+	return out
 }
 
 func isIdent(s string) bool {
@@ -139,13 +159,19 @@ func isIdent(s string) bool {
 	return unicode.IsLetter(r) || r == '_'
 }
 
-func matchParen(toks []token, openIdx int) int {
+func matchParen(toks []token, openIdx int) int { return matchPair(toks, openIdx, "(", ")") }
+
+func matchBrace(toks []token, openIdx int) int { return matchPair(toks, openIdx, "{", "}") }
+
+// matchPair returns the index of the close delimiter matching the open delimiter at
+// openIdx.
+func matchPair(toks []token, openIdx int, open, close string) int {
 	depth := 0
 	for k := openIdx; k < len(toks); k++ {
 		switch toks[k].text {
-		case "(":
+		case open:
 			depth++
-		case ")":
+		case close:
 			depth--
 		}
 		if depth == 0 {

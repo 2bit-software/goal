@@ -12,21 +12,17 @@ type User struct {
 
 sealed interface Shape {}
 
-type Circle struct {
+type Circle struct implements Shape {
     r float64
 }
-
-implements Shape for Circle
 
 type Stringer interface {
     String() string
 }
 
-type Tag struct {
+type Tag struct implements Stringer {
     v string
 }
-
-implements Stringer for Tag
 
 func (t Tag) String() string {
     return t.v

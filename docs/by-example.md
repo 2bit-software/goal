@@ -55,7 +55,7 @@ goal→Go pair ready to drop into an editor.
 | 04 | [Option](#04-option) | `Option[T]` | `*T` (nil = None) |
 | 05 | [`?` propagation](#05--propagation) | `x := f()?` | unwrap-or-early-return |
 | 06 | [Result (closed-E)](#06-result-closed-e) | `Result[T, MyErr]` | generic sum `Ok[T,E]`/`Err[T,E]` + From-conversion |
-| 07 | [implements](#07-implements) | `implements I for T` | compile-time assertion `var _ I = T{}` |
+| 07 | [implements](#07-implements) | `type T struct implements I { … }` | compile-time assertion `var _ I = T{}` |
 | 08 | [no-zero-value](#08-no-zero-value) | `T{a: x, ...defaults}` | explicit per-field zero expansion |
 | 09 | [pure](#09-pure) | `pure func f()` | plain `func` (marker erased) |
 | 10 | [assert](#10-assert) | `assert cond, "msg", args` | runtime `if !(cond) { panic(...) }` |
@@ -562,16 +562,17 @@ error types differ. (Open-E and closed-E can coexist in one file — see
 
 ## 07. implements
 
-`implements I for T` declares — at the type's own site — that `T` satisfies interface
-`I`. Structural satisfaction is unchanged; this only *adds* a checked assertion.
+The inline `implements` clause on a struct declares — at the type's own site — that the
+struct satisfies one or more interfaces. Structural satisfaction is unchanged; this only
+*adds* a checked assertion.
 
 ```goal
-implements Stringer for Point   // I: any interface; T: a local type
+type Point struct implements Stringer { X int; Y int }   // any interface(s); comma-separated
 ```
 
 **Unlocks:** Go's silent, unchecked-at-declaration interface satisfaction becomes a
 compile error at the struct. A missing or mis-signed method is caught at the
-`implements` line, not at a distant call site (or never).
+declaration, not at a distant call site (or never).
 
 **Goal:** convert an invisible "does this still satisfy the interface?" into located
 feedback at the type itself — kept additive, so structural typing elsewhere is
@@ -584,12 +585,10 @@ type Stringer interface {
     String() string
 }
 
-type Point struct {
+type Point struct implements Stringer {
     X int
     Y int
 }
-
-implements Stringer for Point
 
 func (p Point) String() string {
     return "point"
@@ -949,21 +948,17 @@ type User struct {
 
 sealed interface Shape {}
 
-type Circle struct {
+type Circle struct implements Shape {
     r float64
 }
-
-implements Shape for Circle
 
 type Stringer interface {
     String() string
 }
 
-type Tag struct {
+type Tag struct implements Stringer {
     v string
 }
-
-implements Stringer for Tag
 
 func (t Tag) String() string {
     return t.v

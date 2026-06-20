@@ -1,17 +1,14 @@
 package shape
 
-type Circle struct {
+type Circle struct implements Shape {
     Radius float64
 }
-type Rectangle struct {
+type Rectangle struct implements Shape {
     Width  float64
     Height float64
 }
 
 sealed interface Shape {}
-
-implements Shape for Circle
-implements Shape for Rectangle
 
 func unit() Shape {
     return Circle{Radius: 1}

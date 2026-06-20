@@ -51,27 +51,25 @@ elsewhere), the same closed set is expressed with a `sealed interface` plus per-
 `implements`:
 
 ```goal
-type Circle struct {
+type Circle struct implements Shape {
     Radius float64
 }
-type Rectangle struct {
+type Rectangle struct implements Shape {
     Width  float64
     Height float64
 }
 
 sealed interface Shape {}
-
-implements Shape for Circle
-implements Shape for Rectangle
 ```
 
 - `sealed interface Shape {}` declares a **closed contract**: the compiler gathers every
-  `implements Shape for ...` in the module and that set is frozen — no external package may add a
+  `struct implements Shape` in the module and that set is frozen — no external package may add a
   satisfier. `sealed` is the closedness marker here (the `enum` keyword plays that role in the
   single-block form).
-- `implements Shape for Circle` is the assertion "Circle is a variant of Shape." It reuses the
-  **same `implements` mechanism** as the open-contract assertion in feature 07 (`implements
-  io.Writer for JSONWriter`); the only difference is whether the target interface is `sealed`.
+- `type Circle struct implements Shape { … }` is the assertion "Circle is a variant of Shape." It
+  reuses the **same inline `implements` clause** as the open-contract assertion in feature 07
+  (`type JSONWriter struct implements io.Writer { … }`); the only difference is whether the target
+  interface is `sealed`.
 - Variants in this form are **ordinary Go-shaped struct types** and are constructed as ordinary
   composite literals (`Circle{Radius: 1}`), because they are standalone types — there is no
   `Shape.Circle(...)` sugar in this form. This asymmetry with the single-block form is deliberate:
@@ -85,9 +83,9 @@ form as the common path (spec §2.6).
 
 ## 2. Grammar
 
-EBNF fragment (`{ x }` = zero-or-more, `[ x ]` = optional). It nests inside Go-shaped top-level
-declarations — an `EnumDecl` / `SealedDecl` / `ImplementsDecl` is a new kind of top-level
-declaration alongside Go's `type` / `func` / `var`.
+EBNF fragment (`{ x }` = zero-or-more, `[ x ]` = optional). An `EnumDecl` / `SealedDecl` is a new
+kind of top-level declaration alongside Go's `type` / `func` / `var`; the satisfier assertion is an
+inline `ImplementsClause` on the struct declaration.
 
 ```ebnf
 EnumDecl       = "enum" identifier "{" { Variant } "}" .
@@ -95,8 +93,8 @@ Variant        = identifier [ "{" FieldList "}" ] .          (* newline-separate
 FieldList      = Field { "," Field } [ "," ] .
 Field          = identifier ":" Type .
 
-SealedDecl     = "sealed" "interface" identifier "{" "}" .
-ImplementsDecl = "implements" identifier "for" identifier .
+SealedDecl       = "sealed" "interface" identifier "{" "}" .
+ImplementsClause = "implements" identifier { "," identifier } .   (* between `struct` and its body *)
 
 Construction   = identifier "." identifier [ "(" [ ArgList ] ")" ] .
 ArgList        = Arg { "," Arg } [ "," ] .
@@ -153,18 +151,15 @@ func first() Light {
 ### 3.3 Sealed-interface form — standalone variant types
 
 ```goal
-type Circle struct {
+type Circle struct implements Shape {
     Radius float64
 }
-type Rectangle struct {
+type Rectangle struct implements Shape {
     Width  float64
     Height float64
 }
 
 sealed interface Shape {}
-
-implements Shape for Circle
-implements Shape for Rectangle
 
 func unit() Shape {
     return Circle{Radius: 1}
@@ -186,16 +181,17 @@ principle).
 | `Variant { field: Type }` payload | Rust struct-variants / Swift associated values / TS object types | "which positional field is which" → named fields | Small: `{ }` + `:` rather than Go's `name Type` — buys self-documenting payloads and labeled construction |
 | `Status.Active(since: now())` labeled call | constructor-call shape; labels echo Swift/Python keyword args | "wrong argument order at construction" → labeled, order-independent | Small: labeled call args are not Go, but they make the payload contract explicit at the call site |
 | `Status.Pending` (no parens, data-less) | enum-member access (Swift `.pending`, Java `Status.PENDING`) | n/a (ergonomic) | None notable |
-| `sealed interface` + `implements ... for` | Kotlin/Scala/Java `sealed`; reuses goal's own `implements` | "open interface silently breaks exhaustiveness when an outside package adds an implementor" → closed, enforced satisfier set | `sealed` keyword; justified below |
+| `sealed interface` + inline `implements` clause | Kotlin/Scala/Java `sealed`; reuses goal's own `implements` | "open interface silently breaks exhaustiveness when an outside package adds an implementor" → closed, enforced satisfier set | `sealed` keyword; justified below |
 
 **Conventional names are preserved** (§7): this feature introduces no `Some`/`None`/`Ok`/`Err`/`?`
 /`=>`/`_` — those belong to later features and are not Go-ified here.
 
 ### Why `sealed` is not redundant with `implements` (familiarity-budget justification)
 
-`implements X for Y` asserts *"Y satisfies X"* and nothing more; it says nothing about whether
-X's satisfier set is closed. The two concerns are **orthogonal**, and they come apart in exactly
-the case feature 07 exists for: `implements io.Writer for JSONWriter` is a useful assertion over
+`type Y struct implements X` asserts *"Y satisfies X"* and nothing more; it says nothing about
+whether X's satisfier set is closed. The two concerns are **orthogonal**, and they come apart in
+exactly the case feature 07 exists for: `type JSONWriter struct implements io.Writer` is a useful
+assertion over
 an **open** contract — anyone may add another `io.Writer`, and `match` over `io.Writer` must
 **not** be exhaustiveness-checked. Without a marker on the interface, the compiler cannot tell an
 open contract (don't check, don't restrict implementors) from a closed enum (check exhaustively,
@@ -226,5 +222,5 @@ when a satisfier is added elsewhere with no declared intent and no located error
 None. The spec's illustrative sample (§2.5) used Go-style positional payloads
 (`Active(since Time)`) and the single-block form; this audit adopts brace-named payloads
 (`Active { since: Time }`) per the user's choice and pins the sealed-interface form's surface
-(`sealed interface` + `implements ... for`), which §2.6 left unspecified. Both lower to the
+(`sealed interface` + inline `implements` clause), which §2.6 left unspecified. Both lower to the
 encoding the spec mandates in §8.1, so no spec semantics change.

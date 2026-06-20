@@ -73,7 +73,8 @@ func transpile(src string) (string, error) {
 	enums := map[string]*enumInfo{}
 	var reps []replacement
 
-	// Pass 1: declarations (enum, sealed interface, implements) build the registry.
+	// Pass 1: declarations (enum, sealed interface, struct implements clause) build the
+	// registry and emit their encodings.
 	for i := 0; i < len(toks); {
 		switch toks[i].text {
 		case "enum":
@@ -85,9 +86,9 @@ func transpile(src string) (string, error) {
 			rep, next := parseSealed(toks, i)
 			reps = append(reps, rep)
 			i = next
-		case "implements":
-			rep, next := parseImplements(toks, i)
-			reps = append(reps, rep)
+		case "type":
+			rs, next := parseStructImplements(src, toks, i)
+			reps = append(reps, rs...)
 			i = next
 		default:
 			i++
@@ -185,12 +186,71 @@ func parseSealed(toks []token, i int) (replacement, int) {
 	return replacement{toks[i].start, end, genInterface(name)}, i + 5
 }
 
-// parseImplements parses `implements IFACE for TYPE` starting at toks[i] == "implements".
-func parseImplements(toks []token, i int) (replacement, int) {
-	iface := toks[i+1].text
-	typ := toks[i+3].text // toks[i+2] == "for"
-	end := toks[i+3].end
-	return replacement{toks[i].start, end, genMarker(typ, iface)}, i + 4
+// parseStructImplements handles a struct declaration that may carry an inline
+// `implements` clause — `type T struct implements X, Y { … }`. When present, it returns
+// two replacements (collapse the clause; emit a marker method per interface after the
+// struct's closing brace) and the index past the struct. A plain struct (or any other
+// `type` form) yields no replacements and advances by one token.
+func parseStructImplements(src string, toks []token, i int) ([]replacement, int) {
+	if i+2 >= len(toks) || !isIdent(toks[i+1].text) || toks[i+2].text != "struct" {
+		return nil, i + 1
+	}
+	name := toks[i+1].text
+	open := -1
+	for k := i + 3; k < len(toks); k++ {
+		if toks[k].text == "{" {
+			open = k
+			break
+		}
+	}
+	if open < 0 {
+		return nil, i + 1
+	}
+	imp := -1
+	for k := i + 3; k < open; k++ {
+		if toks[k].text == "implements" {
+			imp = k
+			break
+		}
+	}
+	if imp < 0 {
+		return nil, i + 1
+	}
+	closeIdx := matchBrace(toks, open)
+
+	var b strings.Builder
+	for _, iface := range splitInterfaces(src[toks[imp].end:toks[open].start]) {
+		b.WriteString(genMarker(name, iface))
+		b.WriteByte('\n')
+	}
+	if b.Len() == 0 {
+		return nil, closeIdx + 1
+	}
+	return []replacement{
+		{toks[i+2].end, toks[open].start, " "},
+		{toks[closeIdx].end, toks[closeIdx].end, "\n\n" + b.String()},
+	}, closeIdx + 1
+}
+
+// splitInterfaces splits a clause's comma-separated interface list into trimmed names,
+// dropping empties. Qualified names (`io.Writer`) survive intact — they carry no comma.
+func splitInterfaces(s string) []string {
+	var out []string
+	for part := range strings.SplitSeq(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// isIdent reports whether s begins like a Go identifier (letter or underscore).
+func isIdent(s string) bool {
+	if s == "" {
+		return false
+	}
+	r := []rune(s)[0]
+	return unicode.IsLetter(r) || r == '_'
 }
 
 type kv struct {
@@ -199,13 +259,20 @@ type kv struct {
 }
 
 // matchParen returns the index of the ")" matching the "(" at openIdx.
-func matchParen(toks []token, openIdx int) int {
+func matchParen(toks []token, openIdx int) int { return matchPair(toks, openIdx, "(", ")") }
+
+// matchBrace returns the index of the "}" matching the "{" at openIdx.
+func matchBrace(toks []token, openIdx int) int { return matchPair(toks, openIdx, "{", "}") }
+
+// matchPair returns the index of the close delimiter matching the open delimiter at
+// openIdx.
+func matchPair(toks []token, openIdx int, open, close string) int {
 	depth := 0
 	for k := openIdx; k < len(toks); k++ {
 		switch toks[k].text {
-		case "(":
+		case open:
 			depth++
-		case ")":
+		case close:
 			depth--
 		}
 		if depth == 0 {

@@ -36,7 +36,9 @@ then **format once**. Doctests run separately on the *original* source (Output.T
 - **Partition shared surface by a table fact, don't double-claim:**
   - `match` — claimed by result (open Result), option (Option), closed (closed Result), or match (enum),
     chosen via `MatchQualifier` + callee mode. See `calleeIsClosed`.
-  - `implements X for T` — marker method when X is `Sealed` (enums pass), else assertion (implements pass).
+  - `type T struct implements X, Y { … }` — the implements pass strips the clause and emits, per
+    interface, a marker method when it is `Sealed` else a compile-time assertion (the enums pass no
+    longer touches `implements`).
   - `?` — open/Option in the question pass, closed in the closed pass; `funcSpans`/`sigAt` centralize the
     open-vs-closed decision so the two never both claim a `?`.
   - `from func` — ONE registry (analyze); the derive pass strips every leaf; closed-E and derive both read it.

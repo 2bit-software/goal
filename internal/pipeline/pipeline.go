@@ -26,7 +26,8 @@ type Pass struct {
 // Passes is the ordered front-end pipeline.
 //
 //  1. Pure       — strip the `pure func` modifier.
-//  2. Implements  — `implements X for T` (non-sealed) -> compile-time assertion.
+//  2. Implements  — strip a struct's inline `implements` clause, emitting a compile-time
+//     assertion per ordinary interface and a marker method per sealed interface.
 //  3. Defaults    — `...defaults` -> explicit per-field zero values.
 //  4. Result      — Result[T, error] signatures, Ok/Err returns, statement match.
 //  5. Option      — Option[T] -> *T, Some/None returns, statement match.
@@ -34,6 +35,7 @@ type Pass struct {
 //  7. ResultClosed — closed-E Result: sum constructors, `match`, `?`, From-conversion.
 //  8. Derive       — `from func` strip + `derive func` field-by-field expansion.
 //  9. Assert       — `assert` -> runtime `if !(cond) { panic(...) }`.
+//
 // 10. Match        — enum `match` -> type-switch over the §8.1 encoding.
 // 11. Enums        — enum/sealed declarations -> encoding, variant constructions.
 //
@@ -41,9 +43,10 @@ type Pass struct {
 // constructs and could run anywhere; they are grouped to mirror the spec's pass
 // order. Match precedes Enums: a variant construction and an enum match pattern share
 // the surface `Enum.Variant(...)`, so the match pass must consume the patterns before
-// the enums pass rewrites the remaining (genuine) constructions. Implements (non-
-// sealed) and Enums (sealed marker) partition `implements X for T` by sealedness, so
-// their order relative to each other does not matter.
+// the enums pass rewrites the remaining (genuine) constructions. Implements emits any
+// sealed-interface marker method as plain Go that later passes leave untouched; the
+// sealed interface declaration itself is still emitted by Enums, so the two passes'
+// order relative to each other does not matter.
 var Passes = []Pass{
 	{Name: "pure", Run: pass.Pure},
 	{Name: "implements", Run: pass.Implements},

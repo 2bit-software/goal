@@ -57,7 +57,7 @@ checker (not yet built — see [Status](#status)).
 | 04 | Option | `Option[T]` | `*T` (nil = None) |
 | 05 | `?` propagation | `x := f()?` | unwrap-or-early-return |
 | 06 | Result (closed-E) | `Result[T, MyErr]` | generic sum `Ok[T,E]`/`Err[T,E]` + From-conversion |
-| 07 | implements | `implements I for T` | compile-time assertion `var _ I = T{}` |
+| 07 | implements | `type T struct implements I { … }` | compile-time assertion `var _ I = T{}` |
 | 08 | no-zero-value | `T{a: x, ...defaults}` | explicit per-field zero expansion |
 | 09 | pure | `pure func f()` | plain `func` (marker erased) |
 | 10 | assert | `assert cond, "msg", args` | runtime `if !(cond) { panic(...) }` |
@@ -114,8 +114,8 @@ fight over them, each is **partitioned by a table fact**:
 
 - `match` is claimed by the open-Result, Option, closed-Result, or enum pass, chosen by
   the arm qualifier and the scrutinee's mode.
-- `implements I for T` is a marker method when `I` is a sealed interface, a compile-time
-  assertion otherwise.
+- each interface in a struct's `implements` clause becomes a marker method when it is a
+  sealed interface, a compile-time assertion otherwise.
 - `?` is handled open/Option in one pass and closed-E in another; a shared
   enclosing-function lookup keeps them from both claiming the same `?`.
 - `from func` is one registry, shared by closed-E `?` (06) and `derive func` (12).

@@ -799,3 +799,29 @@ Entry kinds:
   rule and are noted but minimal in v1. Verified: `go test` passes (3/3), all generated packages
   compile + vet clean, AND behavioral tests confirm the conversions produce correct values and thread
   errors (empty ID → error).
+
+---
+
+## 07-implements — surface-syntax revision
+
+### `implements` moves from standalone declaration to inline struct clause
+- **Kind:** decision
+- **Chose:** the inline clause `type T struct implements X, Y { … }` (between `struct` and the body
+  `{`, comma-separated interface list), replacing the standalone top-level `implements X for T`
+  declaration entirely. Lowering strips the clause and emits one declaration per interface right
+  after the struct's closing brace: a `var _ X = T{}` / `var _ X = (*T)(nil)` assertion for an
+  ordinary interface (feature 07), a `func (T) isX() {}` marker for a sealed one (feature 01). A
+  single clause may mix both. This consolidates all `implements` handling into the implements pass;
+  the enums pass no longer touches `implements` (it still emits the sealed interface declaration).
+- **Over:** keeping the standalone `implements X for T` form (the one pinned in feature 01), or
+  supporting both forms in parallel.
+- **Why:** the contract reads better attached to the type (the §3.4 note that the syntax "could
+  equally be an annotation on the type" is now realized), and a comma list expresses multiple
+  interfaces in one place. Full replacement (not dual-support) keeps a single spelling. The comma
+  list can mix sealed + ordinary in one clause, which made the old "partition `implements` across two
+  passes by sealedness" impossible to keep — hence the consolidation into one pass (the enums pass's
+  `genMarker` is reused, not duplicated). Scope is **structs only for now**; extending the clause to
+  any concrete type as Go allows (`type Celsius float64 implements Stringer`) is noted as future
+  work. Verified: root `go test ./...` green (pipeline transpiles + compiles `kitchen_sink`), both
+  feature-01 and feature-07 reference transpiler suites green, examples/expected regenerated, no
+  `implements … for` remains in any `.goal` or surface doc.

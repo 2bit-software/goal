@@ -399,20 +399,22 @@ declaration-site compile error.
 #### Sample
 
 ```goplus
-type JSONWriter struct { ... }
-
 // Asserts at least io.Writer; still free to satisfy others structurally elsewhere.
-implements io.Writer for JSONWriter
+type JSONWriter struct implements io.Writer { ... }
 
 func (w JSONWriter) Write(p []byte) (int, error) { ... }
 // If Write were missing or mis-signed, the error points HERE, at the declaration.
 ```
 
+The clause takes a comma-separated list, so a struct may assert several interfaces at once
+(`type T struct implements Stringer, io.Writer { ... }`).
+
 #### Implementation notes
 
 - Compile-time only; **erased after checking**, zero runtime cost.
-- Syntax above (`implements X for T`) is illustrative; could equally be an annotation on the
-  type. The semantic requirement is "declaration-site, additive, located error."
+- The clause attaches to the type declaration, satisfying the semantic requirement
+  "declaration-site, additive, located error." Today only struct types carry it; extending it to
+  any concrete type, as Go allows (`type Celsius float64 implements Stringer`), is future work.
 
 ---
 
@@ -956,7 +958,7 @@ Notes:
   memoization/reordering/parallelization — an optimization pass, not a codegen requirement.)
 
 ```go
-// implements io.Writer for JSONWriter  ->
+// type JSONWriter struct implements io.Writer { ... }  ->  (clause stripped, assertion appended)
 var _ io.Writer = JSONWriter{}     // optional, free, recommended
 ```
 

@@ -11,20 +11,21 @@ import (
 
 // Enums lowers closed sum types to the sealed-interface + per-variant-struct +
 // unexported-marker Go encoding (spec §8.1): an `enum` declaration becomes its
-// encoding, a `sealed interface` becomes a marker interface, `implements I for T`
-// (when I is sealed) becomes the marker method, and a variant construction
+// encoding, a `sealed interface` becomes a marker interface, and a variant construction
 // `Enum.V(field: x)` becomes `Enum(Enum_V{Field: x})`.
 //
 // This pass runs LATE — after the match pass — because a variant construction and an
 // enum match pattern share the surface form `Enum.Variant(...)`. The match pass
 // consumes the patterns inside `match` blocks first; whatever `Enum.Variant(...)`
-// remains is a genuine construction this pass rewrites. `implements I for T` where I
-// is not sealed is left untouched for the implements pass (feature 07).
+// remains is a genuine construction this pass rewrites. The marker method that admits a
+// type into a sealed interface comes from its `implements` clause, lowered by the
+// implements pass (which calls genMarker); this pass only emits the sealed interface
+// declaration itself.
 func Enums(src string, t *analyze.Tables) (string, error) {
 	toks := scan.Lex(src)
 	var reps []scan.Replacement
 
-	// Pass A: declarations (enum encoding, sealed interface, sealed marker).
+	// Pass A: declarations (enum encoding, sealed interface).
 	for i := 0; i < len(toks); {
 		switch toks[i].Text {
 		case "enum":
@@ -40,23 +41,6 @@ func Enums(src string, t *analyze.Tables) (string, error) {
 			end := scan.MatchBrace(toks, i+3) // i+3 "{"
 			reps = append(reps, scan.Replacement{Start: toks[i].Start, End: toks[end].End, Text: genInterface(name)})
 			i = end + 1
-		case "implements":
-			// implements I for T. Only the sealed-interface form is a marker method;
-			// the rest is feature 07's compile-time assertion, left untouched here.
-			f := i + 1
-			for f < len(toks) && toks[f].Text != "for" {
-				f++
-			}
-			if f+1 < len(toks) {
-				iface := strings.TrimSpace(src[toks[i+1].Start:toks[f].Start])
-				if t.Sealed[iface] {
-					typ := toks[f+1].Text
-					reps = append(reps, scan.Replacement{Start: toks[i].Start, End: toks[f+1].End, Text: genMarker(typ, iface)})
-				}
-				i = f + 2
-				continue
-			}
-			i++
 		default:
 			i++
 		}

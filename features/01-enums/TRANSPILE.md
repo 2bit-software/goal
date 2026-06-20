@@ -104,18 +104,15 @@ func first() Light {
 ### 2.3 Sealed-interface form (`examples/shape`)
 
 ```goal
-type Circle struct {
+type Circle struct implements Shape {
     Radius float64
 }
-type Rectangle struct {
+type Rectangle struct implements Shape {
     Width  float64
     Height float64
 }
 
 sealed interface Shape {}
-
-implements Shape for Circle
-implements Shape for Rectangle
 
 func unit() Shape {
     return Circle{Radius: 1}
@@ -126,15 +123,17 @@ func unit() Shape {
 type Circle struct {
 	Radius float64
 }
+
+func (Circle) isShape() {}
+
 type Rectangle struct {
 	Width  float64
 	Height float64
 }
 
-type Shape interface{ isShape() }
-
-func (Circle) isShape()    {}
 func (Rectangle) isShape() {}
+
+type Shape interface{ isShape() }
 
 func unit() Shape {
 	return Circle{Radius: 1}
@@ -171,11 +170,13 @@ anywhere a `NAME` is expected), exactly per §8.1.
 ### 3.3 Sealed-interface form
 
 1. `sealed interface NAME {}` → `type NAME interface{ isNAME() }` (identical interface to §3.1).
-2. `implements NAME for T` → `func (T) isNAME() {}` (attach the marker to the existing standalone
-   type `T`; the marker name is `is` + the interface name).
-3. The standalone `type T struct { ... }` declarations and their composite-literal constructions
-   (`T{...}`) are **ordinary Go** and pass through untouched. Because they now have the `isNAME`
-   method, they satisfy `NAME`.
+2. `type T struct implements NAME { ... }` → strip the `implements` clause (leaving an ordinary
+   `type T struct { ... }`) and emit `func (T) isNAME() {}` right after the struct's closing brace
+   (the marker name is `is` + the interface name). A clause listing several interfaces emits one
+   marker each.
+3. The struct declarations and their composite-literal constructions (`T{...}`) are otherwise
+   **ordinary Go** and pass through untouched. Because they now have the `isNAME` method, they
+   satisfy `NAME`.
 
 ### 3.4 Everything else
 

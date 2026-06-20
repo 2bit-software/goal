@@ -3,15 +3,17 @@ package shape
 type Circle struct {
 	Radius float64
 }
+
+func (Circle) isShape() {}
+
 type Rectangle struct {
 	Width  float64
 	Height float64
 }
 
-type Shape interface{ isShape() }
-
-func (Circle) isShape()    {}
 func (Rectangle) isShape() {}
+
+type Shape interface{ isShape() }
 
 func unit() Shape {
 	return Circle{Radius: 1}

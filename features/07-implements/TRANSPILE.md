@@ -11,10 +11,12 @@ the output self-verifying (§8.5, recommended).
 
 | goal | Go |
 |---|---|
-| `implements X for T` (T has value-receiver methods) | `var _ X = T{}` |
-| `implements X for T` (T has a pointer-receiver method) | `var _ X = (*T)(nil)` |
+| `type T struct implements X { … }` (T has value-receiver methods) | `var _ X = T{}` after the struct |
+| `type T struct implements X { … }` (T has a pointer-receiver method) | `var _ X = (*T)(nil)` after the struct |
 
-The assertion is the *entire* output — `implements` itself produces no runtime behavior. Because
+The clause is stripped from the declaration (leaving a plain Go struct) and the assertion is emitted
+just after the struct's closing brace. The assertion is the *entire* added output — `implements`
+itself produces no runtime behavior. Because
 `var _ X = …` only compiles when the value's method set satisfies `X`, the assertion is itself the
 shadow of the checker's proof: if the methods don't line up, Go rejects it (located at the
 assertion, mirroring goal's declaration-site error).
@@ -26,11 +28,13 @@ assertion, mirroring goal's declaration-site error).
 ### 2.1 Value receiver (`examples/value_recv`)
 
 ```goal
-implements Stringer for Point
+type Point struct implements Stringer { X int; Y int }
 func (p Point) String() string { return "point" }
 ```
 
 ```go
+type Point struct { X int; Y int }
+
 var _ Stringer = Point{}
 
 func (p Point) String() string { return "point" }
@@ -39,11 +43,13 @@ func (p Point) String() string { return "point" }
 ### 2.2 Pointer receiver (`examples/pointer_recv`)
 
 ```goal
-implements Resetter for Counter
+type Counter struct implements Resetter { n int }
 func (c *Counter) Reset() { c.n = 0 }
 ```
 
 ```go
+type Counter struct { n int }
+
 var _ Resetter = (*Counter)(nil)
 
 func (c *Counter) Reset() { c.n = 0 }
@@ -55,10 +61,12 @@ typed nil pointer so it compiles.
 ### 2.3 Qualified interface (`examples/qualified_iface`)
 
 ```goal
-implements io.Writer for Discard
+type Discard struct implements io.Writer {}
 ```
 
 ```go
+type Discard struct{}
+
 var _ io.Writer = Discard{}
 ```
 
@@ -66,13 +74,15 @@ var _ io.Writer = Discard{}
 
 ## 3. Lowering rules
 
-1. **Parse** `implements X for T`: `X` is the (possibly qualified) interface text between
-   `implements` and `for`; `T` is the type text after `for` to end of line.
+1. **Parse** the clause `type T struct implements X, Y { … }`: `T` is the declared type name; the
+   interface list is the comma-separated (possibly qualified) text between `implements` and the
+   struct body `{`.
 2. **Receiver kind.** Scan the file for `func (recv *T) …`. If any method of `T` uses a pointer
    receiver, emit `var _ X = (*T)(nil)`; otherwise emit `var _ X = T{}`. (Only `*T`'s method set
    includes pointer-receiver methods, so the value form would not satisfy `X` then.)
-3. **Replace** the whole `implements` declaration with the assertion. Everything else is passed
-   through and `go/format`-ed.
+3. **Strip** the clause (`struct implements X, Y {` → `struct {`) and **emit** one assertion per
+   interface immediately after the struct's closing brace. Everything else is passed through and
+   `go/format`-ed.
 
 The reference transpiler **emits** the assertion but does **not** verify the methods exist or match
 (the checker's job, §8.5). If they don't, Go's own compiler rejects the emitted assertion — a
@@ -98,10 +108,10 @@ The only branch is the **assertion target** — `T{}` (value receivers) vs `(*T)
 pointer-receiver method present) — selected by scanning the file's method receivers. There is no
 relationship to the §8.7 immediate-vs-stored fork (that is a `Result`/`Option` concern).
 
-Note the cross-feature fork on `implements` itself: with a **sealed** interface (feature 01) it
-lowers to the unexported marker method (closing the set); with an **ordinary** interface (this
-feature) it lowers to the erased assertion. Same surface, two lowerings — the §3.4/§2 shared
-capability.
+Note the cross-feature fork on `implements` itself: a **sealed** interface in the list (feature 01)
+lowers to the unexported marker method (closing the set); an **ordinary** interface (this feature)
+lowers to the erased assertion. Same clause, two lowerings — the §3.4/§2 shared capability. A single
+clause may list both, and each interface is lowered independently.
 
 ---
 
