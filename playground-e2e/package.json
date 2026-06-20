@@ -1,0 +1,10 @@
+{
+  "name": "goal-playground-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Headless gate: runs goal.wasm in Node and checks every playground feature reproduces its seed output.",
+  "scripts": {
+    "test": "node run.mjs"
+  }
+}

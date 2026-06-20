@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>goal Playground — by example</title>
+    <meta
+      name="description"
+      content="A live, in-browser playground for goal — a correctness-oriented dialect of Go. Edit a .goal program and watch it transpile to plain Go, with one example per language feature."
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">goal</span>
+        <span class="tagline">Playground &mdash; a live example for every feature</span>
+      </div>
+      <div class="topbar-right">
+        <a class="repo-link" href="https://github.com/2bit-software/goal" target="_blank" rel="noopener">source</a>
+        <div class="runtime-status" id="runtime-status" data-state="idle">
+          wasm: not loaded
+        </div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <nav class="sidebar" id="sidebar" aria-label="Features">
+        <!-- feature list injected from features.json -->
+      </nav>
+
+      <main class="content" id="content">
+        <p class="loading">Loading features&hellip;</p>
+      </main>
+    </div>
+
+    <!-- The goal transpiler, compiled to WebAssembly. wasm_exec.js (Go's runtime
+         glue) is loaded lazily on the first Run; see app.js. -->
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

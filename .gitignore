@@ -6,3 +6,8 @@
 
 # Editor / OS
 .DS_Store
+
+# Generated playground artifacts (rebuild with scripts/build-site.sh)
+/site/goal.wasm
+/site/wasm_exec.js
+/site/features.json
