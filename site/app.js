@@ -42,11 +42,29 @@ async function boot() {
 
 function route() {
   const anchor = location.hash.replace(/^#/, "");
-  const feat = state.byAnchor.get(anchor) || state.manifest.categories[0]?.features[0];
+  if (anchor === "" || anchor === "about") {
+    renderIntro();
+    highlightActive("about");
+    return;
+  }
+  const feat = state.byAnchor.get(anchor);
   if (feat) {
     renderFeature(feat);
     highlightActive(feat.anchor);
+  } else {
+    renderIntro();
+    highlightActive("about");
   }
+}
+
+// renderIntro shows the landing page — the README-style overview generated from
+// docs/overview.md — as the full-width home view.
+function renderIntro() {
+  const main = document.getElementById("content");
+  main.innerHTML = "";
+  const intro = el("div", "intro");
+  intro.innerHTML = state.manifest.introHtml || "<p>No overview available.</p>";
+  main.appendChild(intro);
 }
 
 // --------------------------------------------------------------------------- //
@@ -56,6 +74,19 @@ function route() {
 function renderSidebar(manifest) {
   const nav = document.getElementById("sidebar");
   nav.innerHTML = "";
+
+  // Home link: the overview / "what is goal?" landing page.
+  const home = el("div", "nav-group");
+  const homeList = el("ul", "nav-list");
+  const homeLi = el("li");
+  const homeLink = el("a", "nav-link nav-home", "About goal");
+  homeLink.href = "#about";
+  homeLink.dataset.anchor = "about";
+  homeLi.appendChild(homeLink);
+  homeList.appendChild(homeLi);
+  home.appendChild(homeList);
+  nav.appendChild(home);
+
   for (const cat of manifest.categories) {
     const group = el("div", "nav-group");
     group.appendChild(el("h3", "nav-cat", cat.name));

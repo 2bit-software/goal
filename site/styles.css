@@ -187,6 +187,76 @@ body {
   color: var(--fg-muted);
 }
 
+/* ---- intro / landing ---- */
+
+.nav-home {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.intro {
+  max-width: 760px;
+  line-height: 1.6;
+}
+.intro h1 {
+  font-size: 1.9rem;
+  margin: 0.2rem 0 0.4rem;
+  letter-spacing: -0.01em;
+}
+.intro h1 strong {
+  color: var(--accent);
+}
+.intro h2 {
+  font-size: 1.15rem;
+  margin: 1.6rem 0 0.5rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+.intro p {
+  margin: 0 0 0.85rem;
+}
+.intro > p:first-of-type {
+  font-size: 1.08rem;
+  color: var(--fg);
+}
+.intro ul {
+  margin: 0 0 0.95rem;
+  padding-left: 1.2rem;
+}
+.intro li {
+  margin: 0.28rem 0;
+}
+.intro blockquote {
+  margin: 0 0 1.1rem;
+  padding: 0.6rem 1rem;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-elev);
+  border-radius: 0 8px 8px 0;
+  color: var(--fg-muted);
+}
+.intro blockquote p {
+  margin: 0;
+  font-style: italic;
+}
+.intro code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  padding: 0.05em 0.35em;
+}
+.intro strong {
+  color: var(--fg);
+}
+.intro a {
+  color: var(--accent);
+}
+.intro p:last-child {
+  margin-top: 1.4rem;
+  font-size: 1.05rem;
+}
+
 .feature-head h2 {
   margin: 0 0 0.5rem;
   font-size: 1.5rem;

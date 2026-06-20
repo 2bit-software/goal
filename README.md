@@ -1,4 +1,4 @@
-# goal
+# goal — the Go Augmented Language
 
 A correctness-oriented dialect of Go that transpiles to plain Go. goal exists to give
 AI coding agents (and humans) **fast, located, machine-checkable feedback** — biasing

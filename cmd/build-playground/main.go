@@ -23,18 +23,20 @@ import (
 
 func main() {
 	in := flag.String("in", "docs/by-example.md", "path to the by-example markdown")
+	overview := flag.String("overview", "docs/overview.md", "path to the landing-page markdown")
 	out := flag.String("out", "site/features.json", "path to write the generated manifest")
 	flag.Parse()
 
-	if err := run(*in, *out); err != nil {
+	if err := run(*in, *overview, *out); err != nil {
 		fmt.Fprintln(os.Stderr, "build-playground:", err)
 		os.Exit(1)
 	}
 }
 
 // run parses the by-example doc at inPath, verifies every example against the
-// live transpiler, and writes the manifest JSON to outPath.
-func run(inPath, outPath string) error {
+// live transpiler, renders the landing page from overviewPath, and writes the
+// manifest JSON to outPath.
+func run(inPath, overviewPath, outPath string) error {
 	raw, err := os.ReadFile(inPath)
 	if err != nil {
 		return fmt.Errorf("read doc: %w", err)
@@ -42,6 +44,11 @@ func run(inPath, outPath string) error {
 	manifest, err := parse(string(raw), inPath)
 	if err != nil {
 		return err
+	}
+	if intro, err := os.ReadFile(overviewPath); err == nil {
+		manifest.IntroHTML = renderMarkdown(strings.Split(string(intro), "\n"))
+	} else {
+		return fmt.Errorf("read overview: %w", err)
 	}
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -60,6 +67,7 @@ func run(inPath, outPath string) error {
 type Manifest struct {
 	Title         string     `json:"title"`
 	GeneratedFrom string     `json:"generatedFrom"`
+	IntroHTML     string     `json:"introHtml"`
 	Categories    []Category `json:"categories"`
 }
 
@@ -305,8 +313,14 @@ func verify(source, expected, kind string) error {
 // minimal markdown rendering (the controlled subset the doc uses)
 // --------------------------------------------------------------------------- //
 
-// renderMarkdown turns a block of doc lines into HTML, handling paragraphs,
-// fenced code blocks, and inline code / bold / links.
+var (
+	headingLineRe = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
+	listItemRe    = regexp.MustCompile(`^[-*]\s+(.*)$`)
+)
+
+// renderMarkdown turns a block of doc lines into HTML, handling the markdown
+// subset the docs use: headings, paragraphs, unordered lists, blockquotes,
+// fenced code blocks, and inline code / bold / italic / links.
 func renderMarkdown(lines []string) string {
 	var b strings.Builder
 	var para []string
@@ -314,36 +328,84 @@ func renderMarkdown(lines []string) string {
 		if len(para) == 0 {
 			return
 		}
-		b.WriteString("<p>")
-		b.WriteString(renderInline(strings.Join(para, " ")))
-		b.WriteString("</p>\n")
+		fmt.Fprintf(&b, "<p>%s</p>\n", renderInline(strings.Join(para, " ")))
 		para = nil
 	}
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
-		if m := anyFenceRe.FindString(line); m != "" {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trimmed, "```"):
 			flush()
-			lang := strings.TrimPrefix(strings.TrimSpace(line), "```")
-			lang = strings.Fields(lang + " ")[0]
-			var code []string
-			for i++; i < len(lines); i++ {
-				if anyFenceRe.MatchString(lines[i]) {
-					break
-				}
-				code = append(code, lines[i])
-			}
-			fmt.Fprintf(&b, "<pre class=\"code lang-%s\"><code>%s</code></pre>\n",
-				escapeHTML(lang), escapeHTML(strings.Join(code, "\n")))
-			continue
-		}
-		if strings.TrimSpace(line) == "" {
+			i = writeFence(&b, lines, i)
+		case headingLineRe.MatchString(line):
 			flush()
-			continue
+			m := headingLineRe.FindStringSubmatch(line)
+			lvl := len(m[1])
+			fmt.Fprintf(&b, "<h%d>%s</h%d>\n", lvl, renderInline(strings.TrimSpace(m[2])), lvl)
+		case listItemRe.MatchString(trimmed):
+			flush()
+			i = writeList(&b, lines, i)
+		case strings.HasPrefix(trimmed, ">"):
+			flush()
+			i = writeQuote(&b, lines, i)
+		case trimmed == "":
+			flush()
+		default:
+			para = append(para, trimmed)
 		}
-		para = append(para, strings.TrimSpace(line))
 	}
 	flush()
 	return strings.TrimSpace(b.String())
+}
+
+// writeFence emits a code block starting at lines[start] and returns the index
+// of its closing fence.
+func writeFence(b *strings.Builder, lines []string, start int) int {
+	lang := strings.Fields(strings.TrimPrefix(strings.TrimSpace(lines[start]), "```") + " ")[0]
+	var code []string
+	i := start + 1
+	for ; i < len(lines); i++ {
+		if anyFenceRe.MatchString(lines[i]) {
+			break
+		}
+		code = append(code, lines[i])
+	}
+	fmt.Fprintf(b, "<pre class=\"code lang-%s\"><code>%s</code></pre>\n",
+		escapeHTML(lang), escapeHTML(strings.Join(code, "\n")))
+	return i
+}
+
+// writeList emits a <ul> consuming consecutive list items and returns the index
+// of the last item line.
+func writeList(b *strings.Builder, lines []string, start int) int {
+	b.WriteString("<ul>\n")
+	i := start
+	for ; i < len(lines); i++ {
+		m := listItemRe.FindStringSubmatch(strings.TrimSpace(lines[i]))
+		if m == nil {
+			break
+		}
+		fmt.Fprintf(b, "<li>%s</li>\n", renderInline(m[1]))
+	}
+	b.WriteString("</ul>\n")
+	return i - 1
+}
+
+// writeQuote emits a <blockquote> consuming consecutive `>` lines and returns the
+// index of the last quoted line.
+func writeQuote(b *strings.Builder, lines []string, start int) int {
+	var quoted []string
+	i := start
+	for ; i < len(lines); i++ {
+		t := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(t, ">") {
+			break
+		}
+		quoted = append(quoted, strings.TrimSpace(strings.TrimPrefix(t, ">")))
+	}
+	fmt.Fprintf(b, "<blockquote><p>%s</p></blockquote>\n", renderInline(strings.Join(quoted, " ")))
+	return i - 1
 }
 
 var (
