@@ -149,6 +149,25 @@ func Analyze(src string) ([]Diagnostic, error) {
 	return Run(src, analyze.Build(src))
 }
 
+// AnalyzePackage runs every check over each file in a package against one set of merged,
+// name-keyed tables (analyze.BuildPackage), so a check resolves symbols declared in a
+// sibling file — closing the cross-file deferrals (an enum declared in one file and
+// matched in another, a closed-E error type shared across files). Diagnostics are
+// returned per file, aligned with the input order. Checks are source-anchored, so each
+// file's constructs are checked exactly once; the merged tables only add resolution.
+func AnalyzePackage(srcs []string) ([][]Diagnostic, error) {
+	tables := analyze.BuildPackage(srcs)
+	out := make([][]Diagnostic, len(srcs))
+	for i, src := range srcs {
+		ds, err := Run(src, tables)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = ds
+	}
+	return out, nil
+}
+
 // HasErrors reports whether any diagnostic is Error severity.
 func HasErrors(diags []Diagnostic) bool {
 	for _, d := range diags {

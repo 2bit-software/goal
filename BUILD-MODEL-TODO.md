@@ -172,10 +172,13 @@ testdata, record decisions in `DECISIONS.md`, verify (`go vet ./...`, `go test -
     sibling `.go`. `goal run` executes main (test prints `green`); build errors map to `.goal`
     (test: `bad.goal:4`). `check` is per-file pending U7. DECISIONS Phase A §U6.
 
-- [ ] **U7 — Cross-file checker.** Extend `check.Analyze` to run over a package with merged
+- [x] **U7 — Cross-file checker.** Extend `check.Analyze` to run over a package with merged
   tables, so the existing 7 guarantees resolve cross-file symbols (closes the 02/06/08
   out-of-file deferrals at the *lexical* level; the `go/types` depth versions are Phase B).
   *Depends on U2.*
+  - **Done:** `check.AnalyzePackage([]string)` runs `Run` per file against merged tables; `goal
+    check` uses it. Cross-file non-exhaustive match now caught (deferred solo, error in-package).
+    DECISIONS Phase A §U7.
 
 **Done when:** a multi-file goal package (≥2 files with a cross-file enum + closed-E Result +
 `?`) builds via `goal build`, runs correctly, the checker sees across files, and a deliberate
@@ -208,4 +211,8 @@ Go type error in passed-through code is reported at the correct `.goal` location
 - `internal/scan/scan.go` — `Replacement`/`Splice` (Claim 3: journal is discarded).
 - `internal/pipeline/pipeline.go` — `Transpile` / format-once (extended by U4).
 
-_Status: thesis drafted 2026-06-20; both spikes PASSED 2026-06-20 — thesis proven, queue stands. Next: U1._
+_Status: Phase A COMPLETE 2026-06-20 — both spikes passed, all 7 units (U1–U7) shipped. A
+multi-file goal package now discovers, transpiles in memory to a compilable Go package (one
+shared prelude), builds & runs via `goal build`/`goal run` (ephemeral overlay or `--emit`), maps
+toolchain errors back to `.goal` source, and the checker resolves cross-file symbols. Next: Phase B
+(`go/types` depth checks) — see ROADMAP_TO_GOAL.md._

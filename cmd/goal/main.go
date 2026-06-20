@@ -153,13 +153,17 @@ func cmdCheck(root string, out, errOut io.Writer) error {
 	}
 	total := 0
 	for _, pkg := range pkgs {
-		for _, f := range pkg.Files {
-			diags, err := check.Analyze(f.Src)
-			if err != nil {
-				return fmt.Errorf("check %s: %w", f.Path, err)
-			}
+		srcs := make([]string, len(pkg.Files))
+		for i, f := range pkg.Files {
+			srcs[i] = f.Src
+		}
+		perFile, err := check.AnalyzePackage(srcs)
+		if err != nil {
+			return fmt.Errorf("check %s: %w", pkg.Dir, err)
+		}
+		for i, diags := range perFile {
 			for _, d := range diags {
-				fmt.Fprintln(errOut, d.Render(f.Src, f.Path))
+				fmt.Fprintln(errOut, d.Render(pkg.Files[i].Src, pkg.Files[i].Path))
 			}
 			total += countErrors(diags)
 		}

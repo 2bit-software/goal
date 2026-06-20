@@ -1377,3 +1377,15 @@ spikes are in `BUILD-MODEL-TODO.md`. Decisions accrue here per unit.
   the checker — that is U7's job. Wiring `check` to package-level tables is deferred to U7.
 - **Over:** could have blocked `check` until U7, but a per-file check is useful now and the upgrade
   is localized (swap the per-file analyze for a package-tables analyze).
+
+### U7 — cross-file checker (`check.AnalyzePackage`)
+- **Kind:** decision
+- **Chose:** `AnalyzePackage(srcs []string) ([][]Diagnostic, error)` builds merged tables once
+  (`analyze.BuildPackage`) and runs the existing `Run(src, t)` over each file against them, returning
+  per-file diagnostics aligned with input order. `goal check` now uses it, so the checker resolves
+  cross-file symbols. Closes the 02/06/08 *out-of-file* deferrals at the lexical level (the
+  type-information-dependent residue remains Phase B / `go/types`).
+- **Why:** the checks are already source-anchored and read facts from tables by name, so package-mode
+  is exactly "same checks, merged tables" — each file's constructs are checked once, the union only
+  adds resolution. Proven by a non-exhaustive match whose enum lives in a sibling file: deferred
+  (no Error) under single-file `Analyze`, caught as `non-exhaustive-match` under `AnalyzePackage`.
