@@ -239,4 +239,7 @@ We reuse the discipline that built the checker:
 
 ---
 
-_Status: roadmap drafted 2026-06-20. Next concrete step: author `BUILD-MODEL-TODO.md` (Phase A)._
+_Status (2026-06-20): **Phase A COMPLETE** (`BUILD-MODEL-TODO.md`, U1–U7) — multi-file
+discover/transpile/build/run/check works, errors map to `.goal`. **Phase B underway**
+(`DEPTH-TODO.md`) — SPIKE-B1 passed (stdlib `go/types` loads the lowered package, answers type
+identity + Defs/Uses, positions map to `.goal`); next is B1, the typecheck harness._
