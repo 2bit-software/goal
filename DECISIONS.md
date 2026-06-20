@@ -265,6 +265,55 @@ Entry kinds:
   Omitting it keeps the two unambiguous. 01-enums already covers construction. Per-feature
   standalone makes this duplication/omission expected.
 
+### Checker (`internal/check/exhaustive.go`) — exhaustiveness resolved from arm qualifiers, not scrutinee
+- **Kind:** decision
+- **Chose:** the checker fires `non-exhaustive-match` (Error) when a `match`'s arms name an in-file
+  enum (read from `analyze.Tables.Enums[…].Variants`) but omit at least one of its variants **and**
+  the match has no `_` rest-arm. The enum is resolved from the **arm qualifiers** (`Status.Pending`),
+  not from the scrutinee's declared type. Arm location reuses the match pass's machinery verbatim:
+  `scan.MatchBodyBrace`/`scan.MatchBrace` bound the arm block, arrows are the depth-0 `=>` tokens, and
+  the `patternStart` locator (lifted from `internal/pass/result.go`, shared by every qualified match)
+  finds each arm's first token — then this check **reads** the covered set instead of lowering.
+- **Over:** resolving the scrutinee's type from the function signature / construction context (what
+  the slot doc sketched). The arm qualifiers carry the enum name in *every* match position, so reading
+  them is both simpler and strictly more position-independent.
+- **Why:** the arm-qualifier read makes the check fire uniformly on **all** match positions —
+  statement, `return match`, `var x T = match`, **and the untyped `x := match`** that the lowering
+  defers (the lowering needs the *result* type; exhaustiveness needs only the *enum*, which the arms
+  name). So the value-position deferral the CHECKER-TODO listed does **not** apply to exhaustiveness.
+  No `analyze.Tables` extension was needed — `Enums[…].Variants`/`VSet` already carry the variant set.
+
+### Defer-boundary: out-of-file enum → Warning; non-enum match → skipped silently
+- **Kind:** decision
+- **Chose:** two non-Error outcomes. (a) When the arms are enum-qualified but the named enum is **not
+  declared in this file** (an out-of-package enum), its full variant set is unknown, so completeness is
+  unprovable — emit a located **Warning** (`unresolved-match-enum`, "exhaustiveness deferred") naming
+  the enum, never an Error. (b) When a match has **no** enum-qualified arm — a `Result`/`Option` match
+  (`Result.Ok(v)` etc., owned by features 03/06), or any construct whose first arm qualifier is not a
+  known enum — the match is skipped **silently** (no diagnostic at all).
+- **Over:** assuming an out-of-file match is exhaustive (a false guarantee), or emitting a Warning on
+  every Result/Option match (noise on matches this guarantee does not own).
+- **Why:** "defer, never guess" — a false "exhaustive" on an unresolvable enum is worse than an honest
+  deferral. Result/Option exhaustiveness belongs to their own features, so silence (not a Warning) is
+  correct there; the same first-arm-qualifier key the match pass uses to *claim* enum matches is reused
+  here to *recognize* them.
+
+### File-layout / `Code` scheme + the 08-fields cross-check interaction
+- **Kind:** assumption
+- **Chose:** `Feature` = `"02-match"`; `Code` = `"non-exhaustive-match"` (Error) and
+  `"unresolved-match-enum"` (deferral Warning). The message lists every missing variant **qualified**
+  (`Status.Cancelled`) in **declaration order**, echoing the arm form the agent must add. Testdata uses
+  **data-less** enum variants so a payload-binding arm (`Status.Active(a)`) — which is lexically
+  identical to a variant construction and so trips the **08-fields** check (`missing-field`) when the
+  harness runs all checks together — does not contaminate exhaustiveness cases. (The 02↔08 lexical
+  ambiguity is the same one recorded in "02 transpiler omits enum construction" above.)
+- **Over:** no naming scheme was fixed by the spec; payload-binding arms in testdata were avoided
+  rather than worked around in another slot.
+- **Why:** stable greppable codes per the slot doc. The `patternStart` `(binding)` branch is lifted
+  verbatim from the proven match-pass locator (exercised by the front-end round-trip suite), so the
+  exhaustiveness testdata can stay data-less and focused on variant *coverage* without re-proving arm
+  binding parsing.
+
 ---
 
 ## 03-result — Result[T, error] (open-E keystone)

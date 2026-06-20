@@ -1,0 +1,16 @@
+package status
+
+enum Status {
+	Pending
+	Active
+	Cancelled
+}
+
+// label, in return (value) position, handles only `Pending`. Two variants are missing
+// and there is no `_`, so the match is non-exhaustive — the message lists both gaps in
+// declaration order.
+func label(s Status) string {
+	return match s { // want "missing variants `Status.Active`, `Status.Cancelled`"
+		Status.Pending => "pending"
+	}
+}

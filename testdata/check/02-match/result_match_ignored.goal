@@ -1,0 +1,13 @@
+package status
+
+type Config = int
+
+// loadConfig matches on a Result, not an enum. Result exhaustiveness belongs to its own
+// feature (06), not this guarantee — the first arm qualifier `Result` is not a known
+// enum, so this check skips the match silently. No diagnostic (Error or Warning) here.
+func loadConfig(r Result[Config, error]) Config {
+	return match r {
+		Result.Ok(v) => v
+		Result.Err(e) => 0
+	}
+}

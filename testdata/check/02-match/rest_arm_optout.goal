@@ -1,0 +1,20 @@
+package status
+
+func resume()          {}
+func showPlaceholder() {}
+
+enum Status {
+	Pending
+	Active
+	Cancelled
+}
+
+// handle2 handles only `Active` but supplies an explicit `_` rest-arm: a deliberate
+// opt-out of exhaustiveness (spec §8.2 — a real default, not a panic). The two omitted
+// variants are dismissed by `_`, so this is complete by construction — no diagnostic.
+func handle2(s Status) {
+	match s {
+		Status.Active => resume()
+		_ => showPlaceholder()
+	}
+}

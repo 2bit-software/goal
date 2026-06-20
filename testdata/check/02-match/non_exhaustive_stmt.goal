@@ -1,0 +1,22 @@
+package status
+
+func startOnboarding() {}
+func resume()         {}
+
+// Data-less variants keep this case focused on variant *coverage* — payload arms
+// (`Active(a)`) are lexically a variant construction, which is feature 08's concern, not
+// exhaustiveness'.
+enum Status {
+	Pending
+	Active
+	Cancelled
+}
+
+// handle omits the `Cancelled` arm and has no `_` rest-arm. Lowering would emit a
+// silent panic default; the checker rejects the gap and names the missing variant.
+func handle(s Status) {
+	match s { // want "missing variant `Status.Cancelled`"
+		Status.Pending => startOnboarding()
+		Status.Active => resume()
+	}
+}

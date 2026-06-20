@@ -1,0 +1,30 @@
+package status
+
+func startOnboarding() {}
+func resume()         {}
+func archive()        {}
+
+enum Status {
+	Pending
+	Active
+	Cancelled
+}
+
+// handle covers every variant explicitly: exhaustive, no diagnostic. (No markers — any
+// Error here fails the case, pinning down false positives on a complete match.)
+func handle(s Status) {
+	match s {
+		Status.Pending => startOnboarding()
+		Status.Active => resume()
+		Status.Cancelled => archive()
+	}
+}
+
+// label, in return position, also covers every variant.
+func label(s Status) string {
+	return match s {
+		Status.Pending => "pending"
+		Status.Active => "active"
+		Status.Cancelled => "cancelled"
+	}
+}

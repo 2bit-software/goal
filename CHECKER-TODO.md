@@ -33,13 +33,22 @@ Order is by self-containment / value: the most local, inference-free guarantees 
     existing `Structs` + `Enums`. Brace disambiguation (func-body / decl-body / keyword braces)
     handled lexically via `scan.ScanFuncs` + enum/struct decl-span scan. See `DECISIONS.md` §08.
 
-- [ ] **02-match** — match exhaustiveness
+- [x] **02-match** — match exhaustiveness
   - Slot: `internal/check/exhaustive.go` (`checkExhaustive`). Testdata: `testdata/check/02-match/`.
   - Guarantee: a `match` over an enum covers every variant or has an explicit `_`; a gap
     without `_` is an **Error** (the case lowering would otherwise make a silent panic-default).
   - Spec: §02; `features/02-match/`; §8.1 encoding, §8.2 default rule.
   - Reuse: match pass locators (`scan.MatchQualifier`, `scan.MatchBodyBrace`); `Tables.Enums[…].VSet`.
   - Deps: none. Defer: untyped `x := match …` / value-position scrutinee → Warning.
+  - **Done:** covers all match positions (statement, `return match`, `var x T = match`, and the
+    untyped `x := match` the lowering defers) — the enum is resolved from the **arm qualifiers**
+    (`Status.Pending`), not the scrutinee, so the value-position deferral did **not** apply here.
+    Error `non-exhaustive-match` lists every missing variant qualified, in declaration order; an
+    explicit `_` rest-arm = complete. Deferred (located Warning, `unresolved-match-enum`): a match on
+    an enum not declared in-file (out-of-package). Non-enum matches (Result/Option, owned by 03/06)
+    are skipped silently. No `analyze.Tables` extension — used existing `Enums[…].Variants`/`VSet`.
+    Note: payload-binding arms (`Active(a)`) are lexically a variant construction and trip the
+    08-fields check under the shared harness, so testdata uses data-less variants. See `DECISIONS.md` §02.
 
 - [ ] **07-implements** — interface satisfaction
   - Slot: `internal/check/implements.go` (`checkImplements`). Testdata: `testdata/check/07-implements/`.

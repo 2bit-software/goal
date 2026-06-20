@@ -1,0 +1,19 @@
+package status
+
+enum Status {
+	Pending
+	Active
+	Cancelled
+}
+
+// describe uses the untyped `d := match` value form. The lowering DEFERS this form
+// (it needs the inferred result type), but exhaustiveness does not: the arm qualifiers
+// name the enum regardless of position, so the checker still rejects the missing
+// `Cancelled` arm here.
+func describe(s Status) string {
+	d := match s { // want "missing variant `Status.Cancelled`"
+		Status.Pending => "pending"
+		Status.Active => "active"
+	}
+	return d
+}

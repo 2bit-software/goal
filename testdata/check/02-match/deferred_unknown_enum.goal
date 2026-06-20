@@ -1,0 +1,12 @@
+package status
+
+// route matches on `Color`, an enum NOT declared in this file (it lives in another
+// package). Its full variant set is unknown here, so the checker cannot prove the match
+// covers every variant — it defers with a located Warning rather than assume
+// exhaustiveness, and must NOT emit an Error.
+func route(c Color) string {
+	return match c { // want "exhaustiveness deferred"
+		Color.Red => "r"
+		Color.Green => "g"
+	}
+}
