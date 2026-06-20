@@ -885,6 +885,42 @@ Entry kinds:
   runtime check; the strip strategy is documented in TRANSPILE.md as reserved. Likewise the §4.3
   statically-checkable assert subset and §5 contracts are reserved syntax, not built.
 
+### Checker (10-assert): the static-provable subset, minimal slice
+- **Kind:** decision
+- **Chose:** `checkAssert` folds only constant conditions with no free names, in exactly two shapes:
+  (1) a bare boolean literal — `assert false` → Error `assert-always-false` (guaranteed panic),
+  `assert true` → Warning `assert-always-true` (dead code); (2) a comparison of two integer literals
+  `LIT OP LIT` for OP ∈ {`<`,`<=`,`>`,`>=`,`==`,`!=`} — folded to a constant, false → Error, true →
+  Warning. Located at the `assert` keyword. The condition is bounded exactly as the assert pass does
+  (keyword at `scan.IsLineStart`, statement to `scan.NextNewline`, condition = left of the first
+  top-level comma).
+- **Over:** any broader folding (floats, unary `!`/`-`, parens, multi-term arithmetic, identifier
+  resolution).
+- **Why:** §4.3 / SYNTAX.md "Reserved" deliberately scoped this to a small static-checkable subset
+  and *refused* general Dafny-style proving. A bare boolean literal and a two-literal integer
+  comparison are the only shapes provable purely lexically with zero risk of diverging from Go's
+  runtime evaluation. Tautologies are a Warning (not an Error) per CHECKER-TODO — the program is
+  valid, the check is just dead.
+- **Defer-boundary (emit nothing, by design):** any non-constant condition — an identifier, call, or
+  field access — draws **no diagnostic at all**, not even a Warning. This differs from the other
+  checks' "located Warning on deferral": here a runtime-checked assert over a variable is the
+  *intended* v1 behavior (SYNTAX.md), so there is nothing unresolved to surface. Float comparisons,
+  unary/paren/multi-term expressions, and non-decimal-or-over-large integer literals are also left to
+  runtime — folding them risks a false "always panics", and a false guarantee is worse than an
+  unflagged decidable case.
+- **No `analyze.Tables` extension:** constant folding reads only the source tokens; `t` is unused.
+
+### Checker assumption: `Code` scheme and testdata layout (10-assert)
+- **Kind:** assumption
+- **Chose:** two greppable codes — `assert-always-false` (Error) and `assert-always-true` (Warning);
+  messages quote the offending condition text verbatim (`assert condition \`...\` is statically
+  false`). Testdata split by verdict: `always_false.goal` (Errors, claimed by `// want`),
+  `always_true.goal` (tautology Warnings, claimed), `runtime_ok.goal` (non-constant conditions, no
+  markers — pins the defer-boundary against false positives, incl. the `assert cond, msg, args...`
+  message form and a `%` in the condition).
+- **Why:** consistent with the per-feature `Code` convention; the user can veto the naming or ask for
+  a wider fold scope.
+
 ---
 
 ## 11-doctests — runnable doctests

@@ -1,0 +1,13 @@
+package bank
+
+// Tautology cases: conditions the checker folds to true. These are dead-code Warnings
+// (the runtime check can never fire), not Errors — unclaimed Warnings are allowed, but
+// we claim them here to pin the message. No Error must fire on this file.
+
+func tautologies() {
+	assert true                   // want "always true"
+	assert 3 < 4                  // want "always true"
+	assert 5 >= 5                 // want "always true"
+	assert 2 == 2                 // want "always true"
+	assert 1 != 9                 // want "always true"
+}

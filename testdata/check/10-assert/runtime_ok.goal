@@ -1,0 +1,22 @@
+package bank
+
+// Negative / deferral case: every assert here has a non-constant condition, so the
+// checker folds nothing and emits NO diagnostic — the runtime check stands. A file with
+// no markers asserts cleanliness: any Error fails it. These exercise the defer-boundary
+// (free identifiers, calls, the `assert cond, msg, args...` message form, a `%` in the
+// condition, and the bare-true-looking-but-variable case).
+
+func withdraw(balance int, amount int) int {
+	assert amount > 0
+	assert balance - amount >= 0, "overdraft: balance=%d amount=%d", balance, amount
+	return balance - amount
+}
+
+func parity(n int) {
+	assert n%2 == 0
+}
+
+func clamped(lo int, hi int, n int) {
+	assert lo <= hi
+	assert clamp(lo, hi, n) == n, "n=%d not in [%d, %d]", n, lo, hi
+}

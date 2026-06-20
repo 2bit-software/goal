@@ -1,0 +1,15 @@
+package bank
+
+// Positive cases: conditions the checker can constant-fold to false. Each is a
+// guaranteed runtime panic, so the checker rejects it pre-lowering.
+
+func boom() {
+	assert false                  // want "statically false"
+}
+
+func badRange() {
+	assert 2 > 3                  // want "statically false"
+	assert 5 <= 4                 // want "statically false"
+	assert 1 == 2                 // want "statically false"
+	assert 7 != 7                 // want "statically false"
+}

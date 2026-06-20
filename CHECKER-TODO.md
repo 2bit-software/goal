@@ -138,13 +138,22 @@ Order is by self-containment / value: the most local, inference-free guarantees 
     dataflow — left deferred, this is 03's graduation point onto `go/ast`+`go/types`. No
     `analyze.Tables` extension — used existing `FuncSignatures`. See `DECISIONS.md` §03 (checker).
 
-- [ ] **10-assert** — static-provable subset (minimal, reserved)
+- [x] **10-assert** — static-provable subset (minimal, reserved)
   - Slot: `internal/check/assert.go` (`checkAssert`). Testdata: `testdata/check/10-assert/`.
   - Guarantee: an `assert` whose condition is a statically-decidable constant proven false
     is an **Error**; a tautology may be a dead-code **Warning**. Everything else stays a
     runtime check — do not over-reach.
   - Spec: §10; `features/10-assert/`. The audit **reserved** this subset; keep it conservative.
   - Reuse: assert pass locator. Deps: none. Defer: any non-constant condition → emit nothing.
+  - **Done:** folds the two purely-lexical constant shapes — a bare boolean literal
+    (`assert false` → Error `assert-always-false`; `assert true` → Warning `assert-always-true`,
+    dead code) and a two-integer-literal comparison (`LIT OP LIT`, OP ∈ `< <= > >= == !=`; false →
+    Error, true → Warning). Condition bounded exactly as the assert pass (keyword at line-start,
+    statement to next newline, condition = left of first top-level comma); located at the `assert`
+    keyword. Deferred (emit **nothing** — runtime check stands, by design): any non-constant
+    condition (identifier/call/field), and — kept conservative — floats, unary `!`/`-`, parens,
+    multi-term expressions, and non-decimal/over-large integer literals. No `analyze.Tables`
+    extension (`t` unused — folds tokens only). See `DECISIONS.md` §10 (checker).
 
 ---
 
