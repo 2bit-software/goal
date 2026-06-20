@@ -142,20 +142,27 @@ testdata, record decisions in `DECISIONS.md`, verify (`go vet ./...`, `go test -
     run). Single-file output byte-identical — full regression suite green. U4 sets the flag and
     emits one `goal_prelude.go`. 3 gate tests; vet clean. DECISIONS Phase A §U3.
 
-- [ ] **U4 — Package transpile driver.** Transpile every file in a package with the merged
-  tables (U2) + single prelude (U3); write `.go` outputs. Extends `pipeline.Transpile` (single
-  source) to `pipeline.TranspilePackage`. Round-trip test: a multi-file package → a compilable
-  Go package. *Depends on U2, U3.*
+- [ ] **U4 — Package transpile driver (in-memory).** Transpile every file in a package with the
+  merged tables (U2) + suppressed prelude (U3), returning the Go **in memory** (named `GoFile`s
+  + one synthesized `goal_prelude.go` + doctest sidecars) — **no disk I/O here**. Extends
+  `pipeline.Transpile` (single source) to `pipeline.TranspilePackage`. Round-trip test: a
+  multi-file package → a compilable Go package (build in a temp dir). *Depends on U2, U3.*
+  - **Done:** `pipeline.TranspilePackage(*project.Package) (PackageOutput, error)` — in-memory
+    `GoFile`s + one `goal_prelude.go` + doctest sidecars; shares a `transpileWith(src, tables)`
+    core with `Transpile`. Test builds a 2-file cross-file package and **`go build`s it** (compiles).
+    Output layout resolved: in-memory default, `--emit` to persist. DECISIONS Phase A §U4.
 
 - [ ] **U5 — `//line` source-map emitter.** Emit `//line file.goal:N` directives per the SPIKE-1
   outcome, so toolchain errors map back to `.goal`. Ships the reusable mapping helper Phase C's
   LSP reuses. *Depends on SPIKE-1, U4.*
 
 - [ ] **U6 — `goal build` / umbrella CLI.** A `goal` command (`build`/`check`/`run`, then
-  `fmt`/`new` later) that runs U4 over `./...`, shells out to `go build`/`go vet`, and relays
-  errors mapped through U5. `goalc` (single-file) stays as the core. End-to-end: a multi-file
-  goal project builds & runs, and a Go error in passed-through code is shown at its `.goal`
-  line. *Depends on U4, U5.*
+  `fmt`/`new` later) that runs U4 over `./...`. **By default it compiles in-memory:** writes the
+  U4 output to a temp dir, shells out to `go build`/`go vet`, relays errors mapped through U5,
+  and discards the temp dir. A `--emit[=dir]` flag instead **persists** the generated `.go`
+  (sibling to the `.goal` by default, gitignored) for tooling/inspection. `goalc` (single-file)
+  stays as the core. End-to-end: a multi-file goal project builds & runs, and a Go error in
+  passed-through code is shown at its `.goal` line. *Depends on U4, U5.*
 
 - [ ] **U7 — Cross-file checker.** Extend `check.Analyze` to run over a package with merged
   tables, so the existing 7 guarantees resolve cross-file symbols (closes the 02/06/08
@@ -173,8 +180,10 @@ Go type error in passed-through code is reported at the correct `.goal` location
 - **Prelude delivery** (U3): generated `goal_prelude.go` per package vs. a versioned imported
   runtime module. Generated-file is simpler and self-contained; imported-runtime eases future
   upgrades. *Lean: generated file for v1.*
-- **Output layout** (U4/U6): write `.go` next to `.goal` (sibling, gitignored) vs. a `build/`
-  output dir vs. an in-memory module for `go build`. Affects `//line` paths and `go:generate`.
+- **Output layout** (U4/U6): **RESOLVED** — compile **in-memory by default** (U4 returns named
+  Go in memory; U6 builds from a temp dir and discards it), with a `--emit[=dir]` flag to persist
+  the `.go` (sibling to the `.goal`, gitignored) for tooling/inspection. Keeps the repo clean by
+  default; the flag covers inspection and any `go:generate`/IDE wiring that needs real files.
 - **`//line` granularity** (U5): per-decl vs. per-statement directives; columns vs. line-only.
   Driven by SPIKE-1's fidelity result.
 - **Package scope** (U1): single-package multi-file first (common case); **cross-package goal

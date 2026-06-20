@@ -1315,3 +1315,25 @@ spikes are in `BUILD-MODEL-TODO.md`. Decisions accrue here per unit.
   `pipeline.Passes` list for package mode) or a package-level variable (hidden global state). The
   flag is the least-surprising way to thread a per-build directive through the fixed pass signature;
   the slight grain-violation is called out in the field doc so it isn't mistaken for source analysis.
+
+### U4 — in-memory package transpile driver (`pipeline.TranspilePackage`)
+- **Kind:** decision
+- **Chose:** `TranspilePackage(*project.Package) (PackageOutput, error)` returns the Go **in memory**
+  — `GoFile{Name,Go}` per source, one synthesized `goal_prelude.go` when the package uses closed-E
+  Result, and doctest `_test.go` sidecars — and does **no disk I/O**. It builds merged tables once
+  (U2), sets `SuppressResultPrelude` (U3), and lowers each file with a shared `transpileWith(src,
+  tables)` core factored out of `Transpile`. Names map `foo.goal -> foo.go` / `foo_test.go`.
+- **Why:** keeping the driver pure (in-memory) is what the resolved output-layout decision needs —
+  the build path (U6) compiles from a temp dir by default and `--emit` persists the same bytes, so
+  both modes share one transpile with no I/O policy baked in. A real `go build` in the test (not just
+  a golden compare) is the actual proof the cross-file lowering + single prelude cohere.
+
+### U4 — output layout resolved: in-memory default, `--emit` to persist
+- **Kind:** decision (supersedes the BUILD-MODEL-TODO "Output layout" open question)
+- **Chose:** `goal build` compiles in-memory by default (write U4 output to a temp dir, `go build`,
+  discard); a `--emit[=dir]` flag persists the generated `.go` (sibling to the `.goal`, gitignored)
+  for tooling/inspection. (Pivoted from the earlier "sibling files always" lean.)
+- **Why:** for a personal-use tool the common path should leave the repo clean — no generated twins
+  committed or cluttering source dirs — while the flag still covers inspection and any
+  `go:generate`/IDE wiring that needs real files on disk. `goal_prelude.go` collision with a
+  user file literally named `goal_prelude.goal` is a known low-risk edge, noted for U6.

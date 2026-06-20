@@ -12,9 +12,11 @@ package pipeline
 import (
 	"fmt"
 	"go/format"
+	"strings"
 
 	"goal/internal/analyze"
 	"goal/internal/pass"
+	"goal/internal/project"
 )
 
 // Pass is one named lowering step over the source.
@@ -71,7 +73,14 @@ type Output struct {
 // a sibling test file. The returned error names the failing pass, or reports the
 // generated Go alongside the gofmt error when the final source does not parse.
 func Transpile(src string) (Output, error) {
-	tables := analyze.Build(src)
+	return transpileWith(src, analyze.Build(src))
+}
+
+// transpileWith is Transpile's core with the tables supplied by the caller: the
+// single-file path passes analyze.Build(src); the package path passes the merged tables
+// (analyze.BuildPackage) with SuppressResultPrelude set, so cross-file references
+// resolve and the prelude is emitted once by the package driver rather than per file.
+func transpileWith(src string, tables *analyze.Tables) (Output, error) {
 	cur := src
 	for _, p := range Passes {
 		next, err := p.Run(cur, tables)
@@ -91,4 +100,75 @@ func Transpile(src string) (Output, error) {
 		return Output{}, fmt.Errorf("doctests: %w", err)
 	}
 	return Output{Go: string(formatted), Test: test}, nil
+}
+
+// GoFile is one generated Go source: the base file name to write and its formatted
+// content. Names are derived from the originating `.goal` file (foo.goal -> foo.go,
+// foo_test.go for its doctest sidecar); the synthesized prelude is goal_prelude.go.
+type GoFile struct {
+	Name string
+	Go   string
+}
+
+// PackageOutput is the full Go output for one goal package, held in memory (no disk
+// I/O): one Go file per source, the optional shared goal_prelude.go, and any doctest
+// sidecars. The build driver (U6) decides whether to compile this from a temp dir or
+// persist it via --emit.
+type PackageOutput struct {
+	Files []GoFile // transpiled sources, plus goal_prelude.go when the package uses closed-E Result
+	Tests []GoFile // doctest sidecars (`_test.go`), one per source file that has doctests
+}
+
+// TranspilePackage lowers every file in a package against one set of merged, name-keyed
+// tables, so a file resolves enums/structs/from-funcs/signatures declared in a sibling
+// (U2), and emits the closed-E Result prelude exactly once for the package (U3). It does
+// no disk I/O — it returns the Go in memory.
+func TranspilePackage(pkg *project.Package) (PackageOutput, error) {
+	srcs := make([]string, len(pkg.Files))
+	for i, f := range pkg.Files {
+		srcs[i] = f.Src
+	}
+	tables := analyze.BuildPackage(srcs)
+	tables.SuppressResultPrelude = true // the package emits one prelude below, not one per file
+
+	var out PackageOutput
+	for _, f := range pkg.Files {
+		res, err := transpileWith(f.Src, tables)
+		if err != nil {
+			return PackageOutput{}, fmt.Errorf("%s: %w", f.Name, err)
+		}
+		out.Files = append(out.Files, GoFile{Name: goName(f.Name), Go: res.Go})
+		if res.Test != "" {
+			out.Tests = append(out.Tests, GoFile{Name: testName(f.Name), Go: res.Test})
+		}
+	}
+	if pass.NeedsResultPrelude(tables) {
+		preludeGo, err := preludeFile(pkg.Name)
+		if err != nil {
+			return PackageOutput{}, fmt.Errorf("prelude: %w", err)
+		}
+		out.Files = append(out.Files, GoFile{Name: "goal_prelude.go", Go: preludeGo})
+	}
+	return out, nil
+}
+
+// goName maps a source file name to its generated Go name: foo.goal -> foo.go.
+func goName(goalName string) string {
+	return strings.TrimSuffix(goalName, project.Ext) + ".go"
+}
+
+// testName maps a source file name to its doctest sidecar: foo.goal -> foo_test.go.
+func testName(goalName string) string {
+	return strings.TrimSuffix(goalName, project.Ext) + "_test.go"
+}
+
+// preludeFile is the standalone goal_prelude.go for a package: the package clause plus
+// the generic closed-E Result sum encoding, formatted.
+func preludeFile(pkgName string) (string, error) {
+	src := "package " + pkgName + "\n\n" + pass.ResultPreamble + "\n"
+	formatted, err := format.Source([]byte(src))
+	if err != nil {
+		return "", err
+	}
+	return string(formatted), nil
 }
