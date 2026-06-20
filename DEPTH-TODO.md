@@ -93,10 +93,19 @@ typed checks that return goal-located diagnostics. `goal check` runs **both** st
     `types.MissingMethod(*T, I)`; resolves in-package and qualified (`io.Writer`) interfaces. Alias
     false-mismatch eliminated; qualified interfaces checked not deferred. 4 tests. DECISIONS §B2.
 
-- [ ] **B3 — 03 must-use, stored-then-dropped (the refused class).** A `Result`/`Option`-typed
+- [x] **B3 — 03 must-use, stored-then-dropped (the refused class).** A `Result`/`Option`-typed
   local (goal-typed per the tables) that is `Info.Defs`-defined but never in `Info.Uses` — and
   not explicitly discarded — is an unused result → Error. Lifts the explicit refusal in
   DECISIONS §03. *Depends on B1.*
+  - **Done:** `typecheck.CheckMustUse` covers the two flow subsets Go itself does NOT catch (the
+    simple bound-then-unused local is already a Go "declared and not used" error): (1)
+    `discarded-result-error` — `v, _ := f()` / `_, _ = f()` discarding the error of an open-E
+    Result call (Error, at the `_`); (2) `dropped-stored-result` — an unexported Result/Option
+    struct field never read via a selector (Error), with exported-field-never-read-in-package
+    deferred as an `unresolved-dropped-field` Warning. Result fields read from go/types (the
+    injected `Result` type), sidestepping the comma-split bug in `analyze.parseStructBody`; Option
+    fields confirmed via the tables. 9 tests. Deferrals (selector-callee, open-E Result field,
+    selector-write, interprocedural drop) recorded. DECISIONS §B3. No CLI wiring (same as B2).
 
 - [ ] **B4 — 12 conversion recursion.** Resolve map/`Option`/pointer/nested-struct field types
   via `go/types` and check derive totality through them; close the out-of-package types the

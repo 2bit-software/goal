@@ -1435,3 +1435,48 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
   concrete payoff of the Phase B thesis: transpile to Go, ask go/types.
 - **Note:** the depth and lexical 07 checks can both flag the same clause; dedup (prefer the
   type-backed verdict) is wired when `goal check` runs both stages (a later B-unit / integration).
+
+### B3 — must-use stored-then-dropped (`typecheck.CheckMustUse`), the §03-refused class
+- **Kind:** decision
+- **Chose:** lift the §03 "go/types graduation boundary" refusal (assigned/stored Results never read)
+  by covering the **two genuinely-deferred flow subsets that Go itself does not catch** and types can
+  resolve. The simple bound-then-unused local needs nothing — once a Result/Option lowers to a Go
+  local, Go's own "declared and not used" already rejects it (verified: `o := find(x)` unused →
+  `declared and not used: o`). So B3 targets:
+  1. **`discarded-result-error` (Error):** `v, _ := f()` / `_, _ = f()` where `f` is an open-E Result
+     function (`Tables.FuncSignatures[f].Mode == ModeResult`, lowered to a `(T, error)` tuple) and the
+     error (last) LHS position is the blank `_`. This is the canonical unchecked-error footgun: legal
+     Go, but the must-use violation goal exists to prevent. Located at the discarding `_`.
+  2. **`dropped-stored-result` (Error) / `unresolved-dropped-field` (Warning):** a Result/Option-typed
+     struct field never read via any selector in the package. "Consulted" = the field's `*types.Var`
+     appears as the `Obj()` of some `Info.Selections` entry (a composite-literal *store* is not a
+     selection, so storing into a field does not count as using it). An **unexported** never-read
+     field is package-private, so provably dropped → Error; an **exported** never-read-in-package
+     field may be read by another package → honest deferral Warning, never an Error.
+- **Scope confirmed with user** (AskUserQuestion): cover **both** subsets (vs. either alone).
+- **Why:** these are exactly the cases CHECKER-TODO/§03 flagged as needing real type/flow info. Each
+  is grounded in "tables locate, go/types decides": the goal tables name the Result-mode functions and
+  the Option/Result fields; go/types decides the blank-error-position and the never-selected-field
+  flow facts. A false "consumed" is worse than an honest deferral, so anything types cannot resolve is
+  skipped or warned, never errored. 9 tests (positives per kind incl. closed-E Result field, the
+  value-discard/error-kept and plain-`(int,error)` negatives that pin false positives, the read-field
+  clean case, and the exported-field deferral).
+- **Assumption — Result fields read from go/types, not the (buggy) struct table.** `analyze`'s
+  `parseStructBody` splits a field line on `strings.Fields`, so a multi-arg `result Result[int, DBErr]`
+  line is mis-split into garbage `Field`s (the embedded comma). That is a front-end limitation outside
+  this unit's scope (`internal/analyze`). B3 sidesteps it: it iterates the **real go/types fields** of
+  each goal-declared struct and recognizes a Result field from its resolved type (the injected generic
+  `Result` named type), consulting `Tables.Structs` only for the type-ambiguous Option case (`*T`),
+  whose single-argument line the table parses correctly. The user may prefer fixing
+  `parseStructBody` to be bracket-depth aware instead — vetoable.
+- **Defers (recorded, not faked):** a `v, _ :=` whose callee is a selector/method (mode not
+  table-resolvable) is skipped silently (like the §02 boundary); an **open-E** `Result[T, error]`
+  *field* has no single-value lowering (its type stays unresolved) and is skipped via an invalid-type
+  guard; a field stored then written-back via a selector (`b.f = …`) counts that selector as a touch
+  and is conservatively not flagged; a "bound and passed to a callee that ignores it" drop needs
+  interprocedural analysis and is left to a later unit. An unexported must-use field consulted only via
+  reflection/serialization would be a false Error — judged rare under goal's no-magic philosophy;
+  vetoable.
+- **No harness change, no CLI change.** `CheckMustUse(*Package) []Diagnostic` follows the B2 pattern;
+  the depth stage is still not wired into `goal check` (no caller of `typecheck` outside the package,
+  same as after B2) — wiring stays a later integration unit.
