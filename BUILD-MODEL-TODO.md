@@ -160,13 +160,17 @@ testdata, record decisions in `DECISIONS.md`, verify (`go vet ./...`, `go test -
     code reporting at `shapes.goal:8` via real `go build`. Per-statement precision deferred.
     DECISIONS Phase A §U5.
 
-- [ ] **U6 — `goal build` / umbrella CLI.** A `goal` command (`build`/`check`/`run`, then
+- [x] **U6 — `goal build` / umbrella CLI.** A `goal` command (`build`/`check`/`run`, then
   `fmt`/`new` later) that runs U4 over `./...`. **By default it compiles in-memory:** writes the
   U4 output to a temp dir, shells out to `go build`/`go vet`, relays errors mapped through U5,
   and discards the temp dir. A `--emit[=dir]` flag instead **persists** the generated `.go`
   (sibling to the `.goal` by default, gitignored) for tooling/inspection. `goalc` (single-file)
   stays as the core. End-to-end: a multi-file goal project builds & runs, and a Go error in
   passed-through code is shown at its `.goal` line. *Depends on U4, U5.*
+  - **Done:** `cmd/goal` with `build`/`run`/`check` + `--emit[=dir]`. Default build/run ephemeral
+    via `go build -overlay` (no source-tree writes; module imports resolve); `--emit` persists
+    sibling `.go`. `goal run` executes main (test prints `green`); build errors map to `.goal`
+    (test: `bad.goal:4`). `check` is per-file pending U7. DECISIONS Phase A §U6.
 
 - [ ] **U7 — Cross-file checker.** Extend `check.Analyze` to run over a package with merged
   tables, so the existing 7 guarantees resolve cross-file symbols (closes the 02/06/08

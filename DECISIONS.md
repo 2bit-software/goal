@@ -1355,3 +1355,25 @@ spikes are in `BUILD-MODEL-TODO.md`. Decisions accrue here per unit.
 - **Limitation (noted):** exact line within a body whose statements were themselves lowered (a
   `match`/`?` expansion) may drift from the source line; the per-statement precision that would fix
   it needs the pass Replacement journals and is deliberately deferred (BUILD-MODEL-TODO U5).
+
+### U6 — `goal` umbrella CLI (build / run / check, ephemeral by default)
+- **Kind:** decision
+- **Chose:** a new `cmd/goal` command with `build`, `run`, `check` subcommands and a `--emit[=dir]`
+  flag; `goalc` stays the single-file primitive. `build`/`run` default to **ephemeral**: the
+  in-memory `TranspilePackage` output is materialized to a temp dir and mapped into the module via
+  `go build -overlay`, so nothing is written to the source tree and module/stdlib imports still
+  resolve. `--emit` instead writes the generated `.go` beside each `.goal` (or mirrored under dir)
+  for tooling/inspection. `run` requires exactly one `package main`. Toolchain output is relayed
+  verbatim, so errors arrive already `.goal`-mapped by the U5 `//line` directives.
+- **Why:** the overlay is the clean way to "compile in-memory natively" — it keeps the repo
+  untouched on the common path while letting the real module's imports/deps resolve, which an
+  isolated temp module would break. Tests prove the round trip: `goal run` prints the program's
+  output, a planted type error maps to `bad.goal:4`, and the default build leaves no `.go` behind.
+
+### U6 — `goal check` is per-file pending U7
+- **Kind:** assumption
+- **Chose:** `goal check` currently runs the existing single-file `check.Analyze` over every
+  discovered file. It does not yet use merged tables, so cross-file references are not resolved by
+  the checker — that is U7's job. Wiring `check` to package-level tables is deferred to U7.
+- **Over:** could have blocked `check` until U7, but a per-file check is useful now and the upgrade
+  is localized (swap the per-file analyze for a package-tables analyze).
