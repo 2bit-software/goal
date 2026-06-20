@@ -3,6 +3,8 @@
 *.test
 *.out
 /bin/
+# Compiled reference transpilers (rebuild with `go build` in each dir)
+features/*/transpiler/transpiler
 
 # Editor / OS
 .DS_Store
