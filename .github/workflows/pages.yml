@@ -15,6 +15,7 @@ on:
       - "cmd/build-playground/**"
       - "internal/**"
       - "docs/by-example.md"
+      - "docs/overview.md"
       - "site/**"
       - "playground-e2e/**"
       - "go.mod"
