@@ -64,6 +64,7 @@ function renderIntro() {
   main.innerHTML = "";
   const intro = el("div", "intro");
   intro.innerHTML = state.manifest.introHtml || "<p>No overview available.</p>";
+  highlightStaticBlocks(intro);
   main.appendChild(intro);
 }
 
@@ -131,6 +132,7 @@ function renderFeature(feat) {
   head.appendChild(h2);
   const desc = el("div", "feature-desc");
   desc.innerHTML = feat.descriptionHtml || "";
+  highlightStaticBlocks(desc);
   head.appendChild(desc);
   main.appendChild(head);
 
@@ -150,18 +152,9 @@ function renderFeature(feat) {
   srcHead.appendChild(actions);
   srcPanel.appendChild(srcHead);
 
-  const ta = el("textarea", "editor");
-  ta.spellcheck = false;
-  ta.value = feat.source.replace(/\n+$/, "");
-  enableTab(ta);
-  ta.addEventListener("keydown", (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      runFeature(runBtn);
-    }
-  });
-  state.editor = ta;
-  srcPanel.appendChild(ta);
+  const ed = makeEditor(feat.source.replace(/\n+$/, ""), runBtn);
+  state.editor = ed;
+  srcPanel.appendChild(ed);
   grid.appendChild(srcPanel);
 
   // ---- result pane ----
@@ -185,6 +178,7 @@ function renderFeature(feat) {
   if (feat.loweringHtml) {
     const note = el("div", "lowering");
     note.innerHTML = feat.loweringHtml;
+    highlightStaticBlocks(note);
     main.appendChild(note);
   }
 }
@@ -263,7 +257,18 @@ function renderOutput(out, result) {
   }
   out.classList.add("ok");
   if (result.seed) out.classList.add("seed");
-  out.textContent = body.replace(/\n$/, "");
+  setGo(out, body.replace(/\n$/, ""));
+}
+
+// setGo fills a node with Go source, syntax-highlighted via Prism when it's
+// available. Both the "go" and "test" tabs are plain Go (.go / _test.go), so the
+// same grammar applies. Falls back to plain text if Prism failed to load.
+function setGo(node, code) {
+  if (globalThis.Prism?.languages?.go) {
+    node.innerHTML = globalThis.Prism.highlight(code, globalThis.Prism.languages.go, "go");
+  } else {
+    node.textContent = code;
+  }
 }
 
 // Lazily instantiate goal.wasm exactly once and return the goalTranspile fn.
@@ -346,6 +351,67 @@ function enableTab(ta) {
     ta.value = ta.value.slice(0, start) + "    " + ta.value.slice(end);
     ta.selectionStart = ta.selectionEnd = start + 4;
   });
+}
+
+// setupGoalEditor registers the code-input template (Prism + a 4-space Indent
+// plugin) exactly once. Returns false if the editor scripts or the goal grammar
+// failed to load, so makeEditor can fall back to a plain textarea. Globals come
+// from the classic scripts loaded before this module (code-input*.js, prism*.js).
+function setupGoalEditor() {
+  if (setupGoalEditor.ready) return true;
+  if (!globalThis.codeInput || !globalThis.Prism?.languages?.goal) return false;
+  codeInput.registerTemplate(
+    "goal",
+    codeInput.templates.prism(Prism, [new codeInput.plugins.Indent(true, 4)]),
+  );
+  setupGoalEditor.ready = true;
+  return true;
+}
+
+// makeEditor builds the .goal source editor: a <code-input> (transparent textarea
+// over a Prism-highlighted <pre>) when available, else a plain <textarea> with the
+// same behavior. Both expose `.value`, so runFeature/Reset don't care which it is.
+function makeEditor(source, runBtn) {
+  const runOnCmdEnter = (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      runFeature(runBtn);
+    }
+  };
+  if (setupGoalEditor()) {
+    const ed = document.createElement("code-input");
+    ed.className = "editor";
+    ed.setAttribute("language", "goal");
+    ed.setAttribute("template", "goal");
+    ed.setAttribute("spellcheck", "false");
+    // Seed via the `value` attribute, not inner text: code-input reads it on
+    // connect, and as a DOM attribute the source's <, >, & stay literal (never
+    // parsed as HTML). Tab is handled by the Indent plugin. Cmd/Ctrl+Enter
+    // bubbles from the inner textarea to this host.
+    ed.setAttribute("value", source);
+    ed.addEventListener("keydown", runOnCmdEnter);
+    return ed;
+  }
+  const ta = el("textarea", "editor");
+  ta.spellcheck = false;
+  ta.value = source;
+  enableTab(ta);
+  ta.addEventListener("keydown", runOnCmdEnter);
+  return ta;
+}
+
+// highlightStaticBlocks colors the read-only .goal/.go snippets in generated doc
+// HTML in place. The build emits <pre class="code lang-goal"><code>…</code></pre>
+// (also lang-go, lang-error); we Prism-highlight goal and go, and leave anything
+// without a grammar (lang-error) as plain text.
+function highlightStaticBlocks(root) {
+  if (!globalThis.Prism) return;
+  for (const pre of root.querySelectorAll("pre.code[class*='lang-']")) {
+    const code = pre.querySelector("code");
+    const lang = (pre.className.match(/lang-(\w+)/) || [])[1];
+    const grammar = lang === "goal" ? Prism.languages.goal : lang === "go" ? Prism.languages.go : null;
+    if (code && grammar) code.innerHTML = Prism.highlight(code.textContent, grammar, lang);
+  }
 }
 
 function el(tag, className, text) {

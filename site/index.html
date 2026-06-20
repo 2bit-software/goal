@@ -8,6 +8,9 @@
       name="description"
       content="A live, in-browser playground for goal — a correctness-oriented dialect of Go. Edit a .goal program and watch it transpile to plain Go, with one example per language feature."
     />
+    <!-- code-input's base layout/overlay CSS; loaded before styles.css so the
+         playground theme (code-input.editor rules) overrides it. -->
+    <link rel="stylesheet" href="code-input.min.css" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -34,6 +37,15 @@
       </main>
     </div>
 
+    <!-- Prism (vendored, ~9KB): syntax-highlights the transpiled Go in the result
+         pane. Classic script so window.Prism exists before the deferred module runs. -->
+    <script src="prism.js"></script>
+    <!-- goal grammar (extends Prism's Go) + the code-input editor component and its
+         Indent plugin. Classic scripts, in order, so Prism.languages.goal and
+         window.codeInput exist before app.js (a deferred module) renders any editor. -->
+    <script src="prism-goal.js"></script>
+    <script src="code-input.min.js"></script>
+    <script src="code-input-indent.min.js"></script>
     <!-- The goal transpiler, compiled to WebAssembly. wasm_exec.js (Go's runtime
          glue) is loaded lazily on the first Run; see app.js. -->
     <script type="module" src="app.js"></script>

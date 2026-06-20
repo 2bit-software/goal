@@ -389,6 +389,20 @@ body {
   padding: 0.85rem 1rem;
   tab-size: 4;
 }
+/* When the editor is the code-input web component, the rules above set its font,
+   colors and flex grow (inherited by the inner textarea/pre). code-input forces
+   its own host margin/height and applies padding through custom properties, so
+   override those here so it fills the panel exactly like the old textarea did. */
+code-input.editor {
+  margin: 0;
+  height: auto;
+  min-height: 0;
+  caret-color: var(--fg);
+  --padding-top: 0.85rem;
+  --padding-bottom: 0.85rem;
+  --padding-left: 1rem;
+  --padding-right: 1rem;
+}
 
 .output {
   flex: 1 1 auto;
@@ -426,6 +440,37 @@ body {
   color: var(--fg-dim);
   font-size: 0.72rem;
   font-style: italic;
+}
+
+/* Prism token theme — themed to the GitHub-dark palette above. Shared by every
+   highlight surface: the result pane (.output), the .goal editor (code-input),
+   and the static doc snippets (.feature-desc pre.code). Tokens only appear where
+   we run Prism, so an unscoped .token theme is safe. */
+.token.comment,
+.token.prolog {
+  color: var(--fg-dim);
+  font-style: italic;
+}
+.token.keyword {
+  color: #ff7b72;
+}
+.token.boolean,
+.token.number,
+.token.constant {
+  color: #79c0ff;
+}
+.token.string,
+.token.char {
+  color: #a5d6ff;
+}
+.token.function,
+.token.builtin,
+.token.class-name {
+  color: #d2a8ff;
+}
+.token.operator,
+.token.punctuation {
+  color: var(--fg-muted);
 }
 
 /* output tabs */
