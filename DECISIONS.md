@@ -1480,3 +1480,52 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
 - **No harness change, no CLI change.** `CheckMustUse(*Package) []Diagnostic` follows the B2 pattern;
   the depth stage is still not wired into `goal check` (no caller of `typecheck` outside the package,
   same as after B2) — wiring stays a later integration unit.
+
+### B4 — conversion recursion is BLOCKED as a checker-only unit (refusal-with-reason)
+- **Kind:** refusal (with reason)
+- **Refused:** implementing B4 (12 conversion-recursion depth check) within the depth-checker loop's
+  guardrails (touch only `internal/typecheck`; never edit the front-end passes / build model).
+- **Why — the depth checker runs on the *lowered* Go, but the derive pass refuses to lower exactly the
+  classes B4 must check, so those programs never transpile and the depth stage never sees them.**
+  Verified empirically by transpiling derive programs through `pipeline.TranspilePackage`:
+  - An **out-of-package** target/source struct → transpile error: `pass.genConversion` reads
+    `t.Structs[type]`, which holds only in-package (package-merged) structs, and errors
+    ("unknown target struct") on an imported type.
+  - **map / `Option[A]`→`Option[B]` / pointer-differing / nested-without-`from func`** recursion →
+    transpile error: `pass.resolveField` implements only same-text-type, a registered `from func`, and
+    `[]A→[]B` (with same-or-registered element); anything else is "no conversion ... in scope".
+  - Everything that **does** transpile is already fully and correctly decided by the lexical
+    `checkConvert` (the depth check would be a port of the same same-type/registry/slice logic over the
+    same merged `Tables.Structs` — go/types adds nothing). Feature 12 also has **no checker tests and
+    no derive testdata** in the repo, consistent with these paths being unexercised end-to-end.
+  - So B4's value (out-of-package types; map/Option/pointer/nested recursion; identity- not text-based
+    matching) requires **first extending the derive *pass*** to lower those classes (and to use
+    go/types identity) — front-end/build-model work the loop's guardrails forbid, and the same
+    cross-cutting lowering nature the queue already flagged for B5. Recorded, not faked: a vacuous
+    depth check would be a false signal of progress.
+- **User decision (AskUserQuestion):** "Reassess the queue" — do not force B4; report the dependency
+  analysis below and re-plan.
+
+### Phase B queue reassessment (2026-06-20, after B1–B3)
+- **Kind:** assumption (planning note; vetoable)
+- **State:** B1 (harness), B2 (07 implements), B3 (03 must-use) are **done** — the units whose deferred
+  classes survive transpilation and are decidable from the lowered Go. The remaining units are gated:
+  - **B4 (12 conversion recursion):** BLOCKED on front-end lowering (see refusal above). Not
+    checker-viable until the derive pass lowers out-of-package + map/Option/pointer/nested recursion.
+  - **B5 (value-position `x := match`):** already flagged in the queue as a **lowering** unit
+    (`internal/pass`/`pipeline`), "not a pure checker unit." Out of the depth-checker loop's scope by
+    the same guardrail.
+  - **B6 (promote residual 02/06/08 deferrals):** its stated "depends on B1–B4" is **conservative
+    sequencing, not a real dependency** — B6 covers features 02/06/08, independent of B4's feature 12.
+    Probed and found checker-viable: e.g. an **inferred/nested struct literal of an in-file goal
+    struct** (`Outer{inner: {a: 1}}` omitting required `b`) transpiles cleanly **and the lexical 08
+    check silently misses it** (it cannot type the bare `{…}`), while go/types resolves the literal's
+    type — a genuine, loadable, type-backed Error the depth stage can add. (By contrast, cross-*file*
+    02 exhaustiveness is already caught via merged tables; only truly cross-*package* 02/06 cases
+    remain, which are semantically limited — unexported sealed markers aren't enumerable across a
+    package boundary, and imported Go structs don't carry goal's no-zero-value contract.)
+- **Recommendation:** **resequence B6 ahead of B4** as the next depth-checker unit (it has real,
+  loadable, checker-only wins and no true B4 dependency). Treat **B4 and B5 as a separate front-end /
+  lowering workstream** to be authorized explicitly (they extend the deriver and the match lowering),
+  after which B4's depth check becomes meaningful. This keeps the depth-checker loop honest: it
+  advances on what the lowered Go can actually express, and does not fake units gated on the front end.

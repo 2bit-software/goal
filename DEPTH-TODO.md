@@ -110,6 +110,14 @@ typed checks that return goal-located diagnostics. `goal check` runs **both** st
 - [ ] **B4 — 12 conversion recursion.** Resolve map/`Option`/pointer/nested-struct field types
   via `go/types` and check derive totality through them; close the out-of-package types the
   lexical check deferred. *Depends on B1.*
+  - **BLOCKED (2026-06-20) — not a checker-only unit.** The depth checker runs on the *lowered* Go,
+    but `internal/pass/derive.go` refuses to lower exactly these classes — out-of-package T/S (reads
+    in-package `Tables.Structs`) and map/`Option`-differing/pointer/nested-without-`from func`
+    recursion (`resolveField` does only same-type/registry/`[]A→[]B`). So such programs never
+    transpile and the depth stage never sees them; every program that *does* transpile is already
+    decided by the lexical `checkConvert`. Delivering B4 needs the **derive pass extended first**
+    (front-end/build-model work the loop forbids). Verified by transpile probes; user chose "reassess
+    the queue." See DECISIONS §B4 (refusal-with-reason) + the reassessment.
 
 - [ ] **B5 — value-position untyped `x := match` (lowering completion).** With the result type
   now inferable via `go/types`, complete the deferred value-position `match` / stored
@@ -120,6 +128,14 @@ typed checks that return goal-located diagnostics. `goal check` runs **both** st
 - [ ] **B6 — promote residual 02/06/08 deferrals.** Where `go/types` resolves a case the
   lexical checker (even package-merged) still defers as a Warning, upgrade it to a type-backed
   Error; otherwise re-record as a genuine narrower residue. *Depends on B1–B4.*
+  - **Resequence note (2026-06-20):** the "depends on B1–B4" is conservative — B6 covers features
+    02/06/08, **independent of B4's feature 12**, so it does NOT actually need B4. Probed
+    checker-viable: an inferred/nested struct literal of an in-file goal struct
+    (`Outer{inner: {a: 1}}` omitting required `b`) transpiles cleanly and the lexical 08 check
+    **silently misses it**, while `go/types` resolves the literal's type — a real, loadable,
+    type-backed Error. **Recommended as the next depth-checker unit, ahead of B4.** (Cross-*file* 02
+    is already caught via merged tables; only cross-*package* 02/06 residue remains, which is
+    semantically limited.) See DECISIONS "Phase B queue reassessment."
 
 **Done when:** each type-dependent deferral in `ROADMAP_TO_GOAL.md` §0 is either a type-backed
 Error with a goal-located message, or a re-recorded narrower residue with reason; `goal check`
@@ -151,6 +167,10 @@ runs both stages.
 - `DECISIONS.md` §03/§07/§12 — the refusals/assumptions naming the `go/types` ceiling.
 - `internal/check/check.go` — the lexical stage; the typed stage mirrors its diagnostic shape.
 
-_Status: thesis drafted 2026-06-20; SPIKE-B1 PASSED 2026-06-20 — stdlib go/types loads the
-lowered package, answers type-identity + Defs/Uses, and positions map to `.goal` via `//line`
-(line-accurate). Thesis proven, queue stands. Next: B1 (the typecheck harness)._
+_Status: thesis drafted 2026-06-20; SPIKE-B1 PASSED 2026-06-20. **B1–B3 done** (harness, 07
+implements, 03 must-use). **B4 BLOCKED** and **B5** is front-end/lowering work — both gated on
+extending the derive/match lowering (outside the depth-checker loop's guardrails). **B6** is
+checker-viable and independent of B4; recommended as the next depth-checker unit (resequenced
+ahead of B4). See DECISIONS "Phase B queue reassessment" (2026-06-20). The depth-checker track
+has delivered the deferred classes that survive transpilation; the remainder is gated on an
+authorized front-end workstream._
