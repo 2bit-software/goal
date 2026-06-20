@@ -77,10 +77,13 @@ typed checks that return goal-located diagnostics. `goal check` runs **both** st
 
 ## Unit queue (dependency-ordered; one per iteration after the spike)
 
-- [ ] **B1 — `go/types` harness (`internal/typecheck`).** Load a package's lowered Go
+- [x] **B1 — `go/types` harness (`internal/typecheck`).** Load a package's lowered Go
   error-tolerantly; expose `{fset, pkg, info, files}` plus helpers to (a) get the `.goal`
   position of a node and (b) resolve a generated object back to its goal name. The foundation
   every check below uses. *Depends on SPIKE-B1, Phase A U4.*
+  - **Done:** `typecheck.Load(*project.Package) (*Package, error)` → `{Fset, Types, Info, Files,
+    Tables, Errors}` + `GoalPos`/`Lookup`; error-collecting config (type errors non-fatal, mapped
+    to `.goal`), `importer.Default()`. 2 tests (typed view + error tolerance). DECISIONS Phase B §B1.
 
 - [ ] **B2 — 07 implements via real type identity.** Replace the lexical check's
   textual-after-normalization signature comparison with `types.Implements`/`types.Identical`,

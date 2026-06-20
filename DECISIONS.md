@@ -1389,3 +1389,34 @@ spikes are in `BUILD-MODEL-TODO.md`. Decisions accrue here per unit.
   is exactly "same checks, merged tables" — each file's constructs are checked once, the union only
   adds resolution. Proven by a non-exhaustive match whose enum lives in a sibling file: deferred
   (no Error) under single-file `Analyze`, caught as `non-exhaustive-match` under `AnalyzePackage`.
+
+---
+
+## Depth checks — Phase B (DEPTH-TODO)
+
+The depth checker is a second stage that runs on the *lowered* Go (Phase A's
+TranspilePackage output) and answers the type-information-dependent deferrals via stdlib
+go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
+
+### B1 — go/types harness (`internal/typecheck`)
+- **Kind:** decision
+- **Chose:** `typecheck.Load(*project.Package) (*Package, error)` transpiles the package
+  (pipeline.TranspilePackage), parses the lowered Go, and type-checks it with stdlib go/types
+  under an error-collecting `Config{Error: collect}`. `Package` exposes `{Fset, Types, Info, Files,
+  Tables, Errors}` plus `GoalPos(node)`/`Lookup(name)`. Load errors only on a transpile/parse
+  failure (a goal-compiler bug); Go type errors are collected into `Errors`, not fatal. Importer is
+  `importer.Default()` (verified to resolve stdlib `fmt`). Stdlib-only — no x/tools.
+- **Why:** every B2–B6 check needs the same typed view + the merged goal tables (to know which
+  question to ask about which symbol) + a goal position. Error tolerance keeps partial type info
+  available for a buggy program, and the collected errors are themselves goal-located via the U5
+  //line directives (test: a type error maps to `bad.goal:4`). Parsing with SkipObjectResolution
+  since go/types does its own resolution.
+
+### B1 — depth checker is a separate stage beside the lexical checker
+- **Kind:** decision
+- **Chose:** `internal/typecheck` is distinct from `internal/check`. The lexical checker runs on the
+  original source pre-lowering (no parser, name-keyed); the depth checker runs on the lowered Go
+  post-transpile (go/types). `goal check` will run both and merge diagnostics (B-units wire this in).
+- **Why:** the two operate on different artifacts with different machinery; conflating them would
+  force a parser into the lexical stage or re-lower inside it. Keeping them separate preserves the
+  front-end's no-new-parser discipline while letting the depth stage use the full Go type system.
