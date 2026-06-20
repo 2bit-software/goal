@@ -405,6 +405,13 @@ body {
 .output.ok {
   border-left: 2px solid var(--ok);
 }
+/* The pre-filled seed is shaded and gets a neutral border until a real Run
+   produces it — then it snaps to full color with the green "validated" border. */
+.output.seed {
+  opacity: 0.45;
+  border-left-color: var(--border);
+  transition: opacity 0.15s ease;
+}
 .output.bad {
   border-left: 2px solid var(--bad);
   color: #ffb4ae;
@@ -413,7 +420,7 @@ body {
   color: var(--fg-dim);
 }
 .output.seed::after {
-  content: "seed — press Run to re-derive";
+  content: "preview — press Run to transpile live";
   display: block;
   margin-top: 1rem;
   color: var(--fg-dim);
