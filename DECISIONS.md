@@ -1230,3 +1230,43 @@ Entry kinds:
 - **Why:** stable greppable codes per the slot doc; normalization handles the real friction
   (parameter-name and spacing differences between an interface decl and a method decl) without a type
   system, and the residual alias ambiguity is the documented lexical ceiling — deferred, not guessed.
+
+---
+
+## Build Model — Phase A (BUILD-MODEL-TODO)
+
+The build model turns goal from a single-file transpiler into one that builds a multi-file
+package. Phase A is plumbing around an unchanged front-end; the thesis and the two proving
+spikes are in `BUILD-MODEL-TODO.md`. Decisions accrue here per unit.
+
+### U1 — package model & discovery (`internal/project`)
+- **Kind:** decision
+- **Chose:** a new `internal/project` package with `File{Path,Name,Src}` and
+  `Package{Dir,Name,Files}`, plus `Discover(root)` that walks recursively (the `./...` sense),
+  groups `.goal` files by directory, and reads each directory's shared `package` clause. One
+  directory = one package (Go's rule); files sorted by path for determinism; source read once at
+  discovery so later units need not touch the disk.
+- **Why:** the rest of Phase A (U2 table merge, U4 package transpile) needs a stable, offset-free
+  unit to operate over. Modeling a package as a directory of files matches Go and the eventual
+  `go build` target, and keeps discovery name-oriented like the rest of the front-end.
+
+### U1 — one-package-per-directory enforced; reserved dirs skipped
+- **Kind:** decision
+- **Chose:** `Discover` errors when two files in a directory declare different `package` names, or
+  when a file omits the clause — the same constraint `go build` enforces. `PackageClause` lexes
+  (via `scan.Lex`) rather than regexping, so a `package` word in a string/comment is never the
+  clause. Discovery prunes `testdata`, hidden (`.`-prefixed), and Go-convention `_`-prefixed
+  directories (e.g. `features/_cut`).
+- **Why:** surfacing the conflict at discovery is a located, early error instead of a confusing
+  Go-compiler redeclaration later; lexing reuses the project's no-second-parser discipline; the
+  skip set mirrors Go's non-buildable directory conventions so discovery doesn't sweep in fixtures.
+
+### U1 — single-package goal imports deferred
+- **Kind:** assumption
+- **Chose:** Phase A v1 models discovery and grouping but not **cross-package goal imports** (one
+  goal package importing another goal package). `Discover` finds and groups all packages; wiring up
+  inter-package symbol resolution is a later unit, explicitly out of Phase A v1 (per
+  BUILD-MODEL-TODO open decisions).
+- **Over:** could have modeled an import graph now, but the common case is single-package multi-file
+  and the cross-package resolution rules (visibility, import paths) deserve their own unit rather
+  than being guessed here.

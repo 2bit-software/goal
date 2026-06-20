@@ -115,9 +115,13 @@ Each unit follows the loop discipline (`ROADMAP_TO_GOAL.md` §5): implement, pro
 testdata, record decisions in `DECISIONS.md`, verify (`go vet ./...`, `go test -count=1
 ./...`), check the box, commit one reviewable unit, stop.
 
-- [ ] **U1 — Package model & file discovery.** A `package`/workspace type: given a directory
+- [x] **U1 — Package model & file discovery.** A `package`/workspace type: given a directory
   (or `./...`), find `.goal` files, group them into packages (one package per dir, Go-style).
   Define the `goal.File`/`goal.Package` types the rest of the phase consumes. No transpile yet.
+  - **Done:** `internal/project` — `File{Path,Name,Src}`, `Package{Dir,Name,Files}`,
+    `Discover(root)` (recursive, groups by dir, sorted), `PackageClause` (lexes the clause).
+    Enforces one-package-per-directory; skips `testdata`/hidden/`_` dirs. 6 tests pass; vet clean.
+    Cross-package goal imports deferred (DECISIONS Phase A §U1).
 
 - [ ] **U2 — Cross-file table merge.** `analyze.BuildPackage([]File) *Tables` (or a `Merge`)
   that unions per-file tables; define and test the collision rule (union; document last-wins vs.
