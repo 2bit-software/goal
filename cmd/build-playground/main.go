@@ -137,7 +137,7 @@ func parse(doc, docPath string) (Manifest, error) {
 		}
 		// Drop a redundant "Category: " prefix, then sentence-case for a
 		// consistent nav. The doc keeps keyword headings lowercase (implements,
-		// pure, assert); the playground display capitalizes the first letter so
+		// assert); the playground display capitalizes the first letter so
 		// every entry reads uniformly. Titles that lead with a code span or
 		// symbol (e.g. "`?` propagation") are left as-is.
 		display := capitalizeFirst(strings.TrimPrefix(feat.Title, cat+": "))

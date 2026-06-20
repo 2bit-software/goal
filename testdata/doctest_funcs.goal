@@ -3,7 +3,7 @@ package mathx
 /// Squares an int.
 /// >>> square(3)
 /// 9
-pure func square(x int) int {
+func square(x int) int {
     return x * x
 }
 

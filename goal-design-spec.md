@@ -605,42 +605,13 @@ func add(a int, b int) int { return a + b }
 
 ---
 
-### 4.2 Lightweight `pure` annotation
+### 4.2 Lightweight `pure` annotation — CUT (not in v1)
 
-#### What it is
-
-A **declarable-and-checked** "this function has no side effects" marker. *Not* a full granular
-effect system.
-
-#### Why we chose it
-
-- It's the reasoning aid (priority #2) that best fits the "where it's low-friction" clause:
-  **opt-in** (annotate where useful, silent elsewhere) and the check is **cheap**.
-- Enables reasoning ("this can't mutate anything") and dependency analysis / parallelization
-  (cf. Pel's AST-dependency auto-parallelization).
-
-#### What it gains us
-
-Cheap, checkable purity facts that aid both the model's reasoning and runtime analysis.
-
-#### Refused / denied
-
-- **Full granular effect systems** (declaring *which* I/O, *which* tables, etc.). Refused for
-  now — best theory, **near-zero empirical evidence**, high annotation cost. The single
-  most-overrated feature in the design discourse. The *light* version only.
-
-#### Sample
-
-```goplus
-pure func square(x int) int { return x * x }
-
-// Compile error if a `pure` function performs I/O or mutation.
-```
-
-#### Implementation notes
-
-- Checker verifies the absence of effects within `pure` bodies. Keep the definition of
-  "effect" simple and conservative for v1.
+The `pure func` marker was designed and spiked, then **cut before v1**. "Cheap" and "soundly
+checkable" turned out to be mutually exclusive on this architecture, and its only concrete payoff
+(the §8.5 parallelization/memoization optimizer) was already deferred. The full rationale and the
+preserved spike live in [`features/_cut/README.md`](features/_cut/README.md). Reconsider it
+**together with** the §8.5 optimizer — the only consumer that turns purity into real value.
 
 ---
 
@@ -746,7 +717,7 @@ A running tally framing: every feature past the *additive* ones spends familiari
 where it buys the most error-catching.
 
 - **Additive (cheap — do freely):** explicit `implements`, exhaustiveness/`match`, asserts,
-  `pure`, doctests. They *add* a checkable assertion without changing what existing Go
+  doctests. They *add* a checkable assertion without changing what existing Go
   constructs mean.
 - **Replacing (costly — justify each):** `Result` over `if err != nil`, strict zero-values,
   any immutability default, `?`. Each spends real familiarity; do it only when the
@@ -776,11 +747,11 @@ This section gives the target Go for each feature. It is the contract the transp
 ### 8.0 Governing principle: checks erased, guarantees compiled in
 
 By transpile time the Go+ checker has **proven** exhaustiveness, must-use, field-completeness,
-`implements`, and `pure`. The generated Go therefore does **not** re-check those — they
+and `implements`. The generated Go therefore does **not** re-check those — they
 constrained *which source was legal*, and re-litigating proven facts only bloats the output.
 But there is a sharp distinction:
 
-- **Static guarantees** (exhaustiveness, `implements`, field-completeness, must-use, `pure`)
+- **Static guarantees** (exhaustiveness, `implements`, field-completeness, must-use)
   → **erased entirely.** They produced no runtime behavior; generated Go simply omits them.
 - **Runtime semantics** (the *value* a `match` produces, `Result`/`?` control flow, `Option`
   branching, runtime `assert`) → **preserved exactly.** They affect what the program *does*.
@@ -954,8 +925,6 @@ Notes:
 - **No-zero-value-surprises** → generates *nothing extra*; the feature only ever rejected
   source. Output is the ordinary struct literal with all fields present. `...defaults` lowers
   to explicit per-field default values so the generated literal is also complete.
-- **`pure`** → erased to a plain `func`. (Later, the backend *may* exploit purity for
-  memoization/reordering/parallelization — an optimization pass, not a codegen requirement.)
 
 ```go
 // type JSONWriter struct implements io.Writer { ... }  ->  (clause stripped, assertion appended)
@@ -1030,7 +999,7 @@ five features, two real pieces of engineering (the closed union + the matching/e
 checker). Errors are unignorable (`Result`-as-whole-return, must-use) with **open-or-closed
 `E` selected by lint policy over one shared mechanism**, made ergonomic by `?`. Additive
 correctness assertions (**explicit `implements`**, strict **no-zero-value** construction,
-runtime **asserts**, lightweight **`pure`**, runnable **doctests**) round out v1. We refuse
+runtime **asserts**, runnable **doctests**) round out v1. We refuse
 novel symbolic syntax, macros, full effect systems, and static verification — anything that's
 slow, evidence-free, or drags the language out of the model's training distribution. A sibling
 language, **goscript**, is an exact semantic subset with a sandbox and an engine, giving a

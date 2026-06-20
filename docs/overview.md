@@ -38,10 +38,10 @@ and watch it become plain, readable Go.
 - **Sum types & exhaustive `match`** — forgetting a case is a compile error, not a wrong answer.
 - **`Result` / `Option` with `?`** — errors and absence are values you can't silently drop.
 - **No accidental zero values** — every struct field is set, or you opt out on purpose.
-- **Checked contracts** — `implements`, `pure`, `assert`, and total struct conversions.
+- **Checked contracts** — `implements`, `assert`, and total struct conversions.
 - **Doctests** — examples in comments become real tests that can't drift from the code.
 
-All twelve features compose, and everything lowers to Go you could have written by
+All eleven features compose, and everything lowers to Go you could have written by
 hand.
 
 **→ Pick a feature on the left to see it live.**

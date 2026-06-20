@@ -89,7 +89,7 @@ Write `features/<NN-name>/TRANSPILE.md` containing:
 - **Lowering rules.** The general algorithm, not just the examples: how payloads map to fields,
   how bindings rewrite to field accesses, what the marker/encoding is, etc.
 - **Erasure vs preservation (§8.0).** State explicitly which parts are **erased** (static
-  guarantees: exhaustiveness, must-use, field-completeness, `implements`, `pure`) and which are
+  guarantees: exhaustiveness, must-use, field-completeness, `implements`) and which are
   **runtime-preserved** (match value, `Result`/`?` control flow, `Option` branching, `assert`).
   Where the checker proves unreachability, emit the **defensive `panic("unreachable: ...")`**
   per the erasure-with-defensive-panic rule — never silent fall-through.
@@ -110,7 +110,7 @@ shared infra; a unified front-end is a later, separate effort.
 
 **Crucial constraint: NO error checking yet.** Assume the input is already well-formed and
 type-correct. Do **not** implement exhaustiveness checking, must-use tracking, field-completeness
-validation, `implements` verification, or `pure` effect-checking. Those are the checker's job and
+validation, or `implements` verification. Those are the checker's job and
 come later. The reference transpiler's only job is: **valid `goal` source for this feature → the
 correct Go from Deliverable B.** If input is malformed, undefined behavior is acceptable.
 

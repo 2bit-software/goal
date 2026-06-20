@@ -1,8 +1,8 @@
-# NEXT-SESSION — the unified front-end is COMPLETE (12/12); next is the checker
+# NEXT-SESSION — the unified front-end is COMPLETE (11/11); next is the checker
 
 The unified front-end is **built and proven**. One pipeline (`internal/pipeline`) transpiles a
-`.goal` program using *any combination* of the 12 features, replacing the 12 standalone reference
-transpilers. All 12 reference example suites pass through it unchanged (regression-locked), and a
+`.goal` program using *any combination* of the 11 features, replacing the standalone reference
+transpilers. All 11 reference example suites pass through it unchanged (regression-locked), and a
 growing `testdata/` of genuinely multi-feature programs — combinations no single reference can
 produce — round-trips to correct, **independently-compiling** Go.
 
@@ -26,7 +26,7 @@ goal/
 ```
 
 ### Pass order (`pipeline.Passes`)
-`pure → implements → defaults → result → option → question → closed → derive → assert → match → enums`,
+`implements → defaults → result → option → question → closed → derive → assert → match → enums`,
 then **format once**. Doctests run separately on the *original* source (Output.Test).
 
 ### The design rules that held (do not regress)
@@ -48,7 +48,7 @@ then **format once**. Doctests run separately on the *original* source (Output.T
 ### Composition bugs found & fixed (regression cases exist for each)
 - `match` passes greedily claimed every match → gated by qualifier + mode.
 - `__gop_some` (Option box) vs `__gop_o` (`?`-Option temp) must stay distinct.
-- doctest extraction missed `pure func`/`from func`/`derive func` → strips the modifier first.
+- doctest extraction missed `from func`/`derive func` → strips the modifier first.
 - open-E and closed-E Result in the SAME file → mode partition (see `testdata/open_closed_mix.goal`).
 
 ---
@@ -70,7 +70,7 @@ keeps the "located error, not silent footgun" discipline (it defers what it cann
 no diagnostics. The checker is where the thesis lands:
 
 - exhaustiveness (02 match), must-use (03 Result), field-completeness (08), `implements` satisfaction (07),
-  `pure` effect-freedom (09), static asserts (10), conversion completeness / registry totality (12),
+  static asserts (10), conversion completeness / registry totality (12),
   closedness & From-totality (06).
 - Pairs with codegen's erasure-with-defensive-`panic` (§8.0): today every pass lowers proven-valid input;
   the checker is what *proves* it, turning UB-on-malformed-input into located compile errors.
@@ -89,7 +89,7 @@ must-use (03) and conversion totality (12).
 ---
 
 ## Governing files
-- `TODO.md` — all 12 boxes checked (per-feature artifact pointers).
+- `TODO.md` — 11 live boxes checked; 09-pure cut (per-feature artifact pointers).
 - `DECISIONS.md` — the choice/assumption/refusal ledger, §01–§12.
 - `goal-design-spec.md` — **read-only**, covers 01–11.
 - `FEATURE-AUDIT-PROMPT.md` — the completed per-feature loop (for any *future* feature).
@@ -97,5 +97,6 @@ must-use (03) and conversion totality (12).
 ## Housekeeping
 - No `.sentrux/`; not indexed in codebase-memory-mcp. Offer to set up once if you touch much code.
 - Commits on `main`. Use `mcp__zombiekit__git` + `/commit-message`; stage only the turn's artifacts.
-- The 12 standalone `features/NN/transpiler/` reference transpilers still build and are the source of
+- The 11 standalone `features/NN/transpiler/` reference transpilers still build and are the source of
   truth for each feature's lowering; the unified front-end reuses their logic, re-keyed by name.
+  (Cut features are frozen under `features/_cut/` and are not part of the build.)

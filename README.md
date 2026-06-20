@@ -44,7 +44,7 @@ go build -o bin/goalc ./cmd/goalc
 The output is gofmt-formatted Go. Pipe it to a `.go` file in a real package and it
 compiles as-is.
 
-## The 12 features
+## The 11 features
 
 Each transpiles to idiomatic Go; the static *guarantee* behind each is the job of the
 checker (not yet built — see [Status](#status)).
@@ -59,7 +59,6 @@ checker (not yet built — see [Status](#status)).
 | 06 | Result (closed-E) | `Result[T, MyErr]` | generic sum `Ok[T,E]`/`Err[T,E]` + From-conversion |
 | 07 | implements | `type T struct implements I { … }` | compile-time assertion `var _ I = T{}` |
 | 08 | no-zero-value | `T{a: x, ...defaults}` | explicit per-field zero expansion |
-| 09 | pure | `pure func f()` | plain `func` (marker erased) |
 | 10 | assert | `assert cond, "msg", args` | runtime `if !(cond) { panic(...) }` |
 | 11 | doctests | `/// >>> f(2)` / `/// 4` | a generated `_test.go` |
 | 12 | derive-convert | `derive func g(s S) T` | field-by-field conversion via a `from func` registry |
@@ -67,12 +66,12 @@ checker (not yet built — see [Status](#status)).
 Locked conventions (see `DECISIONS.md`): qualified construction (`Status.Active(…)`,
 `Result.Ok`, `Option.Some`), brace-named payloads, newline-separated variants/arms,
 conventional names verbatim (`Ok`/`Err`/`Some`/`None`/`=>`/`_`/`?`), modifiers before
-`func` (`from`/`pure`/`derive`), and `__gop_`-prefixed synthesized temporaries.
+`func` (`from`/`derive`), and `__gop_`-prefixed synthesized temporaries.
 
 ## The unified front-end
 
 `cmd/goalc` drives one pipeline that transpiles a program using **any combination** of
-the 12 features — there is no per-feature tool to pick. The pipeline is an ordered list
+the 11 features — there is no per-feature tool to pick. The pipeline is an ordered list
 of source→source passes; the driver threads the source string through them and formats
 **once** at the end.
 
@@ -88,13 +87,14 @@ internal/
   pipeline/   ordered Passes + driver; returns Output{Go, Test}
 cmd/goalc/    the CLI
 testdata/     multi-feature .goal/.go.expected programs (the real proof)
-features/     the 12 standalone reference transpilers — per-feature source of truth
+features/     the 11 standalone reference transpilers — per-feature source of truth
+                (audited-but-cut features are frozen under features/_cut/)
 ```
 
 Pass order:
 
 ```
-pure → implements → defaults → result → option → question → closed → derive → assert → match → enums
+implements → defaults → result → option → question → closed → derive → assert → match → enums
 ```
 
 then format once. Doctests are extracted from the original source as a side output.
@@ -127,14 +127,14 @@ produce that; the unified pipeline does (`testdata/open_closed_mix.goal`).
 
 ## Status
 
-**Front-end: complete.** All 12 features compose. Every reference example and a suite of
+**Front-end: complete.** All 11 features compose. Every reference example and a suite of
 multi-feature `testdata/` programs round-trip to correct, independently-compiling Go.
 
 **Checker: not started** — the next major workstream. The front-end lowers proven-valid
 input and *defers* (with a located error) anything it cannot resolve, but it emits no
 static diagnostics yet. The checker is where each feature's guarantee lands:
 exhaustiveness (02), must-use (03), field-completeness (08), `implements` satisfaction
-(07), `pure` effect-freedom (09), static asserts (10), conversion totality (12),
+(07), static asserts (10), conversion totality (12),
 closedness & From-totality (06). See `NEXT-SESSION.md`.
 
 ## Tests

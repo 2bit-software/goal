@@ -65,11 +65,11 @@ Entry kinds:
 ### TODO ordered by the closed sum-type dependency spine
 - **Kind:** decision
 - **Chose:** enums → match → Result → Option → `?` → closed-`E` → implements → no-zero-value →
-  pure → assert → doctests.
+  assert → doctests.
 - **Over:** following the spec's section order, or grouping by tier.
 - **Why:** the sum-type encoding (§2/§8.1) is the spine every error-catching feature reuses, so it
   must be pinned first; `match` needs enums; `Result`/`Option` need both; `?` needs them. Additive
-  features (implements, pure, assert, doctests) have no deps and sort after.
+  features (implements, assert, doctests) have no deps and sort after.
 
 ---
 
@@ -439,7 +439,8 @@ Entry kinds:
 - **Over:** a dedicated `from Src to Dst { ... }` block (more novel); an unmarked function discovered
   by signature (zero syntax but implicit/magic and ambiguous if multiple match).
 - **Why:** user chose via AskUserQuestion, weighing "obvious / not too foreign / explicit." The
-  modifier is the same shape as `pure func` (feature 09), so it's consistent and Go-shaped; the
+  modifier sits in the established modifier-before-`func` slot (shared with `derive func`), so it's
+  consistent and Go-shaped; the
   marker keeps it explicit (the conversion `?` reaches for is on the page), and `from` lands on
   Rust's `From`. The dedicated block was refused as the most foreign; signature-discovery refused as
   implicit/ambiguous. Open-E `?` needs no conversion — same `?` mechanism, with/without a conversion
@@ -565,38 +566,28 @@ Entry kinds:
 
 ---
 
-## 09-pure — lightweight `pure` annotation
+## 09-pure — CUT (not in v1)
 
-### No syntax question raised — `pure func` inherited from spec + the `from func` precedent
-- **Kind:** decision
-- **Chose:** use `pure func` (modifier before `func`) as given by §4.2, without raising an
-  `AskUserQuestion`.
-- **Over:** opening a syntax question (e.g. an attribute/annotation form like `@pure`, a trailing
-  marker, or a doc-comment directive).
-- **Why:** the spelling is fixed by the §4.2 sample and is identical in shape to feature 06's
-  `from func` modifier — the "modifier-before-`func`" slot is already a settled convention.
-  `pure` is not a §9 open question. Re-asking would re-litigate a settled choice (same reasoning as
-  07-implements reusing `implements X for T`). The feature owns no construction/control-flow surface.
-
-### `pure` is pure erasure — strip the modifier, emit a plain `func`
-- **Kind:** decision
-- **Chose:** lower `pure func …` to `func …` (delete the `pure ` prefix), passing the body and
-  everything else through verbatim. Same span-splice technique as 06's `from` stripping.
-- **Over:** emitting any marker/annotation in the Go output (e.g. a `//go:` directive or a wrapper).
-- **Why:** §8.5 says `pure` is "erased to a plain `func`." Go has no runtime notion of purity, the
-  guarantee is checked upstream, and the optional purity-exploiting optimizations (memoization /
-  reordering / parallelization) are a later backend pass, not a codegen requirement.
-
-### Effect verification and purity exploitation are out of scope (checker / later backend)
-- **Kind:** assumption
-- **Chose:** the reference transpiler does NOT verify that a `pure` body is effect-free, and does NOT
-  exploit purity for optimization. `pure` is matched only when directly before `func` (contextual
-  keyword); elsewhere it is an ordinary identifier, untouched.
-- **Over:** defining a conservative v1 "effect" set and checking it here.
-- **Why:** the audit's NO-checking-yet constraint puts effect verification in the checker workstream
-  (§4.2 "checker verifies the absence of effects… keep the definition simple and conservative");
-  optimization is the deferred backend pass (§8.5). The reference transpiler's only job is valid
-  goal → correct Go.
+### `pure` removed from the v1 surface — the value is gated on a deferred optimizer, and the cheap version lies
+- **Kind:** decision (reversal of the earlier "adopt `pure func`" decisions)
+- **Chose:** remove `pure` entirely — delete the live pass, drop it from the pipeline/docs/playground,
+  and **move the full feature (spec, spike transpiler, examples) intact to `features/_cut/09-pure/`**
+  (a new convention for audited-but-cut work). Feature 09's number stays vacant; nothing is renumbered.
+- **Over:** keeping the erase-only marker; or building a real effect checker now.
+- **Why:** an audit of how purity *checking* would actually work found a dead end on this architecture:
+  - §4.2 deferred the entire definition of "effect" to a checker that was never built — there was no
+    rule to implement.
+  - The transpiler is a token recognizer with no type/scope/escape/cross-package analysis, so it
+    cannot distinguish local mutation from aliased mutation, resolve a call's target package, or see
+    through interface dispatch. **Sound** purity checking is not buildable on it.
+  - "Cheap" and "sound" are mutually exclusive: a cheap syntactic denylist is unsound (a guarantee
+    that lies — worse than nothing, since readers/models trust it); a sound check needs a real parse
+    pass, a value-only-parameter restriction, **and** a maintained per-Go-release FFI purity manifest.
+  - The only concrete payoff — auto-parallelization / memoization (§8.5) — was already "not v1," so
+    cost and benefit were both deferred and bound to the expensive version. The residual
+    documentation value is marginal (an LLM already infers leaf-function purity).
+- **Revisit:** reconsider **together with** the §8.5 optimizer — the only consumer that turns purity
+  into real value. Full rationale + preserved spike: `features/_cut/README.md`.
 
 ---
 
@@ -727,7 +718,7 @@ Entry kinds:
 - **Over (Q1):** bodyless `from func` (no body ⇒ derive — implicit, collides with leaf bodies);
   `convert A to B as name` (non-func-shaped statement).
 - **Over (Q2):** a clause block (`ignore`/`from`/`=`).
-- **Why:** user-selected via `AskUserQuestion`. `derive func` parallels the `from func`/`pure func`
+- **Why:** user-selected via `AskUserQuestion`. `derive func` parallels the `from func`
   modifier convention and is distinct from a bodied leaf; `...derive` is the exact parallel of
   feature 08's `...defaults` (deriving IS complete construction), and `_` reuses goal's skip marker.
   **Reconciliation:** the two picks (bodyless decl vs partial literal) are the same construct at two

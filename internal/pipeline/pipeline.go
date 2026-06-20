@@ -25,21 +25,19 @@ type Pass struct {
 
 // Passes is the ordered front-end pipeline.
 //
-//  1. Pure       — strip the `pure func` modifier.
-//  2. Implements  — strip a struct's inline `implements` clause, emitting a compile-time
+//  1. Implements  — strip a struct's inline `implements` clause, emitting a compile-time
 //     assertion per ordinary interface and a marker method per sealed interface.
-//  3. Defaults    — `...defaults` -> explicit per-field zero values.
-//  4. Result      — Result[T, error] signatures, Ok/Err returns, statement match.
-//  5. Option      — Option[T] -> *T, Some/None returns, statement match.
-//  6. Question     — open-E `?` / Option `?` (closed-E `?` is skipped for pass 7).
-//  7. ResultClosed — closed-E Result: sum constructors, `match`, `?`, From-conversion.
-//  8. Derive       — `from func` strip + `derive func` field-by-field expansion.
-//  9. Assert       — `assert` -> runtime `if !(cond) { panic(...) }`.
+//  2. Defaults    — `...defaults` -> explicit per-field zero values.
+//  3. Result      — Result[T, error] signatures, Ok/Err returns, statement match.
+//  4. Option      — Option[T] -> *T, Some/None returns, statement match.
+//  5. Question     — open-E `?` / Option `?` (closed-E `?` is skipped for pass 6).
+//  6. ResultClosed — closed-E Result: sum constructors, `match`, `?`, From-conversion.
+//  7. Derive       — `from func` strip + `derive func` field-by-field expansion.
+//  8. Assert       — `assert` -> runtime `if !(cond) { panic(...) }`.
+//  9. Match        — enum `match` -> type-switch over the §8.1 encoding.
+// 10. Enums        — enum/sealed declarations -> encoding, variant constructions.
 //
-// 10. Match        — enum `match` -> type-switch over the §8.1 encoding.
-// 11. Enums        — enum/sealed declarations -> encoding, variant constructions.
-//
-// The independent declaration/statement transforms (1-3, 7) touch disjoint
+// The independent declaration/statement transforms (1-2, 6) touch disjoint
 // constructs and could run anywhere; they are grouped to mirror the spec's pass
 // order. Match precedes Enums: a variant construction and an enum match pattern share
 // the surface `Enum.Variant(...)`, so the match pass must consume the patterns before
@@ -48,7 +46,6 @@ type Pass struct {
 // sealed interface declaration itself is still emitted by Enums, so the two passes'
 // order relative to each other does not matter.
 var Passes = []Pass{
-	{Name: "pure", Run: pass.Pure},
 	{Name: "implements", Run: pass.Implements},
 	{Name: "defaults", Run: pass.Defaults},
 	{Name: "result", Run: pass.Result},

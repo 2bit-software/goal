@@ -33,7 +33,7 @@ enum State {
     Running { pid: int }
 }
 
-pure func square(x int) int {
+func square(x int) int {
     return x * x
 }
 

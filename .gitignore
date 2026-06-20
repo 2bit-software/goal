@@ -5,6 +5,7 @@
 /bin/
 # Compiled reference transpilers (rebuild with `go build` in each dir)
 features/*/transpiler/transpiler
+features/_cut/*/transpiler/transpiler
 
 # Editor / OS
 .DS_Store

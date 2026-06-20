@@ -5,7 +5,7 @@ Governing contract: §8.6 (runtime-preserved features) and §8.0.
 ## Erasure vs preservation (§8.0)
 
 - **Runtime-preserved:** the assert check itself. Unlike the erased static guarantees (exhaustiveness,
-  `implements`, `pure`, field-completeness), an `assert` has **runtime semantics** — it must still
+  `implements`, field-completeness), an `assert` has **runtime semantics** — it must still
   panic on failure in the generated Go. So it lowers to a real `if !(cond) { panic(...) }` (§8.6),
   not to nothing.
 - **Located feedback preserved into runtime:** the panic message carries the **source expression

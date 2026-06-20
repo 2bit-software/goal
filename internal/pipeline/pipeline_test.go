@@ -62,7 +62,6 @@ func TestSingleFeatureRegression(t *testing.T) {
 		filepath.Join("..", "..", "features", "06-error-e", "examples"),
 		filepath.Join("..", "..", "features", "07-implements", "examples"),
 		filepath.Join("..", "..", "features", "08-no-zero-value", "examples"),
-		filepath.Join("..", "..", "features", "09-pure", "examples"),
 		filepath.Join("..", "..", "features", "10-assert", "examples"),
 		filepath.Join("..", "..", "features", "12-derive-convert", "examples"),
 	}

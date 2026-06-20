@@ -21,7 +21,7 @@ its keep.
 >   forces divergence, land on another widely-seen idiom (Rust/Swift/Scala/TS) rather
 >   than inventing novel syntax.
 
-> **Front-end status: complete.** All 12 features compose, and every snippet here
+> **Front-end status: complete.** All 11 features compose, and every snippet here
 > round-trips to independently-compiling Go (the `.go.expected` golden files in
 > `features/*/examples/` and `testdata/` are generated *from* the tool and verified to
 > compile). The **checker** — which turns each guarantee below into a static diagnostic
@@ -42,10 +42,10 @@ goal→Go pair ready to drop into an editor.
 - **Errors & absence:** [Result (open-E)](#03-result-open-e) · [Option](#04-option) ·
   [`?` propagation](#05--propagation) · [Result (closed-E)](#06-result-closed-e)
 - **Contracts on types:** [implements](#07-implements) ·
-  [No zero value](#08-no-zero-value) · [pure](#09-pure)
+  [No zero value](#08-no-zero-value)
 - **Runtime & test feedback:** [assert](#10-assert) · [Doctests](#11-doctests) ·
   [derive-convert](#12-derive-convert)
-- **Composition:** [All twelve in one file](#composition-all-twelve-in-one-file)
+- **Composition:** [All eleven in one file](#composition-all-eleven-in-one-file)
 
 | # | Feature | Surface | Lowers to |
 |---|---------|---------|-----------|
@@ -57,7 +57,6 @@ goal→Go pair ready to drop into an editor.
 | 06 | [Result (closed-E)](#06-result-closed-e) | `Result[T, MyErr]` | generic sum `Ok[T,E]`/`Err[T,E]` + From-conversion |
 | 07 | [implements](#07-implements) | `type T struct implements I { … }` | compile-time assertion `var _ I = T{}` |
 | 08 | [no-zero-value](#08-no-zero-value) | `T{a: x, ...defaults}` | explicit per-field zero expansion |
-| 09 | [pure](#09-pure) | `pure func f()` | plain `func` (marker erased) |
 | 10 | [assert](#10-assert) | `assert cond, "msg", args` | runtime `if !(cond) { panic(...) }` |
 | 11 | [doctests](#11-doctests) | `/// >>> f(2)` / `/// 4` | a generated `_test.go` |
 | 12 | [derive-convert](#12-derive-convert) | `derive func g(s S) T` | field-by-field conversion via a `from func` registry |
@@ -554,7 +553,7 @@ func handle(input string) {
 `Err[T,E]` cases. `match` becomes a type switch with a defensive panic default; `?`
 becomes type-switch-and-return, inserting a `from func` conversion in the `Err` arm when
 error types differ. (Open-E and closed-E can coexist in one file — see
-[composition](#composition-all-twelve-in-one-file).)
+[composition](#composition-all-eleven-in-one-file).)
 
 ---
 
@@ -688,52 +687,6 @@ func newAdmin() User {
 **Lowers to:** a complete literal passes through verbatim; a `...defaults` literal
 expands to explicit per-field zero values (e.g. `User{name: name, role: 0, active: false}`).
 The guarantee is a checker concern — the emitted Go is ordinary.
-
-## 09. pure
-
-A `pure` modifier immediately before `func` marks a function (or method) as
-side-effect-free; the checker verifies the body does no I/O or mutation. It's a
-contextual keyword — an ordinary identifier elsewhere.
-
-```goal
-pure func square(x int) int { return x * x }
-pure func (v Vec) Dot(o Vec) float64 { ... }
-```
-
-**Unlocks:** a silent assumption ("this is pure") becomes a checkable, located error. An
-annotated function that performs I/O or mutation is rejected at its declaration, not
-left to chance.
-
-**Goal:** a lightweight, opt-in purity marker (not a granular effect system) — spend a
-little annotation only where purity matters, and have the body checked against it.
-
-```goal name=square.goal
-package mathx
-
-// square has no side effects; the `pure` marker is checked by the goal checker
-// and then erased — the emitted Go is a plain func.
-pure func square(x int) int {
-	return x * x
-}
-```
-
-Transpiles to:
-
-```go
-package mathx
-
-// square has no side effects; the `pure` marker is checked by the goal checker
-// and then erased — the emitted Go is a plain func.
-func square(x int) int {
-	return x * x
-}
-```
-
-**Lowers to:** a plain `func` — the marker is checked, then erased. (Governing rule:
-*checks erased, guarantees compiled in* — the static guarantee lives in the checker, the
-runtime is unchanged.)
-
----
 
 # Runtime & test feedback
 
@@ -926,12 +879,12 @@ fields.
 
 ---
 
-# Composition: all twelve in one file
+# Composition: all eleven in one file
 
 The headline claim is that the features **compose** — there's one front-end pipeline,
-not twelve tools, and any combination transpiles in a single pass. This program uses
+not eleven tools, and any combination transpiles in a single pass. This program uses
 enums, match, Result (open-E), `?`, implements (both a sealed-interface marker and a
-plain assertion), no-zero-value `...defaults`, pure, and assert together:
+plain assertion), no-zero-value `...defaults`, and assert together:
 
 ```goal name=kitchen_sink.goal
 package app
@@ -969,7 +922,7 @@ enum State {
     Running { pid: int }
 }
 
-pure func square(x int) int {
+func square(x int) int {
     return x * x
 }
 

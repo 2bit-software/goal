@@ -43,8 +43,9 @@ match parse(input) {
 ### 1.1 `From`-conversion for `?` across mismatched error enums
 
 When `?` propagates a callee's error enum into a function whose error type differs, the conversion
-is a **`from func`** — an ordinary function marked with a `from` modifier (the same modifier shape
-as `pure func`, feature 09). `?` auto-invokes it, resolved by its `(Src) → Dst` signature:
+is a **`from func`** — an ordinary function marked with a `from` modifier (the same
+modifier-before-`func` slot used by `derive func`, feature 12). `?` auto-invokes it, resolved by
+its `(Src) → Dst` signature:
 
 ```goal
 enum AppError {
@@ -124,7 +125,7 @@ func load(s string) Result[Config, AppError] {
 |---|---|---|---|
 | Closed `E` = an `enum` as the `Result` error type | Rust/Swift typed errors; reuses goal's own enum | "the failure set is invisible / unmatchable" → visible in the signature, exhaustively matched | None new — it's `enum` + `Result`, both already pinned |
 | One mechanism, one knob (open↔closed = `E` only) | — | keeps `Result`/`match`/`?`/must-use identical so lint-as-policy works (§3.3) | None — *refuses* to add a second error system |
-| `from func` modifier for conversion | Rust `From`; goal's own `pure func` modifier | "`?` can't bridge mismatched typed errors" → an explicit, visible conversion `?` applies | Small: one `from` keyword, erasing, on an ordinary func |
+| `from func` modifier for conversion | Rust `From`; goal's own modifier-before-`func` slot (`derive func`) | "`?` can't bridge mismatched typed errors" → an explicit, visible conversion `?` applies | Small: one `from` keyword, erasing, on an ordinary func |
 
 `Ok`/`Err`, `=>`, `?` are kept verbatim (§7).
 

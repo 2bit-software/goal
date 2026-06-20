@@ -130,8 +130,9 @@ Per-feature deliverables (every item):
   - Note: lint-level open-vs-closed *policy* is not a transpile concern; only the two lowerings are.
   - **Done:** `features/06-error-e/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Closed `E`
     is just an `enum` used as the `Result` error type — **no new construction/match/`?` syntax** (the
-    one-knob constraint). Resolved §9: the `From`-conversion is a **`from func`** modifier (same shape
-    as `pure func`; `?` auto-invokes it by `(Src)→Dst` signature; `from` erases). Lowering is the
+    one-knob constraint). Resolved §9: the `From`-conversion is a **`from func`** modifier (in the
+    established modifier-before-`func` slot; `?` auto-invokes it by `(Src)→Dst` signature; `from`
+    erases). Lowering is the
     §8.1 **sum encoding** (injected generic `Result[T,E any]` + `Ok`/`Err`): construction →
     `Ok[T,E]{Value: …}`/`Err[T,E]{…}`, `match` → type-switch with defensive panic default, `?` →
     type-switch-and-return with the `from func` call in the `Err` arm when caller/callee error types
@@ -179,19 +180,10 @@ Per-feature deliverables (every item):
 
 ## Tier 1.5 / Tier 2 — supporting
 
-- [x] **09-pure** — Lightweight `pure` annotation
-  - Spec: §4.2, codegen §8.5
-  - Deps: none (additive)
-  - Nail down: `pure func ...` marker. *Not* a granular effect system.
-  - Transpile to: **erased** to a plain `func` (§8.5). The reference transpiler strips the `pure`
-    keyword; it does **not** check for effects (checker's job).
-  - **Done:** `features/09-pure/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. **No syntax
-    question** — `pure func` is given by §4.2 and inherits the settled `[modifier] func` slot from
-    06's `from func`; not a §9 item (confirmed & proceeded, like 07). Pure **erasure**: strip the
-    `pure ` prefix before `func` (free funcs and methods) via the same span-splice as 06's `from`
-    stripping; everything else passes through verbatim. Contextual keyword — only matched directly
-    before `func`. Does **not** verify effects or exploit purity (checker / later backend). `go test
-    ./...` passes (3/3) and all three generated packages compile + `go vet` clean.
+- [~] **09-pure** — CUT (not in v1). Removed from the surface; the spike is frozen under
+  `features/_cut/09-pure/`. Rationale: "cheap" and soundly-checkable are mutually exclusive on this
+  architecture, and the only concrete payoff (§8.5 optimizer) is deferred. Revisit with that
+  optimizer. See `features/_cut/README.md` and DECISIONS.md §09-pure.
 
 - [x] **10-assert** — Runtime asserts
   - Spec: §4.3, codegen §8.6

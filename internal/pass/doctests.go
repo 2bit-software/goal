@@ -110,16 +110,15 @@ func docContent(line string) string {
 
 // funcNameBelow returns the name of the free function declared at the next non-blank
 // line at or after idx, or "" if that line is not a `func NAME(`. A leading
-// declaration modifier (`pure`/`from`/`derive func`) is stripped first, so doctests
-// attach to modifier-prefixed functions too — a composition the standalone feature
-// never saw.
+// declaration modifier (`from`/`derive func`) is stripped first, so doctests attach to
+// modifier-prefixed functions too — a composition the standalone feature never saw.
 func funcNameBelow(lines []string, idx int) string {
 	for ; idx < len(lines); idx++ {
 		t := strings.TrimSpace(lines[idx])
 		if t == "" {
 			continue
 		}
-		for _, mod := range []string{"pure ", "from ", "derive "} {
+		for _, mod := range []string{"from ", "derive "} {
 			if after, ok := strings.CutPrefix(t, mod); ok {
 				t = strings.TrimSpace(after)
 				break
