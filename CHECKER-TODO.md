@@ -50,7 +50,7 @@ Order is by self-containment / value: the most local, inference-free guarantees 
     Note: payload-binding arms (`Active(a)`) are lexically a variant construction and trip the
     08-fields check under the shared harness, so testdata uses data-less variants. See `DECISIONS.md` §02.
 
-- [ ] **07-implements** — interface satisfaction
+- [x] **07-implements** — interface satisfaction
   - Slot: `internal/check/implements.go` (`checkImplements`). Testdata: `testdata/check/07-implements/`.
   - Guarantee: `type T struct implements I` — T has every method I declares, signatures
     matching; a missing/mismatched method is an **Error**. (Sealed I = marker, trivially met.)
@@ -58,6 +58,17 @@ Order is by self-containment / value: the most local, inference-free guarantees 
   - Reuse: implements pass clause-locator; `Tables.Sealed`. **Likely needs a method index
     added to `analyze.Tables`** — add it; record in `DECISIONS.md`.
   - Deps: none. Defer: signature equality ambiguous across aliases/embedding → Warning.
+  - **Done:** covers in-file, non-sealed interfaces — Error `unimplemented-method` (method absent)
+    and `method-signature-mismatch` (name present, normalized signature differs), located at the
+    `implements` clause; value- and pointer-receiver methods both count; in-file embedded interfaces
+    are folded into the obligation. Sealed interfaces (feature 01) are trivially met → skipped.
+    Deferred (located Warning, `unresolved-interface`): a qualified (`io.Writer`) interface, an
+    interface not declared in this file, or one embedding such — method set unreadable lexically.
+    **`analyze.Tables` extended** with a method index: `Interfaces` (iface → methods),
+    `EmbeddedIfaces` (iface → embedded names), `Methods` (type → methods); signatures normalized
+    (param names + whitespace stripped) for equality. Residual: alias-equal-but-differently-spelled
+    signatures could false-mismatch in principle — needs `go/types`; the in-file cases here don't hit
+    it and cross-package cases are deferred. See `DECISIONS.md` §07 (checker).
 
 - [ ] **06-error-e** — closedness & From-totality
   - Slot: `internal/check/closed.go` (`checkClosed`). Testdata: `testdata/check/06-error-e/`.

@@ -935,3 +935,79 @@ Entry kinds:
   work. Verified: root `go test ./...` green (pipeline transpiles + compiles `kitchen_sink`), both
   feature-01 and feature-07 reference transpiler suites green, examples/expected regenerated, no
   `implements … for` remains in any `.goal` or surface doc.
+
+### Checker (`internal/check/implements.go`) — interface-satisfaction defer-boundary
+- **Kind:** decision
+- **Chose:** the implements check fires when a `type T struct implements I {…}` clause names an
+  **in-file, non-sealed** interface `I`. For every method `I` declares (folding in any in-file
+  embedded interface's methods), it looks up `T`'s declared methods (`analyze.Tables.Methods[T]`)
+  and emits an Error — `unimplemented-method` when the method name is absent, or
+  `method-signature-mismatch` when the name is present but the normalized signature differs. The
+  error is **located at the `implements` clause** (the `implements` token's offset), mirroring
+  goal's declaration-site contract. The clause locator (the `type T struct … implements … {` scan
+  and the comma-split of the interface list) is lifted verbatim from `internal/pass/implements.go`.
+- **Over:** locating the error at the missing method's would-be site (there is none) or at the call
+  site (a distant, structural-satisfaction location goal exists to replace); over chasing
+  out-of-package interface method sets (not lexically readable).
+- **Why:** the clause is exactly where the author asserted the contract, so it is where an unmet
+  contract should be reported — that *is* the feature (convert "satisfied invisibly / a wrong
+  signature surfaces far away" into a located declaration-site error, §3.4/§8.5). Both value- and
+  pointer-receiver methods of `T` contribute to the obligation's method set (a `var _ I = (*T)(nil)`
+  assertion sees `*T`'s full set), so the check keys methods by receiver type stripped of `*`.
+
+### Defer-boundary: qualified / out-of-file / out-of-file-embedded interface → Warning; sealed → trivially met
+- **Kind:** decision
+- **Chose:** four non-Error outcomes. (a) A **sealed** interface (`analyze.Tables.Sealed[I]`,
+  feature 01) is satisfied by the unexported marker method the implements pass synthesizes — it is
+  trivially met and **skipped silently**, never flagged. (b) A **qualified** interface (`io.Writer`)
+  is from another package — its method set is unreadable in-file, so emit a located **Warning**
+  (`unresolved-interface`, "interface-satisfaction deferred"). (c) An interface **not declared in
+  this file** is likewise deferred with that Warning. (d) An interface that **embeds** a qualified or
+  out-of-file interface makes the full obligation unknown — deferred (folding in a partial set could
+  miss a method and yield a false "satisfied", so the whole obligation defers).
+- **Over:** assuming an out-of-package interface is satisfied (a false guarantee), or flagging a
+  sealed interface as missing its (synthesized, source-invisible) marker method (a false Error on
+  every feature-01 enum variant).
+- **Why:** "defer, never guess" (checker contract) — a false "implements" on an unresolvable
+  interface is worse than an honest deferral. The qualified/external/embedded boundaries are exactly
+  the lexical ceiling: without the imported package's source, the method set cannot be read, and the
+  slot doc names this as the defer-boundary. Sealed-skip mirrors how the lowering pass treats sealed
+  vs ordinary interfaces in one clause.
+
+### `analyze.Tables` extension — method index (`Interfaces`, `EmbeddedIfaces`, `Methods`)
+- **Kind:** decision
+- **Chose:** extend `analyze.Tables` with three name-keyed, read-only tables built once in `Build`:
+  `Interfaces` (in-file interface name → its declared methods, each a `Method{Name, Sig, Raw}`),
+  `EmbeddedIfaces` (interface name → embedded interface names), and `Methods` (concrete type name →
+  its declared methods). A `Method.Sig` is a **normalized signature** — the parameter and result
+  *type* sequences with parameter names and whitespace stripped (`(p []byte) (int, error)` →
+  `[]byte|int,error`), so an interface obligation and a concrete method compare by structural
+  equality; `Raw` keeps the original text for the diagnostic message.
+- **Over:** re-scanning interfaces and methods inside the check (duplicating analysis the slot doc
+  said to put in the tables), or comparing raw signature text (whitespace/param-name differences
+  would yield false mismatches).
+- **Why:** the slot doc explicitly licenses (and predicts) a method index on `analyze.Tables` for
+  this guarantee — it is a fact the existing tables didn't carry. Building it once, keyed by name,
+  matches the package's discipline (survives re-lexing, read-only to checks). The `interface`
+  branch of `analyzeTypeDecls` already located the interface body, so populating `Interfaces` there
+  is minimal; a new `analyzeMethods` scan mirrors the implements pass's `scanPointerReceivers`
+  receiver-walk to index concrete methods.
+
+### File-layout / `Code` scheme + signature-equality limitation
+- **Kind:** assumption
+- **Chose:** `Feature` = `"07-implements"`; codes `unimplemented-method` and
+  `method-signature-mismatch` (Errors), `unresolved-interface` (deferral Warning). Signature
+  equality is **textual after normalization** (drop param names, collapse whitespace) — it does
+  **not** resolve type aliases or otherwise-spelled-but-equal types. So the check only asserts a
+  mismatch when a method of the **same name** has a **different normalized signature** (the common,
+  lexically-decidable case); it never tries to prove two differently-spelled types unequal beyond
+  that normalization. A genuinely-equal-but-differently-spelled signature (via an alias) could in
+  principle surface as a false mismatch — the slot doc's named alias/embedding ambiguity — but the
+  in-file cases this check fires on (both sides spelled against the same file's types) do not hit it;
+  the unreadable cross-package cases are already deferred. Testdata uses data-less / primitive
+  method signatures so no struct literal trips the 08-fields check under the shared harness.
+- **Over:** no naming scheme was fixed by the spec; full type-aware signature comparison needs the
+  later `go/types` workstream and is out of scope for this lexical iteration.
+- **Why:** stable greppable codes per the slot doc; normalization handles the real friction
+  (parameter-name and spacing differences between an interface decl and a method decl) without a type
+  system, and the residual alias ambiguity is the documented lexical ceiling — deferred, not guessed.

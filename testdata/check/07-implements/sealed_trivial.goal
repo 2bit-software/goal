@@ -1,0 +1,11 @@
+package shapes
+
+// Shape is a sealed interface (feature 01). Its only obligation is the unexported marker
+// method the implements pass synthesizes, so Circle satisfies it by construction with no
+// user method at all. The check must treat a sealed interface as trivially met — NOT a
+// missing-method error. Clean case, no markers.
+sealed interface Shape {}
+
+type Circle struct implements Shape {
+	r float64
+}

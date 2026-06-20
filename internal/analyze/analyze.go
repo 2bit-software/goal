@@ -86,6 +86,20 @@ type Tables struct {
 	// converts between them. Read by the closed-E pass for the `?` From-conversion
 	// (error types) and by the derive pass for field-by-field conversion (any types).
 	FromRegistry map[[2]string]ConvEntry
+	// Interfaces maps an in-file `type I interface { … }` name to its declared method
+	// set (name + normalized signature). Read by the implements check (feature 07) to
+	// know what an `implements I` clause obligates. Empty for a marker (sealed)
+	// interface. Embedded interfaces are recorded under EmbeddedIfaces.
+	Interfaces map[string][]Method
+	// EmbeddedIfaces maps an in-file interface name to the interface names it embeds
+	// (a bare type name on its own line inside the body, e.g. `io.Reader`). The
+	// implements check folds an in-file embedded interface's methods into the
+	// obligation and defers when an embedded interface is not resolvable in-file.
+	EmbeddedIfaces map[string][]string
+	// Methods maps a concrete type name to the methods declared on it in this file
+	// (value- and pointer-receiver alike), name + normalized signature. Read by the
+	// implements check to decide whether a type satisfies an interface's obligation.
+	Methods map[string][]Method
 }
 
 // ConvEntry is one `from func` conversion: its name and whether it is fallible (the
@@ -93,6 +107,17 @@ type Tables struct {
 type ConvEntry struct {
 	Name     string
 	Fallible bool
+}
+
+// Method is one method of an interface or a concrete type: its name plus a normalized
+// signature (the parameter and result *type* lists with parameter names and whitespace
+// stripped) so an interface obligation and a concrete method can be compared for
+// equality. Sig is the canonical text `(paramTypes) resultTypes`; Raw keeps the
+// original parameter+result text for diagnostics.
+type Method struct {
+	Name string
+	Sig  string
+	Raw  string
 }
 
 // Build analyzes the original source and returns the populated tables.
@@ -105,6 +130,9 @@ func Build(src string) *Tables {
 		Structs:        map[string][]Field{},
 		TypeDecls:      map[string]string{},
 		FromRegistry:   map[[2]string]ConvEntry{},
+		Interfaces:     map[string][]Method{},
+		EmbeddedIfaces: map[string][]string{},
+		Methods:        map[string][]Method{},
 	}
 	for _, f := range scan.ScanFuncs(toks) {
 		if f.Name == "" {
@@ -113,6 +141,7 @@ func Build(src string) *Tables {
 		t.FuncSignatures[f.Name] = analyzeSig(src, toks, f)
 	}
 	analyzeFromFuncs(src, toks, t)
+	analyzeMethods(src, toks, t)
 	for i := 0; i+1 < len(toks); i++ {
 		switch {
 		case toks[i].Text == "enum":
@@ -146,6 +175,15 @@ func analyzeTypeDecls(src string, toks []scan.Token, t *Tables) {
 			}
 		case "interface":
 			t.TypeDecls[name] = "interface"
+			open := indexOf(toks, i+2, "{")
+			if open >= 0 {
+				closeIdx := scan.MatchBrace(toks, open)
+				methods, embedded := parseInterfaceBody(src, toks, open, closeIdx)
+				t.Interfaces[name] = methods
+				if len(embedded) > 0 {
+					t.EmbeddedIfaces[name] = embedded
+				}
+			}
 		default:
 			t.TypeDecls[name] = restOfLine(src, toks[i+2].Start)
 		}
@@ -295,6 +333,233 @@ func parseFields(src string, toks []scan.Token, k int) ([]Field, int) {
 		}
 	}
 	return fields, k
+}
+
+// parseInterfaceBody parses the body of `type I interface { … }` between the braces at
+// open and close, returning its declared methods and the names of any embedded
+// interfaces. A method is a `Name(params) results` entry whose token after the name is
+// "(". A bare type name on its own (no following "(") is an embedded interface.
+func parseInterfaceBody(src string, toks []scan.Token, open, close int) (methods []Method, embedded []string) {
+	for k := open + 1; k < close; k++ {
+		if !scan.IsIdent(toks[k].Text) {
+			continue
+		}
+		if k+1 < close && toks[k+1].Text == "(" {
+			name := toks[k].Text
+			pc := scan.MatchParen(toks, k+1)
+			m := methodFrom(src, toks, name, k+1, pc, close)
+			methods = append(methods, m)
+			k = endOfSignature(toks, pc, close)
+			continue
+		}
+		// A bare identifier (possibly qualified `io.Reader`) with no "(" is an embedded
+		// interface. Capture the dotted name and skip to the line's end.
+		name := toks[k].Text
+		for k+2 < close && toks[k+1].Text == "." && scan.IsIdent(toks[k+2].Text) {
+			name += "." + toks[k+2].Text
+			k += 2
+		}
+		embedded = append(embedded, name)
+	}
+	return methods, embedded
+}
+
+// analyzeMethods records every concrete-type method `func (r T) Name(params) results`
+// under its receiver type name, keyed minus any pointer star (value- and pointer-
+// receiver methods both contribute to *T's method set, which is what an interface
+// assertion `var _ I = (*T)(nil)` sees).
+func analyzeMethods(src string, toks []scan.Token, t *Tables) {
+	for i := 0; i+1 < len(toks); i++ {
+		if toks[i].Text != "func" || toks[i+1].Text != "(" {
+			continue
+		}
+		rc := scan.MatchParen(toks, i+1)
+		recv := receiverType(toks, i+1, rc)
+		if recv == "" {
+			continue
+		}
+		// The method name is the identifier just after the receiver's ")".
+		ni := rc + 1
+		if ni >= len(toks) || !scan.IsIdent(toks[ni].Text) {
+			continue
+		}
+		po := ni + 1
+		if po >= len(toks) || toks[po].Text != "(" {
+			continue
+		}
+		pc := scan.MatchParen(toks, po)
+		body := scan.FirstBodyBrace(toks, i)
+		end := len(toks)
+		if body >= 0 {
+			end = body
+		}
+		m := methodFrom(src, toks, toks[ni].Text, po, pc, end)
+		t.Methods[recv] = append(t.Methods[recv], m)
+	}
+}
+
+// receiverType returns the bare receiver type name of a method receiver `(r T)` or
+// `(r *T)` between the parens at open and close, stripped of a leading "*". It returns
+// "" when no type identifier is present.
+func receiverType(toks []scan.Token, open, close int) string {
+	name := ""
+	for k := open + 1; k < close; k++ {
+		if scan.IsIdent(toks[k].Text) {
+			name = toks[k].Text // last identifier in the receiver = the type
+		}
+	}
+	return name
+}
+
+// methodFrom builds a Method from a signature whose parameter list opens at po (the
+// "(") and closes at pc (the ")"). The result list is the text from pc to the next
+// signature terminator (a "{" body, a newline at interface-body depth, or limit).
+func methodFrom(src string, toks []scan.Token, name string, po, pc, limit int) Method {
+	params := strings.TrimSpace(src[toks[po].Start:toks[pc].End])
+	resEnd := endOfSignature(toks, pc, limit)
+	results := ""
+	if resEnd > pc {
+		results = strings.TrimSpace(src[toks[pc].End:toks[resEnd].End])
+	}
+	raw := strings.TrimSpace(params + " " + results)
+	return Method{Name: name, Sig: normalizeSig(params, results), Raw: raw}
+}
+
+// endOfSignature returns the index of the last token of a method signature whose
+// parameter list closes at pc: it consumes a balanced result list (a parenthesized
+// `(T, error)` or a single bare type) up to limit. It returns pc when there is no
+// result list (the next token starts a new method or closes the body).
+func endOfSignature(toks []scan.Token, pc, limit int) int {
+	k := pc + 1
+	if k >= limit {
+		return pc
+	}
+	switch {
+	case toks[k].Text == "(":
+		return scan.MatchParen(toks, k)
+	case toks[k].Text == "{" || toks[k].Text == "}":
+		return pc
+	case scan.IsIdent(toks[k].Text) || toks[k].Text == "*" || toks[k].Text == "[":
+		// A single bare result type, possibly `*T`, `[]T`, `pkg.T`. Walk the balanced
+		// type expression to its end.
+		end := k
+		depth := 0
+		for ; k < limit; k++ {
+			switch toks[k].Text {
+			case "(", "[", "{":
+				depth++
+			case ")", "]", "}":
+				depth--
+			}
+			if depth < 0 {
+				break
+			}
+			end = k
+			// A bare type ends at the next ident that starts a new method: ident "(".
+			if depth == 0 && k+1 < limit && scan.IsIdent(toks[k+1].Text) &&
+				k+2 < limit && toks[k+2].Text == "(" {
+				break
+			}
+		}
+		return end
+	default:
+		return pc
+	}
+}
+
+// normalizeSig produces a canonical signature string from a method's parameter and
+// result text by reducing each to its type sequence: parameter names are dropped and
+// all whitespace is collapsed, so `(p []byte) (int, error)` and `([]byte) (int,error)`
+// compare equal. The result is `paramTypes|resultTypes`.
+func normalizeSig(params, results string) string {
+	return normalizeTypeList(stripOuterParens(params)) + "|" + normalizeTypeList(stripOuterParens(results))
+}
+
+// stripOuterParens removes one layer of surrounding parentheses from s, if present.
+func stripOuterParens(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "(") && strings.HasSuffix(s, ")") {
+		return s[1 : len(s)-1]
+	}
+	return s
+}
+
+// normalizeTypeList canonicalizes a comma-separated parameter/result list to its type
+// sequence: each entry's leading parameter name (an identifier followed by a type) is
+// dropped, leaving the type; whitespace is collapsed. A lone type with no name is kept
+// as-is. Entries are split at top-level commas only (nested generics/funcs survive).
+func normalizeTypeList(list string) string {
+	list = strings.TrimSpace(list)
+	if list == "" {
+		return ""
+	}
+	parts := splitTopLevel(list)
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		out = append(out, normalizeParam(p))
+	}
+	return strings.Join(out, ",")
+}
+
+// normalizeParam reduces one `name Type` (or bare `Type`) entry to its collapsed type.
+// A leading bare identifier that is followed by more tokens is treated as the parameter
+// name and dropped; the remainder is the type. A single token is a bare type kept as-is.
+func normalizeParam(p string) string {
+	fields := strings.Fields(p)
+	if len(fields) >= 2 {
+		// `name Type…` — drop the name, keep the rest as the type. (A leading `...` or
+		// `[]`/`*` would attach to the type, never standing alone as a "name".)
+		if isBareName(fields[0]) {
+			return collapse(strings.Join(fields[1:], " "))
+		}
+	}
+	return collapse(p)
+}
+
+// isBareName reports whether s is a plain identifier (no type punctuation), i.e. a
+// candidate parameter name rather than a type.
+func isBareName(s string) bool {
+	for _, r := range s {
+		if !(r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') {
+			return false
+		}
+	}
+	return s != ""
+}
+
+// collapse trims and squeezes internal whitespace runs in a type expression to a single
+// space, then removes spaces adjacent to punctuation so spacing differences don't matter.
+func collapse(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	for _, p := range []string{"[", "]", "*", ".", ","} {
+		s = strings.ReplaceAll(s, " "+p, p)
+		s = strings.ReplaceAll(s, p+" ", p)
+	}
+	return s
+}
+
+// splitTopLevel splits a comma-separated list at commas that sit at delimiter depth 0,
+// so a generic `map[K]V` or a func type's inner commas do not split the entry.
+func splitTopLevel(s string) []string {
+	var parts []string
+	depth, start := 0, 0
+	for i, r := range s {
+		switch r {
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+		case ',':
+			if depth == 0 {
+				parts = append(parts, strings.TrimSpace(s[start:i]))
+				start = i + 1
+			}
+		}
+	}
+	if last := strings.TrimSpace(s[start:]); last != "" {
+		parts = append(parts, last)
+	}
+	return parts
 }
 
 // analyzeSig reads the return mode and type parameters of one function from its

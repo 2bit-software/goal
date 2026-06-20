@@ -1,0 +1,25 @@
+package io2
+
+// ReadWriter embeds Reader and adds Write; File implements ReadWriter and provides BOTH
+// the embedded Read and the direct Write, so the folded obligation is fully met. Clean
+// case — the check must resolve the embedded interface in-file and find every method.
+type Reader interface {
+	Read(p []byte) (int, error)
+}
+
+type ReadWriter interface {
+	Reader
+	Write(p []byte) (int, error)
+}
+
+type File struct implements ReadWriter {
+	fd int
+}
+
+func (f File) Read(p []byte) (int, error) {
+	return 0, nil
+}
+
+func (f File) Write(p []byte) (int, error) {
+	return len(p), nil
+}

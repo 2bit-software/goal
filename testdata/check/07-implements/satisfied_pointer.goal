@@ -1,0 +1,16 @@
+package shapes
+
+// Counter satisfies Resetter through a pointer-receiver method; a pointer-receiver
+// method is still part of *Counter's method set, so the assertion holds and the check
+// must NOT flag it. Clean case — no markers.
+type Resetter interface {
+	Reset()
+}
+
+type Counter struct implements Resetter {
+	n int
+}
+
+func (c *Counter) Reset() {
+	c.n = 0
+}

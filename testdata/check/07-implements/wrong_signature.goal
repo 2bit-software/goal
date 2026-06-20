@@ -1,0 +1,16 @@
+package codec
+
+// Encoder declares it implements Writer, and has a Write method — but with the wrong
+// signature (`(string) int` instead of `([]byte) (int, error)`). A mis-signed method is
+// as much a violation as a missing one; the error reports both signatures.
+type Writer interface {
+	Write(p []byte) (int, error)
+}
+
+type Encoder struct implements Writer { // want "method `Write` has signature"
+	buf []byte
+}
+
+func (e Encoder) Write(s string) int {
+	return len(s)
+}

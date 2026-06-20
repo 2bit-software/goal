@@ -1,0 +1,10 @@
+package plugins
+
+// Plugin asserts it implements Handler, but Handler is declared in another file/package
+// (not in this source), so its method set is unknown here. The check defers with a
+// located Warning rather than guess — and must NOT emit an Error. No markers.
+type Plugin struct implements Handler {
+	id int
+}
+
+func (p Plugin) Handle() {}

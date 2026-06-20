@@ -1,0 +1,17 @@
+package shapes
+
+// Point declares it implements Stringer and provides String() with a matching
+// value-receiver signature: the obligation is met, no diagnostic (a clean case — any
+// Error here fails the test).
+type Stringer interface {
+	String() string
+}
+
+type Point struct implements Stringer {
+	X int
+	Y int
+}
+
+func (p Point) String() string {
+	return "point"
+}

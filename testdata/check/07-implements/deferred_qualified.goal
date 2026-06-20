@@ -1,0 +1,13 @@
+package writers
+
+import "io"
+
+// Discard asserts it implements io.Writer — a qualified, out-of-package interface whose
+// method set is not readable in-file. The check cannot prove satisfaction lexically, so
+// it DEFERS with a located Warning and must NOT emit an Error (an unclaimed Warning is
+// allowed; an Error here would falsely reject valid code). No markers = no Error expected.
+type Discard struct implements io.Writer {}
+
+func (Discard) Write(p []byte) (int, error) {
+	return len(p), nil
+}

@@ -1,0 +1,17 @@
+package shapes
+
+// Square declares it implements Shaper but never defines Area(): the method is missing,
+// so the contract asserted at the declaration is unmet. The error lands at the
+// `implements` clause and names the absent method.
+type Shaper interface {
+	Area() float64
+	Perimeter() float64
+}
+
+type Square struct implements Shaper { // want "missing method `Area()"
+	side float64
+}
+
+func (s Square) Perimeter() float64 {
+	return 4 * s.side
+}
