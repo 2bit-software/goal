@@ -1420,3 +1420,18 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
 - **Why:** the two operate on different artifacts with different machinery; conflating them would
   force a parser into the lexical stage or re-lower inside it. Keeping them separate preserves the
   front-end's no-new-parser discipline while letting the depth stage use the full Go type system.
+
+### B2 — implements via real type identity (`typecheck.CheckImplements`)
+- **Kind:** decision
+- **Chose:** the depth 07 check locates each `type T struct implements I` clause in the goal source
+  (reusing the lexical locator) and verifies it with `types.MissingMethod(*T, I)` against the
+  type-checked package, reporting at the clause position. The interface is resolved through go/types:
+  an in-package name via package scope, a qualified name (`io.Writer`) via the package's imports.
+  Checks the pointer type's method set (the superset matching goal's `var _ I = (*T)(nil)` form).
+- **Why:** real type identity removes both documented §07 lexical limits — an alias-equal-but-
+  differently-spelled signature is no longer a false mismatch (test: `Get(id int)` vs `Get(id ID)`
+  with `type ID = int` is accepted), and a qualified/out-of-package interface is *checked* rather
+  than deferred (test: `io.Writer` satisfied → clean, missing `Write` → located error). This is the
+  concrete payoff of the Phase B thesis: transpile to Go, ask go/types.
+- **Note:** the depth and lexical 07 checks can both flag the same clause; dedup (prefer the
+  type-backed verdict) is wired when `goal check` runs both stages (a later B-unit / integration).

@@ -85,10 +85,13 @@ typed checks that return goal-located diagnostics. `goal check` runs **both** st
     Tables, Errors}` + `GoalPos`/`Lookup`; error-collecting config (type errors non-fatal, mapped
     to `.goal`), `importer.Default()`. 2 tests (typed view + error tolerance). DECISIONS Phase B §B1.
 
-- [ ] **B2 — 07 implements via real type identity.** Replace the lexical check's
+- [x] **B2 — 07 implements via real type identity.** Replace the lexical check's
   textual-after-normalization signature comparison with `types.Implements`/`types.Identical`,
   killing the alias-spelled-differently false-mismatch (the documented §07 lexical ceiling).
   *Depends on B1.*
+  - **Done:** `typecheck.CheckImplements` — locates clauses in source, verifies via
+    `types.MissingMethod(*T, I)`; resolves in-package and qualified (`io.Writer`) interfaces. Alias
+    false-mismatch eliminated; qualified interfaces checked not deferred. 4 tests. DECISIONS §B2.
 
 - [ ] **B3 — 03 must-use, stored-then-dropped (the refused class).** A `Result`/`Option`-typed
   local (goal-typed per the tables) that is `Info.Defs`-defined but never in `Info.Uses` — and

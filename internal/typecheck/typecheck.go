@@ -21,6 +21,7 @@ import (
 	"go/types"
 
 	"goal/internal/analyze"
+	"goal/internal/check"
 	"goal/internal/pipeline"
 	"goal/internal/project"
 )
@@ -38,6 +39,10 @@ type Package struct {
 	Files  []*ast.File
 	Tables *analyze.Tables
 	Errors []error
+	// Src is the original goal package (pre-lowering): some depth checks locate a
+	// construct in the goal source (an `implements` clause, a `derive func`) and then
+	// verify it against the type information, rather than reconstruct it from the AST.
+	Src *project.Package
 }
 
 // Load transpiles a goal package, parses the lowered Go, and type-checks it with
@@ -72,7 +77,7 @@ func Load(pkg *project.Package) (*Package, error) {
 		Types:      map[ast.Expr]types.TypeAndValue{},
 		Selections: map[*ast.SelectorExpr]*types.Selection{},
 	}
-	p := &Package{Fset: fset, Info: info, Files: files, Tables: tables}
+	p := &Package{Fset: fset, Info: info, Files: files, Tables: tables, Src: pkg}
 	conf := types.Config{
 		Importer: importer.Default(),
 		Error:    func(e error) { p.Errors = append(p.Errors, e) },
@@ -80,6 +85,31 @@ func Load(pkg *project.Package) (*Package, error) {
 	// Check returns a usable (possibly incomplete) package even when Error fires.
 	p.Types, _ = conf.Check(pkg.Name, fset, files, info)
 	return p, nil
+}
+
+// Diagnostic is one depth-checker finding. Unlike the lexical checker's byte-offset
+// Diagnostic, it carries a resolved token.Position (already in .goal coordinates), since
+// a depth check works from go/types positions and source scans rather than one source
+// string. Severity reuses the lexical checker's type so both stages render uniformly.
+type Diagnostic struct {
+	Pos      token.Position
+	Severity check.Severity
+	Feature  string
+	Code     string
+	Message  string
+}
+
+// String renders the diagnostic as `file:line:col: severity: [code] message`.
+func (d Diagnostic) String() string {
+	return fmt.Sprintf("%s: %s: [%s] %s", d.Pos, d.Severity, d.Code, d.Message)
+}
+
+// goalPosition turns a byte offset into a goal source file into a token.Position. Used
+// by checks that locate a construct in the source (e.g. an `implements` clause) and
+// report there rather than at a go/types node.
+func goalPosition(f project.File, off int) token.Position {
+	p := check.OffsetToPosition(f.Src, off)
+	return token.Position{Filename: f.Path, Line: p.Line, Column: p.Col}
 }
 
 // GoalPos returns the .goal source position of an AST node, resolved through the //line
