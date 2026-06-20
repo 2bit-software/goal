@@ -135,8 +135,12 @@ func parse(doc, docPath string) (Manifest, error) {
 			// A level-1 heading that is itself a feature (the composition section).
 			cat = strings.SplitN(sec.title, ":", 2)[0]
 		}
-		// Drop a redundant "Category: " prefix from the display title.
-		display := strings.TrimPrefix(feat.Title, cat+": ")
+		// Drop a redundant "Category: " prefix, then sentence-case for a
+		// consistent nav. The doc keeps keyword headings lowercase (implements,
+		// pure, assert); the playground display capitalizes the first letter so
+		// every entry reads uniformly. Titles that lead with a code span or
+		// symbol (e.g. "`?` propagation") are left as-is.
+		display := capitalizeFirst(strings.TrimPrefix(feat.Title, cat+": "))
 		feat.Title = display
 		feat.TitleHTML = renderInline(display)
 		addFeature(&manifest, cat, feat)
@@ -449,6 +453,16 @@ var (
 
 func stripLeadingNumber(s string) string {
 	return leadingNumberRe.ReplaceAllString(s, "")
+}
+
+// capitalizeFirst upper-cases the first character when it is a lowercase ASCII
+// letter, so nav titles read consistently. Titles that lead with a symbol or
+// code span (e.g. "`?` propagation") are returned unchanged.
+func capitalizeFirst(s string) string {
+	if s == "" || s[0] < 'a' || s[0] > 'z' {
+		return s
+	}
+	return string(s[0]-('a'-'A')) + s[1:]
 }
 
 // slugify mirrors the GitHub-style anchor used in the doc's table of contents.
