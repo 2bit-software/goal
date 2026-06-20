@@ -354,12 +354,14 @@ func parseInterfaceBody(src string, toks []scan.Token, open, close int) (methods
 		}
 		// A bare identifier (possibly qualified `io.Reader`) with no "(" is an embedded
 		// interface. Capture the dotted name and skip to the line's end.
-		name := toks[k].Text
+		var name strings.Builder
+		name.WriteString(toks[k].Text)
 		for k+2 < close && toks[k+1].Text == "." && scan.IsIdent(toks[k+2].Text) {
-			name += "." + toks[k+2].Text
+			name.WriteString(".")
+			name.WriteString(toks[k+2].Text)
 			k += 2
 		}
-		embedded = append(embedded, name)
+		embedded = append(embedded, name.String())
 	}
 	return methods, embedded
 }
