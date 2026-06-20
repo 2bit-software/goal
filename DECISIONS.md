@@ -589,6 +589,51 @@ Entry kinds:
   (Unsafe-default rejection is the one exception the pass owns, because an unsafe zero reaching
   codegen — unlike a merely-incomplete literal the checker will catch — would defeat the feature.)
 
+### Checker (`internal/check/fields.go`) — field-completeness defer-boundary
+- **Kind:** decision
+- **Chose:** the checker fires `missing-field` (Error) only when the literal's type is **named at the
+  site**: a struct literal `T{…}` where `T` is an in-file `type T struct` (read from
+  `analyze.Tables.Structs`), or a variant construction `Enum.Variant(…)` where `Enum` is an in-file
+  `enum` (read from `analyze.Tables.Enums[…].FieldSet`/`.Variants`). Completeness = every declared
+  field appears as a keyed element at the literal's own depth, **unless** the struct literal carries
+  the `...defaults` spread (which the checker treats as complete-by-construction — the defaults pass
+  owns expanding and unsafe-zero-rejecting it). Present-key detection mirrors the defaults pass's
+  `presentFields` (an `IDENT :` at brace depth 0).
+- **Over:** chasing the type of an unnamed/inferred literal (a bare `{…}` element of a typed outer
+  literal, a `:=` whose type isn't at the site, a positionally-passed literal) — and over enforcing
+  variant-construction completeness only when the surface is unambiguous.
+- **Why:** "defer, never guess" (checker contract). A literal whose type isn't resolvable in-file is
+  surfaced as a located **Warning** (`unresolved-literal-type`, "field-completeness deferred") naming
+  the unresolved type, never an Error — a false "complete" is worse than an honest "cannot tell." This
+  needed **no `analyze.Tables` extension**: `Structs` and `Enums` already carry the field sets.
+
+### Variant construction `Enum.Variant(…)` is checked for completeness, paren-form, no `...defaults`
+- **Kind:** assumption
+- **Chose:** treat enum variant construction as the **paren** surface `Enum.Variant(field: expr, …)`
+  (what `internal/pass/enums.go` actually lowers), not the brace form `Enum.Variant{…}` the
+  CHECKER-TODO line writes shorthand. A variant has **no** `...defaults` escape (the defaults pass only
+  recognizes `...defaults` inside `{`-braces), so every declared field of a data-carrying variant must
+  be named; a data-less variant (`Shape.Dot`) is trivially complete. The enums-pass `construct`/
+  `parseArgs` lowering silently zero-fills omitted variant args, so this completeness check is a
+  genuine erased guarantee landing here.
+- **Over:** (a) reading `Enum.Variant{…}` brace-form literally — that form does not exist on the
+  surface; (b) inventing a `...defaults` escape for variants — none is specified.
+- **Why:** keeps the check tied to the real lowering. Flagged as an assumption (not a hard decision)
+  because the TODO's `{…}` shorthand could be read either way; the user can veto routing variant
+  completeness through this slot.
+
+### File-layout / `Code` scheme for the fields slot
+- **Kind:** assumption
+- **Chose:** `Feature` = `"08-no-zero-value"`; `Code` = `"missing-field"` for a violation and
+  `"unresolved-literal-type"` for a deferral Warning. Brace/keyword/func-body/decl-body braces that
+  share the `IDENT {` shape (`func f() T {`, `enum E { … }`, `type T struct { … }`, `struct{}`,
+  `interface{}`, control-flow) are excluded via `scan.ScanFuncs` body-brace indices and an
+  enum/struct decl-span scan, so a return type or a variant field declaration is never misread as a
+  literal.
+- **Over:** no naming scheme was fixed by the spec.
+- **Why:** stable, greppable codes per the slot doc; the brace-disambiguation is the one place a
+  lexical literal-finder can go wrong, so it is guarded explicitly and recorded for review.
+
 ---
 
 ## 09-pure — CUT (not in v1)

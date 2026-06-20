@@ -19,13 +19,19 @@ Order is by self-containment / value: the most local, inference-free guarantees 
 
 ---
 
-- [ ] **08-no-zero-value** — field-completeness
+- [x] **08-no-zero-value** — field-completeness
   - Slot: `internal/check/fields.go` (`checkFields`). Testdata: `testdata/check/08-no-zero-value/`.
   - Guarantee: every `T{…}` / `Enum.Variant{…}` literal names every field unless it uses
     `...defaults`; an omission without the spread is an **Error**.
   - Spec: §08 in `goal-design-spec.md`; `features/08-no-zero-value/`; §8.0 erasure.
   - Reuse: defaults pass literal-locator; `Tables.Structs`, `Tables.Enums[…].FieldSet`.
   - Deps: none. Defer: literal whose type isn't resolvable at the site → Warning.
+  - **Done:** covers in-file struct literals `T{…}` (Error on omission; `...defaults` = complete) and
+    paren-form variant constructions `Enum.Variant(…)` (every field required; no `...defaults`).
+    Deferred (located Warning, `unresolved-literal-type`): any literal whose type isn't named in-file
+    (out-of-package type, unnamed/inferred literal). No `analyze.Tables` extension needed — used
+    existing `Structs` + `Enums`. Brace disambiguation (func-body / decl-body / keyword braces)
+    handled lexically via `scan.ScanFuncs` + enum/struct decl-span scan. See `DECISIONS.md` §08.
 
 - [ ] **02-match** — match exhaustiveness
   - Slot: `internal/check/exhaustive.go` (`checkExhaustive`). Testdata: `testdata/check/02-match/`.

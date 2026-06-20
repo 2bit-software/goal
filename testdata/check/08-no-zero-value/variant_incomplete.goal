@@ -1,0 +1,23 @@
+package shapes
+
+enum Shape {
+	Circle { r: float64 }
+	Rect   { w: float64, h: float64 }
+	Dot
+}
+
+// unitRect omits `h` from the Rect variant construction. A variant has no
+// `...defaults` escape, so every field must be named — the omission is an error.
+func unitRect() Shape {
+	return Shape.Rect(w: 1.0) // want "omits required field `h`"
+}
+
+// dot constructs a data-less variant: trivially complete, no diagnostic.
+func dot() Shape {
+	return Shape.Dot
+}
+
+// disc names every Circle field: complete, no diagnostic.
+func disc() Shape {
+	return Shape.Circle(r: 2.0)
+}

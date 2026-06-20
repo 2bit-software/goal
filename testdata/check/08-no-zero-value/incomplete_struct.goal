@@ -1,0 +1,13 @@
+package users
+
+type User struct {
+	name  string
+	email string
+	admin bool
+}
+
+// newUser omits the `email` and `admin` fields without `...defaults` — each is a
+// located missing-field error, not a silent Go zero value.
+func newUser(name string) User {
+	return User{name: name} // want "omits required fields `email`, `admin`"
+}

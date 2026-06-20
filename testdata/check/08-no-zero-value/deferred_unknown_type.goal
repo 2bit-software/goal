@@ -1,0 +1,8 @@
+package config
+
+// External is constructed but declared in another package (not in this file), so its
+// field set is unknown. The checker cannot prove completeness lexically and must defer
+// with a located Warning rather than assume — and must NOT emit an Error here.
+func mk() External {
+	return External{host: "h"} // want "field-completeness deferred"
+}

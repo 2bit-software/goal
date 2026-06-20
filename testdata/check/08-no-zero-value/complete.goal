@@ -1,0 +1,30 @@
+package users
+
+type Role int
+
+const (
+	RoleMember Role = iota
+	RoleAdmin
+)
+
+type User struct {
+	name  string
+	email string
+	role  Role
+	admin bool
+}
+
+type Addr struct {
+	host string
+	port int
+}
+
+// newAdmin names every field explicitly: a complete literal, no diagnostic.
+func newAdmin() User {
+	return User{name: "root", email: "root@x", role: RoleAdmin, admin: true}
+}
+
+// nested names every field of both the outer and the inner literal.
+func endpoint() Addr {
+	return Addr{host: "localhost", port: 8080}
+}

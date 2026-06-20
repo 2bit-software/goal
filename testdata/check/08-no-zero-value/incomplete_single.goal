@@ -1,0 +1,11 @@
+package users
+
+type Point struct {
+	x int
+	y int
+}
+
+// origin sets only `x`; the single omitted field is named in the diagnostic.
+func origin() Point {
+	return Point{x: 0} // want "omits required field `y`"
+}
