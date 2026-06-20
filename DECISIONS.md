@@ -313,6 +313,12 @@ Entry kinds:
   verbatim from the proven match-pass locator (exercised by the front-end round-trip suite), so the
   exhaustiveness testdata can stay data-less and focused on variant *coverage* without re-proving arm
   binding parsing.
+- **Resolved (08-fields fix):** the 02↔08 interaction is now fixed in `checkFields` — payload-binding
+  arms (`Status.Active(a)`) inside a `match` are recognized as bindings (via `matchPatternSpans`) and
+  no longer trip the 08 `missing-field` check. The note above stands as the historical reason the 02
+  testdata uses data-less variants; data-carrying payload-binding arms are now safe under the shared
+  harness (proven by `testdata/check/08-no-zero-value/match_binding_arm.goal`). See §08 "Fix:
+  `...derive(src)` spread and match payload-binding arms no longer false-flag."
 
 ---
 
@@ -716,6 +722,45 @@ Entry kinds:
 - **Why:** stable, greppable codes per the slot doc; the brace-disambiguation is the one place a
   lexical literal-finder can go wrong, so it is guarded explicitly and recorded for review.
 
+### Fix: `...derive(src)` spread and match payload-binding arms no longer false-flag (was a follow-up)
+- **Kind:** decision
+- **Chose:** a dedicated false-positive fix to `checkFields` closing the two shared-harness
+  interactions earlier slots worked around in testdata (recorded in §02 and §12). Two changes, both
+  lexical, both reusing the lowering passes' own locators (assert, not splice):
+  1. **`...derive(src)` is complete-by-construction**, exactly like `...defaults`. The spread detector
+     (renamed `litHasDefaults` → `litHasCompletingSpread`) now recognizes the four-token
+     `.` `.` `.` `derive` form (the same shape `internal/pass/derive.go` expands) at the literal's own
+     brace depth, in addition to `...defaults`. A `T{ …, ...derive(s) }` body literal of a `derive func`
+     no longer reads as omitting the unnamed fields — the derive pass owns expanding/rejecting them, so
+     08 must not assert completeness over them (the exact parallel of the `...defaults` carve-out).
+  2. **Variant payload-binding arms in `match` are not constructions.** A `Status.Active(a) => …` arm
+     binds the narrowed value to `a`; it is lexically identical to a variant construction
+     `Status.Active(a)` but must NOT be field-checked. New `matchPatternSpans` collects every match
+     arm-pattern token span — mirroring `internal/pass/match.go`'s `parseMatchArms` (depth-0 `=>`
+     arrows) and `internal/pass/result.go`'s `patternStart` (lifted verbatim as `matchPatternStart`) —
+     and `checkFields` skips any `Enum.Variant(…)` site whose qualifier token falls inside an
+     arm-pattern span.
+- **Defer-never-guess preserved:** neither change can manufacture a false Error. The `...derive`
+  carve-out only *suppresses* a would-be Error on a recognized spread (same risk profile as
+  `...defaults`). The match-arm skip only *suppresses* the variant check inside a lexically-bounded
+  arm pattern (the same `=>`/`patternStart` machinery the proven lowering uses to read arms); outside
+  that span nothing changes. Where the construct genuinely cannot be told apart (a literal with no
+  type at the site), the pre-existing `unresolved-literal-type` Warning still defers rather than guess.
+- **Over:** leaving the two interactions worked-around in sibling testdata (the prior state — honest but
+  it meant a real surface shape, a `...derive` body literal or a payload-binding arm, drew a spurious
+  08 Error under the shared harness); broadening the match-arm skip to suppress 08 anywhere a `match`
+  appears (would risk under-checking real constructions in arm *bodies* — the skip is scoped to the
+  pattern span only, not the whole arm block).
+- **Why:** a false Error is worse than a deferral, and these were *known* false Errors on valid
+  programs. Both reuse the owning pass's locators so the check's view of a `...derive` spread and a
+  match arm stays identical to the lowering's. **No `analyze.Tables` extension**, no new diagnostic
+  code. Testdata added under `testdata/check/08-no-zero-value/`: `derive_spread_optout.goal` (a real
+  `derive func` body using `...derive(s)`, clean) and `match_binding_arm.goal` (a payload-binding
+  `Status.Active(a) => a.since` arm, clean). All existing 08 positive/negative cases stay green, and
+  the full suite (`go vet`, `./internal/check/`, `./...`) passes. Resolves the follow-ups noted in
+  §02 ("File-layout / `Code` scheme + the 08-fields cross-check interaction") and §12 ("testdata avoids
+  `...derive` literals that trip the 08 field-completeness check").
+
 ---
 
 ## 09-pure — CUT (not in v1)
@@ -990,6 +1035,12 @@ Entry kinds:
   08); the conservative move is to write 12 testdata that does not provoke a sibling check. The
   `...derive`→08 interaction is real surface (a body literal with `...derive` *will* draw an 08
   `missing-field` today) and is worth a follow-up — recorded here, not silently worked around in code.
+- **Resolved (08-fields fix):** the follow-up is done — `checkFields` now treats `...derive(src)` as
+  complete-by-construction (same carve-out as `...defaults`), so a `T{ …, ...derive(s) }` body literal
+  no longer draws a spurious 08 `missing-field`. Bodied derives with `...derive` spreads are now safe
+  under the shared harness (proven by `testdata/check/08-no-zero-value/derive_spread_optout.goal`); the
+  bodyless-only constraint above is no longer required. See §08 "Fix: `...derive(src)` spread and match
+  payload-binding arms no longer false-flag."
 
 ---
 

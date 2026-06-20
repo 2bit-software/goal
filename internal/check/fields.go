@@ -15,8 +15,10 @@ import (
 // Two surface forms carry per-field payloads and are checked here:
 //
 //   - Struct literals `T{…}` (keyed composite literals). Completeness may be satisfied
-//     explicitly or via the `...defaults` escape hatch (§8.5); an omission without the
-//     spread is an Error. This is the documented common case.
+//     explicitly or via a complete-by-construction spread — `...defaults` (§8.5, the
+//     defaults pass fills the rest) or `...derive(src)` (§12, the derive pass fills the
+//     rest field-by-field); an omission without such a spread is an Error. This is the
+//     documented common case.
 //   - Enum variant constructions `Enum.Variant(field: expr, …)` (paren form, the surface
 //     the enums pass lowers). A variant has no `...defaults` escape, so every declared
 //     field must be named; an omission is an Error.
@@ -27,6 +29,10 @@ import (
 //     structLitKeys, but asserting completeness instead of expanding.
 //   - Required field sets: analyze.Tables.Structs (ordered fields per struct) and
 //     analyze.Tables.Enums[…].FieldSet (field-name set per variant).
+//   - Match arm-pattern spans (matchPatternSpans) mirror the match pass's arm locator
+//     (internal/pass/match.go parseMatchArms + internal/pass/result.go patternStart): a
+//     `Enum.Variant(a)` inside an arm pattern is a binding, NOT a construction, so it is
+//     skipped — the same `=>`/patternStart machinery the lowering uses to read arms.
 //
 // Defer-boundary: this check only fires when the literal's type is named *at the site*
 // — `T{…}` where T is a known struct, or `Enum.Variant(…)` where Enum is a known enum.
@@ -38,6 +44,7 @@ func checkFields(src string, t *analyze.Tables) ([]Diagnostic, error) {
 	toks := scan.Lex(src)
 	declSpans := declBraceSpans(toks)
 	bodyBraces := funcBodyBraces(toks)
+	patSpans := matchPatternSpans(toks)
 	var diags []Diagnostic
 	for i := 0; i+1 < len(toks); i++ {
 		// Struct literal: IDENT "{" where IDENT names a known struct. Two braces wear the
@@ -52,7 +59,12 @@ func checkFields(src string, t *analyze.Tables) ([]Diagnostic, error) {
 			continue
 		}
 		// Enum variant construction: Enum "." Variant "(" where Enum is a known enum.
-		if toks[i+1].Text == "." && i+3 < len(toks) && toks[i+3].Text == "(" {
+		// A `Enum.Variant(a)` sitting in a match arm-pattern position is a payload
+		// BINDING (`Status.Active(a) => …`), not a construction — it binds the narrowed
+		// value to a name and must not be checked for field completeness. Skip any site
+		// whose qualifier token falls inside an arm-pattern span.
+		if toks[i+1].Text == "." && i+3 < len(toks) && toks[i+3].Text == "(" &&
+			!inSpans(i, patSpans) {
 			if ds, ok := checkVariantLit(src, toks, i, t); ok {
 				diags = append(diags, ds...)
 			}
@@ -98,9 +110,11 @@ func checkStructLit(src string, toks []scan.Token, i int, t *analyze.Tables) ([]
 		}}, true
 	}
 	present, _ := litKeys(toks, i+1)
-	hasDefaults := litHasDefaults(toks, i+1)
-	if hasDefaults {
-		return nil, true // `...defaults` opts the rest into their zeros — complete by construction.
+	if litHasCompletingSpread(toks, i+1) {
+		// `...defaults` opts the rest into their zeros; `...derive(src)` opts the rest
+		// into derived values. Either spread makes the literal complete by construction —
+		// the defaults / derive pass owns expanding (and rejecting) the unnamed fields.
+		return nil, true
 	}
 	missing := missingFields(fields, present)
 	if len(missing) == 0 {
@@ -255,10 +269,13 @@ func parenKeys(toks []scan.Token, openIdx, closeIdx int) map[string]bool {
 	return present
 }
 
-// litHasDefaults reports whether the literal whose "{" is at openIdx contains the
-// `...defaults` spread element at its own brace depth (the four-token `.` `.` `.`
-// `defaults` form the defaults pass recognizes).
-func litHasDefaults(toks []scan.Token, openIdx int) bool {
+// litHasCompletingSpread reports whether the literal whose "{" is at openIdx contains a
+// complete-by-construction spread element at its own brace depth: `...defaults` (§8.5,
+// the four-token `.` `.` `.` `defaults` the defaults pass recognizes) or `...derive`
+// (§12, `.` `.` `.` `derive` followed by `(src)`, the four-token spread the derive pass
+// recognizes — internal/pass/derive.go). Either spread means the unnamed fields are
+// filled by that owning pass, so completeness here is not this check's to assert.
+func litHasCompletingSpread(toks []scan.Token, openIdx int) bool {
 	closeIdx := scan.MatchBrace(toks, openIdx)
 	depth := 0
 	for k := openIdx + 1; k < closeIdx; k++ {
@@ -268,12 +285,85 @@ func litHasDefaults(toks []scan.Token, openIdx int) bool {
 		case "}", "]", ")":
 			depth--
 		}
-		if depth == 0 && k >= openIdx+4 && toks[k].Text == "defaults" &&
+		if depth == 0 && k >= openIdx+4 &&
+			(toks[k].Text == "defaults" || toks[k].Text == "derive") &&
 			toks[k-1].Text == "." && toks[k-2].Text == "." && toks[k-3].Text == "." {
 			return true
 		}
 	}
 	return false
+}
+
+// matchPatternSpans returns, for every `match` arm block, the half-open token-index
+// spans `{open, close}` that an arm PATTERN occupies (so a `Enum.Variant(a)` inside one
+// is a payload binding, not a construction). It mirrors the match pass's arm locator:
+// the arm block is `MatchBodyBrace`…`MatchBrace`, arms are delimited by depth-0 `=>`
+// (lexed as `=` then `>`), and each arm's pattern runs from `patternStart(arrow)` up to
+// the arrow. Spans are encoded for `inSpans` (strict `open < idx < close`) by widening
+// `open` to `patternStart-1` so the qualifier token itself reads as inside.
+//
+// This claims arm patterns of EVERY match — not only enum matches — because the false
+// positive being closed is purely lexical: a single-identifier bind `(a)` in pattern
+// position reads as a variant construction with no keyed fields. Matches whose first
+// token after `{` is not part of a `Qual.Variant(...)` pattern simply yield no variant
+// site for the caller to check, so over-claiming pattern spans is harmless.
+func matchPatternSpans(toks []scan.Token) []span {
+	var spans []span
+	for mi := 0; mi < len(toks); mi++ {
+		if toks[mi].Text != "match" {
+			continue
+		}
+		bo := scan.MatchBodyBrace(toks, mi)
+		if bo < 0 {
+			continue
+		}
+		bc := scan.MatchBrace(toks, bo)
+		// Arrows: depth-0 `=` immediately followed by `>` inside the arm block.
+		depth := 0
+		for j := bo + 1; j < bc; j++ {
+			switch toks[j].Text {
+			case "(", "[", "{":
+				depth++
+			case ")", "]", "}":
+				depth--
+			}
+			if depth == 0 && toks[j].Text == "=" && j+1 < bc && toks[j+1].Text == ">" {
+				ps := matchPatternStart(toks, j)
+				spans = append(spans, span{open: ps - 1, close: j})
+			}
+		}
+		mi = bc // arm blocks don't overlap; resume past this one.
+	}
+	return spans
+}
+
+// matchPatternStart returns the first token index of the arm pattern whose `=>` arrow's
+// `=` is at eqIdx. Lifted from internal/pass/result.go patternStart (the shared qualified
+// match locator): a `Qual.Variant(binding)` pattern walks back from its `)` to the
+// qualifier; a bare `Qual.Variant` is three tokens; `_` is the rest arm.
+func matchPatternStart(toks []scan.Token, eqIdx int) int {
+	j := eqIdx - 1
+	switch toks[j].Text {
+	case ")":
+		depth := 0
+		k := j
+		for ; k >= 0; k-- {
+			switch toks[k].Text {
+			case ")":
+				depth++
+			case "(":
+				depth--
+			}
+			if depth == 0 {
+				break
+			}
+		}
+		return k - 3
+	case "_":
+		return j
+	default:
+		return j - 2
+	}
 }
 
 // missingFields returns the declared field names not present in the literal, in

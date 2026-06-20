@@ -1,0 +1,19 @@
+package orders
+
+enum Status {
+	Active { since int }
+	Closed
+}
+
+// `Status.Active(a)` here is a payload BINDING in a match arm pattern — it binds the
+// narrowed `Active` value to `a` so the body can read `a.since`. It is NOT a variant
+// construction and must not be checked for field completeness: the 08 check previously
+// mis-read `Active(a)` as a `Status.Active(...)` construction that omits `since` and
+// flagged a spurious `missing-field` Error. The match covers every variant, so the 02
+// exhaustiveness check is also clean. No markers: this is a clean negative case.
+func describe(s Status) int {
+	return match s {
+		Status.Active(a) => a.since
+		Status.Closed    => 0
+	}
+}

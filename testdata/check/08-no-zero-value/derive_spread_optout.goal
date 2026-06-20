@@ -1,0 +1,28 @@
+package conv
+
+// A `derive func` body whose returned literal uses `...derive(src)` to fill the
+// unnamed fields. The derive pass owns expanding (and rejecting) those fields, so the
+// literal is complete by construction — exactly like `...defaults`. The 08 field-
+// completeness check must NOT read the unnamed `Railroad`/`Note` fields as omitted and
+// flag a spurious `missing-field` Error. No markers: this is a clean negative case.
+
+type Source struct {
+	Name     string
+	Railroad string
+	Note     string
+}
+
+type Target struct {
+	Name     string
+	Railroad string
+	Note     string
+}
+
+// `Name` is overridden verbatim; `...derive(s)` fills `Railroad` and `Note` (same-named,
+// same-typed). Previously the unnamed fields tripped 08's `missing-field`.
+derive func toTarget(s Source) Target {
+	return Target{
+		Name: s.Name,
+		...derive(s),
+	}
+}

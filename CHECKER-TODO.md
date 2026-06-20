@@ -32,6 +32,11 @@ Order is by self-containment / value: the most local, inference-free guarantees 
     (out-of-package type, unnamed/inferred literal). No `analyze.Tables` extension needed — used
     existing `Structs` + `Enums`. Brace disambiguation (func-body / decl-body / keyword braces)
     handled lexically via `scan.ScanFuncs` + enum/struct decl-span scan. See `DECISIONS.md` §08.
+  - **Fix (false-positive):** `...derive(src)` spreads are now complete-by-construction (like
+    `...defaults`), and variant payload-binding arms in `match` (`Status.Active(a)`) are recognized as
+    bindings (via match arm-pattern spans) and skipped — both previously drew a spurious `missing-field`
+    Error. Defer-never-guess preserved (the fix only suppresses would-be Errors on recognized spreads /
+    arm patterns). Closes the 02↔08 and 12↔08 shared-harness interactions. See `DECISIONS.md` §08 fix.
 
 - [x] **02-match** — match exhaustiveness
   - Slot: `internal/check/exhaustive.go` (`checkExhaustive`). Testdata: `testdata/check/02-match/`.
