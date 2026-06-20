@@ -1337,3 +1337,21 @@ spikes are in `BUILD-MODEL-TODO.md`. Decisions accrue here per unit.
   committed or cluttering source dirs — while the flag still covers inspection and any
   `go:generate`/IDE wiring that needs real files on disk. `goal_prelude.go` collision with a
   user file literally named `goal_prelude.goal` is a known low-risk edge, noted for U6.
+
+### U5 — `//line` source map (per-declaration)
+- **Kind:** decision
+- **Chose:** `addLineDirectives(goalSrc, genGo, goalFile, genFile)` inserts a Go `//line` directive
+  before every top-level decl in the generated Go: a decl whose name matches a user decl in the
+  goal source anchors to that source line (names survive lowering, so the match is by name); a
+  synthesized decl (enum encoding, `var _` assertion, injected import) re-anchors to the generated
+  file at its own physical line. Granularity is **per-declaration** (chosen over per-statement),
+  wired into `TranspilePackage` per user file; the prelude carries no directives.
+- **Why:** SPIKE-1 proved the Go compiler honors `//line` and gofmt preserves it, so the source map
+  is directive emission, not a bespoke offset structure. Per-declaration needs no per-pass
+  Replacement journal and no surviving-gofmt bookkeeping; it maps the realistic failure (a Go type
+  error in a passed-through function body) to the right `.goal` line — proven by a planted-error
+  `go build` landing on `shapes.goal:8`. Re-anchoring synthesized decls keeps their numbering
+  truthful instead of inheriting the previous mapped decl's goal line.
+- **Limitation (noted):** exact line within a body whose statements were themselves lowered (a
+  `match`/`?` expansion) may drift from the source line; the per-statement precision that would fix
+  it needs the pass Replacement journals and is deliberately deferred (BUILD-MODEL-TODO U5).

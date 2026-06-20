@@ -152,9 +152,13 @@ testdata, record decisions in `DECISIONS.md`, verify (`go vet ./...`, `go test -
     core with `Transpile`. Test builds a 2-file cross-file package and **`go build`s it** (compiles).
     Output layout resolved: in-memory default, `--emit` to persist. DECISIONS Phase A §U4.
 
-- [ ] **U5 — `//line` source-map emitter.** Emit `//line file.goal:N` directives per the SPIKE-1
+- [x] **U5 — `//line` source-map emitter.** Emit `//line file.goal:N` directives per the SPIKE-1
   outcome, so toolchain errors map back to `.goal`. Ships the reusable mapping helper Phase C's
   LSP reuses. *Depends on SPIKE-1, U4.*
+  - **Done:** `addLineDirectives` (per-declaration, name-anchored; synthesized decls re-anchor to
+    the gen file), wired into `TranspilePackage`. Proven by a planted type error in passed-through
+    code reporting at `shapes.goal:8` via real `go build`. Per-statement precision deferred.
+    DECISIONS Phase A §U5.
 
 - [ ] **U6 — `goal build` / umbrella CLI.** A `goal` command (`build`/`check`/`run`, then
   `fmt`/`new` later) that runs U4 over `./...`. **By default it compiles in-memory:** writes the
