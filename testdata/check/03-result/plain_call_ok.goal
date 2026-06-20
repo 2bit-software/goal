@@ -1,0 +1,9 @@
+package config
+
+// log returns nothing (ModeNone) — dropping its call is ordinary Go, not a must-use
+// violation. The obligation attaches only to Result-returning callees.
+func log(msg string) {}
+
+func emit() {
+	log("hello")
+}

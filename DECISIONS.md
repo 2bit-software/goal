@@ -377,6 +377,57 @@ Entry kinds:
   are explicitly later (feature 06). The audit prompt says handle the immediate case and note the
   fallback. Deferred forms fail loudly rather than miscompiling.
 
+### (checker) Must-use checks the unconsumed *call site*, not the fate of a bound value
+- **Kind:** decision
+- **Chose:** `internal/check/mustuse.go` rules **only** on a Result-returning direct call that
+  stands alone as an expression statement (`parse(input)` on its own line). That is an Error
+  `dropped-result`. Every consuming/nested context — `name := f(...)`, `match f(...) {…}`,
+  `f(...)?`, `return f(...)`, `g(f(...))` — is recognized as a use by reading the token immediately
+  before the callee (statement-start delimiter `{`/`}`/`;` vs `=`/`,`/`(`/`return`/`match`/…) and
+  the token immediately after the matching `)` (a trailing `?` = consumed).
+- **Over:** intra-function use-tracking of an assigned-then-unused Result (`r := parse(x)` where `r`
+  is never read), which the slot doc lists as a candidate coverage target.
+- **Why:** the statement-leading drop is provable lexically with zero false-positive risk. Proving
+  "this bound variable is never used" needs flow analysis the lexical model cannot do soundly
+  (closures, shadowing, reassignment, use in a later block); a false `dropped-result` would be a
+  false guarantee, which the loop forbids. The obligation attaches to both `ModeResult` (open-E) and
+  `ModeResultClosed` (closed-E) callees read from `Tables.FuncSignatures`. **Defer-boundary recorded
+  as the go/types graduation point below.**
+
+### (checker) Defer-boundary: `_ :=` discard and chained continuations → Warning
+- **Kind:** decision
+- **Chose:** two located deferrals instead of a verdict. `_ := f(...)` / `_ = f(...)` (a whole-Result
+  discard) → Warning `unresolved-result-discard`, because the sanctioned explicit-discard surface for
+  a Result is **not yet defined** (feature 03 SYNTAX.md §5 defers it together with this check) and its
+  `(T, error)`-tuple lowering is unsettled — neither a use nor a sound drop can be asserted yet. A
+  statement-leading Result call followed by an expression continuation (`f(...).x`, `f(...) + …`) →
+  Warning `unresolved-result-use` (a Result has no usable surface besides match/?/bind, so this is
+  unusual; rather than guess whether the continuation consumes the value, defer).
+- **Over:** ruling `_ := f(...)` an Error (it is the natural Go discard and may become the sanctioned
+  form) or a silent pass (would let a Result be dropped through `_`); and over guessing at chained
+  uses.
+- **Why:** "defer, never guess" — a false `dropped-result` is worse than an honest Warning. When the
+  explicit-discard surface lands (feature 03 follow-up), this Warning is where the rule attaches.
+
+### (checker) The assigned-then-unused class is the go/types graduation boundary for 03
+- **Kind:** refusal (with reason)
+- **Refused:** implementing assigned-then-dropped detection (`r := parse(x)` never read; a Result
+  stored in a field/slice and never consumed; a Result passed onward and dropped by the callee) in
+  this lexical loop.
+- **Why:** these need real dataflow / type information — exactly what CHECKER-TODO.md flags as the
+  point where 03 "graduates onto `go/types`." Doing it lexically would mean either false positives
+  (unsound "unused" detection) or unbounded special-casing. Left **deferred**; the statement-level
+  drop (the common, high-value case) is covered now, and the residue waits for the planned
+  `go/ast` + `go/types` workstream — not started inside this loop.
+
+### (checker) No `analyze.Tables` extension for 03
+- **Kind:** decision
+- **Chose:** reused `Tables.FuncSignatures` (the `Mode` of each in-file callee) as the only fact the
+  must-use check needs; no table extension.
+- **Why:** identifying a Result-returning callee is a name → Mode lookup the existing table already
+  serves. Per-function spans (used by 06/02) weren't needed here — the obligation is decided from the
+  call's immediate lexical neighbours, independent of which function encloses it.
+
 ---
 
 ## 04-option — Option[T] / nil-safety (pointer strategy)

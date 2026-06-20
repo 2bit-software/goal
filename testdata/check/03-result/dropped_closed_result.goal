@@ -1,0 +1,22 @@
+package config
+
+enum ParseError {
+	Empty
+}
+
+type Config struct {
+	Raw string
+}
+
+// load is a closed-E Result-returning function (E is the ParseError enum, not the
+// builtin error). The must-use obligation attaches to closed-E Results too.
+func load(s string) Result[Config, ParseError] {
+	if s == "" {
+		return Result.Err(ParseError.Empty)
+	}
+	return Result.Ok(Config{Raw: s})
+}
+
+func boot(input string) {
+	load(input) // want "the `Result` returned by `load(…)` is dropped"
+}

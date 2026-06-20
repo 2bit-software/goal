@@ -117,7 +117,7 @@ Order is by self-containment / value: the most local, inference-free guarantees 
     (08 only knows `...defaults`), so clean testdata uses bodyless derives or fully-named literals — the
     08↔`...derive` interaction is recorded in `DECISIONS.md` §12 as a follow-up. See `DECISIONS.md` §12 (checker).
 
-- [ ] **03-result** — must-use
+- [x] **03-result** — must-use
   - Slot: `internal/check/mustuse.go` (`checkMustUse`). Testdata: `testdata/check/03-result/`.
   - Guarantee: a Result-returning call's value is consumed (`?`, match, inspected assign,
     or explicit discard); dropping it is an **Error**.
@@ -126,6 +126,17 @@ Order is by self-containment / value: the most local, inference-free guarantees 
   - Deps: none. Defer: cover local statement-level drop; defer real flow analysis (stored,
     passed on, then dropped) → Warning. First candidate to graduate onto `go/types` if the
     lexical model is too weak — note that boundary in `DECISIONS.md` if you hit it.
+  - **Done:** covers the statement-level drop — a Result-returning direct call (open-E `ModeResult`
+    and closed-E `ModeResultClosed`) standing alone as an expression statement is Error
+    `dropped-result`, located at the callee. All consuming/nested forms (`name := f(…)`,
+    `match f(…)`, `f(…)?`, `return f(…)`, `g(f(…))`) are recognized as uses by the callee's
+    immediate lexical neighbours; plain (`ModeNone`) callees carry no obligation. Deferred (located
+    Warning): `_ := f(…)` whole-Result discard → `unresolved-result-discard` (the sanctioned
+    explicit-discard surface isn't defined yet, SYNTAX.md §5); a statement-leading call with an
+    expression continuation (`f(…).x`) → `unresolved-result-use`. **Refused (go/types boundary):** the
+    assigned-then-unused class (`r := parse(x)` never read; stored/passed-on-then-dropped) needs real
+    dataflow — left deferred, this is 03's graduation point onto `go/ast`+`go/types`. No
+    `analyze.Tables` extension — used existing `FuncSignatures`. See `DECISIONS.md` §03 (checker).
 
 - [ ] **10-assert** — static-provable subset (minimal, reserved)
   - Slot: `internal/check/assert.go` (`checkAssert`). Testdata: `testdata/check/10-assert/`.

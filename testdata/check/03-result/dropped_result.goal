@@ -1,0 +1,20 @@
+package config
+
+type Config struct {
+	Raw string
+}
+
+// parse is a Result-returning (open-E) function: its value must be used.
+func parse(s string) Result[Config, error] {
+	if s == "" {
+		return Result.Err(errors.New("empty"))
+	}
+	return Result.Ok(Config{Raw: s})
+}
+
+// run drops the Result on the floor — a bare call statement. The success value is
+// unreachable and the error branch is silently discarded; this is the must-use
+// violation feature 03 exists to reject.
+func run(input string) {
+	parse(input) // want "the `Result` returned by `parse(…)` is dropped"
+}

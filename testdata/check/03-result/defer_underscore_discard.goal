@@ -1,0 +1,20 @@
+package config
+
+type Config struct {
+	Raw string
+}
+
+func parse(s string) Result[Config, error] {
+	if s == "" {
+		return Result.Err(errors.New("empty"))
+	}
+	return Result.Ok(Config{Raw: s})
+}
+
+// discard uses `_ :=` to throw the whole Result away. The sanctioned explicit-discard
+// surface for a Result is not yet defined (feature 03 SYNTAX.md §5), so this check
+// defers with a located Warning rather than ruling it a drop or a use — no Error fires,
+// so this no-marker case stays clean.
+func discard(input string) {
+	_ := parse(input)
+}

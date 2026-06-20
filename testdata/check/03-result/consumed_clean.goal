@@ -1,0 +1,48 @@
+package config
+
+type Config struct {
+	Raw string
+}
+
+func parse(s string) Result[Config, error] {
+	if s == "" {
+		return Result.Err(errors.New("empty"))
+	}
+	return Result.Ok(Config{Raw: s})
+}
+
+// reparse takes the parsed value and re-wraps it — used as an argument (a nested call
+// position), and returned. No drop.
+func reparse(c Config) Result[Config, error] {
+	return Result.Ok(c)
+}
+
+// matchUse consumes the Result via a match.
+func matchUse(input string) {
+	match parse(input) {
+		Result.Ok(cfg) => use(cfg)
+		Result.Err(e) => report(e)
+	}
+}
+
+// bindUse binds the Result to a named local (an inspected assign).
+func bindUse(input string) {
+	r := parse(input)
+	_ = r
+}
+
+// questionUse propagates the Result with `?`.
+func questionUse(input string) Result[Config, error] {
+	cfg := parse(input)?
+	return Result.Ok(cfg)
+}
+
+// returnUse propagates the Result as its own return value.
+func returnUse(input string) Result[Config, error] {
+	return parse(input)
+}
+
+// argUse passes the Result onward as an argument — used in place, not dropped.
+func argUse(input string) {
+	consume(parse(input))
+}
