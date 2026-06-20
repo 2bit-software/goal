@@ -1,0 +1,24 @@
+package conv
+
+// The only registered conversion for ID's pair (string -> UUID) is fallible (returns
+// (UUID, error)), but `toDomain` is declared total (bare `EventExecution` return). The
+// deriver cannot thread `?` through a total signature: an Error directing the author to
+// make the derive fallible.
+
+type UUID struct{ s string }
+
+from func parseUUID(s string) (UUID, error) {
+	return UUID{s: s}, nil
+}
+
+type StoredEvent struct {
+	ID       string
+	Railroad string
+}
+
+type EventExecution struct {
+	ID       UUID
+	Railroad string
+}
+
+derive func toDomain(s StoredEvent) EventExecution // want "this derive is total — declare it returning `(EventExecution, error)`"

@@ -1,0 +1,19 @@
+package conv
+
+// `ID` is sourced (same name) but the source type `UUID` differs from the target type
+// `string`, and no `from func` converts UUID -> string is registered. The field is
+// unbridged — the deriver has no conversion to fill it: an Error.
+
+type UUID struct{ s string }
+
+type EventExecution struct {
+	ID       UUID
+	Railroad string
+}
+
+type StoredEvent struct {
+	ID       string
+	Railroad string
+}
+
+derive func toStorage(e EventExecution) StoredEvent // want "no `from func` converts `UUID`→`string`"

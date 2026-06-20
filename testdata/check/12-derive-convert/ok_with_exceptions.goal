@@ -1,0 +1,36 @@
+package conv
+
+// Clean: a body-form derive whose returned literal names every target field — `ID`,
+// `CustomerID` and `Railroad` as verbatim overrides, `ExternalID` via an explicit
+// expression, and `Audit` skipped with `_`. The checker treats every named/`_` field as
+// author-supplied (satisfied), so nothing is unsourced. No markers: any Error fails this
+// case. (The literal names all fields so it also satisfies the 08 field-completeness
+// check, which runs in the same harness and does not recognize `...derive` as a spread.)
+
+type UUID struct{ s string }
+
+func (u UUID) String() string { return u.s }
+
+type EventExecution struct {
+	ID         UUID
+	CustomerID UUID
+	Railroad   string
+}
+
+type StoredEvent struct {
+	ID         string
+	CustomerID string
+	Railroad   string
+	ExternalID string
+	Audit      string
+}
+
+derive func toStorage(e EventExecution) StoredEvent {
+	return StoredEvent{
+		ID:         e.ID.String(),
+		CustomerID: e.CustomerID.String(),
+		Railroad:   e.Railroad,
+		ExternalID: e.ID.String(),
+		Audit:      _,
+	}
+}

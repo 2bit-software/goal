@@ -1,0 +1,21 @@
+package conv
+
+// `Tags` is `Option[string] -> Option[int]` and `Meta` is `map[string]A -> map[string]B`:
+// both need the map/Option recursion the v1 checker keeps minimal (a leaf A->B may yet
+// make them total). The checker defers each with a located Warning, never a false
+// incompleteness Error. `Name` is direct. No markers: Warnings may go unclaimed, no
+// Error must fire.
+
+type Source struct {
+	Name string
+	Tags Option[string]
+	Meta map[string]int
+}
+
+type Target struct {
+	Name string
+	Tags Option[int]
+	Meta map[string]int64
+}
+
+derive func toTarget(s Source) Target

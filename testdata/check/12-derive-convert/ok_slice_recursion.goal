@@ -1,0 +1,22 @@
+package conv
+
+// Clean: `Members []UUID -> []string` is filled by built-in slice recursion from the
+// registered UUID -> string element conversion; `Name` is direct. No markers.
+
+type UUID struct{ s string }
+
+func (u UUID) String() string { return u.s }
+
+from func uuidToString(u UUID) string { return u.String() }
+
+type Group struct {
+	Name    string
+	Members []UUID
+}
+
+type IDList struct {
+	Name    string
+	Members []string
+}
+
+derive func toIDs(g Group) IDList

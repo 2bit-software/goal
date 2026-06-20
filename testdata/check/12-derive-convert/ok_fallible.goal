@@ -1,0 +1,23 @@
+package conv
+
+// Clean: `string -> UUID` is a fallible conversion, and `fromStorage` is declared
+// fallible (returns `(EventExecution, error)`), so the deriver may thread `?`. Every
+// other field is direct. No markers: any Error fails this case.
+
+type UUID struct{ s string }
+
+from func parseUUID(s string) (UUID, error) {
+	return UUID{s: s}, nil
+}
+
+type StoredEvent struct {
+	ID       string
+	Railroad string
+}
+
+type EventExecution struct {
+	ID       UUID
+	Railroad string
+}
+
+derive func fromStorage(s StoredEvent) (EventExecution, error)

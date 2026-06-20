@@ -943,6 +943,54 @@ Entry kinds:
   compile + vet clean, AND behavioral tests confirm the conversions produce correct values and thread
   errors (empty ID → error).
 
+### Checker (12-derive-convert): conversion-totality slot — defer-boundary
+- **Kind:** decision
+- **Chose:** `checkConvert` (`internal/check/convert.go`) walks every `derive func` exactly the way
+  `pass.expandDerives` does — same source-param / return-type / fallibility parse, same `parseOverrides`
+  body read — and for each unmentioned target field asserts resolvability with `resolveField`'s strategy
+  order: same type → registered `from func` → built-in `[]A→[]B` slice recursion. A target field that is
+  neither overridden, `_`-skipped, nor resolvable is an **Error**. Three Error codes: `unsourced-field`
+  (no same-named source field), `unbridged-field` (sourced but no conversion for the differing type pair),
+  `fallible-in-total-derive` (the only registered conversion is fallible but the derive is total —
+  mirrors the pass's "declare the derive returning `(T, error)`" rejection).
+- **Defer-boundary (located Warning, never a false Error):** `unresolved-derive-type` when the target
+  *or source* type is not an in-file `struct` (out-of-package — field set unreadable); `unresolved-derive-field`
+  when a `...derive` field's resolution needs a recursion class the v1 deriver keeps minimal — `map[…]`,
+  `Option[…]`, pointer (`Option[T]↔*T` bridge), or a slice whose element pair has no total conversion.
+  Those classes may yet be total via a rule this lexical check doesn't model, so they are deferred, not
+  flagged. This is exactly the audit's "slice implemented; map/Option/nested + the two bespoke shapes
+  (pmk_upgrade, patterns JSON) deferred" boundary, surfaced as a located Warning instead of silence.
+- **Over:** proving totality of map/Option/nested recursion lexically (needs real type structure — defer
+  to the planned `go/types` workstream); treating an out-of-package target as incomplete (a false Error).
+- **Why:** a false "this conversion is incomplete" is as bad as a false "complete"; deferring the
+  unprovable classes keeps the guarantee honest. Located at the `derive` keyword (the construct erased by
+  lowering). No `analyze.Tables` extension — `Structs` + `FromRegistry` carry every fact.
+
+### Checker (12): private ports of the derive pass's parse helpers
+- **Kind:** assumption
+- **Chose:** `convert.go` carries byte-for-byte private copies of `pass.parseOverrides`, `splitReturn`,
+  `findField`, `indexOfTok`, `tokenAtOffset` (the derive pass's locators), since they are unexported and
+  the check package must not import `internal/pass`.
+- **Over:** exporting them from `internal/pass` (would change a file outside this slot's scope and couple
+  the checker to the lowering package); re-deriving the parse differently (risks the check reading a
+  `derive func` differently than the lowering does — the exact false-guarantee hazard).
+- **Why:** the spine's reuse contract is "lift the pass's locating logic, then assert instead of splice."
+  Mirroring the helpers verbatim keeps the check's view of a `derive func` identical to the lowering's.
+
+### Checker (12): testdata avoids `...derive` literals that trip the 08 field-completeness check
+- **Kind:** assumption
+- **Chose:** the `...derive` spread path is exercised by **bodyless** derive testdata (no literal); the
+  body-form clean case names every target field explicitly. Rationale: the 08-fields check
+  (`checkFields`) runs in the same harness and recognizes only `...defaults` as a completeness spread, so
+  a `T{ …, ...derive(src) }` literal reads to it as omitting the unnamed fields → a spurious
+  `missing-field` Error on the shared case. Bodyless derives have no literal, so 08 never sees them.
+- **Over:** editing `fields.go` to also recognize `...derive` (out of this slot's scope); claiming the
+  08 error in the 12 case's markers (would mis-attribute it).
+- **Why:** same shared-harness interaction the 02-match slot already noted (payload-binding arms tripping
+  08); the conservative move is to write 12 testdata that does not provoke a sibling check. The
+  `...derive`→08 interaction is real surface (a body literal with `...derive` *will* draw an 08
+  `missing-field` today) and is worth a follow-up — recorded here, not silently worked around in code.
+
 ---
 
 ## 07-implements — surface-syntax revision

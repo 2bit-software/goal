@@ -1,0 +1,18 @@
+package conv
+
+// The target StoredEvent has a field `ExternalID` with no same-named source field on
+// EventExecution and no explicit override in the (bodyless) derive — it is unsourced.
+// An incomplete conversion that would otherwise silently zero ExternalID: an Error.
+
+type EventExecution struct {
+	ID       string
+	Railroad string
+}
+
+type StoredEvent struct {
+	ID         string
+	Railroad   string
+	ExternalID string
+}
+
+derive func toStorage(e EventExecution) StoredEvent // want "target field `StoredEvent.ExternalID` has no same-named source field"

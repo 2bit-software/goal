@@ -1,0 +1,26 @@
+package conv
+
+// Clean: a bodyless derive (the implicit full `...derive(e)` spread) where every target
+// field resolves — `ID`/`CustomerID` via the registered UUID->string conversion and
+// `Railroad` direct. Bodyless, so there is no literal for the 08 field-completeness check
+// to flag. No markers: any Error fails this case.
+
+type UUID struct{ s string }
+
+func (u UUID) String() string { return u.s }
+
+from func uuidToString(u UUID) string { return u.String() }
+
+type EventExecution struct {
+	ID         UUID
+	CustomerID UUID
+	Railroad   string
+}
+
+type StoredEvent struct {
+	ID         string
+	CustomerID string
+	Railroad   string
+}
+
+derive func toStorage(e EventExecution) StoredEvent

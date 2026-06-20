@@ -90,7 +90,7 @@ Order is by self-containment / value: the most local, inference-free guarantees 
     `FromRegistry` + `Enums[E].VSet`; per-function spans re-derived locally (closed pass's `funcSpans`
     is private). See `DECISIONS.md` §06 (checker).
 
-- [ ] **12-derive-convert** — conversion totality
+- [x] **12-derive-convert** — conversion totality
   - Slot: `internal/check/convert.go` (`checkConvert`). Testdata: `testdata/check/12-derive-convert/`.
   - Guarantee: `derive func g(s S) T` is total — every target field is reachable
     field-by-field, via a `from func`, or via an exception clause; an unreachable field is an **Error**.
@@ -98,6 +98,19 @@ Order is by self-containment / value: the most local, inference-free guarantees 
   - Reuse: derive pass field-correspondence + exception clause; `Tables.Structs`, `Tables.FromRegistry`.
   - Deps: **06** (generalizes its From-totality). Defer: map/Option/nested recursion and the
     two bespoke shapes (pmk_upgrade, patterns JSON) → Warning.
+  - **Done:** walks each `derive func` the way `pass.expandDerives` does (same param/return/override
+    parse) and asserts every unmentioned target field is resolvable via `resolveField`'s order — same
+    type, registered `from func`, or built-in `[]A→[]B` slice recursion. Errors: `unsourced-field` (no
+    same-named source field), `unbridged-field` (differing type pair, no registered conversion),
+    `fallible-in-total-derive` (only a fallible conversion exists for a total derive). Overrides
+    (`Field: expr`) and `_`-skips count as author-supplied. Deferred (located Warning):
+    `unresolved-derive-type` (target/source not an in-file struct — out-of-package) and
+    `unresolved-derive-field` (map/`Option`/pointer/nested recursion the v1 deriver keeps minimal, incl.
+    the bespoke pmk_upgrade/patterns shapes). No `analyze.Tables` extension — used `Structs` +
+    `FromRegistry`; the pass's parse helpers are mirrored privately (can't import `internal/pass`).
+    Note: `...derive(src)` body literals trip the 08 field-completeness check under the shared harness
+    (08 only knows `...defaults`), so clean testdata uses bodyless derives or fully-named literals — the
+    08↔`...derive` interaction is recorded in `DECISIONS.md` §12 as a follow-up. See `DECISIONS.md` §12 (checker).
 
 - [ ] **03-result** — must-use
   - Slot: `internal/check/mustuse.go` (`checkMustUse`). Testdata: `testdata/check/03-result/`.

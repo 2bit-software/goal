@@ -1,0 +1,13 @@
+package conv
+
+// The target type `proto.StoredEvent` is not a struct declared in this file (an
+// out-of-package type), so its field set is unreadable and completeness cannot be
+// proven. The checker defers with a located Warning rather than a false Error. No
+// markers: the Warning may go unclaimed, and no Error must fire.
+
+type EventExecution struct {
+	ID       string
+	Railroad string
+}
+
+derive func toStorage(e EventExecution) proto.StoredEvent
