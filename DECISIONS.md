@@ -1529,3 +1529,53 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
   lowering workstream** to be authorized explicitly (they extend the deriver and the match lowering),
   after which B4's depth check becomes meaningful. This keeps the depth-checker loop honest: it
   advances on what the lowered Go can actually express, and does not fake units gated on the front end.
+
+### B6 — promote residual 08 deferral: elided composite literals (type-backed)
+- **Kind:** decision
+- **Did:** added `typecheck.CheckNoZeroValue` (`internal/typecheck/nozero.go`) — the depth version of
+  feature 08 (no-zero-value) for **elided composite literals**: an element/value literal that omits its
+  type because Go infers it from the surrounding array, slice, or map type
+  (`[]Inner{{a: 1}}`, `map[string]Inner{"k": {a: 1}}`, `[N]Inner{{a: 1}}`). Such a literal is valid Go
+  that silently zero-fills any omitted field — the exact footgun feature 08 closes — but its
+  required-field set is invisible to the lexical scan. The check walks AST `*ast.CompositeLit` nodes with
+  no type expression (`Type == nil`), resolves the inferred type via `Info.Types`, and — when it is a
+  **named struct declared in this goal package** — reports each omitted field as a located Error
+  (`Code: "elided-missing-field"`, at the literal's `{`, goal-mapped via `//line`). 8 tests
+  (slice/map/array/empty positives, complete + typed-at-site + non-struct negatives, unresolved deferral).
+- **Correction to the queue-reassessment probe (2026-06-20).** The reassessment cited
+  `Outer{inner: {a: 1}}` (struct-field-value elision) as the win. **That example is wrong:** Go does
+  **not** permit eliding the type of a *struct field value* (only of array/slice/map elements and map
+  keys), so that program lowers to **invalid Go** — `go/types` reports "missing type in composite
+  literal" and the literal's type is unresolved, not type-backed. (If goal intends to *accept* that
+  surface, the deriver/transpiler must insert the field type — a front-end/lowering gap, out of this
+  loop's scope.) The genuine, in-scope, type-backed win is the **valid** elision positions above. There
+  the lexical stage does not "silently miss" but actively **misfires**: it latches onto the surrounding
+  `Inner{` of `[]Inner{{…}}`, cannot see into the nested element, and reports the **wrong** field set
+  (every field "missing", even ones the element supplies). The depth check returns the field-accurate set.
+- **Defer-boundary (what types decide vs. what is punted):**
+  - **In scope:** `Type == nil` literals resolving to an in-package named struct (`named.Obj().Pkg() ==
+    p.Types` **and** the name is in `Tables.Structs`). The package-identity guard keeps feature 08's
+    guarantee off **imported Go structs** (which carry no such contract) and off **injected helper types**
+    (e.g. the generated `Result`/`Option` sum types are not in `Tables.Structs`).
+  - **Positional element literals** (`Inner{1, 2}` style, non-keyed) are skipped: Go itself requires
+    every field of a positional struct literal, so an incomplete one is already a Go error — no goal gap.
+  - **Unresolved** elided literals (`Info.Types` type nil/invalid) are skipped silently, not warned: they
+    are already a collected Go error (e.g. the invalid struct-field elision above), and a second
+    feature-08 diagnostic on the same construct would be noise.
+  - **Deferred (narrower residue, recorded not faked):** generic-instantiated *named* literals
+    (`Box[int]{…}`, `cl.Type != nil` as an `IndexExpr`) — the lexical scan also misses these (it keys on
+    `IDENT {`, but `Box[int]{` has `]` before the brace); promoting them is a separable follow-up, left
+    out to keep B6 one coherent class (type-elided literals). Qualified out-of-package literals
+    (`pkg.User{…}`) stay deferred by design — not goal's guarantee. `...defaults` *inside* an elided
+    literal depends on whether the defaults pass expands it there (lowering-dependent); untested, deferred.
+- **Assumption — `Code: "elided-missing-field"` (distinct from the lexical stage's `missing-field`).**
+  A separate code makes the type-backed promotion greppable and lets the CLI merge apply the DEPTH-TODO
+  dedup decision ("prefer the type-backed one") when both stages flag one construct. Vetoable — could be
+  unified to `missing-field` if the merge keys on `Feature`+position instead.
+- **No harness change, no CLI change.** `CheckNoZeroValue(*Package) []Diagnostic` follows the B2/B3
+  pattern; the depth stage is still not wired into `goal check` (wiring remains a later integration unit,
+  same as after B2/B3). `plural`/`quoteJoin` are local copies (the lexical stage's are in package `check`).
+- **Residual 02/06 after B6:** unchanged from the reassessment — cross-*file* 02 exhaustiveness is
+  already caught via merged tables; only cross-*package* 02/06 cases remain, which are semantically
+  limited (unexported sealed markers aren't enumerable across a package boundary; imported Go structs
+  carry no goal contract). Not promoted; recorded as a genuine narrow residue.

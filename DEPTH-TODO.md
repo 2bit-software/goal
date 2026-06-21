@@ -125,17 +125,26 @@ typed checks that return goal-located diagnostics. `goal check` runs **both** st
   `internal/pass`/`pipeline`, fed by B1's type info — cross-cutting with the front-end, not a
   pure checker unit. *Depends on B1.*
 
-- [ ] **B6 — promote residual 02/06/08 deferrals.** Where `go/types` resolves a case the
-  lexical checker (even package-merged) still defers as a Warning, upgrade it to a type-backed
-  Error; otherwise re-record as a genuine narrower residue. *Depends on B1–B4.*
-  - **Resequence note (2026-06-20):** the "depends on B1–B4" is conservative — B6 covers features
-    02/06/08, **independent of B4's feature 12**, so it does NOT actually need B4. Probed
-    checker-viable: an inferred/nested struct literal of an in-file goal struct
-    (`Outer{inner: {a: 1}}` omitting required `b`) transpiles cleanly and the lexical 08 check
-    **silently misses it**, while `go/types` resolves the literal's type — a real, loadable,
-    type-backed Error. **Recommended as the next depth-checker unit, ahead of B4.** (Cross-*file* 02
-    is already caught via merged tables; only cross-*package* 02/06 residue remains, which is
-    semantically limited.) See DECISIONS "Phase B queue reassessment."
+- [x] **B6 — promote residual 02/06/08 deferrals.** Where `go/types` resolves a case the
+  lexical checker (even package-merged) still defers/misfires, upgrade it to a type-backed
+  Error; otherwise re-record as a genuine narrower residue. *Resequenced ahead of B4 (user-authorized);
+  the "depends on B1–B4" was conservative sequencing — B6's 08 work is independent of B4's feature 12.*
+  - **Done (2026-06-20):** `typecheck.CheckNoZeroValue` (`nozero.go`) — promotes the **feature-08**
+    residual: **elided composite literals** (type omitted, inferred from a surrounding array/slice/map:
+    `[]Inner{{a: 1}}`, `map[string]Inner{"k": {a: 1}}`, `[N]Inner{{…}}`). These are valid Go that
+    silently zero-fills omitted fields; the lexical scan can't type the bare `{…}` and **misfires** on
+    the surrounding `Inner{` (reports the wrong field set), while `go/types` resolves the inferred type
+    and reports the field-accurate Error (`elided-missing-field`, goal-located). Scoped to in-package
+    named structs (`pkg == p.Types` ∧ in `Tables.Structs`) so the guarantee stays off imported Go
+    structs / injected sum types. 8 tests. No harness/CLI change.
+  - **Probe correction:** the reassessment's `Outer{inner: {a: 1}}` example is **invalid Go**
+    (struct-field-value elision isn't allowed — only array/slice/map elements/keys), so it is *not* a
+    type-backed case; it surfaces as a collected Go error and is deferred. The valid elision positions
+    above are the real win. See DECISIONS §B6.
+  - **Deferred (narrower residue):** generic-instantiated named literals (`Box[int]{…}`) — also
+    lexically missed, separable follow-up; qualified out-of-package literals (`pkg.T{…}`) — not goal's
+    guarantee; cross-*package* 02/06 (unexported sealed markers not enumerable across a boundary;
+    imported Go structs carry no goal contract). Recorded, not faked. See DECISIONS §B6.
 
 **Done when:** each type-dependent deferral in `ROADMAP_TO_GOAL.md` §0 is either a type-backed
 Error with a goal-located message, or a re-recorded narrower residue with reason; `goal check`
@@ -167,10 +176,12 @@ runs both stages.
 - `DECISIONS.md` §03/§07/§12 — the refusals/assumptions naming the `go/types` ceiling.
 - `internal/check/check.go` — the lexical stage; the typed stage mirrors its diagnostic shape.
 
-_Status: thesis drafted 2026-06-20; SPIKE-B1 PASSED 2026-06-20. **B1–B3 done** (harness, 07
-implements, 03 must-use). **B4 BLOCKED** and **B5** is front-end/lowering work — both gated on
-extending the derive/match lowering (outside the depth-checker loop's guardrails). **B6** is
-checker-viable and independent of B4; recommended as the next depth-checker unit (resequenced
-ahead of B4). See DECISIONS "Phase B queue reassessment" (2026-06-20). The depth-checker track
-has delivered the deferred classes that survive transpilation; the remainder is gated on an
-authorized front-end workstream._
+_Status: thesis drafted 2026-06-20; SPIKE-B1 PASSED 2026-06-20. **B1–B3 + B6 done** (harness, 07
+implements, 03 must-use, 08 elided-literal promotion — B6 resequenced ahead of B4 with user
+authorization). **B4 BLOCKED** and **B5** is front-end/lowering work — both gated on extending the
+derive/match lowering (outside the depth-checker loop's guardrails). The depth-checker track has now
+delivered every deferred class that survives transpilation and is decidable from the lowered Go
+(07 identity, 03 stored/discarded must-use, 08 elided literals); the remainder — B4 (12 conversion
+recursion), B5 (value-position match), and the narrow cross-*package* 02/06 residue — is gated on an
+authorized front-end workstream or is a recorded narrow residue. See DECISIONS §B6 and "Phase B queue
+reassessment" (2026-06-20)._
