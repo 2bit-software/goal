@@ -148,13 +148,21 @@ typed checks that return goal-located diagnostics. `goal check` runs **both** st
 
 **Done when:** each type-dependent deferral in `ROADMAP_TO_GOAL.md` §0 is either a type-backed
 Error with a goal-located message, or a re-recorded narrower residue with reason; `goal check`
-runs both stages.
+runs both stages. **`goal check` now runs both stages** (integration unit, 2026-06-21 — see
+DECISIONS "Integration — wire the depth stage into `goal check`"); the remaining open items are
+B4/B5 (front-end-gated) and the recorded narrow residue.
 
 ---
 
-## Open decisions (resolve at the named unit, not now)
+## Open decisions
 
-- **Stage home & integration** (B1): `internal/typecheck` separate from `internal/check`;
+- **RESOLVED (integration, 2026-06-21) — stage integration & dedup.** `goal check` runs the lexical
+  stage then the typed depth stage and merges them; when both flag the same construct (file basename +
+  line + feature), the **type-backed finding wins** (the lexical one is dropped). Raw `go/types` errors
+  (`Package.Errors`) are **not** surfaced by `check` yet — `importer.Default()` can false-positive on
+  third-party imports; `goal build` remains the gate for real Go type errors. Cost: the typed stage runs
+  on `check` only, not `build`/`run`. See DECISIONS for the full rationale (incl. the importer caveat).
+- **Stage home** (B1, settled): `internal/typecheck` separate from `internal/check`;
   `goal check` runs lexical (pre-lowering) then typed (post-lowering) and merges diagnostics.
   Decide dedup when both stages flag the same thing (prefer the type-backed one).
 - **Importer** (B1): `go/importer.Default()` (gc export data) vs `importer.ForCompiler(…,
@@ -178,10 +186,12 @@ runs both stages.
 
 _Status: thesis drafted 2026-06-20; SPIKE-B1 PASSED 2026-06-20. **B1–B3 + B6 done** (harness, 07
 implements, 03 must-use, 08 elided-literal promotion — B6 resequenced ahead of B4 with user
-authorization). **B4 BLOCKED** and **B5** is front-end/lowering work — both gated on extending the
-derive/match lowering (outside the depth-checker loop's guardrails). The depth-checker track has now
-delivered every deferred class that survives transpilation and is decidable from the lowered Go
-(07 identity, 03 stored/discarded must-use, 08 elided literals); the remainder — B4 (12 conversion
+authorization). **Depth stage WIRED into `goal check` (2026-06-21):** both stages now run, dedup
+prefers the type-backed finding — see DECISIONS "Integration." **B4 BLOCKED** and **B5** is
+front-end/lowering work — both gated on extending the derive/match lowering (outside the
+depth-checker loop's guardrails). The depth-checker track has now delivered every deferred class that
+survives transpilation and is decidable from the lowered Go (07 identity, 03 stored/discarded
+must-use, 08 elided literals) **and surfaces them through the CLI**; the remainder — B4 (12 conversion
 recursion), B5 (value-position match), and the narrow cross-*package* 02/06 residue — is gated on an
-authorized front-end workstream or is a recorded narrow residue. See DECISIONS §B6 and "Phase B queue
-reassessment" (2026-06-20)._
+authorized front-end workstream or is a recorded narrow residue. See DECISIONS §B6, "Integration," and
+"Phase B queue reassessment."_

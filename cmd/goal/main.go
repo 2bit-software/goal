@@ -19,11 +19,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"goal/internal/check"
 	"goal/internal/pipeline"
 	"goal/internal/project"
+	"goal/internal/typecheck"
 )
 
 func main() {
@@ -153,19 +155,16 @@ func cmdCheck(root string, out, errOut io.Writer) error {
 	}
 	total := 0
 	for _, pkg := range pkgs {
-		srcs := make([]string, len(pkg.Files))
-		for i, f := range pkg.Files {
-			srcs[i] = f.Src
-		}
-		perFile, err := check.AnalyzePackage(srcs)
+		diags, err := checkPackage(pkg, errOut)
 		if err != nil {
 			return fmt.Errorf("check %s: %w", pkg.Dir, err)
 		}
-		for i, diags := range perFile {
-			for _, d := range diags {
-				fmt.Fprintln(errOut, d.Render(pkg.Files[i].Src, pkg.Files[i].Path))
+		sortDiags(diags)
+		for _, d := range diags {
+			fmt.Fprintln(errOut, d.render())
+			if d.severity == check.Error {
+				total++
 			}
-			total += countErrors(diags)
 		}
 	}
 	if total > 0 {
@@ -173,6 +172,120 @@ func cmdCheck(root string, out, errOut io.Writer) error {
 	}
 	fmt.Fprintln(out, "ok")
 	return nil
+}
+
+// checkPackage runs both checker stages over one package and returns their merged,
+// deduplicated findings. The lexical stage (internal/check) runs on the original source,
+// before lowering; the typed depth stage (internal/typecheck) runs on the lowered Go and
+// answers what the lexical stage had to defer. When both flag the same construct (same
+// file, line, and feature), the type-backed finding wins — it is grounded in real type
+// information, whereas the lexical one may be a conservative deferral or, for an elided
+// composite literal, an outright misfire. A depth-stage load failure (the program does
+// not transpile) is reported as a note and the lexical findings still stand; goal build is
+// the gate that hard-fails on non-transpiling source.
+func checkPackage(pkg *project.Package, errOut io.Writer) ([]checkDiag, error) {
+	srcs := make([]string, len(pkg.Files))
+	for i, f := range pkg.Files {
+		srcs[i] = f.Src
+	}
+	perFile, err := check.AnalyzePackage(srcs)
+	if err != nil {
+		return nil, err
+	}
+
+	depth, derr := runDepthChecks(pkg)
+	if derr != nil {
+		fmt.Fprintf(errOut, "goal check: depth stage unavailable for %s: %v\n", pkg.Dir, derr)
+	}
+
+	// A type-backed finding suppresses a lexical one for the same construct. Key on the
+	// file basename (the two stages spell the path differently — full path vs. the //line
+	// basename), line, and feature; within a package, basenames are unique.
+	suppress := map[string]bool{}
+	for _, d := range depth {
+		suppress[dedupKey(d.Pos.Filename, d.Pos.Line, d.Feature)] = true
+	}
+
+	var diags []checkDiag
+	for i, fileDiags := range perFile {
+		path := pkg.Files[i].Path
+		for _, d := range fileDiags {
+			p := check.OffsetToPosition(pkg.Files[i].Src, d.Pos)
+			if suppress[dedupKey(path, p.Line, d.Feature)] {
+				continue // type-backed finding owns this construct
+			}
+			diags = append(diags, checkDiag{path, p.Line, p.Col, d.Severity, d.Code, d.Message})
+		}
+	}
+	for _, d := range depth {
+		diags = append(diags, checkDiag{
+			depthFilePath(pkg, d.Pos.Filename), d.Pos.Line, d.Pos.Column,
+			d.Severity, d.Code, d.Message,
+		})
+	}
+	return diags, nil
+}
+
+// runDepthChecks loads the package's lowered Go into go/types and runs every depth check.
+// It returns an error only when the package fails to transpile or parse (a goal-compiler
+// problem); user type errors are tolerated inside Load.
+func runDepthChecks(pkg *project.Package) ([]typecheck.Diagnostic, error) {
+	p, err := typecheck.Load(pkg)
+	if err != nil {
+		return nil, err
+	}
+	var diags []typecheck.Diagnostic
+	diags = append(diags, typecheck.CheckImplements(p)...)
+	diags = append(diags, typecheck.CheckMustUse(p)...)
+	diags = append(diags, typecheck.CheckNoZeroValue(p)...)
+	return diags, nil
+}
+
+// checkDiag is a stage-agnostic rendered finding, so the two stages' diagnostics order
+// and print uniformly.
+type checkDiag struct {
+	file          string
+	line, col     int
+	severity      check.Severity
+	code, message string
+}
+
+// render formats the finding as `file:line:col: severity: [code] message`, matching both
+// stages' native rendering.
+func (d checkDiag) render() string {
+	return fmt.Sprintf("%s:%d:%d: %s: [%s] %s", d.file, d.line, d.col, d.severity, d.code, d.message)
+}
+
+// sortDiags orders findings by file, then line, then column, for stable output.
+func sortDiags(diags []checkDiag) {
+	sort.SliceStable(diags, func(i, j int) bool {
+		if diags[i].file != diags[j].file {
+			return diags[i].file < diags[j].file
+		}
+		if diags[i].line != diags[j].line {
+			return diags[i].line < diags[j].line
+		}
+		return diags[i].col < diags[j].col
+	})
+}
+
+// dedupKey identifies a construct across the two stages by file basename, line, and the
+// feature that flagged it. The basename normalizes the stages' differing path spellings.
+func dedupKey(file string, line int, feature string) string {
+	return fmt.Sprintf("%s:%d:%s", filepath.Base(file), line, feature)
+}
+
+// depthFilePath maps a depth diagnostic's filename (which may be a //line basename) back
+// to the package's full source path, so depth findings render with the same path as
+// lexical ones. It falls back to the reported name when no basename matches.
+func depthFilePath(pkg *project.Package, name string) string {
+	base := filepath.Base(name)
+	for _, f := range pkg.Files {
+		if filepath.Base(f.Path) == base {
+			return f.Path
+		}
+	}
+	return name
 }
 
 // goToolchain runs `go <verb> <target>` over the package with the generated Go supplied
@@ -287,14 +400,4 @@ func mustRel(base, target string) string {
 		return rel
 	}
 	return target
-}
-
-func countErrors(diags []check.Diagnostic) int {
-	n := 0
-	for _, d := range diags {
-		if d.Severity == check.Error {
-			n++
-		}
-	}
-	return n
 }

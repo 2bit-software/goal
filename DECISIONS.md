@@ -1579,3 +1579,46 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
   already caught via merged tables; only cross-*package* 02/06 cases remain, which are semantically
   limited (unexported sealed markers aren't enumerable across a package boundary; imported Go structs
   carry no goal contract). Not promoted; recorded as a genuine narrow residue.
+
+### Integration — wire the depth stage into `goal check` (both stages now run)
+- **Kind:** decision
+- **Did:** `goal check` (`cmd/goal/main.go`, `cmdCheck`→`checkPackage`) now runs **both** stages per
+  package: the lexical stage (`check.AnalyzePackage`, original source) and the typed depth stage
+  (`typecheck.Load` + `CheckImplements`/`CheckMustUse`/`CheckNoZeroValue`, lowered Go). Findings are
+  merged into a stage-agnostic `checkDiag`, sorted by file/line/col, rendered uniformly
+  (`file:line:col: severity: [code] message` — both stages already shared that shape), and Errors from
+  either stage drive the exit code. Closes the DEPTH-TODO "Done when … `goal check` runs both stages"
+  criterion. Until now the entire depth track (B2/B3/B6) was tested but never executed for a user.
+- **Dedup decision (resolved here; was a B1 open decision): prefer the type-backed finding.** When both
+  stages flag the same construct — same file *basename*, line, and `Feature` — the lexical finding is
+  dropped and the depth one kept. This matters most for feature 08: on an elided element literal
+  (`[]Inner{{a: 1}}`) the lexical scan **misfires** (latches onto the surrounding `Inner{`, reports the
+  wrong field set), while the depth check reports the field-accurate set; suppressing the lexical misfire
+  is strictly correct. For 07, both may flag a genuinely-unimplemented interface on the same clause line;
+  the depth verdict (real `types.Implements`) supersedes the lexical text comparison. Keyed on the path
+  **basename** because the two stages spell paths differently — lexical uses the discovered `File.Path`,
+  depth positions come via `//line` (basename) or `goalPosition` (full path), inconsistently even across
+  the depth checks; basenames are unique within a package, so the key is sound. `depthFilePath` maps a
+  depth finding's basename back to the full `File.Path` so output paths are consistent.
+- **Assumption — line+feature granularity for dedup (vetoable).** Two *different* constructs of the same
+  feature on one line would over-suppress (the lexical one is dropped). Judged rare (a line rarely holds
+  two literals of the same struct-completeness violation) and the safe direction (prefer the type-backed
+  verdict). A position-exact key would need the lexical and depth offsets reconciled, which the
+  stage-inconsistent filenames/offsets don't currently support.
+- **Refusal-with-reason — do NOT surface raw `go/types` errors (`Package.Errors`) in `goal check` yet.**
+  The harness collects Go type errors error-tolerantly, and they are goal-mapped, so surfacing them is
+  tempting. But `typecheck.Load` uses `importer.Default()` (gc export data), which resolves stdlib but
+  can **fail to import third-party modules**, producing *false* "could not import" errors — a false
+  guarantee, worse than silence. The three depth checks degrade gracefully (they defer when types don't
+  resolve, so a broken import yields no false Error), but raw `Package.Errors` would not. So `goal check`
+  surfaces only the lexical + depth-check findings; **`goal build` remains the gate that surfaces real Go
+  type errors** (mapped to `.goal`, already tested). Revisit when the importer decision (DEPTH-TODO open
+  decisions: `Default()` vs `ForCompiler(…, "source", …)`) is made.
+- **Depth-stage load failure is non-fatal to `check`.** If `typecheck.Load` fails (the program does not
+  transpile), `checkPackage` prints a `depth stage unavailable for <dir>: <err>` note and returns the
+  lexical findings; it does not fail `check` solely on that. A non-transpiling program is a `goal build`
+  hard-failure, not a guarantee violation — `check` reports guarantees and stays usable on partial input.
+- **Cost:** the typed stage transpiles + type-checks each package, heavier than lexing. Consistent with
+  the DEPTH-TODO "lean: `check` only" decision — `build`/`run` are unchanged and do not run the depth
+  stage. CLI tests: depth catches the elided literal + dedup suppresses the lexical misfire; clean
+  program still prints `ok`.

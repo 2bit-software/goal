@@ -101,6 +101,51 @@ func TestEmitWritesSiblingGo(t *testing.T) {
 	}
 }
 
+// goal check runs BOTH stages: the depth (go/types) stage catches an elided composite
+// literal that omits a field — a feature-08 violation the lexical stage cannot see — and
+// its type-backed finding suppresses the lexical stage's misfire on the same construct.
+func TestCheckDepthStageCatchesElidedLiteral(t *testing.T) {
+	const src = `package demo
+
+type Inner struct {
+    a int
+    b int
+}
+
+func f() []Inner {
+    return []Inner{{a: 1}}
+}
+`
+	dir := goalModule(t, map[string]string{"x.goal": src})
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"check", dir}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected check to fail on the dropped field\nstdout: %s\nstderr: %s", out.String(), errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "[elided-missing-field]") {
+		t.Errorf("type-backed diagnostic not surfaced:\n%s", errOut.String())
+	}
+	// Dedup: the lexical stage's misfiring `[missing-field]` for the same construct is
+	// suppressed in favor of the type-backed one.
+	if strings.Contains(errOut.String(), "[missing-field]") {
+		t.Errorf("lexical misfire was not suppressed by the type-backed finding:\n%s", errOut.String())
+	}
+}
+
+// A program that violates no guarantee passes both stages.
+func TestCheckCleanProgramPasses(t *testing.T) {
+	dir := goalModule(t, map[string]string{"main.goal": mainGoal})
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"check", dir}, &out, &errOut); err != nil {
+		t.Fatalf("clean check failed: %v\nstderr: %s", err, errOut.String())
+	}
+	if strings.TrimSpace(out.String()) != "ok" {
+		t.Errorf("want ok, got stdout=%q stderr=%q", out.String(), errOut.String())
+	}
+}
+
 func TestParseFlags(t *testing.T) {
 	emit, emitDir, root, err := parseFlags([]string{"--emit=out", "./pkg/..."})
 	if err != nil {
