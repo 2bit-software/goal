@@ -141,8 +141,12 @@ typed checks that return goal-located diagnostics. `goal check` runs **both** st
     (struct-field-value elision isn't allowed — only array/slice/map elements/keys), so it is *not* a
     type-backed case; it surfaces as a collected Go error and is deferred. The valid elision positions
     above are the real win. See DECISIONS §B6.
-  - **Deferred (narrower residue):** generic-instantiated named literals (`Box[int]{…}`) — also
-    lexically missed, separable follow-up; qualified out-of-package literals (`pkg.T{…}`) — not goal's
+  - **Follow-up done (2026-06-21):** generic-instantiated literals (`Box[int]{val: 1}` omitting `tag`)
+    now promoted too — also lexically missed (and not in the analyze tables), resolved via go/types
+    (`generic-missing-field`). The `Tables.Structs` guard was replaced with a declaration-position guard
+    (`isGoalDeclared`: in-package + `.goal` decl position) so generics are admitted and injected prelude
+    structs (Ok/Err) stay excluded. See DECISIONS "B6 follow-up."
+  - **Deferred (narrower residue):** qualified out-of-package literals (`pkg.T{…}`) — not goal's
     guarantee; cross-*package* 02/06 (unexported sealed markers not enumerable across a boundary;
     imported Go structs carry no goal contract). Recorded, not faked. See DECISIONS §B6.
 

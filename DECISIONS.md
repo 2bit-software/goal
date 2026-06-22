@@ -1562,12 +1562,10 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
   - **Unresolved** elided literals (`Info.Types` type nil/invalid) are skipped silently, not warned: they
     are already a collected Go error (e.g. the invalid struct-field elision above), and a second
     feature-08 diagnostic on the same construct would be noise.
-  - **Deferred (narrower residue, recorded not faked):** generic-instantiated *named* literals
-    (`Box[int]{…}`, `cl.Type != nil` as an `IndexExpr`) — the lexical scan also misses these (it keys on
-    `IDENT {`, but `Box[int]{` has `]` before the brace); promoting them is a separable follow-up, left
-    out to keep B6 one coherent class (type-elided literals). Qualified out-of-package literals
-    (`pkg.User{…}`) stay deferred by design — not goal's guarantee. `...defaults` *inside* an elided
-    literal depends on whether the defaults pass expands it there (lowering-dependent); untested, deferred.
+  - **Generic-instantiated literals** (`Box[int]{…}`) were initially deferred, then **delivered as a B6
+    follow-up** — see the next entry. Qualified out-of-package literals (`pkg.User{…}`) stay deferred by
+    design — not goal's guarantee. `...defaults` *inside* an elided/generic literal depends on whether the
+    defaults pass expands it there (lowering-dependent); untested, deferred.
 - **Assumption — `Code: "elided-missing-field"` (distinct from the lexical stage's `missing-field`).**
   A separate code makes the type-backed promotion greppable and lets the CLI merge apply the DEPTH-TODO
   dedup decision ("prefer the type-backed one") when both stages flag one construct. Vetoable — could be
@@ -1622,3 +1620,31 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
   the DEPTH-TODO "lean: `check` only" decision — `build`/`run` are unchanged and do not run the depth
   stage. CLI tests: depth catches the elided literal + dedup suppresses the lexical misfire; clean
   program still prints `ok`.
+
+### B6 follow-up — promote generic-instantiated struct literals (`Box[int]{…}`)
+- **Kind:** decision
+- **Did:** extended `CheckNoZeroValue` to also flag **generic instantiation** literals — `Box[int]{val: 1}`
+  omitting `tag`. The lexical scan keys on `IDENT {`, but a `]` sits between the type name and the brace,
+  so it never matches; the analyze tables don't register generic structs either (confirmed:
+  `Tables.Structs` is empty for `type Box[T any] struct`). go/types resolves the instantiated `Box[int]`
+  and reports the field-accurate omission (`Code: "generic-missing-field"`, message spells the
+  instantiation via `types.TypeString`). The literal classifier `litClassOf` routes by AST type
+  expression: `nil` → elided, `*ast.IndexExpr`/`*ast.IndexListExpr` → generic; plain `*ast.Ident`
+  (lexical stage's job) and qualified `*ast.SelectorExpr` (out of package) are skipped.
+- **Decision — replace B6's `Tables.Structs` membership guard with a declaration-position guard
+  (`isGoalDeclared`).** The original guard ("name is in `Tables.Structs`") cannot admit generic structs,
+  because analyze doesn't track them. The new guard accepts a resolved named type iff its object is in
+  this package (`Obj().Pkg() == p.Types`) **and** its declaration position maps to a `.goal` file
+  (`Fset.Position(Obj().Pos()).Filename` ends in `.goal`). Verified: a user type (`Box`, `Inner`) resolves
+  to a `.goal` position; injected prelude structs (`Ok`/`Err`, built by the Result lowering) are not in
+  `.goal` (synthetic prelude) — and `Result` itself is an interface, excluded by the underlying-struct
+  check anyway. This is behavior-preserving for the non-generic elided cases (a user struct is still
+  admitted, injected types still excluded) and strictly more capable (admits generics). A new test pins
+  that an injected `Ok` construction (`Result.Ok(1)`) is never flagged.
+- **Scope/limits unchanged:** keyed-only (positional → Go enforces), in-package only (qualified generics
+  `pkg.Box[int]{…}` excluded by `isGoalDeclared`), unresolved literals deferred. `...defaults` inside a
+  generic literal is lowering-dependent and untested — the message suggests it but it is not asserted.
+- **Tests:** generic positive (omits `tag`, message spells `Box[int]`), generic complete (no diagnostic),
+  injected-type-not-flagged; the four elided cases still pass under the new guard. 11 nozero tests total.
+- **No CLI change needed:** the lexical stage emits nothing for generic literals, so there is no dedup
+  conflict — the depth finding stands alone through the already-wired `goal check`.

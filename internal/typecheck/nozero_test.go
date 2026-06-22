@@ -89,6 +89,68 @@ func TestNoZeroEmptyElement(t *testing.T) {
 	}
 }
 
+// --- positive: generic-instantiation literal omitting a field ---
+
+const boxDecl = `package demo
+
+type Box[T any] struct {
+    val T
+    tag string
+}
+
+`
+
+// `Box[int]{val: 1}` omits `tag`. The lexical scan keys on `IDENT {` but a `]` sits before
+// the brace, so it misses this entirely (and the analyze tables don't register generic
+// structs); go/types resolves `Box[int]` and reports the omission.
+func TestNoZeroGenericLiteral(t *testing.T) {
+	src := boxDecl + `func f() Box[int] {
+    return Box[int]{val: 1}
+}
+`
+	d, ok := hasCode(diagsNoZero(t, src), "generic-missing-field")
+	if !ok {
+		t.Fatalf("want generic-missing-field, got %v", diagsNoZero(t, src))
+	}
+	if !strings.Contains(d.Message, "`tag`") {
+		t.Errorf("message should name the omitted field `tag`: %q", d.Message)
+	}
+	if !strings.Contains(d.Message, "Box[int]") {
+		t.Errorf("message should spell the instantiated type Box[int]: %q", d.Message)
+	}
+	if !strings.HasSuffix(d.Pos.Filename, ".goal") {
+		t.Errorf("diagnostic not located in .goal: %s", d.Pos)
+	}
+}
+
+// A complete generic literal supplies every field — no diagnostic.
+func TestNoZeroGenericComplete(t *testing.T) {
+	src := boxDecl + `func f() Box[int] {
+    return Box[int]{val: 1, tag: "x"}
+}
+`
+	if diags := diagsNoZero(t, src); len(diags) != 0 {
+		t.Fatalf("complete generic literal must produce no diagnostic, got %v", diags)
+	}
+}
+
+// An injected generic prelude struct (Ok/Err, built by the Result lowering) must never be
+// flagged: it is not goal-authored (no .goal declaration position). Result.Ok(1) lowers to
+// a construction of the injected Ok struct, which the depth check must leave alone.
+func TestNoZeroInjectedTypeNotFlagged(t *testing.T) {
+	src := `package demo
+
+func mk() Result[int, error] {
+    return Result.Ok(1)
+}
+`
+	for _, d := range diagsNoZero(t, src) {
+		if d.Feature == "08-no-zero-value" {
+			t.Errorf("must not flag an injected prelude struct: %v", d)
+		}
+	}
+}
+
 // --- negative: must NOT emit an Error ---
 
 // A complete elided element supplies every field.
