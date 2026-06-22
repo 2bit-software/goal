@@ -104,13 +104,26 @@ escalates to B only if a real program needs it.
     `match_infer_value` + unit `match_test.go`. The general case is L5 (type feedback). See DECISIONS
     §02 "Reference transpiler defers … (Partially lifted, L3)."
 
-- [ ] **L4 — stored `Result`/`Option` sum-encoding fallback (§8.7).** Implement the
+- [~] **L4 — stored `Result`/`Option` sum-encoding fallback (§8.7).** Implement the
   immediate-vs-stored analysis: when a `Result`/`Option` is used as a first-class value (element of
   a slice/map literal, a struct field, passed/returned as a value rather than `?`/`match`-ed at the
   site), lower it to the **sum encoding** instead of the native tuple/pointer. This is the spec's §9
   open question — **define the analysis precisely first** (likely: a `Result`/`Option` is "stored"
   unless it is the direct scrutinee of `?`/`match` or the sole return expression). Hard; may want
   the user to confirm the exact rule before building. *Completes B5's hard half.*
+  - **L4a done (2026-06-21) — honest diagnostic, not the boxing.** Added the `storedresult` guard pass
+    (`internal/pass/storedresult.go`, runs first): an **open-E** `Result[T, error]` in a slice/array/map
+    element or struct/enum field is refused with a located §8.7 error, converting today's silent
+    miscompile (open-E has no first-class type; the stored spelling is undefined in lowered Go) into an
+    honest refusal. Probes established the scope: `Option`→`*T` is already first-class (not guarded);
+    **closed-E** Result is the first-class Ok/Err sum and a supported field pattern (the must-use depth
+    check relies on it) so it is **not guarded**; a Result *param* matched in-body is the ambiguous
+    §8.7 case the checker accepts, also **not guarded**. Unit `storedresult_test.go`. See DECISIONS
+    "Lowering L4a."
+  - **L4b deferred (the actual boxing):** making stored Results *work* — open-E sum boxing, the
+    immediate-vs-stored analysis, value-position constructor lowering (probe: closed-E `Result.Ok` in a
+    slice literal is NOT lowered today), and store/read boundary conversions — is the spec's open §9
+    design effort. Needs the rule signed off before building; left for a deliberate, specced unit.
 
 - [ ] **L5 — (GATED on Option B) out-of-package derive + general value-position match via type
   feedback.** Only if the architectural decision escalates to B. A re-lowering step that consults
@@ -153,6 +166,10 @@ _Status: scoped 2026-06-21 (workstream opened on user authorization to lift the 
 guardrail). **L1 + L2 done** — the in-package derive recursion is complete (map/pointer/array/
 Option-as-pointer + nested struct), with the checker kept consistent. This finishes the **in-package
 portion of B4**; only out-of-package derive (L5, type-gated) remains for feature 12. **L3 done**
-(bounded value-position `name := match` inference — string/bool/homogeneous-enum). Next: **L4**
-(stored `Result`/`Option` sum-encoding fallback, §8.7) — the hard one; its immediate-vs-stored rule
-should be confirmed before building. The architecture decision (Option A vs B) is not needed until L5._
+(bounded value-position `name := match` inference — string/bool/homogeneous-enum). **L4a done** — the
+`storedresult` guard turns a stored open-E `Result[T, error]` (slice/map/array element, struct/enum
+field) from a silent miscompile into a located §8.7 error; **L4b** (the actual sum-encoding boxing +
+immediate-vs-stored analysis) is the deferred §9 design effort. Remaining: **L4b**, **L5**
+(out-of-package derive + general value-position match, type-gated on the Option A/B decision), and
+**B4 is CLOSED** (DEPTH-TODO — substance was L1/L2; no non-vacuous depth check). The architecture
+decision (Option A vs B) is needed only for L5._

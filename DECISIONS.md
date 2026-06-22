@@ -389,6 +389,37 @@ Entry kinds:
   are explicitly later (feature 06). The audit prompt says handle the immediate case and note the
   fallback. Deferred forms fail loudly rather than miscompiling.
 
+### Lowering L4a (§8.7): guard rejects a STORED open-E Result with a located error
+- **Kind:** decision (+ refusal-with-reason for the un-built half)
+- **Did:** added the `storedresult` guard pass (`internal/pass/storedresult.go`), first in the
+  pipeline. It refuses, with a located §8.7 error, an **open-E `Result[T, error]`** appearing as a
+  **slice/array/map element** (`[]Result[...]`, `map[K]Result[...]`) or a **struct/enum field** — the
+  two positions where it is unambiguously stored and silently miscompiles today (open-E lowers to a
+  bare `(T, error)` tuple, which has no type name; the stored spelling `Result[int, error]` is
+  undefined in the lowered Go). This turns a silent miscompile into an honest, located refusal — the
+  prime directive. Running first, a rejected program never reaches the Result/Option/closed passes.
+- **Scope nailed down by probing (what is and isn't guarded):**
+  - **Open-E stored → rejected.** Always broken; the guard's target.
+  - **Closed-E `Result[T, E]` (E≠error) → NOT guarded.** It lowers to the first-class Ok/Err **sum
+    interface**; a closed-E Result field is a *supported, lowerable* pattern — the must-use depth check
+    (`CheckMustUse` `dropped-stored-result`) relies on it, and guarding it broke that test. `isOpenEResult`
+    distinguishes the two by the error parameter (bare `error` → open-E). *(A narrower real gap —
+    constructing a closed-E Result `Result.Ok(...)` **in** a stored position is NOT lowered today, probe
+    confirmed — is left to L4b, not conflated with the common declared/assigned field, to avoid a false
+    rejection.)*
+  - **`Option[T]` → NOT guarded.** Lowers to `*T`, which is first-class; stored Options are fine.
+  - **A Result *parameter* matched in-body → NOT guarded.** The lexical checker treats it as valid
+    surface (`testdata/check/02-match/result_match_ignored.goal`); whether it is "immediate" or "stored"
+    is the open §8.7 question — not pre-judged. Likewise a bare local `var x Result[...]` (rare).
+- **Refusal-with-reason (L4b deferred):** the actual sum-encoding fallback — open-E boxing, the
+  immediate-vs-stored analysis (§9 open question), value-position constructor lowering, and store/read
+  boundary conversions — is a deliberate design effort needing the rule signed off first. Probes showed
+  "just emit the closed-E prelude for stored Results" is insufficient (constructors in stored position
+  don't lower → a new silent miscompile), so the safe deliverable now is the diagnostic, not the boxing.
+- **Proof:** `internal/pass/storedresult_test.go` — open-E slice/map/array/field rejected (located);
+  function return, multi-return, Result param, closed-E field/slice, Option field, and Result-free
+  structs all pass. Full suite green (B3 unbroken by the open-E narrowing).
+
 ### (checker) Must-use checks the unconsumed *call site*, not the fate of a bound value
 - **Kind:** decision
 - **Chose:** `internal/check/mustuse.go` rules **only** on a Result-returning direct call that

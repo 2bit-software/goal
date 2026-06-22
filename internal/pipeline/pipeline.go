@@ -27,6 +27,8 @@ type Pass struct {
 
 // Passes is the ordered front-end pipeline.
 //
+//  0. StoredResult — guard: reject a Result[T,E] stored as a value (slice/map/array
+//     element, struct/enum field) with a located §8.7 error, before any Result lowering.
 //  1. Implements  — strip a struct's inline `implements` clause, emitting a compile-time
 //     assertion per ordinary interface and a marker method per sealed interface.
 //  2. Defaults    — `...defaults` -> explicit per-field zero values.
@@ -48,6 +50,7 @@ type Pass struct {
 // sealed interface declaration itself is still emitted by Enums, so the two passes'
 // order relative to each other does not matter.
 var Passes = []Pass{
+	{Name: "storedresult", Run: pass.StoredResultGuard},
 	{Name: "implements", Run: pass.Implements},
 	{Name: "defaults", Run: pass.Defaults},
 	{Name: "result", Run: pass.Result},
