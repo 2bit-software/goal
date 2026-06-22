@@ -107,17 +107,23 @@ typed checks that return goal-located diagnostics. `goal check` runs **both** st
     fields confirmed via the tables. 9 tests. Deferrals (selector-callee, open-E Result field,
     selector-write, interprocedural drop) recorded. DECISIONS §B3. No CLI wiring (same as B2).
 
-- [ ] **B4 — 12 conversion recursion.** Resolve map/`Option`/pointer/nested-struct field types
-  via `go/types` and check derive totality through them; close the out-of-package types the
-  lexical check deferred. *Depends on B1.*
-  - **BLOCKED (2026-06-20) — not a checker-only unit.** The depth checker runs on the *lowered* Go,
-    but `internal/pass/derive.go` refuses to lower exactly these classes — out-of-package T/S (reads
-    in-package `Tables.Structs`) and map/`Option`-differing/pointer/nested-without-`from func`
-    recursion (`resolveField` does only same-type/registry/`[]A→[]B`). So such programs never
-    transpile and the depth stage never sees them; every program that *does* transpile is already
-    decided by the lexical `checkConvert`. Delivering B4 needs the **derive pass extended first**
-    (front-end/build-model work the loop forbids). Verified by transpile probes; user chose "reassess
-    the queue." See DECISIONS §B4 (refusal-with-reason) + the reassessment.
+- [x] **B4 — 12 conversion recursion. CLOSED by reassessment (2026-06-21) — substance delivered by
+  the front-end (Lowering L1/L2), NO non-vacuous depth check exists.** Resolve map/`Option`/pointer/
+  nested-struct field types and check derive totality through them; close out-of-package. *Depends on B1.*
+  - **BLOCKED (2026-06-20):** the depth checker runs on *lowered* Go, but `derive.go` refused to lower
+    these classes, so they never transpiled. Delivering B4 needed the **derive pass extended first**.
+  - **Resolved (2026-06-21), after the front-end workstream lowered them (LOWERING-TODO L1/L2):** a
+    B4 *depth check* is **vacuous as an error-producer**, so none was written (a vacuous check would be
+    the "false signal of progress" the BLOCKED note warned against). Why: the derive pass lowers a
+    conversion **only when every leaf resolves**, so a lowered conversion is **type-sound by
+    construction** (`go/types` finds nothing — confirmed: both L1/L2 round-trip outputs type-check
+    clean); a genuinely incomplete conversion **doesn't lower** (pass errors → `goal build` fails →
+    the depth stage never sees it). The two real "type-backed not textual" wins B4 named —
+    **alias-identity** (`type Name = string` assignable to `string`) and **out-of-package** — do not
+    *lower* today (the pass is textual; out-of-package is the gated L5), so the depth stage can't
+    observe them either. The residual is therefore **front-end lowering work, not a depth check**:
+    alias/assignable-identity in `resolveField` (+ an analyze alias table), and out-of-package via the
+    L5 type-feedback path. See DECISIONS §B4 reassessment (2026-06-21).
 
 - [ ] **B5 — value-position untyped `x := match` (lowering completion).** With the result type
   now inferable via `go/types`, complete the deferred value-position `match` / stored
@@ -191,11 +197,14 @@ B4/B5 (front-end-gated) and the recorded narrow residue.
 _Status: thesis drafted 2026-06-20; SPIKE-B1 PASSED 2026-06-20. **B1–B3 + B6 done** (harness, 07
 implements, 03 must-use, 08 elided-literal promotion — B6 resequenced ahead of B4 with user
 authorization). **Depth stage WIRED into `goal check` (2026-06-21):** both stages now run, dedup
-prefers the type-backed finding — see DECISIONS "Integration." **B4 BLOCKED** and **B5** is
-front-end/lowering work — both gated on extending the derive/match lowering (outside the
-depth-checker loop's guardrails). The depth-checker track has now delivered every deferred class that
-survives transpilation and is decidable from the lowered Go (07 identity, 03 stored/discarded
-must-use, 08 elided literals) **and surfaces them through the CLI**; the remainder — B4 (12 conversion
-recursion), B5 (value-position match), and the narrow cross-*package* 02/06 residue — is gated on an
-authorized front-end workstream or is a recorded narrow residue. See DECISIONS §B6, "Integration," and
-"Phase B queue reassessment."_
+prefers the type-backed finding — see DECISIONS "Integration." The front-end workstream
+(LOWERING-TODO) then lowered the recursion (L1/L2) and bounded value-position `match` (L3), which
+**CLOSED B4** — not as a depth check (vacuous: a lowered conversion is type-sound by construction) but
+by recognizing its substance was front-end lowering; see DECISIONS "B4 — CLOSED by reassessment
+(2026-06-21)." **B5** is partly done (L3 value-position inference); its stored `Result`/`Option`
+sum-encoding half (§8.7, LOWERING L4) and out-of-package (L5) remain front-end work. The depth-checker
+track has delivered every deferred class that survives transpilation and is decidable from the lowered
+Go (07 identity, 03 stored/discarded must-use, 08 elided/generic literals) **and surfaces them through
+the CLI**; the rest is front-end lowering (LOWERING-TODO L4/L5) or recorded narrow residue
+(cross-*package* 02/06). See DECISIONS §B6, "Integration," "B4 … reassessment," and "Phase B queue
+reassessment."_

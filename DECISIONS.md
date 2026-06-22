@@ -1578,6 +1578,36 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
 - **User decision (AskUserQuestion):** "Reassess the queue" — do not force B4; report the dependency
   analysis below and re-plan.
 
+### B4 — CLOSED by reassessment after the front-end lowered the recursion (2026-06-21)
+- **Kind:** refusal-with-reason (no depth check written) + decision (where the residual value lives)
+- **Context:** the front-end workstream (LOWERING-TODO) lifted the guardrail and **L1/L2** extended
+  `pass.resolveField` to lower in-package map/pointer/array/Option-as-pointer and nested-struct
+  conversion recursion — exactly the classes B4's BLOCKED note said had to be "lowered first." User
+  then pivoted to "close B4." On investigation it does not close as a *depth check*.
+- **Finding — a B4 depth check is vacuous as an error-producer, so none was written.** The derive pass
+  lowers a conversion **only when every leaf resolves** (same-type / registry / sub-recursion);
+  therefore a conversion that *lowers* is **type-sound by construction** and `go/types` on the
+  generated function has nothing to flag (verified: the L1 `derive_container_recursion` and L2
+  `derive_nested_struct` outputs both type-check clean). A genuinely *incomplete* conversion **does not
+  lower** — the pass returns an error, `goal build`/`TranspilePackage` fails, and the depth stage's
+  `Load` never sees it. So there is no program that (a) lowers, (b) the lexical `checkConvert` accepts,
+  and (c) `go/types` would reject — i.e. nothing for a depth check to catch. Writing one would be the
+  "vacuous depth check = false signal of progress" the original BLOCKED note explicitly warned against.
+- **Where feature 12's residual value actually lives — the FRONT-END, not a depth check:**
+  - **alias/assignable-identity:** `resolveField` (and lexical `checkConvert`) match field types
+    **textually**, so a `type Name = string` field sourced from a `string` is falsely treated as
+    unbridged — even though the two are identical and directly assignable. Fixing this is a *pass*
+    change (treat assignable-identical types as same-type) plus an `analyze` alias table; it broadens
+    what *lowers*. It is **still not a depth check** — once the pass assigns them directly, the Go
+    type-checks, so `go/types` again has nothing to add.
+  - **out-of-package** target/source structs: `genConversion` reads in-package `t.Structs`; lowering
+    these needs the type-feedback architecture (LOWERING-TODO **L5**, Option B). The "identity not
+    textual" matching B4 envisioned would live there.
+- **Outcome:** B4 marked CLOSED in DEPTH-TODO — its substance (lower the recursion) was delivered by
+  L1/L2; its depth-check framing was a misconception (the original BLOCKED note half-anticipated this:
+  "go/types adds nothing" for what transpiles). No `internal/typecheck` code added. User decision
+  (AskUserQuestion): "Record + move on."
+
 ### Phase B queue reassessment (2026-06-20, after B1–B3)
 - **Kind:** assumption (planning note; vetoable)
 - **State:** B1 (harness), B2 (07 implements), B3 (03 must-use) are **done** — the units whose deferred
