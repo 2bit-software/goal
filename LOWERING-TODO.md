@@ -79,11 +79,18 @@ escalates to B only if a real program needs it.
     structs and fallible/nested-container leaves remain deferred (→ L5 / v-next). See DECISIONS
     "Lowering L1." Full suite green.
 
-- [ ] **L2 — derive: nested in-package struct recursion.** A target field of struct type `B` sourced
+- [x] **L2 — derive: nested in-package struct recursion.** A target field of struct type `B` sourced
   from struct type `A`, both in-package, with no `from func`: recurse field-by-field (synthesize the
   inline conversion, or require a registered/derivable path and otherwise defer with a located
   error naming the missing leaf). Reuses `t.Structs` for both structs. *Tractable lexically.
   Completes the in-package portion of B4.*
+  - **Done (2026-06-21):** `resolveField` recurses a struct→struct field via a temp + `deriveBody`
+    (registered `from func` still wins; fallible leaves propagate through the outer `return out, err`).
+    Required a matching checker fix: `checkConvert` now **defers** a struct→struct pair (was a false
+    `unbridged-field` Error, contradicting its own doc) so `goal check` agrees with `goal build`;
+    struct→non-struct (`UUID→string`) still Errors. Round-trip `derive_nested_struct` + check
+    `defer_nested_struct`. Deferred: pointer/slice/map *of* nested struct (elemConv is expression-only),
+    out-of-package (→ L5). See DECISIONS "Lowering L2."
 
 - [ ] **L3 — value-position `name := match` via bounded lexical type inference.** In
   `classifyPosition`/`lowerMatch`, when the arm bodies share a lexically-inferable result type
@@ -137,6 +144,8 @@ either delivered via Option B or recorded as a narrow, located-deferral residue 
 - `internal/pipeline/pipeline.go` — pass order (derive after option; match before enums).
 
 _Status: scoped 2026-06-21 (workstream opened on user authorization to lift the front-end
-guardrail). **L1 done** (in-package map/pointer/array/Option-as-pointer derive recursion). Next:
-**L2** (nested in-package struct recursion) — still tractable lexically; the architecture decision
-(Option A vs B) is not needed until L5._
+guardrail). **L1 + L2 done** — the in-package derive recursion is complete (map/pointer/array/
+Option-as-pointer + nested struct), with the checker kept consistent. This finishes the **in-package
+portion of B4**; only out-of-package derive (L5, type-gated) remains for feature 12. Next: **L3**
+(value-position `name := match` via bounded lexical inference) — still tractable lexically; the
+architecture decision (Option A vs B) is not needed until L5._

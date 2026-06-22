@@ -1,0 +1,39 @@
+package app
+
+type Code struct {
+	v string
+}
+
+func parseCode(s string) Code {
+	return Code{v: s}
+}
+
+type Addr struct {
+	Street string
+	Zip    string
+}
+
+type AddrV2 struct {
+	Street string
+	Zip    Code
+}
+
+type Person struct {
+	Name string
+	Home Addr
+}
+
+type PersonV2 struct {
+	Name string
+	Home AddrV2
+}
+
+func upgrade(p Person) PersonV2 {
+	var out PersonV2
+	out.Name = p.Name
+	var __gop_s0 AddrV2
+	__gop_s0.Street = p.Home.Street
+	__gop_s0.Zip = parseCode(p.Home.Zip)
+	out.Home = __gop_s0
+	return out
+}

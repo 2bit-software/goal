@@ -1,0 +1,34 @@
+package conv
+
+// `Home` is `Addr -> AddrV2`: both are structs declared in this file, so the deriver
+// recurses field-by-field (Zip is bridged by the registered string -> Code conversion).
+// Proving that nested recursion total lexically is the depth checker's job, so the
+// lexical check DEFERS this with a located Warning rather than a false unbridged-field
+// Error — the lowering can actually bridge it. `Name` is direct. No markers: the Warning
+// may go unclaimed, and no Error must fire.
+
+type Code struct{ v string }
+
+from func parseCode(s string) Code { return Code{v: s} }
+
+type Addr struct {
+	Street string
+	Zip    string
+}
+
+type AddrV2 struct {
+	Street string
+	Zip    Code
+}
+
+type Person struct {
+	Name string
+	Home Addr
+}
+
+type PersonV2 struct {
+	Name string
+	Home AddrV2
+}
+
+derive func upgrade(p Person) PersonV2

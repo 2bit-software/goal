@@ -1,0 +1,31 @@
+package app
+
+type Code struct {
+    v string
+}
+
+from func parseCode(s string) Code {
+    return Code{v: s}
+}
+
+type Addr struct {
+    Street string
+    Zip    string
+}
+
+type AddrV2 struct {
+    Street string
+    Zip    Code
+}
+
+type Person struct {
+    Name string
+    Home Addr
+}
+
+type PersonV2 struct {
+    Name string
+    Home AddrV2
+}
+
+derive func upgrade(p Person) PersonV2

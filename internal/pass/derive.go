@@ -151,7 +151,7 @@ func genConversion(name, srcName, srcType, tgtType, retType string, fallible boo
 		if !found {
 			return "", fmt.Errorf("derive %s: target field %q of %s is not sourced from %s (add an explicit `%s: …` or a `from func`)", name, f.Name, tgtType, srcType, f.Name)
 		}
-		stmts, err := resolveField("out."+f.Name, srcName+"."+sf.Name, sf.Type, f.Type, t.FromRegistry, fallible, &tempN)
+		stmts, err := resolveField("out."+f.Name, srcName+"."+sf.Name, sf.Type, f.Type, t, fallible, &tempN)
 		if err != nil {
 			return "", fmt.Errorf("derive %s, field %q: %w", name, f.Name, err)
 		}
@@ -170,7 +170,8 @@ func genConversion(name, srcName, srcType, tgtType, retType string, fallible boo
 
 // resolveField emits the statements assigning a converted source field to a target
 // field, choosing the strategy by (source type -> target type).
-func resolveField(dst, srcExpr, sf, tf string, reg map[[2]string]analyze.ConvEntry, fallibleOK bool, tempN *int) ([]string, error) {
+func resolveField(dst, srcExpr, sf, tf string, t *analyze.Tables, fallibleOK bool, tempN *int) ([]string, error) {
+	reg := t.FromRegistry
 	sf, tf = strings.TrimSpace(sf), strings.TrimSpace(tf)
 	if sf == tf {
 		return []string{fmt.Sprintf("%s = %s", dst, srcExpr)}, nil
@@ -249,7 +250,49 @@ func resolveField(dst, srcExpr, sf, tf string, reg map[[2]string]analyze.ConvEnt
 			fmt.Sprintf("for k, v := range %s {\n%s[k] = %s\n}", srcExpr, dst, elem("v")),
 		}, nil
 	}
+	// Nested in-package struct recursion: A -> B when both are structs declared in this
+	// package. Build the target in a temp field-by-field (each field resolved by the same
+	// strategy order), then assign it — so the recursion composes with the outer expansion.
+	// A registered `from func A->B`, checked above, takes priority over auto-recursion.
+	if _, srcStruct := t.Structs[sf]; srcStruct {
+		if _, tgtStruct := t.Structs[tf]; tgtStruct {
+			v := fmt.Sprintf("__gop_s%d", *tempN)
+			*tempN++
+			stmts := []string{fmt.Sprintf("var %s %s", v, tf)}
+			body, err := deriveBody(v, srcExpr, sf, tf, t, fallibleOK, tempN)
+			if err != nil {
+				return nil, err
+			}
+			stmts = append(stmts, body...)
+			return append(stmts, fmt.Sprintf("%s = %s", dst, v)), nil
+		}
+	}
 	return nil, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+}
+
+// deriveBody emits the field-by-field assignments converting srcType to tgtType into the
+// already-declared dstVar. It is the recursion core for a nested struct field: every
+// target field must be sourced (same name) and resolvable from the source, or the whole
+// conversion is refused with a located error (no field is silently zeroed).
+func deriveBody(dstVar, srcExpr, srcType, tgtType string, t *analyze.Tables, fallible bool, tempN *int) ([]string, error) {
+	tgtFields, ok := t.Structs[tgtType]
+	if !ok {
+		return nil, fmt.Errorf("unknown target struct %q", tgtType)
+	}
+	srcFields := t.Structs[srcType]
+	var stmts []string
+	for _, f := range tgtFields {
+		sf, found := findField(srcFields, f.Name)
+		if !found {
+			return nil, fmt.Errorf("nested field %q of %s is not sourced from %s", f.Name, tgtType, srcType)
+		}
+		s, err := resolveField(dstVar+"."+f.Name, srcExpr+"."+sf.Name, sf.Type, f.Type, t, fallible, tempN)
+		if err != nil {
+			return nil, fmt.Errorf("nested field %q: %w", f.Name, err)
+		}
+		stmts = append(stmts, s...)
+	}
+	return stmts, nil
 }
 
 // ptrInner returns the pointee type of a pointer-strategy field — a `*A`, or the

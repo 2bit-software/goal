@@ -137,7 +137,7 @@ func checkOneDerive(src string, toks []scan.Token, i int, t *analyze.Tables) []D
 			})
 			continue
 		}
-		if d, ok := resolvableField(pos, tgtType, srcType, f, sf, fallible, t.FromRegistry); !ok {
+		if d, ok := resolvableField(pos, tgtType, srcType, f, sf, fallible, t.FromRegistry, t.Structs); !ok {
 			diags = append(diags, d)
 		}
 	}
@@ -150,7 +150,7 @@ func checkOneDerive(src string, toks []scan.Token, i int, t *analyze.Tables) []D
 // resolvable. When not resolvable it returns a Diagnostic: an Error (unbridged-field) for
 // a concrete unreachable pair, or a Warning (unresolved-derive-field) for a pair whose
 // resolution needs a deferred recursion class (map / Option / nested struct).
-func resolvableField(pos int, tgtType, srcType string, f, sf analyze.Field, fallible bool, reg map[[2]string]analyze.ConvEntry) (Diagnostic, bool) {
+func resolvableField(pos int, tgtType, srcType string, f, sf analyze.Field, fallible bool, reg map[[2]string]analyze.ConvEntry, structs map[string][]analyze.Field) (Diagnostic, bool) {
 	tf := strings.TrimSpace(f.Type)
 	sfType := strings.TrimSpace(sf.Type)
 	if sfType == tf {
@@ -186,10 +186,20 @@ func resolvableField(pos int, tgtType, srcType string, f, sf analyze.Field, fall
 		// bridged by a recursion class this lexical check doesn't model.
 		return deferDeriveField(pos, tgtType, srcType, f, sfType), false
 	}
-	// Map / Option / nested-struct recursion and the bespoke audit shapes: deferred per
-	// the audit (v1 keeps these minimal) — never a false incompleteness Error.
+	// Map / Option / pointer recursion and the bespoke audit shapes: deferred per the
+	// audit (v1 keeps these minimal) — never a false incompleteness Error.
 	if isDeferredShape(sfType) || isDeferredShape(tf) {
 		return deferDeriveField(pos, tgtType, srcType, f, sfType), false
+	}
+	// Nested in-package struct recursion: both sides are structs declared in this file.
+	// The deriver (pass.resolveField) now recurses field-by-field; proving that recursion
+	// total lexically is the depth checker's job, so defer here rather than false-flag a
+	// pair the lowering can actually bridge. (A struct→non-struct pair like `UUID`→`string`
+	// is NOT both-structs, so it stays an unbridged-field Error below.)
+	if _, srcStruct := structs[sfType]; srcStruct {
+		if _, tgtStruct := structs[tf]; tgtStruct {
+			return deferDeriveField(pos, tgtType, srcType, f, sfType), false
+		}
 	}
 	// A concrete, named type pair with no registered conversion and no recursion rule:
 	// a real unbridged field. This is the footgun the feature exists to kill.

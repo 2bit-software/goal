@@ -1160,6 +1160,37 @@ Entry kinds:
   five field kinds (slice/map/array/pointer/Option-as-pointer) through one bodyless `derive func`; the
   expected Go compiles clean (`go vet`). Full suite green.
 
+### Lowering L2 (12-derive-convert): nested in-package struct recursion
+- **Kind:** decision
+- **Did:** `pass.resolveField` now lowers a field whose source and target types are **both structs
+  declared in this package** (`A→B`, no `from func`) by recursing field-by-field: it declares a temp
+  `var __gop_sN B`, fills each target field via `deriveBody` (same strategy order, recursively), and
+  assigns the temp. A registered `from func A→B` still wins (checked before the recursion). Fallible
+  leaves propagate through the recursion via the outer derive's `return out, err` (so a nested fallible
+  field requires the top-level derive to be `(T, error)`, same as a flat one). `resolveField`'s signature
+  changed from taking just `FromRegistry` to the full `*analyze.Tables` (it needs `Structs`).
+- **Matching checker change (required for check/build consistency):** the lexical `checkConvert`
+  (`internal/check/convert.go`) previously emitted an **`unbridged-field` Error** for any concrete named
+  type pair with no registry entry — including a struct→struct pair its `isDeferredShape` predicate
+  (map/Option/pointer only) did not cover, **contradicting its own doc** which lists "nested-struct
+  auto-recursion" as deferred. Left unchanged, `goal check` would now false-Error on a nested-struct
+  derive that `goal build` successfully lowers. Fix: `resolvableField` now **defers a struct→struct pair
+  (both in `Tables.Structs`)** as an `unresolved-derive-field` Warning, before the `unbridged-field`
+  Error. A struct→non-struct pair (e.g. `UUID`→`string`) is *not* both-structs, so it stays an Error —
+  `unbridged_field.goal` is preserved. Proving nested totality lexically stays the depth checker's job
+  (B4); the checker defers, the pass lowers (or errors at lowering on a genuinely unbridged deep leaf,
+  failing `goal build`), so no guarantee is lost.
+- **Scope/defer:** covers a **direct struct-typed field** `A→B`. A pointer/slice/map/array *of* a
+  nested struct (`*A→*B`, `[]A→[]B` where `A`,`B` are structs needing recursion) stays deferred: those
+  go through `elemConv`, which renders a pure expression (identity or a `from func` call) and cannot
+  express the statement-level temp build a struct recursion needs. Out-of-package structs remain refused
+  (in-package `t.Structs` only) — the type-gated L5 case. No infinite-recursion guard needed: value
+  struct nesting is acyclic in Go, and pointer cycles terminate at `sf==tf`/registry.
+- **Proof:** round-trip case `testdata/derive_nested_struct.goal` + `.go.expected` (`Person→PersonV2`
+  with a nested `Addr→AddrV2`, `Zip` bridged by a registered `string→Code`); expected compiles clean.
+  Check case `testdata/check/12-derive-convert/defer_nested_struct.goal` pins the new deferral (no false
+  Error). `unbridged_field.goal` still Errors (struct→non-struct). Full suite green.
+
 ## 07-implements — surface-syntax revision
 
 ### `implements` moves from standalone declaration to inline struct clause
