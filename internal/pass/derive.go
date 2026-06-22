@@ -190,6 +190,24 @@ func resolveField(dst, srcExpr, sf, tf string, reg map[[2]string]analyze.ConvEnt
 			fmt.Sprintf("%s = %s", dst, v),
 		}, nil
 	}
+	// Pointer / Option recursion: *A -> *B (and Option[A] -> Option[B], which lowers to
+	// the same pointer strategy) when A -> B resolves total. A nil source stays the zero
+	// (nil) of the target pointer; a non-nil one is converted and re-addressed.
+	if si, ok := ptrInner(sf); ok {
+		ti, ok := ptrInner(tf)
+		if !ok {
+			return nil, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+		}
+		elem, err := elemConv(si, ti, reg)
+		if err != nil {
+			return nil, err
+		}
+		v := fmt.Sprintf("__gop_p%d", *tempN)
+		*tempN++
+		return []string{
+			fmt.Sprintf("if %s != nil {\n%s := %s\n%s = &%s\n}", srcExpr, v, elem("*"+srcExpr), dst, v),
+		}, nil
+	}
 	// Built-in container recursion: []A -> []B when A -> B resolves (total only, v1).
 	if strings.HasPrefix(sf, "[]") && strings.HasPrefix(tf, "[]") {
 		elem, err := elemConv(sf[2:], tf[2:], reg)
@@ -201,7 +219,88 @@ func resolveField(dst, srcExpr, sf, tf string, reg map[[2]string]analyze.ConvEnt
 			fmt.Sprintf("for i := range %s {\n%s = %s\n}", srcExpr, dst+"[i]", elem(srcExpr+"[i]")),
 		}, nil
 	}
+	// Fixed-array recursion: [N]A -> [N]B (same length) when A -> B resolves total. The
+	// target array is already zero; convert element-by-element in place.
+	if sn, se, ok := arrElem(sf); ok {
+		tn, te, ok := arrElem(tf)
+		if !ok || sn != tn {
+			return nil, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+		}
+		elem, err := elemConv(se, te, reg)
+		if err != nil {
+			return nil, err
+		}
+		return []string{
+			fmt.Sprintf("for i := range %s {\n%s = %s\n}", srcExpr, dst+"[i]", elem(srcExpr+"[i]")),
+		}, nil
+	}
+	// Map recursion: map[K]A -> map[K]B (same key type) when A -> B resolves total.
+	if sk, sv, ok := mapKV(sf); ok {
+		tk, tv, ok := mapKV(tf)
+		if !ok || sk != tk {
+			return nil, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+		}
+		elem, err := elemConv(sv, tv, reg)
+		if err != nil {
+			return nil, err
+		}
+		return []string{
+			fmt.Sprintf("%s = make(%s, len(%s))", dst, tf, srcExpr),
+			fmt.Sprintf("for k, v := range %s {\n%s[k] = %s\n}", srcExpr, dst, elem("v")),
+		}, nil
+	}
 	return nil, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+}
+
+// ptrInner returns the pointee type of a pointer-strategy field — a `*A`, or the
+// `Option[A]` that lowers to it — and whether s is one.
+func ptrInner(s string) (string, bool) {
+	if strings.HasPrefix(s, "*") {
+		return strings.TrimSpace(s[1:]), true
+	}
+	if strings.HasPrefix(s, "Option[") && strings.HasSuffix(s, "]") {
+		return strings.TrimSpace(s[len("Option[") : len(s)-1]), true
+	}
+	return "", false
+}
+
+// arrElem splits a fixed-size array type `[N]E` into its length text and element type,
+// rejecting slices (`[]E`). The length is compared as text, so `[3]` matches `[3]` and a
+// named constant matches the same name.
+func arrElem(s string) (n, elem string, ok bool) {
+	if !strings.HasPrefix(s, "[") || strings.HasPrefix(s, "[]") {
+		return "", "", false
+	}
+	close := strings.IndexByte(s, ']')
+	if close < 0 {
+		return "", "", false
+	}
+	n = strings.TrimSpace(s[1:close])
+	if n == "" {
+		return "", "", false
+	}
+	return n, strings.TrimSpace(s[close+1:]), true
+}
+
+// mapKV splits a `map[K]V` type into key and value, honoring bracket nesting in the key
+// (e.g. `map[[2]int]V`).
+func mapKV(s string) (k, v string, ok bool) {
+	if !strings.HasPrefix(s, "map[") {
+		return "", "", false
+	}
+	depth := 0
+	for i := len("map[") - 1; i < len(s); i++ {
+		switch s[i] {
+		case '[':
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				return strings.TrimSpace(s[len("map["):i]), strings.TrimSpace(s[i+1:]), true
+			}
+		}
+	}
+	return "", "", false
 }
 
 // elemConv returns a renderer for the conversion of a single slice element from type

@@ -1,0 +1,27 @@
+package app
+
+type ID struct {
+    v string
+}
+
+from func parseID(s string) ID {
+    return ID{v: s}
+}
+
+type Raw struct {
+    Tags  []string
+    Index map[string]string
+    Pair  [2]string
+    Lead  *string
+    Maybe Option[string]
+}
+
+type Typed struct {
+    Tags  []ID
+    Index map[string]ID
+    Pair  [2]ID
+    Lead  *ID
+    Maybe Option[ID]
+}
+
+derive func toTyped(r Raw) Typed

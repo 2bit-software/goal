@@ -64,7 +64,7 @@ escalates to B only if a real program needs it.
 
 ## Unit queue (dependency-ordered; one per iteration)
 
-- [ ] **L1 — derive: in-package container & pointer recursion.** Extend `resolveField` to lower
+- [x] **L1 — derive: in-package container & pointer recursion.** Extend `resolveField` to lower
   `map[K]A→map[K]B` (same key, recurse on `A→B`), `*A→*B`, and `[N]A→[N]B`, reusing the existing
   `[]A→[]B` shape and `elemConv`/registry resolution. Total conversions in v1 (same as slices);
   a fallible element conversion inside a container is deferred with a located error. **Pass-order
@@ -72,6 +72,12 @@ escalates to B only if a real program needs it.
   by the time derive generates code — handle the pointer spelling, and verify against the tables
   (which carry the *original* `Option[…]` spelling). *Tractable lexically. Unblocks the in-package
   container slice of B4.*
+  - **Done (2026-06-21):** added pointer (`*A→*B`), Option-as-pointer (`Option[A]→Option[B]` via
+    `ptrInner`, no `Option[…]` spelling emitted), fixed-array (`[N]A→[N]B`, `arrElem`), and map
+    (`map[K]A→map[K]B`, `mapKV`) cases to `resolveField`; all total-only (reuse `elemConv`). Round-trip
+    proof `testdata/derive_container_recursion.goal` (+`.go.expected`, compiles clean). Out-of-package
+    structs and fallible/nested-container leaves remain deferred (→ L5 / v-next). See DECISIONS
+    "Lowering L1." Full suite green.
 
 - [ ] **L2 — derive: nested in-package struct recursion.** A target field of struct type `B` sourced
   from struct type `A`, both in-package, with no `from func`: recurse field-by-field (synthesize the
@@ -131,5 +137,6 @@ either delivered via Option B or recorded as a narrow, located-deferral residue 
 - `internal/pipeline/pipeline.go` — pass order (derive after option; match before enums).
 
 _Status: scoped 2026-06-21 (workstream opened on user authorization to lift the front-end
-guardrail). No units started. Recommended first unit: **L1** — unblocked regardless of the
-architecture decision, concrete and round-trippable._
+guardrail). **L1 done** (in-package map/pointer/array/Option-as-pointer derive recursion). Next:
+**L2** (nested in-package struct recursion) — still tractable lexically; the architecture decision
+(Option A vs B) is not needed until L5._

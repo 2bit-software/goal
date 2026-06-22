@@ -1129,7 +1129,36 @@ Entry kinds:
   bodyless-only constraint above is no longer required. See §08 "Fix: `...derive(src)` spread and match
   payload-binding arms no longer false-flag."
 
----
+### Lowering L1 (12-derive-convert): in-package map / pointer / array recursion
+- **Kind:** decision
+- **Did:** extended `pass.resolveField` (`internal/pass/derive.go`) — which previously lowered only
+  same-type, a registered `from func`, and `[]A→[]B` — to also lower three in-package container shapes,
+  each reusing the slice case's `elemConv` (total element conversion only, v1):
+  - **`*A→*B`** (and **`Option[A]→Option[B]`**, which lowers to the same `*` strategy): a nil source
+    stays the target's nil; a non-nil one is converted and re-addressed
+    (`if src != nil { p := conv(*src); dst = &p }`). `ptrInner` recognizes both `*X` and `Option[X]` —
+    folding Option in *without* emitting an `Option[…]` spelling, which matters because derive runs at
+    pass 7, **after** the option pass (4) lowers `Option[T]→*T`, so any `Option[…]` text the deriver
+    emitted would be left un-lowered and break the Go.
+  - **`[N]A→[N]B`** (same length, compared as text): the target array is already zero; convert in place
+    (`for i := range src { dst[i] = conv(src[i]) }`). No `make` (arrays are values). `arrElem` rejects
+    slices (`[]E`).
+  - **`map[K]A→map[K]B`** (same key type): `make(map[K]B, len(src))` then convert each value.
+- **Scope/defer (unchanged v1 boundary):** element/value/pointee conversions must be **total** (identity
+  or a non-fallible `from func`); a fallible or unresolved leaf still errors with the located
+  "no conversion …" message — same rule the slice case already held. Nested containers
+  (`[][]A`, `map[K][]A`) hit `elemConv`'s identity-or-registry-only limit and defer. **Out-of-package**
+  target/source structs remain refused (`genConversion` reads in-package `t.Structs`) — that is the
+  type-gated L5 case, not L1.
+- **Why total-only:** matches the existing slice contract and the checker's documented
+  `unresolved-derive-field` defer-boundary (§"Checker (12) … defer-boundary"); a partial/fallible
+  container conversion needs explicit error-propagation plumbing not in v1. The lexical `checkConvert`
+  (a separate check, not the pass) still defers these classes as Warnings — it does not consult the
+  pass — so its behavior is unchanged; this unit makes the *lowering* succeed where the program is
+  actually total, which is what B4's depth check will later verify.
+- **Proof:** round-trip case `testdata/derive_container_recursion.goal` + `.go.expected` exercises all
+  five field kinds (slice/map/array/pointer/Option-as-pointer) through one bodyless `derive func`; the
+  expected Go compiles clean (`go vet`). Full suite green.
 
 ## 07-implements — surface-syntax revision
 

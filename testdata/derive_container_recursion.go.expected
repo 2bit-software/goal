@@ -1,0 +1,49 @@
+package app
+
+type ID struct {
+	v string
+}
+
+func parseID(s string) ID {
+	return ID{v: s}
+}
+
+type Raw struct {
+	Tags  []string
+	Index map[string]string
+	Pair  [2]string
+	Lead  *string
+	Maybe *string
+}
+
+type Typed struct {
+	Tags  []ID
+	Index map[string]ID
+	Pair  [2]ID
+	Lead  *ID
+	Maybe *ID
+}
+
+func toTyped(r Raw) Typed {
+	var out Typed
+	out.Tags = make([]ID, len(r.Tags))
+	for i := range r.Tags {
+		out.Tags[i] = parseID(r.Tags[i])
+	}
+	out.Index = make(map[string]ID, len(r.Index))
+	for k, v := range r.Index {
+		out.Index[k] = parseID(v)
+	}
+	for i := range r.Pair {
+		out.Pair[i] = parseID(r.Pair[i])
+	}
+	if r.Lead != nil {
+		__gop_p0 := parseID(*r.Lead)
+		out.Lead = &__gop_p0
+	}
+	if r.Maybe != nil {
+		__gop_p1 := parseID(*r.Maybe)
+		out.Maybe = &__gop_p1
+	}
+	return out
+}
