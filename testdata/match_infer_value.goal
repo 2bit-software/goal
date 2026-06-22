@@ -1,0 +1,27 @@
+package app
+
+enum Color {
+    Red
+    Green
+}
+
+enum Label {
+    Hot
+    Cold
+}
+
+func classify(c Color) Label {
+    label := match c {
+        Color.Red => Label.Hot
+        Color.Green => Label.Cold
+    }
+    return label
+}
+
+func name(c Color) string {
+    s := match c {
+        Color.Red => "red"
+        Color.Green => "green"
+    }
+    return s
+}

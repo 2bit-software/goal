@@ -45,6 +45,7 @@ const (
 	posStmt matchPos = iota
 	posReturn
 	posVar
+	posInferVar // `name := match …`: the type is inferred from the arm bodies (L3)
 )
 
 // matchArm is one arm of an enum match.
@@ -68,6 +69,17 @@ func lowerMatch(src string, toks []scan.Token, t *analyze.Tables, mi int) (scan.
 	scrut := strings.TrimSpace(src[toks[mi].End:toks[bo].Start])
 	bc := scan.MatchBrace(toks, bo)
 	arms := parseMatchArms(toks, bo+1, bc)
+
+	// `name := match …`: lower like an explicitly-typed `var` once the result type is
+	// inferable from the arm bodies (L3, bounded lexical inference); otherwise keep the
+	// honest deferral — a wrong inferred type would be a silent miscompile.
+	if pos == posInferVar {
+		inferred, ok := inferMatchType(toks, arms, t)
+		if !ok {
+			return scan.Replacement{}, 0, fmt.Errorf("value-position `%s := match` needs an inferable result type (arms are not all one enum, string, or bool); annotate it as `var %s T = match ...` or use `return match ...`", name, name)
+		}
+		pos, typ = posVar, inferred
+	}
 
 	bodies := make([]string, len(arms))
 	usesBinding := false
@@ -124,7 +136,10 @@ func classifyPosition(src string, toks []scan.Token, mi int) (pos matchPos, name
 	case prev == "return":
 		return posReturn, "", "", toks[mi-1].Start, nil
 	case prev == "=" && mi-2 >= 0 && toks[mi-2].Text == ":":
-		return 0, "", "", 0, fmt.Errorf("value-position `name := match` needs the checker's inferred result type (deferred); use `var name T = match ...` or `return match ...`")
+		if mi-3 < 0 || !scan.IsIdent(toks[mi-3].Text) {
+			return 0, "", "", 0, fmt.Errorf("malformed `:= match`: expected `name := match ...`")
+		}
+		return posInferVar, toks[mi-3].Text, "", toks[mi-3].Start, nil
 	case prev == "=":
 		return classifyVar(src, toks, mi)
 	default:
@@ -165,6 +180,60 @@ func armStatement(pos matchPos, name, body string) string {
 	default:
 		return body + "\n"
 	}
+}
+
+// inferMatchType infers the result type of a value-position `name := match` from its arm
+// bodies, for the bounded set of shapes whose type is recoverable lexically: every arm
+// (rest included) must be one of — a string literal, a bool literal, or a construction of
+// one and the same enum — and all arms must agree. It returns ("", false) for anything
+// else, so the caller keeps the located deferral rather than guess a type. A wrong guess
+// here would silently miscompile, so the inference is deliberately conservative.
+func inferMatchType(toks []scan.Token, arms []matchArm, t *analyze.Tables) (string, bool) {
+	inferred := ""
+	for _, a := range arms {
+		kind, ok := armBodyType(toks, a.bodyLo, a.bodyHi, t)
+		if !ok {
+			return "", false
+		}
+		switch {
+		case inferred == "":
+			inferred = kind
+		case inferred != kind:
+			return "", false
+		}
+	}
+	return inferred, inferred != ""
+}
+
+// armBodyType classifies one arm body (token range [lo, hi)) into a result type, for the
+// inferable shapes only: a lone string literal -> "string", a lone `true`/`false` -> "bool",
+// and a whole-body `Enum.Variant` / `Enum.Variant(...)` of a known enum -> the enum's name.
+// Any other body (numeric — too many sub-types to pin lexically — identifier, call,
+// compound expression, or empty) is not inferable.
+func armBodyType(toks []scan.Token, lo, hi int, t *analyze.Tables) (string, bool) {
+	n := hi - lo
+	if n <= 0 {
+		return "", false
+	}
+	if n == 1 {
+		switch txt := toks[lo].Text; {
+		case len(txt) > 0 && (txt[0] == '"' || txt[0] == '`'):
+			return "string", true
+		case txt == "true" || txt == "false":
+			return "bool", true
+		}
+		return "", false
+	}
+	// Enum construction as the entire body: `E . Variant` optionally followed by `( … )`.
+	if t.Enums[toks[lo].Text] != nil && toks[lo+1].Text == "." && scan.IsIdent(toks[lo+2].Text) {
+		if n == 3 {
+			return toks[lo].Text, true // payload-less variant
+		}
+		if toks[lo+3].Text == "(" && scan.MatchParen(toks, lo+3) == hi-1 {
+			return toks[lo].Text, true // payload variant, parens span the rest of the body
+		}
+	}
+	return "", false
 }
 
 // parseMatchArms splits the arm-block tokens [lo, hi) into arms, delimited by `=>`.

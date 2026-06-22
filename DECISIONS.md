@@ -253,6 +253,18 @@ Entry kinds:
   checker's inference provides; inferring it here would be ad-hoc and out of scope for a no-checking
   reference transpiler (audit prompt: handle the immediate case, note the fallback). `name := match`
   remains fully valid goal *surface* (documented in SYNTAX.md); only the reference lowering defers.
+- **Partially lifted (Lowering L3, 2026-06-21):** the match pass now infers the result type for
+  `name := match` in the **bounded set of shapes recoverable lexically** and lowers them like the typed
+  `var name T = match` case (a new `posInferVar` resolved in `lowerMatch`, then treated as `posVar`).
+  Inferable: every arm body (rest included) is a string literal (→ `string`), a bool literal (→ `bool`),
+  or a construction of one and the **same** enum (→ that enum's type) — all arms must agree. **Still
+  deferred** (located error pointing to the typed forms): numeric literals (too many sub-types to pin
+  lexically — `int` vs `float64` vs sized), identifiers/calls/compound expressions, and any
+  heterogeneous mix (incl. two different enums). A *wrong* inferred type would be a silent miscompile,
+  so the inference is deliberately conservative — the general case awaits Option B (type-feedback
+  re-lowering, LOWERING-TODO L5). Proof: round-trip `testdata/match_infer_value.goal` (enum- and
+  string-valued); `internal/pass/match_test.go` pins enum/string/bool inference and numeric/mixed/
+  two-enum deferral.
 
 ### 02 transpiler omits enum *construction* (only declaration + match)
 - **Kind:** assumption

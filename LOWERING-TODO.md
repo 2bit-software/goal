@@ -92,11 +92,17 @@ escalates to B only if a real program needs it.
     `defer_nested_struct`. Deferred: pointer/slice/map *of* nested struct (elemConv is expression-only),
     out-of-package (→ L5). See DECISIONS "Lowering L2."
 
-- [ ] **L3 — value-position `name := match` via bounded lexical type inference.** In
+- [x] **L3 — value-position `name := match` via bounded lexical type inference.** In
   `classifyPosition`/`lowerMatch`, when the arm bodies share a lexically-inferable result type
   (all arms construct variants of one enum; or all arms are literals of one primitive kind), infer
   `T` and lower to the existing `var name T; switch …` shape. Keep the located deferral for arms
   whose common type is not lexically recoverable. *Option-A scope of B5; the residue stays deferred.*
+  - **Done (2026-06-21):** `posInferVar` + `inferMatchType`/`armBodyType` — infers `string`/`bool`
+    literals and homogeneous same-enum construction arms; lowers them as the typed `var` case.
+    Numeric (sub-type ambiguity), identifiers/calls/compound, and heterogeneous mixes (incl. two
+    enums) still defer with the located error — a wrong guess would silently miscompile. Round-trip
+    `match_infer_value` + unit `match_test.go`. The general case is L5 (type feedback). See DECISIONS
+    §02 "Reference transpiler defers … (Partially lifted, L3)."
 
 - [ ] **L4 — stored `Result`/`Option` sum-encoding fallback (§8.7).** Implement the
   immediate-vs-stored analysis: when a `Result`/`Option` is used as a first-class value (element of
@@ -146,6 +152,7 @@ either delivered via Option B or recorded as a narrow, located-deferral residue 
 _Status: scoped 2026-06-21 (workstream opened on user authorization to lift the front-end
 guardrail). **L1 + L2 done** — the in-package derive recursion is complete (map/pointer/array/
 Option-as-pointer + nested struct), with the checker kept consistent. This finishes the **in-package
-portion of B4**; only out-of-package derive (L5, type-gated) remains for feature 12. Next: **L3**
-(value-position `name := match` via bounded lexical inference) — still tractable lexically; the
-architecture decision (Option A vs B) is not needed until L5._
+portion of B4**; only out-of-package derive (L5, type-gated) remains for feature 12. **L3 done**
+(bounded value-position `name := match` inference — string/bool/homogeneous-enum). Next: **L4**
+(stored `Result`/`Option` sum-encoding fallback, §8.7) — the hard one; its immediate-vs-stored rule
+should be confirmed before building. The architecture decision (Option A vs B) is not needed until L5._

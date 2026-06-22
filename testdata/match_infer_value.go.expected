@@ -1,0 +1,43 @@
+package app
+
+type Color interface{ isColor() }
+
+type Color_Red struct{}
+type Color_Green struct{}
+
+func (Color_Red) isColor()   {}
+func (Color_Green) isColor() {}
+
+type Label interface{ isLabel() }
+
+type Label_Hot struct{}
+type Label_Cold struct{}
+
+func (Label_Hot) isLabel()  {}
+func (Label_Cold) isLabel() {}
+
+func classify(c Color) Label {
+	var label Label
+	switch c.(type) {
+	case Color_Red:
+		label = Label(Label_Hot{})
+	case Color_Green:
+		label = Label(Label_Cold{})
+	default:
+		panic("unreachable: non-exhaustive Color (compiler invariant violated)")
+	}
+	return label
+}
+
+func name(c Color) string {
+	var s string
+	switch c.(type) {
+	case Color_Red:
+		s = "red"
+	case Color_Green:
+		s = "green"
+	default:
+		panic("unreachable: non-exhaustive Color (compiler invariant violated)")
+	}
+	return s
+}
