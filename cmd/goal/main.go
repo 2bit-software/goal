@@ -23,10 +23,48 @@ import (
 	"strings"
 
 	"goal/internal/check"
+	"goal/internal/guide"
 	"goal/internal/pipeline"
 	"goal/internal/project"
 	"goal/internal/typecheck"
 )
+
+// guideCommands describes the binary's subcommands. It is the single source the
+// dispatch in run() validates against and the one the AI guide's toolchain section
+// lists, so the documented commands cannot drift from the real ones.
+var guideCommands = []guide.Command{
+	{
+		Name:    "build",
+		Summary: "transpile and `go build` the package(s)",
+		Usage:   "goal build [--emit[=dir]] [path]",
+		Flags:   []guide.Flag{{Name: "--emit[=dir]", Summary: "also write generated .go beside each .goal (or under dir)"}},
+	},
+	{
+		Name:    "run",
+		Summary: "transpile and `go run` the sole main package",
+		Usage:   "goal run [--emit[=dir]] [path]",
+		Flags:   []guide.Flag{{Name: "--emit[=dir]", Summary: "also write generated .go beside each .goal (or under dir)"}},
+	},
+	{
+		Name:    "check",
+		Summary: "run the static checker over the package(s)",
+		Usage:   "goal check [path]",
+	},
+	{
+		Name:    "ai",
+		Summary: "print the AI bootstrap guide (how to write goal) to stdout",
+		Usage:   "goal ai [section]",
+	},
+}
+
+// topUsage is the one-line usage listing every subcommand.
+func topUsage() string {
+	names := make([]string, len(guideCommands))
+	for i, c := range guideCommands {
+		names[i] = c.Name
+	}
+	return "usage: goal <" + strings.Join(names, "|") + "> [--emit[=dir]] [path]"
+}
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
@@ -37,23 +75,45 @@ func main() {
 
 func run(args []string, out, errOut io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: goal <build|run|check> [--emit[=dir]] [path]")
+		return fmt.Errorf("%s", topUsage())
 	}
 	cmd, rest := args[0], args[1:]
-	emit, emitDir, root, err := parseFlags(rest)
-	if err != nil {
-		return err
+	if cmd == "--ai" { // alias: `goal --ai [section]` == `goal ai [section]`
+		cmd = "ai"
 	}
 	switch cmd {
-	case "build":
-		return cmdBuild(root, emit, emitDir, out, errOut)
-	case "run":
-		return cmdRun(root, emit, emitDir, out, errOut)
-	case "check":
-		return cmdCheck(root, out, errOut)
+	case "ai":
+		return cmdAI(rest, out)
+	case "build", "run", "check":
+		emit, emitDir, root, err := parseFlags(rest)
+		if err != nil {
+			return err
+		}
+		switch cmd {
+		case "build":
+			return cmdBuild(root, emit, emitDir, out, errOut)
+		case "run":
+			return cmdRun(root, emit, emitDir, out, errOut)
+		default: // check
+			return cmdCheck(root, out, errOut)
+		}
 	default:
-		return fmt.Errorf("unknown command %q (want build, run, or check)", cmd)
+		return fmt.Errorf("unknown command %q (%s)", cmd, topUsage())
 	}
+}
+
+// cmdAI prints the AI bootstrap guide to out. With no argument it prints the whole
+// guide; with one argument it prints only that named section.
+func cmdAI(args []string, out io.Writer) error {
+	section := ""
+	switch len(args) {
+	case 0:
+	case 1:
+		section = args[0]
+	default:
+		return fmt.Errorf("usage: goal ai [section] (sections: %s)", strings.Join(guide.SectionKeys(), ", "))
+	}
+	return guide.Render(out, section, guideCommands)
 }
 
 // parseFlags pulls --emit[=dir] and a single optional path argument out of args. The

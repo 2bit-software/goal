@@ -3,11 +3,12 @@
 //
 // The doc is the single source of truth: every feature section there
 // (## heading + prose + a ```goal name=…``` example + its "Transpiles to" Go
-// block) becomes one playground feature. Because this tool imports the real
-// pipeline, it RE-TRANSPILES each example at build time and asserts the result
-// matches the Go block locked in the doc — so the manifest (and the doc) cannot
-// drift from the transpiler, and the seed output the page shows is guaranteed to
-// equal what the WASM build produces live.
+// block) becomes one playground feature. Parsing is shared with the rest of the
+// toolchain via internal/byexample; this command renders the parsed records to
+// HTML and, because it imports the real pipeline, RE-TRANSPILES each example at
+// build time and asserts the result matches the Go block locked in the doc — so
+// the manifest (and the doc) cannot drift from the transpiler, and the seed output
+// the page shows is guaranteed to equal what the WASM build produces live.
 package main
 
 import (
@@ -18,6 +19,7 @@ import (
 	"regexp"
 	"strings"
 
+	"goal/internal/byexample"
 	"goal/internal/pipeline"
 )
 
@@ -41,7 +43,7 @@ func run(inPath, overviewPath, outPath string) error {
 	if err != nil {
 		return fmt.Errorf("read doc: %w", err)
 	}
-	manifest, err := parse(string(raw), inPath)
+	manifest, err := buildManifest(string(raw), inPath)
 	if err != nil {
 		return err
 	}
@@ -92,62 +94,44 @@ type Feature struct {
 	TitleHTML       string `json:"titleHtml"`
 	DescriptionHTML string `json:"descriptionHtml"`
 	LoweringHTML    string `json:"loweringHtml,omitempty"`
-	Source          string `json:"source"`         // the .goal example
-	SourceName      string `json:"sourceName"`     // e.g. "traffic.goal"
-	OutputKind      string `json:"outputKind"`     // "go" | "test"
-	Expected        string `json:"expected"`       // the locked, verified output
-	ExpectedLabel   string `json:"expectedLabel"`  // pane label, e.g. "transpiled Go"
+	Source          string `json:"source"`        // the .goal example
+	SourceName      string `json:"sourceName"`    // e.g. "traffic.goal"
+	OutputKind      string `json:"outputKind"`    // "go" | "test"
+	Expected        string `json:"expected"`      // the locked, verified output
+	ExpectedLabel   string `json:"expectedLabel"` // pane label, e.g. "transpiled Go"
 }
 
-var (
-	headingRe   = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
-	goalFenceRe  = regexp.MustCompile("^```goal(?:\\s+(.*))?$")
-	goFenceRe    = regexp.MustCompile("^```go\\b")
-	errorFenceRe = regexp.MustCompile("^```error\\b")
-	anyFenceRe   = regexp.MustCompile("^```")
-	nameAttrRe   = regexp.MustCompile(`name=(\S+)`)
-)
-
-// parse walks the doc as a sequence of heading-delimited sections. A section that
-// contains a `name=`-tagged goal block is a feature; a bare level-1 heading is a
-// category. Document order guarantees a category heading is seen before the
-// features it contains.
-func parse(doc, docPath string) (Manifest, error) {
-	manifest := Manifest{Title: "goal by Example", GeneratedFrom: docPath}
-	sections := splitSections(doc)
-
-	category := ""
-	for _, sec := range sections {
-		if sec.title == "goal by Example" || sec.title == "Contents" {
-			continue
-		}
-		if !hasNamedGoalBlock(sec.body) {
-			if sec.level == 1 {
-				category = sec.title // a category divider
-			}
-			continue // headings without an example aren't features (e.g. "Maintaining this doc")
-		}
-		feat, err := parseFeature(sec)
-		if err != nil {
-			return Manifest{}, fmt.Errorf("feature %q: %w", sec.title, err)
-		}
-		cat := category
-		if sec.level == 1 {
-			// A level-1 heading that is itself a feature (the composition section).
-			cat = strings.SplitN(sec.title, ":", 2)[0]
-		}
-		// Drop a redundant "Category: " prefix, then sentence-case for a
-		// consistent nav. The doc keeps keyword headings lowercase (implements,
-		// assert); the playground display capitalizes the first letter so
-		// every entry reads uniformly. Titles that lead with a code span or
-		// symbol (e.g. "`?` propagation") are left as-is.
-		display := capitalizeFirst(strings.TrimPrefix(feat.Title, cat+": "))
-		feat.Title = display
-		feat.TitleHTML = renderInline(display)
-		addFeature(&manifest, cat, feat)
+// buildManifest parses the doc with the shared parser, then renders each feature to
+// HTML and verifies its locked output against the live transpiler.
+func buildManifest(doc, docPath string) (Manifest, error) {
+	parsed, err := byexample.Parse(doc, docPath)
+	if err != nil {
+		return Manifest{}, err
 	}
-	if len(manifest.Categories) == 0 {
-		return Manifest{}, fmt.Errorf("no features parsed from %s", docPath)
+	manifest := Manifest{Title: parsed.Title, GeneratedFrom: parsed.GeneratedFrom}
+	for _, cat := range parsed.Categories {
+		for _, f := range cat.Features {
+			if err := verify(f.Source, f.LockedExpected, f.OutputKind); err != nil {
+				return Manifest{}, fmt.Errorf("feature %q: %w", f.Title, err)
+			}
+			// The doc keeps keyword headings lowercase (implements, assert) and
+			// numbers feature headings; the playground display drops a redundant
+			// "Category: " prefix and sentence-cases the first letter so nav reads
+			// uniformly. Titles that lead with a code span or symbol are left as-is.
+			display := capitalizeFirst(strings.TrimPrefix(f.Title, cat.Name+": "))
+			addFeature(&manifest, cat.Name, Feature{
+				Anchor:          f.Anchor,
+				Title:           display,
+				TitleHTML:       renderInline(display),
+				DescriptionHTML: renderMarkdown(f.DescriptionMD),
+				LoweringHTML:    renderMarkdown(f.LoweringMD),
+				Source:          f.Source,
+				SourceName:      f.SourceName,
+				OutputKind:      f.OutputKind,
+				Expected:        f.LockedExpected,
+				ExpectedLabel:   expectedLabel(f.OutputKind),
+			})
+		}
 	}
 	return manifest, nil
 }
@@ -162,159 +146,16 @@ func addFeature(m *Manifest, catName string, f Feature) {
 	m.Categories = append(m.Categories, Category{Name: catName, Features: []Feature{f}})
 }
 
-type section struct {
-	level int
-	title string
-	body  []string // lines after the heading, up to the next heading
-}
-
-func splitSections(doc string) []section {
-	var out []section
-	var cur *section
-	for line := range strings.SplitSeq(doc, "\n") {
-		if m := headingRe.FindStringSubmatch(line); m != nil {
-			out = append(out, section{level: len(m[1]), title: strings.TrimSpace(m[2])})
-			cur = &out[len(out)-1]
-			continue
-		}
-		if cur != nil {
-			cur.body = append(cur.body, line)
-		}
+// expectedLabel is the output-pane label for a feature's output kind.
+func expectedLabel(kind string) string {
+	switch kind {
+	case "error":
+		return "rejected"
+	case "test":
+		return "generated _test.go"
+	default:
+		return "transpiled Go"
 	}
-	return out
-}
-
-func hasNamedGoalBlock(body []string) bool {
-	inFence := false
-	for _, line := range body {
-		if m := goalFenceRe.FindStringSubmatch(line); m != nil && !inFence {
-			if nameAttrRe.MatchString(m[1]) {
-				return true
-			}
-		}
-		if anyFenceRe.MatchString(line) {
-			inFence = !inFence
-		}
-	}
-	return false
-}
-
-// parseFeature splits a feature section into its description (everything up to the
-// named goal block, including the un-named syntax sketch), the runnable goal
-// example, and the locked Go output — then verifies the output against the live
-// transpiler.
-func parseFeature(sec section) (Feature, error) {
-	descLines, exampleStart := collectDescription(sec.body)
-	if exampleStart < 0 {
-		return Feature{}, fmt.Errorf("no named goal block found")
-	}
-	source, sourceName, afterSource, err := readGoalExample(sec.body, exampleStart)
-	if err != nil {
-		return Feature{}, err
-	}
-	expected, blockKind, afterGo, err := readOutputBlock(sec.body, afterSource)
-	if err != nil {
-		return Feature{}, err
-	}
-
-	// The output block is either a "Transpiles to" go block or a "Rejected with"
-	// error block (a feature whose example is a located compile error, e.g. an
-	// unsafe `...defaults`). A go block with doctests yields a _test.go instead.
-	outputKind := "go"
-	expectedLabel := "transpiled Go"
-	switch {
-	case blockKind == "error":
-		outputKind = "error"
-		expectedLabel = "rejected"
-	case strings.Contains(source, "/// >>>"):
-		outputKind = "test"
-		expectedLabel = "generated _test.go"
-	}
-
-	if err := verify(source, expected, outputKind); err != nil {
-		return Feature{}, err
-	}
-
-	loweringHTML := ""
-	if afterGo >= 0 && afterGo < len(sec.body) {
-		loweringHTML = renderMarkdown(sec.body[afterGo:])
-	}
-
-	return Feature{
-		Anchor:          slugify(sec.title),
-		Title:           strings.TrimSpace(stripLeadingNumber(sec.title)),
-		DescriptionHTML: renderMarkdown(descLines),
-		LoweringHTML:    loweringHTML,
-		Source:          source,
-		SourceName:      sourceName,
-		OutputKind:      outputKind,
-		Expected:        expected,
-		ExpectedLabel:   expectedLabel,
-	}, nil
-}
-
-// collectDescription returns the lines before the runnable example (rendered as
-// the feature's prose, including any un-named syntax-sketch code block) and the
-// index of the line that opens the named goal block.
-func collectDescription(body []string) (desc []string, exampleStart int) {
-	inFence := false
-	for i, line := range body {
-		if !inFence {
-			if m := goalFenceRe.FindStringSubmatch(line); m != nil && nameAttrRe.MatchString(m[1]) {
-				return desc, i
-			}
-		}
-		if anyFenceRe.MatchString(line) {
-			inFence = !inFence
-		}
-		desc = append(desc, line)
-	}
-	return desc, -1
-}
-
-func readGoalExample(body []string, start int) (source, name string, next int, err error) {
-	m := goalFenceRe.FindStringSubmatch(body[start])
-	if am := nameAttrRe.FindStringSubmatch(m[1]); am != nil {
-		name = am[1]
-	}
-	var code []string
-	for i := start + 1; i < len(body); i++ {
-		if anyFenceRe.MatchString(body[i]) {
-			return strings.Join(code, "\n"), name, i + 1, nil
-		}
-		code = append(code, body[i])
-	}
-	return "", "", -1, fmt.Errorf("unterminated goal block")
-}
-
-// readOutputBlock reads the feature's locked output: the first fenced block at or
-// after `from` that is either a "Transpiles to" go block (kind "go") or a "Rejected
-// with" error block (kind "error", holding the exact located compile error).
-func readOutputBlock(body []string, from int) (expected, kind string, next int, err error) {
-	for i := from; i < len(body); i++ {
-		switch {
-		case goFenceRe.MatchString(body[i]):
-			exp, n, e := readFenceBody(body, i)
-			return exp, "go", n, e
-		case errorFenceRe.MatchString(body[i]):
-			exp, n, e := readFenceBody(body, i)
-			return exp, "error", n, e
-		}
-	}
-	return "", "", -1, fmt.Errorf("no \"Transpiles to\" go block or \"Rejected with\" error block found")
-}
-
-// readFenceBody returns the lines inside the fenced block opening at body[openIdx]
-// and the index just past its closing fence.
-func readFenceBody(body []string, openIdx int) (string, int, error) {
-	var code []string
-	for j := openIdx + 1; j < len(body); j++ {
-		if anyFenceRe.MatchString(body[j]) {
-			return strings.Join(code, "\n"), j + 1, nil
-		}
-		code = append(code, body[j])
-	}
-	return "", -1, fmt.Errorf("unterminated output block")
 }
 
 // verify re-transpiles source and asserts the result matches the doc's locked block,
@@ -353,6 +194,7 @@ func verify(source, expected, kind string) error {
 var (
 	headingLineRe = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
 	listItemRe    = regexp.MustCompile(`^[-*]\s+(.*)$`)
+	anyFenceRe    = regexp.MustCompile("^```")
 )
 
 // renderMarkdown turns a block of doc lines into HTML, handling the markdown
@@ -479,15 +321,6 @@ func escapeHTML(s string) string {
 	return s
 }
 
-var (
-	leadingNumberRe = regexp.MustCompile(`^\d+\.\s+`)
-	nonSlugRe       = regexp.MustCompile(`[^a-z0-9]+`)
-)
-
-func stripLeadingNumber(s string) string {
-	return leadingNumberRe.ReplaceAllString(s, "")
-}
-
 // capitalizeFirst upper-cases the first character when it is a lowercase ASCII
 // letter, so nav titles read consistently. Titles that lead with a symbol or
 // code span (e.g. "`?` propagation") are returned unchanged.
@@ -496,12 +329,4 @@ func capitalizeFirst(s string) string {
 		return s
 	}
 	return string(s[0]-('a'-'A')) + s[1:]
-}
-
-// slugify mirrors the GitHub-style anchor used in the doc's table of contents.
-func slugify(s string) string {
-	s = strings.ToLower(s)
-	s = strings.ReplaceAll(s, "`", "")
-	s = nonSlugRe.ReplaceAllString(s, "-")
-	return strings.Trim(s, "-")
 }

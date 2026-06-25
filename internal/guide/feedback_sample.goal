@@ -1,0 +1,23 @@
+package demo
+
+enum Color {
+    Red
+    Green
+    Blue
+}
+
+func name(c Color) string {
+    return match c {
+        Color.Red   => "red"
+        Color.Green => "green"
+    }
+}
+
+type Cfg struct {
+    host string
+    port int
+}
+
+func defaults() Cfg {
+    return Cfg{host: "localhost"}
+}

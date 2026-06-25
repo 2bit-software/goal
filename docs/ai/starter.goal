@@ -1,0 +1,26 @@
+package main
+
+import "fmt"
+
+enum Cmd {
+    Greet { name: string }
+    Quit
+}
+
+func render(c Cmd) string {
+    return match c {
+        Cmd.Greet(g) => "hello, " + g.name
+        Cmd.Quit     => "bye"
+    }
+}
+
+/// Greets a person by name.
+/// >>> greet("Ada")
+/// "hello, Ada"
+func greet(name string) string {
+    return render(Cmd.Greet(name: name))
+}
+
+func main() {
+    fmt.Println(greet("Ada"))
+}
