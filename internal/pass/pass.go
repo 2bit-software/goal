@@ -20,12 +20,12 @@ import (
 // Shared across passes so the signature rewrite (result) and the `?` lowering
 // (question) agree on the same identifiers.
 const (
-	okName   = "__gop_ok"   // named success return / Ok binding target
-	errName  = "__gop_err"  // named error return / Err binding target
-	valName  = "__gop_v"    // Ok value captured at a match site
-	optBase  = "__gop_o"    // base for `?`-Option temporaries (suffixed with a counter)
-	someName = "__gop_some" // boxed Some value when the payload isn't addressable
-	evar     = "__gop_e"    // type-switch guard at a closed-E match/? site
+	okName   = "__goal_ok"   // named success return / Ok binding target
+	errName  = "__goal_err"  // named error return / Err binding target
+	valName  = "__goal_v"    // Ok value captured at a match site
+	optBase  = "__goal_o"    // base for `?`-Option temporaries (suffixed with a counter)
+	someName = "__goal_some" // boxed Some value when the payload isn't addressable
+	evar     = "__goal_e"    // type-switch guard at a closed-E match/? site
 )
 
 // funcSpan pairs a function body's current byte span with its analyzed signature, so

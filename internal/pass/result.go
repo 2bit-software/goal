@@ -9,7 +9,7 @@ import (
 )
 
 // Result lowers the open-E Result[T, error] forms (spec §8.3): function signatures
-// rewrite to named Go returns (__gop_ok T, __gop_err error), `return Result.Ok/Err`
+// rewrite to named Go returns (__goal_ok T, __goal_err error), `return Result.Ok/Err`
 // lowers to the native (T, error) pair, and a statement-position `match` on a Result
 // becomes the idiomatic `if err != nil` / `else`.
 //
@@ -83,7 +83,7 @@ func calleeIsClosed(src string, toks []scan.Token, t *analyze.Tables, mi int) bo
 }
 
 // rewriteResultSignature rewrites a `func ... Result[T, error]` return type to named
-// Go returns. The named __gop_ok return makes the Err-path zero value available
+// Go returns. The named __goal_ok return makes the Err-path zero value available
 // without synthesizing a type-specific zero literal. ok is false for functions that
 // do not return a Result.
 func rewriteResultSignature(src string, toks []scan.Token, fi int) (scan.Replacement, bool) {

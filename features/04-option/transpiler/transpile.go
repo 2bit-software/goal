@@ -49,8 +49,8 @@ type replacement struct {
 
 // hygienic temporaries (§8 prefix).
 const (
-	optName  = "__gop_o"    // the captured pointer at a match site
-	someName = "__gop_some" // boxed Some value when the payload isn't addressable
+	optName  = "__goal_o"    // the captured pointer at a match site
+	someName = "__goal_some" // boxed Some value when the payload isn't addressable
 )
 
 // transpile lowers goal source using Option[T] into idiomatic Go.

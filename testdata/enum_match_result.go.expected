@@ -21,26 +21,26 @@ func (Event_Login) isEvent()   {}
 func (Event_Logout) isEvent()  {}
 func (Event_Failure) isEvent() {}
 
-func classify(code int) (__gop_ok Event, __gop_err error) {
+func classify(code int) (__goal_ok Event, __goal_err error) {
 	if code < 0 {
-		return __gop_ok, errors.New("bad code")
+		return __goal_ok, errors.New("bad code")
 	}
 	return Event(Event_Login{User: "alice"}), nil
 }
 
-func describe(code int) (__gop_ok string, __gop_err error) {
-	ev, __gop_err := classify(code)
-	if __gop_err != nil {
-		return __gop_ok, __gop_err
+func describe(code int) (__goal_ok string, __goal_err error) {
+	ev, __goal_err := classify(code)
+	if __goal_err != nil {
+		return __goal_ok, __goal_err
 	}
 	var label string
-	switch __gop_v := ev.(type) {
+	switch __goal_v := ev.(type) {
 	case Event_Login:
-		label = __gop_v.User
+		label = __goal_v.User
 	case Event_Logout:
-		label = __gop_v.User
+		label = __goal_v.User
 	case Event_Failure:
-		label = __gop_v.Reason
+		label = __goal_v.Reason
 	default:
 		panic("unreachable: non-exhaustive Event (compiler invariant violated)")
 	}

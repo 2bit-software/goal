@@ -21,9 +21,9 @@ func (Status_Active) isStatus()    {}
 func (Status_Cancelled) isStatus() {}
 
 func handle2(s Status) {
-	switch __gop_v := s.(type) {
+	switch __goal_v := s.(type) {
 	case Status_Active:
-		render(__gop_v.Since)
+		render(__goal_v.Since)
 	default:
 		showPlaceholder()
 	}

@@ -58,7 +58,7 @@ Per-feature deliverables (every item):
     bind-the-value `Status.Active(a) => a.since`, qualified variants, and a unified
     statement/expression `match`. Resolved switch-coexistence: plain `switch` on a closed enum is a
     **compile error** redirecting to `match` (checker-enforced; transpiler passes plain `switch`
-    through). Lowering matches §8.2 exactly — type-switch, payload→`__gop_v.Field`, panic-default for
+    through). Lowering matches §8.2 exactly — type-switch, payload→`__goal_v.Field`, panic-default for
     exhaustive vs real `default` for `_`, `return`/`var x T` value positions (no IIFE). Untyped
     `x := match` is valid surface but its lowering is **deferred** (needs the checker's inferred
     type); transpiler rejects it with a located message. `go test ./...` passes (4/4) and all four
@@ -76,9 +76,9 @@ Per-feature deliverables (every item):
   - **Done:** `features/03-result/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Chose
     **qualified** `Result.Ok(...)` / `Result.Err(...)` (one uniform sum-type construction rule with
     01-enums) and always-explicit `Result[T, error]` (no shorthand). Implements the §8.3 keystone:
-    return type → native `(T, error)`, `Ok(v)`→`(v, nil)`, `Err(e)`→`(__gop_ok, e)`, and a
-    statement-position `match` → the idiomatic `if __gop_err != nil { … } else { … }`. Zero value
-    handled via **named returns** (`(__gop_ok T, __gop_err error)`) since the no-checking transpiler
+    return type → native `(T, error)`, `Ok(v)`→`(v, nil)`, `Err(e)`→`(__goal_ok, e)`, and a
+    statement-position `match` → the idiomatic `if __goal_err != nil { … } else { … }`. Zero value
+    handled via **named returns** (`(__goal_ok T, __goal_err error)`) since the no-checking transpiler
     can't synthesize a type-correct zero literal; Ok-binding-unused discards with `_`. Value-position
     Result match and stored Results (§8.7 sum fallback) are deferred with a located message; must-use
     and the explicit-discard surface are the checker's job (not built). `go test ./...` passes (3/3)
@@ -96,7 +96,7 @@ Per-feature deliverables (every item):
     `Option[T]` bracket (not `T?`, keeping `?` for propagation) and qualified
     `Option.Some(...)` / `Option.None` (uniform with enums/Result). Implements the §8.4 pointer
     strategy: `Option[T]`→`*T`, `Option.None`→`nil`, `Option.Some(v)`→`&v` (bare ident) or a boxed
-    temp otherwise, and `match`→`if __gop_o := …; __gop_o != nil { x := *__gop_o; … } else { … }`.
+    temp otherwise, and `match`→`if __goal_o := …; __goal_o != nil { x := *__goal_o; … } else { … }`.
     Value types box to `*int` (v1); the Some deref alias is emitted only when the binding is used.
     Value-position Option match and stored Options deferred with a located message; must-use is the
     checker's job. `go test ./...` passes (3/3) and all three generated packages compile + `go vet`
@@ -113,9 +113,9 @@ Per-feature deliverables (every item):
     **`?` always on the RHS of an assignment** — `name := expr?` keeps the value, `_ := expr?`
     discards it (propagate failure only); no bare `expr?` (explicit/consistent with the `_`-discard
     marker). Mode (Result vs Option) is the enclosing function's return type. Lowering matches §8.3:
-    Result `?` → `name, __gop_err := expr; if __gop_err != nil { return __gop_ok, __gop_err }`
-    (named returns from 03); Option `?` → `__gop_oN := expr; if __gop_oN == nil { return nil };
-    name := *__gop_oN`; discard → if-init form. Composes the 03/04 signature+construction lowerings.
+    Result `?` → `name, __goal_err := expr; if __goal_err != nil { return __goal_ok, __goal_err }`
+    (named returns from 03); Option `?` → `__goal_oN := expr; if __goal_oN == nil { return nil };
+    name := *__goal_oN`; discard → if-init form. Composes the 03/04 signature+construction lowerings.
     Closed-E `?`, inline `?`, and stored values deferred with a located message. `go test ./...`
     passes (3/3) and all three generated packages compile + `go vet` clean.
 
@@ -261,7 +261,7 @@ Per-feature deliverables (every item):
     (lossless / assert-total / Result-fallible); default narrowing = assert-total. Container recursion
     (slices impl; map/Option/nested noted) is a built-in deriver rule; `Option[T]↔*T` built-in
     generic; target-directed dispatch, concrete-beats-generic. Transpiler builds the registry, parses
-    structs (reuses 08), and emits `var out T` + field-by-field Go (registry-resolved, `__gop_`-
+    structs (reuses 08), and emits `var out T` + field-by-field Go (registry-resolved, `__goal_`-
     threaded errors, `make`+loop for slices); unresolvable fields **defer with a located error**
     (never silent-zero). `go test ./...` passes (3/3), all generated packages compile + vet clean,
     **and behavioral tests confirm correct values + error threading**. Reserved: user generics,
@@ -278,7 +278,7 @@ Per-feature deliverables (every item):
 - **Immediate-vs-stored analysis (§8.7):** for `Result`/`Option`, the native-tuple/pointer
   strategy applies only when the value is consumed immediately. Stored as a first-class value →
   sum encoding. v1 reference transpilers handle the immediate case and note the fallback.
-- **Hygiene:** all generated temporaries use the `__gop_` prefix.
+- **Hygiene:** all generated temporaries use the `__goal_` prefix.
 - **Erased vs preserved (§8.0):** static guarantees erased; runtime semantics preserved; proven-
   unreachable points get a defensive `panic`, never silent fall-through.
 - **goscript:** out of scope for this audit pass — we are pinning the Go+ → Go path only.

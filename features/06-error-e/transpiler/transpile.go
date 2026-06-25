@@ -53,7 +53,7 @@ type span struct{ start, end int }
 type resType struct{ t, e string }
 
 const (
-	evar = "__gop_e" // type-switch guard at a match/? site
+	evar = "__goal_e" // type-switch guard at a match/? site
 )
 
 // the injected generic sum encoding for closed-E Results.
@@ -373,7 +373,7 @@ found:
 }
 
 // armBody returns the lowered arm body. If the arm binds and uses its value, a
-// `name := __gop_e.<field>` alias is prepended. The bool reports guard-var use.
+// `name := __goal_e.<field>` alias is prepended. The bool reports guard-var use.
 func (st *tstate) armBody(a *resultArm, field string) (string, bool) {
 	if a == nil {
 		return "", false

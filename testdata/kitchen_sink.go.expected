@@ -48,20 +48,20 @@ func square(x int) int {
 	return x * x
 }
 
-func makeUser(name string, age int) (__gop_ok User, __gop_err error) {
+func makeUser(name string, age int) (__goal_ok User, __goal_err error) {
 	if !(age >= 0) {
 		panic("assertion failed: age >= 0: " + fmt.Sprintf("negative age: %d", age))
 	}
 	if name == "" {
-		return __gop_ok, errors.New("empty name")
+		return __goal_ok, errors.New("empty name")
 	}
 	return User{name: name, role: 0, active: false}, nil
 }
 
-func register(name string, age int) (__gop_ok User, __gop_err error) {
-	u, __gop_err := makeUser(name, age)
-	if __gop_err != nil {
-		return __gop_ok, __gop_err
+func register(name string, age int) (__goal_ok User, __goal_err error) {
+	u, __goal_err := makeUser(name, age)
+	if __goal_err != nil {
+		return __goal_ok, __goal_err
 	}
 	return u, nil
 }

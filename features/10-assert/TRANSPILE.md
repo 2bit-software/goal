@@ -94,7 +94,7 @@ The transpiler is a focused, statement-bounded recognizer (`text/scanner`, span-
 
 ## Hygiene
 
-No `__gop_` temporaries are introduced — the lowering reuses the condition expression directly and
+No `__goal_` temporaries are introduced — the lowering reuses the condition expression directly and
 synthesizes only the literal message.
 
 ## Scope / not built

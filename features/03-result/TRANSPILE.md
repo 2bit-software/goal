@@ -11,10 +11,10 @@ leverage lowering in the language (§8.0).
 
 | goal | Go |
 |---|---|
-| `func f(...) Result[T, error]` | `func f(...) (__gop_ok T, __gop_err error)` |
+| `func f(...) Result[T, error]` | `func f(...) (__goal_ok T, __goal_err error)` |
 | `return Result.Ok(v)` | `return v, nil` |
-| `return Result.Err(e)` | `return __gop_ok, e` |
-| `match call { Result.Ok(x) => A; Result.Err(e) => B }` | `__gop_v, __gop_err := call` + `if __gop_err != nil { B } else { A }` |
+| `return Result.Err(e)` | `return __goal_ok, e` |
+| `match call { Result.Ok(x) => A; Result.Err(e) => B }` | `__goal_v, __goal_err := call` + `if __goal_err != nil { B } else { A }` |
 
 The success type `Result[T, error]` becomes the native pair `(T, error)`; `?` (feature 05) and a
 `match` both consume that pair with the `if err != nil` shape the model already knows.
@@ -35,9 +35,9 @@ func parse(s string) Result[Config, error] {
 ```
 
 ```go
-func parse(s string) (__gop_ok Config, __gop_err error) {
+func parse(s string) (__goal_ok Config, __goal_err error) {
 	if s == "" {
-		return __gop_ok, errors.New("empty input")
+		return __goal_ok, errors.New("empty input")
 	}
 	return Config{Raw: s}, nil
 }
@@ -53,11 +53,11 @@ match parse(input) {
 ```
 
 ```go
-__gop_v, __gop_err := parse(input)
-if __gop_err != nil {
-	report(__gop_err)
+__goal_v, __goal_err := parse(input)
+if __goal_err != nil {
+	report(__goal_err)
 } else {
-	run(__gop_v)
+	run(__goal_v)
 }
 ```
 
@@ -72,9 +72,9 @@ match parse(input) {
 ```
 
 ```go
-_, __gop_err := parse(input)
-if __gop_err != nil {
-	report(__gop_err)
+_, __goal_err := parse(input)
+if __goal_err != nil {
+	report(__goal_err)
 } else {
 	done()
 }
@@ -96,19 +96,19 @@ func parsePositive(s string) Result[int, error] {
 ```
 
 ```go
-func parsePositive(s string) (__gop_ok int, __gop_err error) {
+func parsePositive(s string) (__goal_ok int, __goal_err error) {
 	n, err := strconv.Atoi(s)
 	if err != nil {
-		return __gop_ok, err
+		return __goal_ok, err
 	}
 	if n <= 0 {
-		return __gop_ok, errors.New("not positive")
+		return __goal_ok, errors.New("not positive")
 	}
 	return n, nil
 }
 ```
 
-Both `Err` returns reuse the same zero (`__gop_ok`, an `int` here) with no per-return declaration —
+Both `Err` returns reuse the same zero (`__goal_ok`, an `int` here) with no per-return declaration —
 see §3.2.
 
 ---
@@ -117,16 +117,16 @@ see §3.2.
 
 ### 3.1 Return type → native pair
 
-`func ... Result[T, error]` → `func ... (__gop_ok T, __gop_err error)`. T is copied verbatim from
-the first type argument; the error return is `__gop_err error`.
+`func ... Result[T, error]` → `func ... (__goal_ok T, __goal_err error)`. T is copied verbatim from
+the first type argument; the error return is `__goal_err error`.
 
 ### 3.2 Why named returns
 
 `return Result.Err(e)` must produce `(zero of T, e)`, but a no-type-inference reference transpiler
 cannot synthesize a type-correct zero **literal** (`Config{}` vs `0` vs `nil` vs …) from a bare
-type name. **Named returns** sidestep this entirely: `__gop_ok` *is* the zero value of `T`, for any
+type name. **Named returns** sidestep this entirely: `__goal_ok` *is* the zero value of `T`, for any
 `T`, with no literal to spell and no per-return `var` to declare (which would otherwise collide
-across multiple `Err` returns). So `return Result.Err(e)` → `return __gop_ok, e`. A checker-backed
+across multiple `Err` returns). So `return Result.Err(e)` → `return __goal_ok, e`. A checker-backed
 compiler with full type information could instead emit the spec's literal form
 (`(Config, error)` + `Config{}`); the named-return shape is the type-agnostic equivalent and is
 itself idiomatic Go. (Recorded as an assumption in `DECISIONS.md`.)
@@ -134,7 +134,7 @@ itself idiomatic Go. (Recorded as an assumption in `DECISIONS.md`.)
 ### 3.3 Construction in return position
 
 - `return Result.Ok(X)` → `return X, nil` (X copied verbatim).
-- `return Result.Err(X)` → `return __gop_ok, X`.
+- `return Result.Err(X)` → `return __goal_ok, X`.
 
 Only recognized in `return` position (the immediate case). `Result.Ok/Err` used to build a
 **stored** value (`xs := []Result[...]{Result.Ok(1)}`) is the §8.7 stored case → sum encoding,
@@ -144,13 +144,13 @@ out of scope here.
 
 For `match <call> { Result.Ok(x) => A; Result.Err(e) => B }`:
 
-1. Capture the pair: `<okLHS>, __gop_err := <call>`, where `okLHS` is `__gop_v` if the Ok arm uses
-   its binding, else `_` (the error LHS is always `__gop_err` — it is the branch discriminant).
-2. Branch on the error, Err first (the idiomatic `if err != nil`): `if __gop_err != nil { B } else
+1. Capture the pair: `<okLHS>, __goal_err := <call>`, where `okLHS` is `__goal_v` if the Ok arm uses
+   its binding, else `_` (the error LHS is always `__goal_err` — it is the branch discriminant).
+2. Branch on the error, Err first (the idiomatic `if err != nil`): `if __goal_err != nil { B } else
    { A }`.
-3. Rewrite bindings: the Ok binding → `__gop_v` (the whole success value), the Err binding →
-   `__gop_err`, throughout their arm bodies. Field reads keep their selector (`cfg.Raw` →
-   `__gop_v.Raw`); no capitalization, since the payload is an ordinary value, not an enum variant.
+3. Rewrite bindings: the Ok binding → `__goal_v` (the whole success value), the Err binding →
+   `__goal_err`, throughout their arm bodies. Field reads keep their selector (`cfg.Raw` →
+   `__goal_v.Raw`); no capitalization, since the payload is an ordinary value, not an enum variant.
 
 This is **not** a type switch (contrast 02-match on an enum): there is no sum value at runtime in
 the open-`E` strategy — only `(T, error)` — so matching lowers to the error branch, which is the
@@ -191,6 +191,6 @@ is any stored Result.
 
 ## 6. Hygiene
 
-Synthesized names use the `__gop_` prefix (§8): `__gop_ok` / `__gop_err` (named returns) and
-`__gop_v` / `__gop_err` (the captured pair at a match site). User identifiers and the copied
+Synthesized names use the `__goal_` prefix (§8): `__goal_ok` / `__goal_err` (named returns) and
+`__goal_v` / `__goal_err` (the captured pair at a match site). User identifiers and the copied
 `T`, `Ok`/`Err` payload expressions, and arm bodies are otherwise untouched.

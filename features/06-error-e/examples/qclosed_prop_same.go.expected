@@ -30,11 +30,11 @@ func parse(s string) Result[Config, ParseError] {
 
 func loadFirst(a string) Result[Config, ParseError] {
 	var cfg Config
-	switch __gop_e := parse(a).(type) {
+	switch __goal_e := parse(a).(type) {
 	case Ok[Config, ParseError]:
-		cfg = __gop_e.Value
+		cfg = __goal_e.Value
 	case Err[Config, ParseError]:
-		return Err[Config, ParseError]{Value: __gop_e.Value}
+		return Err[Config, ParseError]{Value: __goal_e.Value}
 	default:
 		panic("unreachable: non-exhaustive Result[Config, ParseError] (compiler invariant violated)")
 	}

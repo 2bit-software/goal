@@ -100,7 +100,7 @@ the §8.6 `got`/`want` shape.)
 
 ## Hygiene
 
-`got` / `want` are local to each generated test function, so no `__gop_` prefix is needed; test names
+`got` / `want` are local to each generated test function, so no `__goal_` prefix is needed; test names
 are namespaced by function name + index, so they never collide.
 
 ## Scope / not built

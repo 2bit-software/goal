@@ -144,7 +144,7 @@ type → zero table above.
 
 ## Hygiene
 
-No temporaries are synthesized, so the `__gop_` prefix is not needed here.
+No temporaries are synthesized, so the `__goal_` prefix is not needed here.
 
 ## Scope
 

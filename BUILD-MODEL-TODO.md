@@ -97,7 +97,7 @@ Two load-bearing claims gate the whole phase. Each spike is small, throwaway, an
   returns `Result[float64, MathErr]` (E from A). **Results:** (1) per-file `analyze.Build(B)`
   has `Enums[Shape] == nil`; the **union** of the two files' tables has it, variants
   `[Circle Square]`. (2) Running the unchanged `pipeline.Passes` over B *with merged tables*
-  lowered the cross-file `match` to a real `switch __gop_v := sh.(type) { case Shape_Circle:
+  lowered the cross-file `match` to a real `switch __goal_v := sh.(type) { case Shape_Circle:
   … }` — no unlowered `match` remained. (3) The closed-E `half()` lowered to `Ok/Err[float64,
   MathErr]`. (4) The two-file package **compiled** with a single emitted `goal_prelude.go`.
   ⟹ Claims 1 & 2 hold: merged name-keyed tables are sufficient for cross-file lowering, and

@@ -271,7 +271,7 @@ func resolve(dst, srcExpr, sf, tf string, reg map[string]convEntry, fallibleOK b
 		if !fallibleOK {
 			return nil, fmt.Errorf("conversion %s->%s is fallible; declare the derive func returning (T, error)", sf, tf)
 		}
-		v := fmt.Sprintf("__gop_v%d", *tempN)
+		v := fmt.Sprintf("__goal_v%d", *tempN)
 		*tempN++
 		return []string{
 			fmt.Sprintf("%s, err := %s(%s)", v, e.name, srcExpr),

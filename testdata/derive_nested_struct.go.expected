@@ -31,9 +31,9 @@ type PersonV2 struct {
 func upgrade(p Person) PersonV2 {
 	var out PersonV2
 	out.Name = p.Name
-	var __gop_s0 AddrV2
-	__gop_s0.Street = p.Home.Street
-	__gop_s0.Zip = parseCode(p.Home.Zip)
-	out.Home = __gop_s0
+	var __goal_s0 AddrV2
+	__goal_s0.Street = p.Home.Street
+	__goal_s0.Zip = parseCode(p.Home.Zip)
+	out.Home = __goal_s0
 	return out
 }

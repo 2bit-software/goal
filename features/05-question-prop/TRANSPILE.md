@@ -9,19 +9,19 @@ signatures and constructions the `?` sites depend on.
 
 ## 1. The lowering (§8.3)
 
-**Result `?`** (enclosing function returns `Result[_, error]` → named `(__gop_ok T, __gop_err error)`):
+**Result `?`** (enclosing function returns `Result[_, error]` → named `(__goal_ok T, __goal_err error)`):
 
 | goal | Go |
 |---|---|
-| `name := expr?` | `name, __gop_err := expr` + `if __gop_err != nil { return __gop_ok, __gop_err }` |
-| `_ := expr?` | `if _, __gop_err := expr; __gop_err != nil { return __gop_ok, __gop_err }` |
+| `name := expr?` | `name, __goal_err := expr` + `if __goal_err != nil { return __goal_ok, __goal_err }` |
+| `_ := expr?` | `if _, __goal_err := expr; __goal_err != nil { return __goal_ok, __goal_err }` |
 
 **Option `?`** (enclosing function returns `Option[_]` → `*T`):
 
 | goal | Go |
 |---|---|
-| `name := expr?` | `__gop_oN := expr` + `if __gop_oN == nil { return nil }` + `name := *__gop_oN` |
-| `_ := expr?` | `if __gop_oN := expr; __gop_oN == nil { return nil }` |
+| `name := expr?` | `__goal_oN := expr` + `if __goal_oN == nil { return nil }` + `name := *__goal_oN` |
+| `_ := expr?` | `if __goal_oN := expr; __goal_oN == nil { return nil }` |
 
 The Result form *is* textbook idiomatic Go — `?` becomes `if err != nil`, and the result
 interoperates with the entire stdlib (§8.3 keystone).
@@ -41,14 +41,14 @@ func loadConfig(p string) Result[Config, error] {
 ```
 
 ```go
-func loadConfig(p string) (__gop_ok Config, __gop_err error) {
-	raw, __gop_err := readFile(p)
-	if __gop_err != nil {
-		return __gop_ok, __gop_err
+func loadConfig(p string) (__goal_ok Config, __goal_err error) {
+	raw, __goal_err := readFile(p)
+	if __goal_err != nil {
+		return __goal_ok, __goal_err
 	}
-	cfg, __gop_err := parse(raw)
-	if __gop_err != nil {
-		return __gop_ok, __gop_err
+	cfg, __goal_err := parse(raw)
+	if __goal_err != nil {
+		return __goal_ok, __goal_err
 	}
 	return cfg, nil
 }
@@ -66,16 +66,16 @@ func grandparent(name string) Option[User] {
 
 ```go
 func grandparent(name string) *User {
-	__gop_o1 := find(name)
-	if __gop_o1 == nil {
+	__goal_o1 := find(name)
+	if __goal_o1 == nil {
 		return nil
 	}
-	u := *__gop_o1
-	__gop_o2 := parent(u.Name)
-	if __gop_o2 == nil {
+	u := *__goal_o1
+	__goal_o2 := parent(u.Name)
+	if __goal_o2 == nil {
 		return nil
 	}
-	p := *__gop_o2
+	p := *__goal_o2
 	return &p
 }
 ```
@@ -90,9 +90,9 @@ func sync() Result[int, error] {
 ```
 
 ```go
-func sync() (__gop_ok int, __gop_err error) {
-	if _, __gop_err := flush(); __gop_err != nil {
-		return __gop_ok, __gop_err
+func sync() (__goal_ok int, __goal_err error) {
+	if _, __goal_err := flush(); __goal_err != nil {
+		return __goal_ok, __goal_err
 	}
 	return 1, nil
 }
@@ -111,26 +111,26 @@ Result/Option function is a located error (open-`E` only here).
 
 ### 3.2 Result mode
 
-The enclosing function's signature is rewritten to **named returns** `(__gop_ok T, __gop_err error)`
-(reused from 03-result), so the early return is `return __gop_ok, __gop_err` for any `T` with no
+The enclosing function's signature is rewritten to **named returns** `(__goal_ok T, __goal_err error)`
+(reused from 03-result), so the early return is `return __goal_ok, __goal_err` for any `T` with no
 zero literal needed.
 
-- `name := expr?` → `name, __gop_err := expr` then `if __gop_err != nil { return __gop_ok, __gop_err }`.
-  Reusing `__gop_err` across several `?` is valid Go: each `:=` introduces a new `name`, so the
-  short declaration redeclares the (param-scoped) `__gop_err` — exactly the spec's `cfg, err := ...`
+- `name := expr?` → `name, __goal_err := expr` then `if __goal_err != nil { return __goal_ok, __goal_err }`.
+  Reusing `__goal_err` across several `?` is valid Go: each `:=` introduces a new `name`, so the
+  short declaration redeclares the (param-scoped) `__goal_err` — exactly the spec's `cfg, err := ...`
   pattern.
-- `_ := expr?` → the if-init form `if _, __gop_err := expr; __gop_err != nil { ... }`, scoping
-  `__gop_err` to the `if` so repeated discards never collide and nothing is unused.
+- `_ := expr?` → the if-init form `if _, __goal_err := expr; __goal_err != nil { ... }`, scoping
+  `__goal_err` to the `if` so repeated discards never collide and nothing is unused.
 
 ### 3.3 Option mode
 
 The enclosing function returns `*T` (Option `[T]` rewritten by the 04 path). `None` propagates as
 `nil`.
 
-- `name := expr?` → `__gop_oN := expr` then `if __gop_oN == nil { return nil }` then
-  `name := *__gop_oN`. Each `?` uses a **fresh** `__gop_oN` (monotonic counter) so multiple `?` in
+- `name := expr?` → `__goal_oN := expr` then `if __goal_oN == nil { return nil }` then
+  `name := *__goal_oN`. Each `?` uses a **fresh** `__goal_oN` (monotonic counter) so multiple `?` in
   one block do not redeclare the pointer temp.
-- `_ := expr?` → the if-init form `if __gop_oN := expr; __gop_oN == nil { return nil }` (value
+- `_ := expr?` → the if-init form `if __goal_oN := expr; __goal_oN == nil { return nil }` (value
   discarded).
 
 ### 3.4 Statement position
@@ -169,6 +169,6 @@ line-to-protect); only the open path is built here.
 
 ## 6. Hygiene
 
-Synthesized names use the `__gop_` prefix (§8): `__gop_ok` / `__gop_err` (Result named returns and
-the per-`?` error), `__gop_oN` (per-`?` Option pointer temp, monotonic). User identifiers, the
+Synthesized names use the `__goal_` prefix (§8): `__goal_ok` / `__goal_err` (Result named returns and
+the per-`?` error), `__goal_oN` (per-`?` Option pointer temp, monotonic). User identifiers, the
 copied `T`, and the operand expressions are otherwise untouched.

@@ -44,28 +44,28 @@ func fetch(key string) Result[Row, DbError] {
 
 func load(key string) Result[Row, AppError] {
 	var r Row
-	switch __gop_e := fetch(key).(type) {
+	switch __goal_e := fetch(key).(type) {
 	case Ok[Row, DbError]:
-		r = __gop_e.Value
+		r = __goal_e.Value
 	case Err[Row, DbError]:
-		return Err[Row, AppError]{Value: dbToApp(__gop_e.Value)}
+		return Err[Row, AppError]{Value: dbToApp(__goal_e.Value)}
 	default:
 		panic("unreachable: non-exhaustive Result[Row, DbError] (compiler invariant violated)")
 	}
 	return Ok[Row, AppError]{Value: r}
 }
 
-func validate(s string) (__gop_ok string, __gop_err error) {
+func validate(s string) (__goal_ok string, __goal_err error) {
 	if s == "" {
-		return __gop_ok, errors.New("empty")
+		return __goal_ok, errors.New("empty")
 	}
 	return s, nil
 }
 
-func process(s string) (__gop_ok string, __gop_err error) {
-	v, __gop_err := validate(s)
-	if __gop_err != nil {
-		return __gop_ok, __gop_err
+func process(s string) (__goal_ok string, __goal_err error) {
+	v, __goal_err := validate(s)
+	if __goal_err != nil {
+		return __goal_ok, __goal_err
 	}
 	return v, nil
 }

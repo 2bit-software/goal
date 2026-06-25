@@ -28,9 +28,9 @@ interface). The error enum `E` is itself the §8.1 sealed-interface encoding (fe
 | `Result[T, E]` (closed) | `Result[T, E]` (the injected generic interface) — unchanged |
 | `Result.Ok(v)` | `Ok[T, E]{Value: v}` (T, E from the enclosing function's return type) |
 | `Result.Err(e)` | `Err[T, E]{Value: e}` |
-| `match call { Ok(x) => A; Err(e) => B }` | `switch __gop_e := call.(type) { case Ok[T,E]: …; case Err[T,E]: …; default: panic(…) }` |
-| `name := call?` (same E) | type switch: `Ok` assigns `name`, `Err` returns `Err[T2,E]{Value: __gop_e.Value}` |
-| `name := call?` (E → E2) | as above, but `Err` returns `Err[T2,E2]{Value: conv(__gop_e.Value)}` |
+| `match call { Ok(x) => A; Err(e) => B }` | `switch __goal_e := call.(type) { case Ok[T,E]: …; case Err[T,E]: …; default: panic(…) }` |
+| `name := call?` (same E) | type switch: `Ok` assigns `name`, `Err` returns `Err[T2,E]{Value: __goal_e.Value}` |
+| `name := call?` (E → E2) | as above, but `Err` returns `Err[T2,E2]{Value: conv(__goal_e.Value)}` |
 | `from func c(e Src) Dst {…}` | `func c(e Src) Dst {…}` (`from` erased) |
 
 T, E for construction come from the **enclosing** function; for `match`/`?` the **callee's** Result
@@ -63,12 +63,12 @@ func parse(s string) Result[Config, ParseError] {
 }
 
 func handle(input string) {
-	switch __gop_e := parse(input).(type) {
+	switch __goal_e := parse(input).(type) {
 	case Ok[Config, ParseError]:
-		cfg := __gop_e.Value
+		cfg := __goal_e.Value
 		run(cfg)
 	case Err[Config, ParseError]:
-		e := __gop_e.Value
+		e := __goal_e.Value
 		report(e)
 	default:
 		panic("unreachable: non-exhaustive Result[Config, ParseError] (compiler invariant violated)")
@@ -91,11 +91,11 @@ func loadFirst(a string) Result[Config, ParseError] {
 ```go
 func loadFirst(a string) Result[Config, ParseError] {
 	var cfg Config
-	switch __gop_e := parse(a).(type) {
+	switch __goal_e := parse(a).(type) {
 	case Ok[Config, ParseError]:
-		cfg = __gop_e.Value
+		cfg = __goal_e.Value
 	case Err[Config, ParseError]:
-		return Err[Config, ParseError]{Value: __gop_e.Value}
+		return Err[Config, ParseError]{Value: __goal_e.Value}
 	default:
 		panic("unreachable: non-exhaustive Result[Config, ParseError] (compiler invariant violated)")
 	}
@@ -121,11 +121,11 @@ func toApp(e ParseError) AppError {
 
 func load(s string) Result[Config, AppError] {
 	var cfg Config
-	switch __gop_e := parse(s).(type) {
+	switch __goal_e := parse(s).(type) {
 	case Ok[Config, ParseError]:
-		cfg = __gop_e.Value
+		cfg = __goal_e.Value
 	case Err[Config, ParseError]:
-		return Err[Config, AppError]{Value: toApp(__gop_e.Value)}
+		return Err[Config, AppError]{Value: toApp(__goal_e.Value)}
 	default:
 		panic("unreachable: non-exhaustive Result[Config, ParseError] (compiler invariant violated)")
 	}
@@ -148,7 +148,7 @@ The `Err` arm switches on the **callee's** `Err[Config, ParseError]` and returns
    independently (so an enum construction inside `Err(…)` is also lowered).
 3. **match** (statement position, scrutinee a direct call): a type switch with `case Ok[T, E]:` /
    `case Err[T, E]:` (T, E from the callee's signature) and a defensive `panic` default (the Ok/Err
-   set is proven exhaustive, §8.0). A used `Ok`/`Err` binding becomes `name := __gop_e.Value`.
+   set is proven exhaustive, §8.0). A used `Ok`/`Err` binding becomes `name := __goal_e.Value`.
 4. **`?`** (`name := call?`): `var name T_callee` then a type switch — the `Ok` arm assigns `name`,
    the `Err` arm `return`s the caller's `Err[T_caller, E_caller]`. If `E_callee == E_caller` the
    value passes through; otherwise it is wrapped in the `from func` for `(E_callee) → E_caller`. The
@@ -189,6 +189,6 @@ value-position match, and stored Results are out of scope.
 
 ## 6. Hygiene
 
-The type-switch guard is the hygienic `__gop_e` (§8). Synthesized type names follow §8.1
+The type-switch guard is the hygienic `__goal_e` (§8). Synthesized type names follow §8.1
 (`Enum_Variant`); the injected `Result`/`Ok`/`Err` are the sum encoding. User identifiers, payload
 expressions, and arm bodies are otherwise untouched.

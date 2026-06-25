@@ -55,9 +55,9 @@ type replacement struct {
 
 // hygienic temporaries (§8 prefix).
 const (
-	okName  = "__gop_ok"  // named success return / Ok binding target
-	errName = "__gop_err" // named error return / Err binding target
-	valName = "__gop_v"   // Ok value captured at a match site
+	okName  = "__goal_ok"  // named success return / Ok binding target
+	errName = "__goal_err" // named error return / Err binding target
+	valName = "__goal_v"   // Ok value captured at a match site
 )
 
 // transpile lowers goal source using Result[T, error] into idiomatic Go.
@@ -65,8 +65,8 @@ func transpile(src string) (string, error) {
 	toks := lex(src)
 	var reps []replacement
 
-	// Pass 1: rewrite `func ... Result[T, error] {` to named returns `(__gop_ok T,
-	// __gop_err error)`. Named returns make the Err-path zero value (`__gop_ok`)
+	// Pass 1: rewrite `func ... Result[T, error] {` to named returns `(__goal_ok T,
+	// __goal_err error)`. Named returns make the Err-path zero value (`__goal_ok`)
 	// available without synthesizing a type-specific zero literal.
 	for i := range toks {
 		if toks[i].text == "func" {

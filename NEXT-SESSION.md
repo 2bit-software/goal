@@ -47,7 +47,7 @@ then **format once**. Doctests run separately on the *original* source (Output.T
 
 ### Composition bugs found & fixed (regression cases exist for each)
 - `match` passes greedily claimed every match → gated by qualifier + mode.
-- `__gop_some` (Option box) vs `__gop_o` (`?`-Option temp) must stay distinct.
+- `__goal_some` (Option box) vs `__goal_o` (`?`-Option temp) must stay distinct.
 - doctest extraction missed `from func`/`derive func` → strips the modifier first.
 - open-E and closed-E Result in the SAME file → mode partition (see `testdata/open_closed_mix.goal`).
 

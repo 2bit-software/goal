@@ -22,8 +22,8 @@ func greet(u User) {}
 func prompt()      {}
 
 func handle(id ID) {
-	if __gop_o := find(id); __gop_o != nil {
-		u := *__gop_o
+	if __goal_o := find(id); __goal_o != nil {
+		u := *__goal_o
 		greet(u)
 	} else {
 		prompt()

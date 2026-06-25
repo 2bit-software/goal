@@ -21,12 +21,14 @@ its keep.
 >   forces divergence, land on another widely-seen idiom (Rust/Swift/Scala/TS) rather
 >   than inventing novel syntax.
 
-> **Front-end status: complete.** All 11 features compose, and every snippet here
+> **Status: front-end + checker complete.** All 11 features compose, and every snippet here
 > round-trips to independently-compiling Go (the `.go.expected` golden files in
 > `features/*/examples/` and `testdata/` are generated *from* the tool and verified to
-> compile). The **checker** — which turns each guarantee below into a static diagnostic
-> — is the next workstream; today the front-end lowers proven-valid input and defers
-> anything it can't resolve. See `NEXT-SESSION.md` and `TODO.md` for status.
+> compile). The **checker** — which turns each guarantee below into a located
+> `file:line:col: error: [code] message` diagnostic — is implemented and on by default in
+> the `goal` CLI (`goal check`, and as a gate on `goal build`/`run`). It runs in two stages:
+> a lexical stage over the original source and a typed depth stage over the lowered Go. See
+> `testdata/check/` for the programs each check is expected to flag.
 
 This doc is the quick-ingest companion to the [design spec](../goal-design-spec.md)
 (authoritative prose), the [decisions ledger](../DECISIONS.md), and the per-feature
@@ -195,9 +197,9 @@ func (Status_Active) isStatus()    {}
 func (Status_Cancelled) isStatus() {}
 
 func handle2(s Status) {
-	switch __gop_v := s.(type) {
+	switch __goal_v := s.(type) {
 	case Status_Active:
-		render(__gop_v.Since)
+		render(__goal_v.Since)
 	default:
 		showPlaceholder()
 	}
@@ -263,9 +265,9 @@ type Config struct {
 	Raw string
 }
 
-func parse(s string) (__gop_ok Config, __gop_err error) {
+func parse(s string) (__goal_ok Config, __goal_err error) {
 	if s == "" {
-		return __gop_ok, errors.New("empty input")
+		return __goal_ok, errors.New("empty input")
 	}
 	return Config{Raw: s}, nil
 }
@@ -357,8 +359,8 @@ func greet(u User) {}
 func prompt()      {}
 
 func handle(id ID) {
-	if __gop_o := find(id); __gop_o != nil {
-		u := *__gop_o
+	if __goal_o := find(id); __goal_o != nil {
+		u := *__goal_o
 		greet(u)
 	} else {
 		prompt()
@@ -421,29 +423,29 @@ type Config struct {
 	Raw string
 }
 
-func readFile(p string) (__gop_ok []byte, __gop_err error) {
+func readFile(p string) (__goal_ok []byte, __goal_err error) {
 	return []byte(p), nil
 }
 
-func parse(raw []byte) (__gop_ok Config, __gop_err error) {
+func parse(raw []byte) (__goal_ok Config, __goal_err error) {
 	return Config{Raw: string(raw)}, nil
 }
 
-func loadConfig(p string) (__gop_ok Config, __gop_err error) {
-	raw, __gop_err := readFile(p)
-	if __gop_err != nil {
-		return __gop_ok, __gop_err
+func loadConfig(p string) (__goal_ok Config, __goal_err error) {
+	raw, __goal_err := readFile(p)
+	if __goal_err != nil {
+		return __goal_ok, __goal_err
 	}
-	cfg, __gop_err := parse(raw)
-	if __gop_err != nil {
-		return __gop_ok, __gop_err
+	cfg, __goal_err := parse(raw)
+	if __goal_err != nil {
+		return __goal_ok, __goal_err
 	}
 	return cfg, nil
 }
 ```
 
 **Lowers to:** in a `Result[_, error]` function, `name := expr?` becomes
-`name, __gop_err := expr; if __gop_err != nil { return __gop_ok, __gop_err }`. In an
+`name, __goal_err := expr; if __goal_err != nil { return __goal_ok, __goal_err }`. In an
 `Option[_]` function it becomes a nil-check-and-return, then a deref.
 
 ## 06. Result (closed-E)
@@ -536,12 +538,12 @@ func run(c Config)        {}
 func report(e ParseError) {}
 
 func handle(input string) {
-	switch __gop_e := parse(input).(type) {
+	switch __goal_e := parse(input).(type) {
 	case Ok[Config, ParseError]:
-		cfg := __gop_e.Value
+		cfg := __goal_e.Value
 		run(cfg)
 	case Err[Config, ParseError]:
-		e := __gop_e.Value
+		e := __goal_e.Value
 		report(e)
 	default:
 		panic("unreachable: non-exhaustive Result[Config, ParseError] (compiler invariant violated)")
@@ -1033,20 +1035,20 @@ func square(x int) int {
 	return x * x
 }
 
-func makeUser(name string, age int) (__gop_ok User, __gop_err error) {
+func makeUser(name string, age int) (__goal_ok User, __goal_err error) {
 	if !(age >= 0) {
 		panic("assertion failed: age >= 0: " + fmt.Sprintf("negative age: %d", age))
 	}
 	if name == "" {
-		return __gop_ok, errors.New("empty name")
+		return __goal_ok, errors.New("empty name")
 	}
 	return User{name: name, role: 0, active: false}, nil
 }
 
-func register(name string, age int) (__gop_ok User, __gop_err error) {
-	u, __gop_err := makeUser(name, age)
-	if __gop_err != nil {
-		return __gop_ok, __gop_err
+func register(name string, age int) (__goal_ok User, __goal_err error) {
+	u, __goal_err := makeUser(name, age)
+	if __goal_err != nil {
+		return __goal_ok, __goal_err
 	}
 	return u, nil
 }
@@ -1086,5 +1088,6 @@ Every goal→Go pair here is copied from the project's verified golden files:
 Those `.go.expected` files are generated *from* the transpiler and verified to compile
 independently (`go test ./...` builds the generated programs in a throwaway module). When
 a feature's lowering changes, regenerate the goldens and re-sync the affected section
-here. When the **checker** lands, add the located-diagnostic examples (the "what the
-error looks like" half) beneath each feature's guarantee.
+here. The **checker** has landed; the next enrichment is to add the located-diagnostic
+examples (the "what the error looks like" half — see `testdata/check/`) beneath each
+feature's guarantee.

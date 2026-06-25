@@ -78,7 +78,7 @@ None. There is a single lowering — strip the modifier — for both free functi
 
 ## Hygiene
 
-No temporaries are synthesized, so the `__gop_` prefix is not needed here.
+No temporaries are synthesized, so the `__goal_` prefix is not needed here.
 
 ## Scope / not-checked (the checker's job, not built)
 

@@ -55,11 +55,11 @@ derive func fromStorage(s StoredEvent) (EventExecution, error)
 ```go
 func fromStorage(s StoredEvent) (EventExecution, error) {
     var out EventExecution
-    __gop_v0, err := parseUUID(s.ID)
+    __goal_v0, err := parseUUID(s.ID)
     if err != nil {
         return out, err
     }
-    out.ID = __gop_v0
+    out.ID = __goal_v0
     // ... remaining fields ...
     return out, nil
 }
@@ -105,7 +105,7 @@ Focused recognizer (`text/scanner`, span-splice, `go/format`); no full Go parser
 4. **Resolve `SF → TF`:**
    - `SF == TF` → direct: `out.F = src.G`.
    - registry has `(SF → TF)` total → `out.F = NAME(src.G)`.
-   - registry has `(SF → TF)` fallible → thread: `__gop_vN, err := NAME(src.G); if err != nil { return out, err }; out.F = __gop_vN` (requires the derived conversion to be fallible; else a located error).
+   - registry has `(SF → TF)` fallible → thread: `__goal_vN, err := NAME(src.G); if err != nil { return out, err }; out.F = __goal_vN` (requires the derived conversion to be fallible; else a located error).
    - **container recursion** (built-in): `SF = []A`, `TF = []B`, and `A → B` resolvable → emit a
      `make` + indexed loop applying the element resolution. (Map and nested-struct recursion follow
      the same rule; see scope.)
@@ -129,7 +129,7 @@ prior features (02/03/05/06 defer unhandled forms with a located message).
 
 ## Hygiene
 
-Fallible threading uses `__gop_vN` temporaries (the `__gop_` prefix, per §8). `out` is the single
+Fallible threading uses `__goal_vN` temporaries (the `__goal_` prefix, per §8). `out` is the single
 result accumulator (a local, so it dodges zero-literal synthesis the way feature 03 used named
 returns).
 

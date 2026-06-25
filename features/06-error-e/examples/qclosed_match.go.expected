@@ -32,12 +32,12 @@ func run(c Config)        {}
 func report(e ParseError) {}
 
 func handle(input string) {
-	switch __gop_e := parse(input).(type) {
+	switch __goal_e := parse(input).(type) {
 	case Ok[Config, ParseError]:
-		cfg := __gop_e.Value
+		cfg := __goal_e.Value
 		run(cfg)
 	case Err[Config, ParseError]:
-		e := __gop_e.Value
+		e := __goal_e.Value
 		report(e)
 	default:
 		panic("unreachable: non-exhaustive Result[Config, ParseError] (compiler invariant violated)")

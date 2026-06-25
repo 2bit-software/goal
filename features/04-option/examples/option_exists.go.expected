@@ -11,7 +11,7 @@ func find(id ID) *User {
 }
 
 func exists(id ID) bool {
-	if __gop_o := find(id); __gop_o != nil {
+	if __goal_o := find(id); __goal_o != nil {
 		return true
 	} else {
 		return false

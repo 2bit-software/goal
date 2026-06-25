@@ -220,6 +220,6 @@ types attach the marker to the user's own types and emit no synthesized structs.
 ## 6. Hygiene
 
 This feature synthesizes no temporaries (no `:=` temporaries, no intermediate locals), so the
-`__gop_` prefix (§8) does not appear in its output. The synthesized **type** names use the
+`__goal_` prefix (§8) does not appear in its output. The synthesized **type** names use the
 `NAME_Variant` form mandated by §8.1, not the temporary prefix. Later features that introduce
-locals (e.g. `match` bindings, `?` desugaring) own the `__gop_` hygiene.
+locals (e.g. `match` bindings, `?` desugaring) own the `__goal_` hygiene.

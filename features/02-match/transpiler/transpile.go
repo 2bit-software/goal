@@ -204,7 +204,7 @@ const (
 )
 
 // vbind is the hygienic name for the type-switch guard variable (§8 prefix).
-const vbind = "__gop_v"
+const vbind = "__goal_v"
 
 type arm struct {
 	rest    bool   // the `_` rest-arm

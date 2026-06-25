@@ -5,13 +5,13 @@ import (
 	"strconv"
 )
 
-func parsePositive(s string) (__gop_ok int, __gop_err error) {
+func parsePositive(s string) (__goal_ok int, __goal_err error) {
 	n, err := strconv.Atoi(s)
 	if err != nil {
-		return __gop_ok, err
+		return __goal_ok, err
 	}
 	if n <= 0 {
-		return __gop_ok, errors.New("not positive")
+		return __goal_ok, errors.New("not positive")
 	}
 	return n, nil
 }

@@ -75,13 +75,15 @@ Entry kinds:
 
 ## Assumptions to revisit (made without explicit discussion)
 
-### `goal-design-spec.md` left unedited despite the rename
-- **Kind:** assumption
-- **Chose:** treat the spec's "Go+" / "goplus" / `__gop_` naming as referring to "goal"; do not
-  rewrite the spec.
-- **Over:** find-and-replacing the spec to the new name.
-- **Why:** the spec is the design record; mass-renaming risks churn and the user only said "renamed
-  *for now*". **Revisit** if the name sticks — may want spec + `__gop_` hygiene prefix updated.
+### Hygiene prefix renamed `__gop_` → `__goal_`
+- **Kind:** decision
+- **Chose:** the synthesized-temporary / named-return hygiene prefix is now `__goal_` (e.g.
+  `__goal_ok`, `__goal_err`, `__goal_v`), matching the project name. Compiler source, golden
+  fixtures, reference transpilers, and docs were updated together.
+- **Over:** keeping the legacy `__gop_` prefix (a leftover from the "Go+" / "goplus" name).
+- **Why:** the name "goal" has stuck, so the earlier "treat `__gop_` as referring to goal *for now*"
+  assumption was resolved by doing the rename. The `goal-design-spec.md` prose still uses "Go+" /
+  "goplus" framing as the design record; only the `__gop_` identifier prefix was changed.
 
 ### Output layout `features/<NN-name>/{SYNTAX,TRANSPILE}.md + transpiler/ + examples/`
 - **Kind:** assumption
@@ -202,7 +204,7 @@ Entry kinds:
   01-enums braced declaration); positional bind `Active(since, at)` (Rust tuple-variant / spec §3.1
   sample).
 - **Why:** user chose via AskUserQuestion. Lands on Go's own type-switch idiom (`case T: v.Field`),
-  the lowest-familiarity-spend binding form, and lowers cleanly to `__gop_v.Field`. Positional was
+  the lowest-familiarity-spend binding form, and lowers cleanly to `__goal_v.Field`. Positional was
   refused for reintroducing the field-order dependence the braced payload removed. Struct-destructure
   was refused despite mirroring the declaration — the user preferred the Go-shaped value binding.
 
@@ -235,13 +237,13 @@ Entry kinds:
   refused because a present `default:` is what defeats exhaustiveness, so it legitimizes the reflex.
   Enforcement is the checker's job; the reference transpiler does not transform plain `switch`.
 
-### `__gop_v` guard variable emitted only when a binding is used
+### `__goal_v` guard variable emitted only when a binding is used
 - **Kind:** assumption
-- **Chose:** emit `switch __gop_v := s.(type)` only if some arm references its binding; otherwise
+- **Chose:** emit `switch __goal_v := s.(type)` only if some arm references its binding; otherwise
   `switch s.(type)` with no guard.
 - **Over:** always declaring the guard (spec §8.2 always shows `v :=`).
 - **Why:** an always-declared but never-used type-switch guard risks an unused-variable complaint
-  and adds noise. Gating on use keeps the output clean and compilable. `__gop_v` follows the §8
+  and adds noise. Gating on use keeps the output clean and compilable. `__goal_v` follows the §8
   hygiene prefix (spec used bare `v`; renamed for collision-safety).
 
 ### Reference transpiler defers the untyped `name := match` value form
@@ -357,12 +359,12 @@ Entry kinds:
   guardrail: don't add unrequested features). Shorthand refused for introducing that magic and
   hiding the error type.
 
-### Result return type lowers to NAMED Go returns `(__gop_ok T, __gop_err error)`
+### Result return type lowers to NAMED Go returns `(__goal_ok T, __goal_err error)`
 - **Kind:** assumption
 - **Chose:** rewrite `func ... Result[T, error]` to named returns; `return Result.Err(e)` becomes
-  `return __gop_ok, e` (the named zero), `return Result.Ok(v)` becomes `return v, nil`.
+  `return __goal_ok, e` (the named zero), `return Result.Ok(v)` becomes `return v, nil`.
 - **Over:** the spec §8.3 shape of unnamed `(T, error)` + a synthesized zero literal (`Config{}`);
-  also over injecting a `var __gop_zero T` at function top.
+  also over injecting a `var __goal_zero T` at function top.
 - **Why:** a no-type-inference reference transpiler cannot pick the correct zero **literal**
   (`Config{}` vs `0` vs `nil` vs …) from a bare type name, and a per-`Err`-return `var` would
   collide when a function has multiple `Err` returns. Named returns give the zero for any T with no
@@ -371,10 +373,10 @@ Entry kinds:
 
 ### Ok-binding-unused → discard the success value with `_`
 - **Kind:** assumption
-- **Chose:** at a match site, capture `__gop_v, __gop_err := call` only when the Ok arm uses its
-  binding; otherwise `_, __gop_err := call`. The error LHS is always `__gop_err` (the branch
+- **Chose:** at a match site, capture `__goal_v, __goal_err := call` only when the Ok arm uses its
+  binding; otherwise `_, __goal_err := call`. The error LHS is always `__goal_err` (the branch
   discriminant).
-- **Over:** always binding `__gop_v` (risks an unused-variable compile error when the Ok arm ignores
+- **Over:** always binding `__goal_v` (risks an unused-variable compile error when the Ok arm ignores
   the value).
 - **Why:** keeps generated Go compiling and clean. Mirrors 02-match's "emit the guard only when
   used" discipline.
@@ -497,24 +499,24 @@ Entry kinds:
 ### `Option.Some(v)`: `&v` for a bare identifier, box through a temp otherwise
 - **Kind:** assumption
 - **Chose:** `return Option.Some(v)` → `return &v` when `v` is a single identifier (addressable,
-  matching §8.4's `Some(u) -> &u`); otherwise `__gop_some := v; return &__gop_some`.
+  matching §8.4's `Some(u) -> &u`); otherwise `__goal_some := v; return &__goal_some`.
 - **Over:** always emitting `&v` (illegal Go for literals/calls/index exprs — `&5`, `&f()`); always
   boxing (correct but noisier for the common `Some(u)` case).
 - **Why:** Go forbids taking the address of a non-addressable expression, so a literal/call/index
   payload must be boxed through a temp (the idiomatic `v := …; &v`); a bare identifier can be
   addressed directly for cleaner output that matches the spec. Boxing also gives the Option its own
   copy (no aliasing). Edge: a single *constant* identifier isn't addressable and would still emit
-  `&c` (rare); noted as a known limitation. The temp name `__gop_some` is shared (distinct `Some`
+  `&c` (rare); noted as a known limitation. The temp name `__goal_some` is shared (distinct `Some`
   returns sit in distinct branches/scopes).
 
-### Option match: deref alias `x := *__gop_o` only when the Some binding is used
+### Option match: deref alias `x := *__goal_o` only when the Some binding is used
 - **Kind:** assumption
-- **Chose:** in the `Some` (non-nil) branch emit `x := *__gop_o` only if the arm uses `x`; otherwise
+- **Chose:** in the `Some` (non-nil) branch emit `x := *__goal_o` only if the arm uses `x`; otherwise
   omit it. `Some` → the `if` branch, `None` → `else`, regardless of source order.
 - **Over:** always emitting the deref alias (unused-variable error when the Some arm ignores the
   value).
 - **Why:** keeps generated Go compiling and clean; mirrors the "emit the binding only when used"
-  discipline from 02/03. `__gop_o` is always used (the nil-test), so no guard needed there.
+  discipline from 02/03. `__goal_o` is always used (the nil-test), so no guard needed there.
 
 ### 04 transpiler scope: immediate pointer strategy only
 - **Kind:** assumption
@@ -546,7 +548,7 @@ Entry kinds:
 
 ### `?` propagation mode comes from the enclosing function's return type
 - **Kind:** assumption
-- **Chose:** a `?` in a `Result[_, error]` function is Result-mode (`return __gop_ok, __gop_err`); in
+- **Chose:** a `?` in a `Result[_, error]` function is Result-mode (`return __goal_ok, __goal_err`); in
   an `Option[_]` function it is Option-mode (`return nil`). The transpiler maps each `?` to its
   enclosing function by source offset.
 - **Over:** inferring the operand's type to decide mode (needs type inference the transpiler lacks).
@@ -554,15 +556,15 @@ Entry kinds:
   compatible channel), so the return type determines the mode without any operand type inference.
   Matches Rust/Swift. A `?` outside a Result/Option function is a located error.
 
-### Reuse `__gop_err` across Result `?`; fresh `__gop_oN` per Option `?`
+### Reuse `__goal_err` across Result `?`; fresh `__goal_oN` per Option `?`
 - **Kind:** assumption
-- **Chose:** Result `name := expr?` emits `name, __gop_err := expr` (reusing the named-return
-  `__gop_err`, valid because `name` is new); the discard form uses an if-init to scope `__gop_err`.
-  Option `?` uses a monotonic `__gop_o1`, `__gop_o2`, … per occurrence.
-- **Over:** unique error temps per Result `?`; reusing one `__gop_o` for Option (which would
+- **Chose:** Result `name := expr?` emits `name, __goal_err := expr` (reusing the named-return
+  `__goal_err`, valid because `name` is new); the discard form uses an if-init to scope `__goal_err`.
+  Option `?` uses a monotonic `__goal_o1`, `__goal_o2`, … per occurrence.
+- **Over:** unique error temps per Result `?`; reusing one `__goal_o` for Option (which would
   redeclare with `:=`).
-- **Why:** Go's `:=` redeclaration rule lets `name, __gop_err :=` reuse `__gop_err` when `name` is
-  new (the spec's `cfg, err := ...` pattern), but an Option `__gop_o := ...` with no new LHS var
+- **Why:** Go's `:=` redeclaration rule lets `name, __goal_err :=` reuse `__goal_err` when `name` is
+  new (the spec's `cfg, err := ...` pattern), but an Option `__goal_o := ...` with no new LHS var
   would be an error on repeat — so Option temps must be unique. Keeps all generated Go compiling.
 
 ### 05 transpiler scope: open-E `?` at statement level; bundles the 03/04 lowerings it needs
@@ -1106,7 +1108,7 @@ Entry kinds:
 - **Kind:** assumption
 - **Chose:** the transpiler builds the registry from `from func` signatures (strips `from`), parses
   struct fields (reusing feature 08), and expands `derive func` to `var out T` + field-by-field
-  assignment (registry-resolved, target-directed), threading `?`/errors via `__gop_vN` for fallible
+  assignment (registry-resolved, target-directed), threading `?`/errors via `__goal_vN` for fallible
   conversions and emitting a `make`+loop for slice recursion. Unresolvable fields are DEFERRED with a
   located error (never silently zero). Examples use lowered Go forms (`(T,error)`, `*string`, local
   UUID/NullString stand-ins) for standalone compilation.
@@ -1207,7 +1209,7 @@ Entry kinds:
 - **Kind:** decision
 - **Did:** `pass.resolveField` now lowers a field whose source and target types are **both structs
   declared in this package** (`A→B`, no `from func`) by recursing field-by-field: it declares a temp
-  `var __gop_sN B`, fills each target field via `deriveBody` (same strategy order, recursively), and
+  `var __goal_sN B`, fills each target field via `deriveBody` (same strategy order, recursively), and
   assigns the temp. A registered `from func A→B` still wins (checked before the recursion). Fallible
   leaves propagate through the recursion via the outer derive's `return out, err` (so a nested fallible
   field requires the top-level derive to be `(T, error)`, same as a flat one). `resolveField`'s signature

@@ -97,7 +97,7 @@ Write `features/<NN-name>/TRANSPILE.md` containing:
   closed-`E` sum encoding; `Option` pointer vs sum; immediate vs stored per §8.7), document each
   and state the rule that selects between them. For v1, handling the **immediate/consumed** case
   is required; note where **stored-as-value** must fall back to the sum encoding.
-- **Hygiene.** All generated temporaries use the `__gop_` prefix (§8).
+- **Hygiene.** All generated temporaries use the `__goal_` prefix (§8).
 
 ---
 

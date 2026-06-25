@@ -25,29 +25,44 @@ compiler already understands.
 
 ## Quick start
 
-Requires Go 1.26+.
+Requires Go 1.26+. There are two binaries: **`goal`**, the umbrella CLI that drives whole
+programs through the Go toolchain, and **`goalc`**, the single-file transpiler primitive.
 
 ```bash
-# transpile a .goal program to Go (stdout)
-go run ./cmd/goalc path/to/file.goal
+# whole-program driver (discovers .goal packages under a path; default ".")
+go run ./cmd/goal check ./app        # run the static checker; prints "ok" or located diagnostics
+go run ./cmd/goal run   ./app        # transpile + `go run` the sole `package main`
+go run ./cmd/goal build ./app        # transpile + `go build ./...`  (ephemeral, via -overlay)
+go run ./cmd/goal build --emit ./app # ALSO write generated .go (+ _test.go) beside each .goal
 
-# emit the doctest sidecar (_test.go) extracted from /// comments
-go run ./cmd/goalc -test path/to/file.goal
+# single-file primitive (transpiles one file to stdout)
+go run ./cmd/goalc path/to/file.goal       # lowered Go to stdout (checker runs first)
+go run ./cmd/goalc -test path/to/file.goal # the doctest sidecar (_test.go) instead
+go run ./cmd/goalc -nocheck file.goal      # skip the checker, just lower
+cat file.goal | go run ./cmd/goalc -       # read from stdin
 
-# read from stdin
-cat file.goal | go run ./cmd/goalc -
-
-# build the CLI
+# build the CLIs
+go build -o bin/goal  ./cmd/goal
 go build -o bin/goalc ./cmd/goalc
 ```
 
-The output is gofmt-formatted Go. Pipe it to a `.go` file in a real package and it
-compiles as-is.
+`goal build`/`run` are **ephemeral** by default: the generated Go is mapped into the module
+with `go build -overlay`, so nothing is written to your source tree and module/stdlib
+imports still resolve. `--emit` instead writes the generated `.go` (and doctest `_test.go`)
+to disk, which is how you run doctests:
+
+```bash
+go run ./cmd/goal build --emit ./app && go test -count=1 ./app/...
+```
+
+`goalc` output is gofmt-formatted Go; pipe it into a `.go` file in a real package and it
+compiles as-is. **A from-scratch agent guide lives in
+[`AI-KNOWLEDGE-BOOTSTRAP.md`](AI-KNOWLEDGE-BOOTSTRAP.md).**
 
 ## The 11 features
 
-Each transpiles to idiomatic Go; the static *guarantee* behind each is the job of the
-checker (not yet built — see [Status](#status)).
+Each transpiles to idiomatic Go; the static *guarantee* behind each is enforced by the
+checker (see [Status](#status)).
 
 | # | Feature | Surface | Lowers to |
 |---|---------|---------|-----------|
@@ -66,7 +81,7 @@ checker (not yet built — see [Status](#status)).
 Locked conventions (see `DECISIONS.md`): qualified construction (`Status.Active(…)`,
 `Result.Ok`, `Option.Some`), brace-named payloads, newline-separated variants/arms,
 conventional names verbatim (`Ok`/`Err`/`Some`/`None`/`=>`/`_`/`?`), modifiers before
-`func` (`from`/`derive`), and `__gop_`-prefixed synthesized temporaries.
+`func` (`from`/`derive`), and `__goal_`-prefixed synthesized temporaries.
 
 ## The unified front-end
 
@@ -130,12 +145,16 @@ produce that; the unified pipeline does (`testdata/open_closed_mix.goal`).
 **Front-end: complete.** All 11 features compose. Every reference example and a suite of
 multi-feature `testdata/` programs round-trip to correct, independently-compiling Go.
 
-**Checker: not started** — the next major workstream. The front-end lowers proven-valid
-input and *defers* (with a located error) anything it cannot resolve, but it emits no
-static diagnostics yet. The checker is where each feature's guarantee lands:
-exhaustiveness (02), must-use (03), field-completeness (08), `implements` satisfaction
-(07), static asserts (10), conversion totality (12),
-closedness & From-totality (06). See `NEXT-SESSION.md`.
+**Checker: implemented and on by default.** Each feature's guarantee now lands as a located
+`file:line:col: error: [code] message` diagnostic, emitted by `goal check` (and gating
+`goal build`/`run` and `goalc` unless `-nocheck` is given). It runs in two stages: a
+**lexical** stage (`internal/check`) over the original source, and a **typed depth** stage
+(`internal/typecheck`) that loads the lowered Go into `go/types` to answer what the lexical
+stage had to defer; the type-backed finding wins when both flag the same construct.
+Coverage spans exhaustiveness (02), must-use / dropped `Result` (03, 06), field-completeness
+(08), `implements` satisfaction and method-signature match (07), always-true/false `assert`
+(10), and conversion totality & From-completeness (12). See `testdata/check/` for the input
+programs each check is expected to flag.
 
 ## Tests
 

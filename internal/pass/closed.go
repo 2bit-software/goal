@@ -125,7 +125,7 @@ func lowerClosedMatch(src string, toks []scan.Token, scrut string, res analyze.F
 }
 
 // closedArmBody returns the lowered arm body. When the arm binds and uses its value,
-// a `name := __gop_e.Value` alias is prepended. The bool reports guard-var use.
+// a `name := __goal_e.Value` alias is prepended. The bool reports guard-var use.
 func closedArmBody(src string, toks []scan.Token, a *resultArm) (string, bool) {
 	if a == nil {
 		return "", false

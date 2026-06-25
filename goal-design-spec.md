@@ -785,7 +785,7 @@ Three cross-cutting strategies govern the whole transpiler:
 3. **Erasure + defensive panic** for all proven invariants (exhaustiveness now; static
    asserts/contracts later).
 
-Hygiene: all generated temporaries use an unlikely-to-collide prefix (e.g. `__gop_`).
+Hygiene: all generated temporaries use an unlikely-to-collide prefix (e.g. `__goal_`).
 
 ### 8.1 Closed sum types (real enums)
 
@@ -886,12 +886,12 @@ and the result interoperates with the entire Go stdlib.
 **Closed `E` → sum encoding;** `?` lowers to type-switch-and-return:
 ```go
 // cfg := parse(raw)?   where parse returns Result[Config, ParseError]
-__gop_r := parse(raw)
-switch __gop_e := __gop_r.(type) {
+__goal_r := parse(raw)
+switch __goal_e := __goal_r.(type) {
 case Err_ParseError:
-	return Result_X_ParseError(Err_ParseError{Value: __gop_e.Value})  // or via From-conversion
+	return Result_X_ParseError(Err_ParseError{Value: __goal_e.Value})  // or via From-conversion
 case Ok_Config:
-	cfg = __gop_e.Value
+	cfg = __goal_e.Value
 }
 ```
 
@@ -911,8 +911,8 @@ match find(id) { Some(u) => greet(u); None => prompt() }
 ```go
 func find(id ID) *User { ... }   // None -> nil, Some(u) -> &u
 
-if __gop_o := find(id); __gop_o != nil {
-	u := *__gop_o
+if __goal_o := find(id); __goal_o != nil {
+	u := *__goal_o
 	greet(u)
 } else {
 	prompt()

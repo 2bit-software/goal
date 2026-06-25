@@ -183,7 +183,7 @@ func resolveField(dst, srcExpr, sf, tf string, t *analyze.Tables, fallibleOK boo
 		if !fallibleOK {
 			return nil, fmt.Errorf("conversion %s->%s is fallible; declare the derive func returning (T, error)", sf, tf)
 		}
-		v := fmt.Sprintf("__gop_v%d", *tempN)
+		v := fmt.Sprintf("__goal_v%d", *tempN)
 		*tempN++
 		return []string{
 			fmt.Sprintf("%s, err := %s(%s)", v, e.Name, srcExpr),
@@ -203,7 +203,7 @@ func resolveField(dst, srcExpr, sf, tf string, t *analyze.Tables, fallibleOK boo
 		if err != nil {
 			return nil, err
 		}
-		v := fmt.Sprintf("__gop_p%d", *tempN)
+		v := fmt.Sprintf("__goal_p%d", *tempN)
 		*tempN++
 		return []string{
 			fmt.Sprintf("if %s != nil {\n%s := %s\n%s = &%s\n}", srcExpr, v, elem("*"+srcExpr), dst, v),
@@ -256,7 +256,7 @@ func resolveField(dst, srcExpr, sf, tf string, t *analyze.Tables, fallibleOK boo
 	// A registered `from func A->B`, checked above, takes priority over auto-recursion.
 	if _, srcStruct := t.Structs[sf]; srcStruct {
 		if _, tgtStruct := t.Structs[tf]; tgtStruct {
-			v := fmt.Sprintf("__gop_s%d", *tempN)
+			v := fmt.Sprintf("__goal_s%d", *tempN)
 			*tempN++
 			stmts := []string{fmt.Sprintf("var %s %s", v, tf)}
 			body, err := deriveBody(v, srcExpr, sf, tf, t, fallibleOK, tempN)

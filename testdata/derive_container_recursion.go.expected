@@ -38,12 +38,12 @@ func toTyped(r Raw) Typed {
 		out.Pair[i] = parseID(r.Pair[i])
 	}
 	if r.Lead != nil {
-		__gop_p0 := parseID(*r.Lead)
-		out.Lead = &__gop_p0
+		__goal_p0 := parseID(*r.Lead)
+		out.Lead = &__goal_p0
 	}
 	if r.Maybe != nil {
-		__gop_p1 := parseID(*r.Maybe)
-		out.Maybe = &__gop_p1
+		__goal_p1 := parseID(*r.Maybe)
+		out.Maybe = &__goal_p1
 	}
 	return out
 }

@@ -66,11 +66,11 @@ func parse(s string) Result[Config, ParseError] {
 
 func load(s string) Result[Config, AppError] {
 	var cfg Config
-	switch __gop_e := parse(s).(type) {
+	switch __goal_e := parse(s).(type) {
 	case Ok[Config, ParseError]:
-		cfg = __gop_e.Value
+		cfg = __goal_e.Value
 	case Err[Config, ParseError]:
-		return Err[Config, AppError]{Value: toApp(__gop_e.Value)}
+		return Err[Config, AppError]{Value: toApp(__goal_e.Value)}
 	default:
 		panic("unreachable: non-exhaustive Result[Config, ParseError] (compiler invariant violated)")
 	}
@@ -80,10 +80,10 @@ func load(s string) Result[Config, AppError] {
 func toTyped(r Raw) (Typed, error) {
 	var out Typed
 	out.Name = r.Name
-	__gop_v0, err := parseID(r.Key)
+	__goal_v0, err := parseID(r.Key)
 	if err != nil {
 		return out, err
 	}
-	out.Key = __gop_v0
+	out.Key = __goal_v0
 	return out, nil
 }

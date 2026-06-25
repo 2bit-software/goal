@@ -68,9 +68,9 @@ type fnInfo struct {
 
 // hygienic temporaries / named returns (§8 prefix).
 const (
-	okName  = "__gop_ok"
-	errName = "__gop_err"
-	optBase = "__gop_o"
+	okName  = "__goal_ok"
+	errName = "__goal_err"
+	optBase = "__goal_o"
 )
 
 // transpile lowers goal source using `?` (plus the Result/Option forms it needs).

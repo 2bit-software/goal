@@ -19,13 +19,13 @@ func (Status_Cancelled) isStatus() {}
 
 func describe(s Status) string {
 	var d string
-	switch __gop_v := s.(type) {
+	switch __goal_v := s.(type) {
 	case Status_Pending:
 		d = "pending"
 	case Status_Active:
 		d = "active"
 	case Status_Cancelled:
-		d = __gop_v.Reason
+		d = __goal_v.Reason
 	default:
 		panic("unreachable: non-exhaustive Status (compiler invariant violated)")
 	}

@@ -36,16 +36,16 @@ func (e *convErr) Error() string { return e.msg }
 // (EventExecution, error) and the deriver threads the error.
 func fromStorage(s StoredEvent) (EventExecution, error) {
 	var out EventExecution
-	__gop_v0, err := parseUUID(s.ID)
+	__goal_v0, err := parseUUID(s.ID)
 	if err != nil {
 		return out, err
 	}
-	out.ID = __gop_v0
-	__gop_v1, err := parseUUID(s.CustomerID)
+	out.ID = __goal_v0
+	__goal_v1, err := parseUUID(s.CustomerID)
 	if err != nil {
 		return out, err
 	}
-	out.CustomerID = __gop_v1
+	out.CustomerID = __goal_v1
 	out.Railroad = s.Railroad
 	return out, nil
 }

@@ -22,13 +22,13 @@ func (Status_Active) isStatus()    {}
 func (Status_Cancelled) isStatus() {}
 
 func handle(s Status) {
-	switch __gop_v := s.(type) {
+	switch __goal_v := s.(type) {
 	case Status_Pending:
 		startOnboarding()
 	case Status_Active:
-		render(__gop_v.Since)
+		render(__goal_v.Since)
 	case Status_Cancelled:
-		logEvent(__gop_v.Reason, __gop_v.At)
+		logEvent(__goal_v.Reason, __goal_v.At)
 	default:
 		panic("unreachable: non-exhaustive Status (compiler invariant violated)")
 	}
