@@ -1,0 +1,10 @@
+package io
+
+func flush() Result[int, error] {
+    return Result.Ok(0)
+}
+
+func sync() Result[int, error] {
+    flush()?
+    return Result.Ok(1)
+}

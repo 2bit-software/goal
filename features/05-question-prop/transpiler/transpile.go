@@ -5,14 +5,19 @@
 // Option pointer strategy (feature 04), so this transpiler also lowers the
 // Result/Option signatures and constructions those `?` sites depend on.
 //
-// `?` is always the RHS of an assignment: `name := expr?` keeps the unwrapped value;
-// `_ := expr?` discards it and propagates only the failure. A bare `expr?` statement
-// is rejected. The propagation mode (Result vs Option) is taken from the enclosing
-// function's return type — `?` early-returns the same kind the function returns.
+// `?` appears as `name := expr?` (keep the unwrapped value), `_ := expr?` (discard it
+// explicitly), or a bare `expr?` statement (the binding-free discard form, for a call
+// whose only output is the error). The propagation mode (Result vs Option) is taken
+// from the enclosing function's return type — `?` early-returns the same kind the
+// function returns.
 //
 // Scope: OPEN-E only (E is `error`). Closed-E `?` needs the From-conversion (feature
-// 06) and is out of scope. No error checking, no type inference. Malformed input is
-// undefined behavior.
+// 06) and is out of scope. The discard lowering is arity-aware for IN-FILE callees: an
+// error-only call lowers to the one-value `if __goal_err := expr; …` form and a
+// `(T, error)` call to `if _, __goal_err := expr; …`. A callee this single-file
+// reference cannot resolve (an imported `pkg.Func`) keeps the two-value form — resolving
+// foreign arity needs the cross-package analysis the production transpiler does and this
+// reference does not. Malformed input is otherwise undefined behavior.
 package main
 
 import (
@@ -62,8 +67,10 @@ const (
 )
 
 type fnInfo struct {
+	name               string
 	bodyStart, bodyEnd int
 	mode               fnMode
+	arity              int // values returned at `?`-lowering time (Result=2, Option=1, else counted)
 }
 
 // hygienic temporaries / named returns (§8 prefix).
@@ -124,7 +131,10 @@ func scanFuncs(src string, toks []token, reps *[]replacement) []fnInfo {
 		}
 		bc := matchBrace(toks, bo)
 		pc := paramsClose(toks, bo)
-		info := fnInfo{bodyStart: toks[bo].start, bodyEnd: toks[bc].end, mode: modeNone}
+		info := fnInfo{name: funcName(toks, i), bodyStart: toks[bo].start, bodyEnd: toks[bc].end, mode: modeNone}
+		if pc >= 0 {
+			info.arity = countReturns(strings.TrimSpace(src[toks[pc].end:toks[bo].start]))
+		}
 		if pc >= 0 && pc+2 < bo {
 			switch {
 			case toks[pc+1].text == "Result" && toks[pc+2].text == "[":
@@ -139,6 +149,14 @@ func scanFuncs(src string, toks []token, reps *[]replacement) []fnInfo {
 			case toks[pc+1].text == "Option" && toks[pc+2].text == "[":
 				info.mode = modeOption // type rewritten by Pass 2
 			}
+		}
+		// A Result/Option signature lowers to a fixed call shape — (T, error) or *T — so its
+		// `?`-time arity is the lowered count, not the syntactic return read above.
+		switch info.mode {
+		case modeResult:
+			info.arity = 2
+		case modeOption:
+			info.arity = 1
 		}
 		funcs = append(funcs, info)
 	}
@@ -192,8 +210,10 @@ func lowerReturns(src string, toks []token) []replacement {
 	return reps
 }
 
-// lowerQuestion lowers each `?`. A `?` must terminate `name := expr?` or `_ := expr?`
-// (a bare `expr?` is rejected). The mode comes from the enclosing function.
+// lowerQuestion lowers each `?`. A `?` terminates `name := expr?`, `_ := expr?`, or a bare
+// `expr?` statement; the latter two discard the value. The mode comes from the enclosing
+// function. This reference assumes a `(T, error)` callee, so a discard lowers two-value (see
+// the package doc — production reads the callee arity and lowers error-only calls one-value).
 func lowerQuestion(src string, toks []token, funcs []fnInfo) ([]replacement, error) {
 	var reps []replacement
 	optCounter := 0
@@ -204,16 +224,26 @@ func lowerQuestion(src string, toks []token, funcs []fnInfo) ([]replacement, err
 		p := toks[q].start
 		lineStart := strings.LastIndexByte(src[:p], '\n') + 1
 		name, rhs, ok := splitAssign(src[lineStart:p])
-		if !ok {
-			return nil, fmt.Errorf("`?` must be the right-hand side of an assignment; write `name := expr?` to keep the value or `_ := expr?` to discard it")
+		if !ok && !isBareQuestionStmt(src, toks, q, lineStart) {
+			return nil, fmt.Errorf("`?` must be the right-hand side of an assignment (`name := expr?`) or a standalone `expr?` statement")
 		}
-		discard := name == "_"
+		discard := !ok || name == "_"
 		var text string
 		switch modeAt(funcs, p) {
 		case modeResult:
+			arity, known := calleeArity(funcs, rhs)
 			if discard {
-				text = fmt.Sprintf("if _, %s := %s; %s != nil {\nreturn %s, %s\n}", errName, rhs, errName, okName, errName)
+				// One blank per discarded value: an error-only callee (arity 1) needs none, a
+				// (value, error) callee one. An unresolved callee keeps the two-value form.
+				n := 2
+				if known && arity >= 1 {
+					n = arity
+				}
+				text = fmt.Sprintf("if %s%s := %s; %s != nil {\nreturn %s, %s\n}", strings.Repeat("_, ", n-1), errName, rhs, errName, okName, errName)
 			} else {
+				if known && arity != 2 {
+					return nil, fmt.Errorf("`?` binds a value but %s returns %d value(s); write a bare `…?` to propagate only the error", leadIdent(strings.TrimSpace(rhs)), arity)
+				}
 				text = fmt.Sprintf("%s, %s := %s\nif %s != nil {\nreturn %s, %s\n}", name, errName, rhs, errName, okName, errName)
 			}
 		case modeOption:
@@ -240,6 +270,40 @@ func splitAssign(s string) (name, rhs string, ok bool) {
 	return "", strings.TrimSpace(s), false
 }
 
+// isBareQuestionStmt reports whether the `?` at qIdx is the whole of a standalone `expr?`
+// statement (no `name :=` / `_ :=`). It requires the `?` to end its line and the line not to
+// begin with a statement keyword, so a `?` used mid-expression (`f(g()?)`) or after a keyword
+// (`return f()?`) is not mistaken for a bare statement.
+func isBareQuestionStmt(src string, toks []token, qIdx, lineStart int) bool {
+	if qIdx < 0 || qIdx >= len(toks) || toks[qIdx].text != "?" {
+		return false
+	}
+	lineEnd := len(src)
+	if nl := strings.IndexByte(src[toks[qIdx].end:], '\n'); nl >= 0 {
+		lineEnd = toks[qIdx].end + nl
+	}
+	if qIdx+1 < len(toks) && toks[qIdx+1].start < lineEnd {
+		return false
+	}
+	first := qIdx
+	for first > 0 && toks[first-1].start >= lineStart {
+		first--
+	}
+	return !isStmtKeyword(toks[first].text)
+}
+
+// isStmtKeyword reports whether s is a Go/goal keyword that can lead a statement, so a line
+// beginning with it is not a bare expression statement.
+func isStmtKeyword(s string) bool {
+	switch s {
+	case "return", "go", "defer", "if", "else", "for", "switch", "select", "case",
+		"default", "var", "const", "type", "func", "range", "break", "continue",
+		"goto", "fallthrough", "match", "assert", "enum", "import", "package":
+		return true
+	}
+	return false
+}
+
 func modeAt(funcs []fnInfo, off int) fnMode {
 	for _, f := range funcs {
 		if off >= f.bodyStart && off < f.bodyEnd {
@@ -247,6 +311,93 @@ func modeAt(funcs []fnInfo, off int) fnMode {
 		}
 	}
 	return modeNone
+}
+
+// calleeArity reports how many values the in-file function called at the head of rhs returns.
+// The bool is false when the head names no in-file function (an imported `pkg.Func` or a method),
+// in which case the caller keeps the two-value form.
+func calleeArity(funcs []fnInfo, rhs string) (int, bool) {
+	head := leadIdent(strings.TrimSpace(rhs))
+	if head == "" {
+		return 0, false
+	}
+	for _, f := range funcs {
+		if f.name == head {
+			return f.arity, true
+		}
+	}
+	return 0, false
+}
+
+// funcName returns the declared name of the function whose `func` keyword is at index fi, skipping
+// an optional receiver. It returns "" when the name cannot be read.
+func funcName(toks []token, fi int) string {
+	nameTok := fi + 1
+	if nameTok < len(toks) && toks[nameTok].text == "(" {
+		nameTok = matchParen(toks, nameTok) + 1 // skip receiver
+	}
+	if nameTok < len(toks) && isIdentText(toks[nameTok].text) {
+		return toks[nameTok].text
+	}
+	return ""
+}
+
+// countReturns reports how many values a function's return clause yields: an empty clause is 0, a
+// single bare type is 1, and a parenthesized list is its count of top-level entries.
+func countReturns(ret string) int {
+	ret = strings.TrimSpace(ret)
+	if ret == "" {
+		return 0
+	}
+	if strings.HasPrefix(ret, "(") && strings.HasSuffix(ret, ")") {
+		inner := strings.TrimSpace(ret[1 : len(ret)-1])
+		if inner == "" {
+			return 0
+		}
+		return 1 + topLevelCommaCount(inner)
+	}
+	return 1
+}
+
+// topLevelCommaCount counts commas at bracket/paren depth 0 in s.
+func topLevelCommaCount(s string) int {
+	depth, n := 0, 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+		case ',':
+			if depth == 0 {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// leadIdent returns the leading identifier of s (letters, digits, underscore from the start).
+func leadIdent(s string) string {
+	end := 0
+	for end < len(s) {
+		c := s[end]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
+			end++
+			continue
+		}
+		break
+	}
+	return s[:end]
+}
+
+// isIdentText reports whether s begins like an identifier (letter or underscore).
+func isIdentText(s string) bool {
+	if s == "" {
+		return false
+	}
+	c := s[0]
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
 }
 
 // ----- shared helpers -----

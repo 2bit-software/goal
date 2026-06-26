@@ -24,33 +24,43 @@ func loadConfig(p string) Result[Config, error] {
 
 - **`?` is postfix** on a `Result`- or `Option`-typed expression — the conventional Rust/Swift
   glyph, non-negotiable (§7), not Go-ified.
-- **`?` is always the right-hand side of an assignment.** Keep the unwrapped value with
-  `name := expr?`; **discard** it (propagate only the failure) with `_ := expr?`. There is **no**
-  bare `expr?` statement — every `?` appears as `lhs := expr?`, and any discard is visible via `_`.
+- **`?` appears as `name := expr?`, `_ := expr?`, or a bare `expr?` statement.** Keep the
+  unwrapped value with `name := expr?`; **discard** it (propagate only the failure) with
+  `_ := expr?` or the bare `expr?` form. The bare form is the natural shape when the call's only
+  output is the error — there is no value to keep — e.g. `os.MkdirAll(dir, 0o755)?`.
 - **The propagation mode is the enclosing function's return type.** Inside a `Result[_, error]`
   function, `?` early-returns the `Err`; inside an `Option[_]` function, `?` early-returns `None`.
   (You cannot `?` a `Result` where the failure has nowhere compatible to go — open-`E` keeps this
   trivial: any `error` flows up as `error`, no conversion.)
 
-### 1.1 Why `?` always sits on an assignment (consistency)
+### 1.1 The discard forms — `_ := expr?` and bare `expr?`
 
-goal already uses `_` as the one **deliberate-discard** marker — the `match` rest-arm (§3.1) and
-the must-use opt-out (§3.2, "`let _ =` spirit"). Requiring `?` to be `name := expr?` or `_ := expr?`
-makes the discard **explicit and visible**, reusing that same `_`, and gives `?` a single uniform
-shape. A bare `expr?` that silently dropped the success value was refused as inconsistent with that
-discipline. (The failure — `Err`/`None` — is never silently dropped either way; `?` propagates it.)
+goal uses `_` as its **deliberate-discard** marker — the `match` rest-arm (§3.1) and the must-use
+opt-out (§3.2, "`let _ =` spirit") — and `_ := expr?` reuses it to make a *value* discard explicit.
+The bare `expr?` statement is also allowed: when the callee's only output is the error there is no
+success value to discard, so the bare form hides nothing — `os.MkdirAll(dir)?` reads more cleanly
+than `_ := os.MkdirAll(dir)?`. The failure (`Err`/`None`) is never silently dropped in any form;
+`?` always propagates it.
+
+The discard lowering is **arity-aware**: it emits one blank identifier per discarded value, so an
+error-only callee (`func(…) error`) lowers to `if __goal_err := expr; …` and a `(T, error)` callee
+to `if _, __goal_err := expr; …`. Keeping a value (`name := expr?`) requires a `(T, error)` callee;
+a `name := expr?` on an error-only call is a compile error — there is nothing to bind. (Arity is
+read from the callee's signature: in-file functions directly, imported functions by parsing the
+package; an unresolved callee keeps the two-value form.)
 
 ---
 
 ## 2. Grammar
 
 ```ebnf
-QuestionStmt = ( identifier | "_" ) ":=" Expression "?" .
+QuestionStmt = [ ( identifier | "_" ) ":=" ] Expression "?" .
 ```
 
-`?` is a postfix operator that may appear only as the final token of a `QuestionStmt`. The
-left-hand side is a single binding name (keep the value) or `_` (discard it). The enclosing
-function must return `Result[_, error]` or `Option[_]`.
+`?` is a postfix operator that may appear only as the final token of a `QuestionStmt`. The optional
+left-hand side is a single binding name (keep the value) or `_` (discard it); with no left-hand side
+the statement is a bare `expr?` that discards the value and propagates only the failure. The
+enclosing function must return `Result[_, error]` or `Option[_]`.
 
 ---
 

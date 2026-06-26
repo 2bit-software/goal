@@ -1,0 +1,15 @@
+package app
+
+func mkdir(path string) error {
+    return nil
+}
+
+func lookup(id string) Result[string, error] {
+    return Result.Ok(id)
+}
+
+func handler(id string) Result[string, error] {
+    mkdir(id)?
+    u := lookup(id)?
+    return Result.Ok(u)
+}
