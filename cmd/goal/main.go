@@ -351,7 +351,7 @@ func checkPackage(pkg *project.Package, errOut io.Writer) ([]checkDiag, error) {
 	for i, f := range pkg.Files {
 		srcs[i] = f.Src
 	}
-	perFile, err := check.AnalyzePackage(srcs)
+	perFile, err := check.AnalyzePackageInDir(srcs, pkg.Dir)
 	if err != nil {
 		return nil, err
 	}

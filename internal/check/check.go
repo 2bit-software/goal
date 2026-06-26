@@ -156,7 +156,24 @@ func Analyze(src string) ([]Diagnostic, error) {
 // returned per file, aligned with the input order. Checks are source-anchored, so each
 // file's constructs are checked exactly once; the merged tables only add resolution.
 func AnalyzePackage(srcs []string) ([][]Diagnostic, error) {
+	return runPackage(srcs, analyze.BuildPackage(srcs))
+}
+
+// AnalyzePackageInDir is AnalyzePackage with the package's directory supplied, so the
+// merged tables are additionally enriched with the struct field sets of imported Go
+// packages (analyze.EnrichForeign). This closes the feature-12 deferral for a `derive
+// func` whose source or target is an out-of-package type — the checker can now prove its
+// completeness instead of warning that the field set is unreadable. Import-resolution
+// failures are non-fatal: an unresolved type simply stays deferred.
+func AnalyzePackageInDir(srcs []string, dir string) ([][]Diagnostic, error) {
 	tables := analyze.BuildPackage(srcs)
+	analyze.EnrichForeign(tables, srcs, dir, nil)
+	return runPackage(srcs, tables)
+}
+
+// runPackage runs every check over each source against shared tables, returning
+// diagnostics per file aligned with the input order.
+func runPackage(srcs []string, tables *analyze.Tables) ([][]Diagnostic, error) {
 	out := make([][]Diagnostic, len(srcs))
 	for i, src := range srcs {
 		ds, err := Run(src, tables)

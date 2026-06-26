@@ -133,6 +133,38 @@ Fallible threading uses `__goal_vN` temporaries (the `__goal_` prefix, per §8).
 result accumulator (a local, so it dodges zero-literal synthesis the way feature 03 used named
 returns).
 
+## Foreign (out-of-package) source/target types
+
+A `derive func` may convert to or from a struct declared in an imported Go package — the
+common case being a generated protobuf message, e.g. `derive func FromProto(p
+*hobv1.EnvironmentSpec) Spec`. The field set of such a type is not in the `.goal` source,
+so the package driver enriches the name-keyed tables before lowering:
+
+- `analyze.EnrichForeign` reads each `.goal` file's import block, finds the packages a
+  `derive`/`from` references by qualifier, resolves each import path to a directory
+  (same-module via `go.mod`, else `go list`), and parses that package's Go with stdlib
+  `go/parser`. Every **exported** struct becomes `Tables.Structs["alias.Type"]`, with each
+  field's type re-rendered qualified by the import alias (`*Workspace` → `*hobv1.Workspace`).
+- The lowering and the checker strip a single leading pointer star before the lookup, so
+  `*pkg.Message` resolves to its struct. A pointer **target** is built as a value and
+  returned by address (`var out T; …; return &out`); a pointer **source** is read directly
+  (Go auto-dereferences `p.Field`).
+- This is enrichment, not type-checking — only the field set is read. Enrichment runs only
+  at the **package** granularity (where a directory exists); a single-file `Transpile`
+  stays foreign-blind and defers as before.
+
+Both directions are supported. **Proto → internal** iterates the internal target's fields
+(usually a curated subset, so fewer to source). **Internal → proto** iterates the proto
+target's fields — every one must be sourced or overridden, so the larger, enum/oneof-laden
+proto is the more demanding target.
+
+**Foundation only.** Fields still resolve by the nominal model: same-named target field,
+same type or a registered `from func` or a built-in recursion. Proto-specific shapes —
+getter access, enum→sum, and oneof→sum — are **not** auto-bridged: an enum or oneof field
+needs an explicit `Field: expr` override or a registered `from func`, exactly as any other
+unbridged pair does. Unexported foreign fields (a proto's `state`/`sizeCache`) are never
+read, so they never participate.
+
 ## Scope / not built (the checker's / a fuller frontend's job)
 
 - **Completeness checking is not enforced as a type system** — the transpiler resolves what it can

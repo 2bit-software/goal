@@ -118,13 +118,18 @@ func parseOverrides(src string, toks []scan.Token, openIdx, closeIdx int) []anal
 	return out
 }
 
-// genConversion produces the Go function body for one derived conversion.
+// genConversion produces the Go function body for one derived conversion. A source or
+// target type may be an out-of-package struct, optionally a pointer to one (the common
+// proto shape `*pkg.Message`): the field set is looked up by the dereferenced, qualified
+// name (foreign field sets are loaded into Tables.Structs by analyze.EnrichForeign). A
+// pointer target is built as a value and returned by address.
 func genConversion(name, srcName, srcType, tgtType, retType string, fallible bool, overrides []analyze.Field, t *analyze.Tables) (string, error) {
-	tgtFields, ok := t.Structs[tgtType]
+	tgtVal := derefType(tgtType)
+	tgtFields, ok := t.Structs[tgtVal]
 	if !ok {
 		return "", fmt.Errorf("derive %s: unknown target struct %q", name, tgtType)
 	}
-	srcFields := t.Structs[srcType]
+	srcFields := t.Structs[derefType(srcType)]
 
 	overridden := map[string]bool{}
 	for _, o := range overrides {
@@ -133,7 +138,7 @@ func genConversion(name, srcName, srcType, tgtType, retType string, fallible boo
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "func %s(%s %s) %s {\n", name, srcName, srcType, retType)
-	b.WriteString("var out " + tgtType + "\n")
+	b.WriteString("var out " + tgtVal + "\n")
 
 	for _, o := range overrides { // explicit overrides first, `_` => leave zero
 		if strings.TrimSpace(o.Type) == "_" {
@@ -160,12 +165,27 @@ func genConversion(name, srcName, srcType, tgtType, retType string, fallible boo
 		}
 	}
 
+	ret := "out"
+	if strings.HasPrefix(strings.TrimSpace(tgtType), "*") {
+		ret = "&out" // pointer target: built as a value, returned by address
+	}
 	if fallible {
-		b.WriteString("return out, nil\n}")
+		b.WriteString("return " + ret + ", nil\n}")
 	} else {
-		b.WriteString("return out\n}")
+		b.WriteString("return " + ret + "\n}")
 	}
 	return b.String(), nil
+}
+
+// derefType strips a single leading pointer star from a type expression, so a foreign
+// pointer type like `*hobv1.EnvironmentSpec` is looked up by its struct name
+// `hobv1.EnvironmentSpec` in the (possibly enriched) Structs table.
+func derefType(s string) string {
+	s = strings.TrimSpace(s)
+	if rest, ok := strings.CutPrefix(s, "*"); ok {
+		return strings.TrimSpace(rest)
+	}
+	return s
 }
 
 // resolveField emits the statements assigning a converted source field to a target

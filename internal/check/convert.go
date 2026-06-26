@@ -28,8 +28,12 @@ import (
 //
 // Defer-boundary (emit a located Warning, never a false incompleteness Error):
 //   - unresolved-derive-type: the target T (or the source S) is not a `type … struct`
-//     declared in this file (out-of-package type) — its field set is unreadable, so
-//     completeness can't be proven for any field.
+//     whose field set is readable. An out-of-package type IS readable when the package
+//     is checked with its directory (AnalyzePackageInDir): analyze.EnrichForeign parses
+//     the imported Go package and loads its exported struct fields, so completeness is
+//     then proven, not deferred. This warning fires only when the field set stays
+//     unreadable — a single-file check (no directory), or an import that does not
+//     resolve. A leading pointer star (`*pkg.Message`) is stripped before lookup.
 //   - unresolved-derive-field: a `...derive` target field whose resolution needs the
 //     recursion classes the v1 deriver keeps minimal — map (`map[K]A`→`map[K]B`),
 //     Option (`Option[A]`→`Option[B]`), `Option[T]`↔`*T`, and nested-struct
@@ -97,25 +101,25 @@ func checkOneDerive(src string, toks []scan.Token, i int, t *analyze.Tables) []D
 
 	tgtType, fallible := splitReturn(retType)
 
-	tgtFields, ok := t.Structs[tgtType]
+	tgtFields, ok := t.Structs[derefType(tgtType)]
 	if !ok {
 		return []Diagnostic{{
 			Pos:      pos,
 			Severity: Warning,
 			Feature:  "12-derive-convert",
 			Code:     "unresolved-derive-type",
-			Message: fmt.Sprintf("cannot verify `derive func` is total: target type `%s` is not a struct declared in this file — completeness deferred",
+			Message: fmt.Sprintf("cannot verify `derive func` is total: target type `%s` is not a struct declared in this file or a resolvable import — completeness deferred",
 				tgtType),
 		}}
 	}
-	srcFields, srcKnown := t.Structs[srcType]
+	srcFields, srcKnown := t.Structs[derefType(srcType)]
 	if !srcKnown {
 		return []Diagnostic{{
 			Pos:      pos,
 			Severity: Warning,
 			Feature:  "12-derive-convert",
 			Code:     "unresolved-derive-type",
-			Message: fmt.Sprintf("cannot verify `derive func` is total: source type `%s` is not a struct declared in this file — completeness deferred",
+			Message: fmt.Sprintf("cannot verify `derive func` is total: source type `%s` is not a struct declared in this file or a resolvable import — completeness deferred",
 				srcType),
 		}}
 	}
@@ -211,6 +215,17 @@ func resolvableField(pos int, tgtType, srcType string, f, sf analyze.Field, fall
 		Message: fmt.Sprintf("`derive func` target field `%s.%s` is `%s` but its source `%s.%s` is `%s`, and no `from func` converts `%s`→`%s` — register one or override the field explicitly",
 			tgtType, f.Name, tf, srcType, sf.Name, sfType, sfType, tf),
 	}, false
+}
+
+// derefType strips a single leading pointer star from a type expression, so a foreign
+// pointer type like `*hobv1.EnvironmentSpec` resolves to its struct name in the (possibly
+// import-enriched) Structs table. Mirrors pass.derefType.
+func derefType(s string) string {
+	s = strings.TrimSpace(s)
+	if rest, ok := strings.CutPrefix(s, "*"); ok {
+		return strings.TrimSpace(rest)
+	}
+	return s
 }
 
 // isDeferredShape reports whether a type expression names one of the v1-deferred recursion

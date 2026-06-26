@@ -162,6 +162,11 @@ func TranspilePackage(pkg *project.Package) (PackageOutput, error) {
 		srcs[i] = f.Src
 	}
 	tables := analyze.BuildPackage(srcs)
+	// Enrich with the struct field sets of imported Go packages a derive/from references,
+	// so feature 12 can lower a `derive func` over an out-of-package type. Resolution
+	// failures are non-fatal: an unresolved foreign type leaves derive to defer/error as
+	// it already does, rather than failing the whole package transpile.
+	analyze.EnrichForeign(tables, srcs, pkg.Dir, nil)
 	tables.SuppressResultPrelude = true // the package emits one prelude below, not one per file
 
 	var out PackageOutput
