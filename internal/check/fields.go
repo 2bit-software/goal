@@ -44,15 +44,23 @@ func checkFields(src string, t *analyze.Tables) ([]Diagnostic, error) {
 	toks := scan.Lex(src)
 	declSpans := declBraceSpans(toks)
 	bodyBraces := funcBodyBraces(toks)
+	ctrlBraces := controlBodyBraces(toks)
 	patSpans := matchPatternSpans(toks)
 	var diags []Diagnostic
 	for i := 0; i+1 < len(toks); i++ {
-		// Struct literal: IDENT "{" where IDENT names a known struct. Two braces wear the
-		// same `IDENT {` shape but are not literals: a type-declaration body
-		// (`enum E { … }`, `type T struct { … }`) and a function body whose `{` follows
-		// the return type (`func f() User {`). Skip both.
+		// Struct literal: IDENT "{" where IDENT names a known struct. Three braces wear
+		// the same `IDENT {` shape but are not literals: a type-declaration body
+		// (`enum E { … }`, `type T struct { … }`), a function body whose `{` follows the
+		// return type (`func f() User {`), and a control-flow body whose `{` follows a
+		// tag/condition that ends in a bare identifier (`switch i {`, `if ok {`,
+		// `for more {`). Skip all three.
+		// A fifth shape is the element/value TYPE of a slice/array/map literal
+		// (`[]Entry{…}`, `[N]Entry{…}`, `map[K]Entry{…}`): the type name is immediately
+		// preceded by `]` and the `{` opens that outer literal, not a struct — no valid
+		// struct literal is preceded by `] IDENT {`. Skip it.
 		if toks[i+1].Text == "{" && scan.IsIdent(toks[i].Text) &&
-			!inSpans(i+1, declSpans) && !bodyBraces[i+1] {
+			(i == 0 || toks[i-1].Text != "]") &&
+			!inSpans(i+1, declSpans) && !bodyBraces[i+1] && !ctrlBraces[i+1] {
 			if ds, ok := checkStructLit(src, toks, i, t); ok {
 				diags = append(diags, ds...)
 			}
@@ -212,6 +220,28 @@ func funcBodyBraces(toks []scan.Token) map[int]bool {
 	for _, f := range scan.ScanFuncs(toks) {
 		if f.BodyOpen >= 0 {
 			bodies[f.BodyOpen] = true
+		}
+	}
+	return bodies
+}
+
+// controlBodyBraces returns the set of token indices that open a control-flow statement
+// body — the "{" after a `switch`/`if`/`for`/`select` header. Such a brace follows the
+// header expression as `<header> {` and, when the header ends in a bare identifier
+// (`switch i {`, `if ok {`, `for more {`), would otherwise be misread as a composite
+// literal of that identifier's "type", deferring on a phantom type. A composite literal
+// in one of these headers must be parenthesized per the grammar, so the body is the first
+// "{" at paren/bracket depth 0 after the keyword. The lone exception is a `for … range
+// []T{…} {` range clause, whose element-type literal is the first depth-0 "{"; mistaking
+// it for the body only forgoes a deferral on a non-struct type, never reports an error.
+func controlBodyBraces(toks []scan.Token) map[int]bool {
+	bodies := map[int]bool{}
+	for i := range toks {
+		switch toks[i].Text {
+		case "switch", "if", "for", "select":
+			if b := scan.FirstBodyBrace(toks, i); b >= 0 {
+				bodies[b] = true
+			}
 		}
 	}
 	return bodies

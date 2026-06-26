@@ -29,6 +29,11 @@ idiomatic Go the compiler already understands. You keep Go's runtime, GC,
 toolchain, and standard library for free — goal only adds the front-end
 correctness layer, then gets out of the way.
 
+A **static checker** enforces each guarantee *before* lowering, emitting located
+`file:line:col` diagnostics — so a forgotten variant, dropped error, or unset field is
+caught as a precise error, not a silent zero. It runs by default in the `goal` CLI
+(`goal check`, and as a gate on `goal build`/`run`).
+
 This playground is the proof: the transpiler itself is compiled to WebAssembly and
 runs **entirely in your browser**. Pick a feature, edit the source, hit **Run**,
 and watch it become plain, readable Go.

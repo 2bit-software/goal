@@ -242,7 +242,7 @@ func analyzeTypeDecls(src string, toks []scan.Token, t *Tables) {
 func parseStructBody(body string) []Field {
 	var fields []Field
 	for _, raw := range strings.FieldsFunc(body, func(r rune) bool { return r == '\n' || r == ';' }) {
-		line := raw
+		line := stripFieldTag(raw)
 		if c := strings.Index(line, "//"); c >= 0 {
 			line = line[:c]
 		}
@@ -259,6 +259,25 @@ func parseStructBody(body string) []Field {
 		}
 	}
 	return fields
+}
+
+// stripFieldTag removes a struct field's tag — a back-quoted or double-quoted string
+// literal following the type (`Name string ` + "`json:\"n\"`") — and anything after it,
+// so the tag is not mistaken for the field type. A Go field type never contains a quote,
+// so the first back-quote (or, for the rare double-quoted tag, the first double-quote)
+// opens the tag and ends the name/type portion. Any trailing line comment goes with it.
+func stripFieldTag(line string) string {
+	cut := -1
+	for i := 0; i < len(line); i++ {
+		if line[i] == '`' || line[i] == '"' {
+			cut = i
+			break
+		}
+	}
+	if cut < 0 {
+		return line
+	}
+	return line[:cut]
 }
 
 // restOfLine returns the source from offset to the next newline, trimmed and with a

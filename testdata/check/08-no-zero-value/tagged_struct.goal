@@ -1,0 +1,13 @@
+package p
+
+// A struct tag must not be mistaken for the field type: a complete literal of a tagged
+// struct is clean. (Regression: tags shifted field-name parsing, so every field of a
+// tagged struct read as missing.) No `// want` markers — any Error fails this case.
+type Tagged struct {
+	Name string `toml:"name"`
+	Age  int    `toml:"age"`
+}
+
+func make() Tagged {
+	return Tagged{Name: "a", Age: 1}
+}
