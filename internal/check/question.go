@@ -28,6 +28,7 @@ import (
 func checkQuestion(src string, t *analyze.Tables) ([]Diagnostic, error) {
 	toks := scan.Lex(src)
 	spans := analyze.FuncSpans(toks, t)
+	imports := importAliases(src)
 	var diags []Diagnostic
 	for q := range toks {
 		if toks[q].Text != "?" {
@@ -86,16 +87,43 @@ func checkQuestion(src string, t *analyze.Tables) ([]Diagnostic, error) {
 		}
 
 		// Unresolved callee in the discard form: the lowering falls back to the two-value
-		// destructure, which is wrong for an error-only callee. Surface it rather than guess.
-		if !known && discard {
+		// destructure, which is wrong for an error-only callee. Surface only a genuinely opaque
+		// callee — a method on a value whose receiver type isn't inferred. A call into an
+		// imported package (`state.Write`, `pkg.Func`) is either resolved already or a sibling
+		// goal package that lowers to `(T, error)`; warning on those is noise.
+		if !known && discard && !isImportedCall(key, imports) {
 			label := key
 			if label == "" {
 				label = strings.TrimSpace(rhs)
 			}
 			diags = append(diags, Diagnostic{Pos: p, Severity: Warning, Feature: "05-question-prop",
 				Code:    "question-callee-unresolved",
-				Message: fmt.Sprintf("cannot confirm the arity of `?` callee `%s` (an uninferred method receiver or an import that did not load); `?` assumes a two-value `(T, error)` callee — if it returns only `error`, the generated Go will not compile until its arity is resolved", label)})
+				Message: fmt.Sprintf("cannot confirm the arity of `?` callee `%s` (its receiver type isn't inferred); `?` assumes a two-value `(T, error)` callee — if it returns only `error`, the generated Go will not compile until its arity is resolved", label)})
 		}
 	}
 	return diags, nil
+}
+
+// importAliases returns the set of package qualifiers a file's imports bind (the explicit
+// alias, or the import path's last segment when unaliased).
+func importAliases(src string) map[string]bool {
+	out := map[string]bool{}
+	for _, imp := range analyze.ParseImports(src) {
+		alias := imp.Alias
+		if alias == "" {
+			alias = imp.Path
+			if i := strings.LastIndexByte(alias, '/'); i >= 0 {
+				alias = alias[i+1:]
+			}
+		}
+		out[alias] = true
+	}
+	return out
+}
+
+// isImportedCall reports whether key is a package-qualified call (`pkg.Func`) whose qualifier
+// is one of the file's imports — as opposed to a method on a value (`recv.Method`).
+func isImportedCall(key string, imports map[string]bool) bool {
+	pkg, _, ok := strings.Cut(key, ".")
+	return ok && imports[pkg]
 }
