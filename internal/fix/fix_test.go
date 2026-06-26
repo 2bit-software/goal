@@ -139,6 +139,106 @@ func TestOptionCollapse(t *testing.T) {
 	}
 }
 
+// The statement-context error guard `if err := f(); err != nil { return Result.Err(err) }`
+// collapses to `f()?` inside a Result function, the same as the value-binding form.
+func TestCollapseInitGuard(t *testing.T) {
+	before := "package app\n\n" +
+		"import \"os\"\n\n" +
+		"func save(dir string) Result[bool, error] {\n" +
+		"\tif err := os.MkdirAll(dir, 0o755); err != nil {\n" +
+		"\t\treturn Result.Err(err)\n" +
+		"\t}\n" +
+		"\treturn Result.Ok(true)\n" +
+		"}\n"
+	want := "package app\n\n" +
+		"import \"os\"\n\n" +
+		"func save(dir string) Result[bool, error] {\n" +
+		"\tos.MkdirAll(dir, 0o755)?\n" +
+		"\treturn Result.Ok(true)\n" +
+		"}\n"
+	got, changes, _ := File(before)
+	if got != want {
+		t.Fatalf("init-guard collapse mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+	if len(changes) == 0 {
+		t.Fatal("expected a change to be recorded")
+	}
+
+	// Idempotence: fixing the fixed output changes nothing.
+	again, ch2, _ := File(got)
+	if again != got {
+		t.Fatalf("not idempotent:\n--- first ---\n%s\n--- second ---\n%s", got, again)
+	}
+	if len(ch2) != 0 {
+		t.Fatalf("idempotent run still reported %d changes", len(ch2))
+	}
+}
+
+// A guard wrapping the error into a domain value changes the error type, so it is left as-is.
+func TestInitGuardWrappedErrorNotCollapsed(t *testing.T) {
+	before := "package app\n\n" +
+		"func step() Result[bool, error] {\n" +
+		"\tif err := run(); err != nil {\n" +
+		"\t\treturn Result.Err(StepError.Failed(cause: err.Error()))\n" +
+		"\t}\n" +
+		"\treturn Result.Ok(true)\n" +
+		"}\n"
+	got, changes, _ := File(before)
+	if got != before || len(changes) != 0 {
+		t.Fatalf("wrapped-error init guard should be left untouched:\n%s", got)
+	}
+}
+
+// A comment inside the init guard's block prevents the collapse (the comment would be lost).
+func TestInitGuardCommentBlocksCollapse(t *testing.T) {
+	before := "package app\n\n" +
+		"func step() Result[bool, error] {\n" +
+		"\tif err := run(); err != nil {\n" +
+		"\t\t// bail out\n" +
+		"\t\treturn Result.Err(err)\n" +
+		"\t}\n" +
+		"\treturn Result.Ok(true)\n" +
+		"}\n"
+	got, _, reports := File(before)
+	if strings.Contains(got, "?") {
+		t.Fatalf("comment block should not collapse to `?`:\n%s", got)
+	}
+	if !hasReport(reports, "propagate") {
+		t.Fatalf("expected a propagate skip report, got %+v", reports)
+	}
+}
+
+// An init guard with an `else` is not a clean early return, so it is left untouched.
+func TestInitGuardElseNotCollapsed(t *testing.T) {
+	before := "package app\n\n" +
+		"func step() Result[bool, error] {\n" +
+		"\tif err := run(); err != nil {\n" +
+		"\t\treturn Result.Err(err)\n" +
+		"\t} else {\n" +
+		"\t\treturn Result.Ok(false)\n" +
+		"\t}\n" +
+		"}\n"
+	got, changes, _ := File(before)
+	if strings.Contains(got, "?") || len(changes) != 0 {
+		t.Fatalf("init guard with else should be left untouched:\n%s", got)
+	}
+}
+
+// The init guard is only collapsed inside a Result function — `?` is illegal elsewhere, so a
+// plain-returning function's guard is reported as a call-site, not rewritten.
+func TestInitGuardNonResultFuncNotCollapsed(t *testing.T) {
+	before := "package app\n\n" +
+		"func step() {\n" +
+		"\tif err := run(); err != nil {\n" +
+		"\t\treturn\n" +
+		"\t}\n" +
+		"}\n"
+	got, changes, _ := File(before)
+	if strings.Contains(got, "?") || len(changes) != 0 {
+		t.Fatalf("init guard in a non-Result function should be left untouched:\n%s", got)
+	}
+}
+
 // A function returning multiple non-error values is out of scope: left untouched, reported.
 func TestMultiValueNotConverted(t *testing.T) {
 	before := "package app\n\n" +

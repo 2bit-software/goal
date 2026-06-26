@@ -87,6 +87,7 @@ func File(src string) (out string, changes []Change, reports []Report) {
 		var reps []scan.Replacement
 		var iterReports []Report
 		reps = append(reps, fixPropagate(out, toks, spans, t, &changes, &iterReports)...)
+		reps = append(reps, fixPropagateInit(out, toks, spans, t, &changes, &iterReports)...)
 		reps = append(reps, fixResultSig(out, toks, t, &changes, &iterReports)...)
 		reps = append(reps, fixSwitchToMatch(out, toks, t, &changes, &iterReports)...)
 		add(iterReports)

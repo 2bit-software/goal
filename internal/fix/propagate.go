@@ -111,6 +111,116 @@ func fixPropagate(src string, toks []scan.Token, spans []analyze.FuncSpan, t *an
 	return reps
 }
 
+// fixPropagateInit collapses the statement-context error guard
+//
+//	if err := g(args); err != nil {
+//	    return Result.Err(err)        // or: return zero, err
+//	}
+//
+// into `g(args)?` inside a function returning Result[T, error], for a call whose only output
+// is the error (the init clause binds exactly the condition variable, nothing else). It
+// complements fixPropagate, which handles the value-binding form where the call's result is
+// bound on the line above the `if`. Like that rule it is conservative: a decorated or non-zero
+// return, an `else`, a comment in the block, or a value bound alongside the error leaves the
+// guard untouched — `?` is only applied where the rewrite is provably equivalent.
+func fixPropagateInit(src string, toks []scan.Token, spans []analyze.FuncSpan, t *analyze.Tables, changes *[]Change, reports *[]Report) []scan.Replacement {
+	var reps []scan.Replacement
+	for i := range toks {
+		if toks[i].Text != "if" || !scan.IsLineStart(src, toks[i].Start) {
+			continue
+		}
+		sig, ok := analyze.SigAt(spans, toks[i].Start)
+		if !ok || sig.Mode != analyze.ModeResult {
+			continue // `?` only propagates the error of an open-E Result function
+		}
+		braceOpen := ifBodyBrace(toks, i)
+		if braceOpen < 0 {
+			continue
+		}
+		// An init clause is what distinguishes this shape from the one fixPropagate handles:
+		// a top-level `;` between the `if` and its body brace. No `;` means there is no init
+		// clause — leave it to fixPropagate.
+		semi := topLevelSemicolon(toks, i+1, braceOpen)
+		if semi < 0 {
+			continue
+		}
+		// The condition must be exactly `condVar != nil` (operators lex char by char).
+		cond := toks[semi+1 : braceOpen]
+		if len(cond) != 4 || !scan.IsIdent(cond[0].Text) ||
+			cond[1].Text+cond[2].Text != "!=" || cond[3].Text != "nil" {
+			continue
+		}
+		condVar := cond[0].Text
+		braceClose := scan.MatchBrace(toks, braceOpen)
+		if braceClose+1 < len(toks) && toks[braceClose+1].Text == "else" {
+			continue // not a clean early return
+		}
+		if !validPropagationReturn(src, toks, braceOpen+1, braceClose, true, condVar, sig.T, t) {
+			continue
+		}
+		// The init clause must be `condVar := CALL` — only the error is bound, so the call's
+		// sole output is the error and a bare `CALL?` discards nothing.
+		initText := src[toks[i+1].Start:toks[semi].Start]
+		name, rhs, isAssign := scan.SplitAssign(initText)
+		if !isAssign || rhs == "" || name != condVar {
+			continue
+		}
+		if spanHasComment(src, toks[i].Start, toks[braceClose].End) {
+			*reports = append(*reports, Report{lineOf(src, toks[i].Start), Skip, "propagate",
+				"propagation block has a comment; left as-is to avoid dropping it"})
+			continue
+		}
+
+		lineStart := lineStartBefore(src, toks[i].Start)
+		reps = append(reps, scan.Replacement{
+			Start: lineStart,
+			End:   toks[braceClose].End,
+			Text:  indentOf(src, lineStart) + rhs + "?",
+		})
+		*changes = append(*changes, Change{lineOf(src, toks[i].Start), "propagate"})
+	}
+	return reps
+}
+
+// ifBodyBrace returns the token index of the `{` opening an if statement's body: the first `{`
+// at paren/bracket depth 0 after the `if` at ifIdx (a call or index in the init clause sits
+// inside parens/brackets, so its delimiters are not mistaken for the body). Returns -1 if none.
+func ifBodyBrace(toks []scan.Token, ifIdx int) int {
+	depth := 0
+	for k := ifIdx + 1; k < len(toks); k++ {
+		switch toks[k].Text {
+		case "(", "[":
+			depth++
+		case ")", "]":
+			depth--
+		case "{":
+			if depth == 0 {
+				return k
+			}
+		}
+	}
+	return -1
+}
+
+// topLevelSemicolon returns the index of the first `;` at paren/bracket/brace depth 0 in
+// toks[lo:hi], or -1 if there is none (so an if statement with no init clause is recognized).
+func topLevelSemicolon(toks []scan.Token, lo, hi int) int {
+	depth := 0
+	for k := lo; k < hi && k < len(toks); k++ {
+		switch toks[k].Text {
+		case "(", "[", "{":
+			depth++
+		case ")", "]", "}":
+			depth--
+		case ";":
+			if depth == 0 {
+				return k
+			}
+		}
+	}
+	return -1
+}
+
 // validPropagationReturn reports whether the tokens in [lo, hi) form exactly the early
 // return of a propagation block: `return zero, err` / `return Result.Err(err)` for Result,
 // `return Option.None` / `return nil` for Option. For Result it also requires the returned
