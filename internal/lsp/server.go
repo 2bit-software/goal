@@ -122,8 +122,12 @@ func (s *Server) handle(m *rpcMessage) (stop bool) {
 	switch m.Method {
 	case "initialize":
 		s.reply(m.ID, InitializeResult{
-			Capabilities: ServerCapabilities{TextDocumentSync: fullSync},
-			ServerInfo:   ServerInfo{Name: "goal-lsp", Version: serverVersion},
+			Capabilities: ServerCapabilities{
+				TextDocumentSync:       fullSync,
+				CodeActionProvider:     &CodeActionOptions{CodeActionKinds: []string{"source.fixAll", "source.fixAll.goal"}},
+				DocumentSymbolProvider: true,
+			},
+			ServerInfo: ServerInfo{Name: "goal-lsp", Version: serverVersion},
 		})
 	case "shutdown":
 		s.replyNull(m.ID)
@@ -135,6 +139,10 @@ func (s *Server) handle(m *rpcMessage) (stop bool) {
 		s.didChange(m.Params)
 	case "textDocument/didClose":
 		s.didClose(m.Params)
+	case "textDocument/codeAction":
+		s.reply(m.ID, s.codeActions(m.Params))
+	case "textDocument/documentSymbol":
+		s.reply(m.ID, s.documentSymbols(m.Params))
 	case "initialized", "$/setTrace", "textDocument/didSave":
 		// no-op notifications
 	default:
@@ -192,6 +200,18 @@ func (s *Server) didClose(raw json.RawMessage) {
 			s.schedule(sibURI)
 		}
 	}
+}
+
+// buffer returns the current text and revision of an open document, or ok=false when the
+// document is not open.
+func (s *Server) buffer(uri string) (text string, version int, ok bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d := s.docs[uri]
+	if d == nil {
+		return "", 0, false
+	}
+	return d.text, d.version, true
 }
 
 func (s *Server) upsert(uri, text string, version int) {

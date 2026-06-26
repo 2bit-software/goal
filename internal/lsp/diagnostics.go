@@ -7,6 +7,7 @@ import (
 
 	"goal/internal/check"
 	"goal/internal/project"
+	"goal/internal/scan"
 )
 
 // compile runs goal's static checks for the open document uri and publishes the findings,
@@ -72,9 +73,10 @@ func (s *Server) compile(uri, text string, version int) {
 		if s.superseded(of.uri, of.version) {
 			continue
 		}
+		tokEnd := tokenEnds(of.text)
 		out := make([]Diagnostic, 0, len(perFile[i]))
 		for _, d := range perFile[i] {
-			out = append(out, toLSP(of.text, d))
+			out = append(out, toLSP(of.text, tokEnd, d))
 		}
 		s.publish(of.uri, of.version, out)
 	}
@@ -89,9 +91,10 @@ func (s *Server) compileSingle(uri, text string, version int) {
 		s.logf("analyze %s: %v", uri, err)
 		return
 	}
+	tokEnd := tokenEnds(text)
 	out := make([]Diagnostic, 0, len(diags))
 	for _, d := range diags {
-		out = append(out, toLSP(text, d))
+		out = append(out, toLSP(text, tokEnd, d))
 	}
 	if s.superseded(uri, version) {
 		return
@@ -195,33 +198,46 @@ func (s *Server) publish(uri string, version int, diags []Diagnostic) {
 	})
 }
 
-// toLSP converts a goal check finding (1-based byte-offset position) into a
-// protocol diagnostic (0-based range). With no token length available, the
-// range spans from the finding to the end of its line.
-func toLSP(text string, d check.Diagnostic) Diagnostic {
-	p := check.OffsetToPosition(text, d.Pos)
-	line := p.Line - 1
-	startChar := p.Col - 1
-	endChar := lineLength(text, p.Line)
-	if endChar <= startChar {
-		endChar = startChar + 1
+// toLSP converts a goal check finding (1-based byte-offset position) into a protocol
+// diagnostic (0-based range). The range covers the offending token when its end offset is
+// known (tokEnd maps a token's start offset to its end); otherwise — or when the resolved end
+// would not lie after the start — it falls back to spanning the finding to the end of its line.
+func toLSP(text string, tokEnd map[int]int, d check.Diagnostic) Diagnostic {
+	start := check.OffsetToPosition(text, d.Pos)
+	rng := Range{
+		Start: Position{Line: start.Line - 1, Character: start.Col - 1},
+		End:   Position{Line: start.Line - 1, Character: lineLength(text, start.Line)},
+	}
+	if end, ok := tokEnd[d.Pos]; ok && end > d.Pos {
+		e := check.OffsetToPosition(text, end)
+		rng.End = Position{Line: e.Line - 1, Character: e.Col - 1}
+	}
+	if rng.End.Line == rng.Start.Line && rng.End.Character <= rng.Start.Character {
+		rng.End.Character = rng.Start.Character + 1 // never an empty/inverted range
 	}
 
 	severity := 1 // Error
 	if d.Severity == check.Warning {
 		severity = 2 // Warning
 	}
-
 	return Diagnostic{
-		Range: Range{
-			Start: Position{Line: line, Character: startChar},
-			End:   Position{Line: line, Character: endChar},
-		},
+		Range:    rng,
 		Severity: severity,
 		Code:     d.Code,
 		Source:   "goal",
 		Message:  d.Message,
 	}
+}
+
+// tokenEnds maps each token's start offset to its end offset, so a diagnostic located at a
+// token start can be given a range that covers exactly that token.
+func tokenEnds(text string) map[int]int {
+	toks := scan.Lex(text)
+	m := make(map[int]int, len(toks))
+	for _, t := range toks {
+		m[t.Start] = t.End
+	}
+	return m
 }
 
 // lineLength returns the character count of the given 1-based line, excluding

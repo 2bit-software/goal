@@ -41,11 +41,86 @@ type InitializeResult struct {
 	ServerInfo   ServerInfo         `json:"serverInfo"`
 }
 
-// ServerCapabilities advertises full-document sync; that is all a
-// diagnostics-only server needs.
+// ServerCapabilities advertises what the server can do: full-document sync, an idiomatize
+// fix-all code action, and document-symbol (outline) support.
 type ServerCapabilities struct {
-	TextDocumentSync int `json:"textDocumentSync"`
+	TextDocumentSync       int                `json:"textDocumentSync"`
+	CodeActionProvider     *CodeActionOptions `json:"codeActionProvider,omitempty"`
+	DocumentSymbolProvider bool               `json:"documentSymbolProvider,omitempty"`
 }
+
+// CodeActionOptions declares which code-action kinds the server offers.
+type CodeActionOptions struct {
+	CodeActionKinds []string `json:"codeActionKinds,omitempty"`
+}
+
+// CodeActionParams is a textDocument/codeAction request: the document, the range the action
+// was requested for, and a context carrying the client's kind filter and current diagnostics.
+type CodeActionParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+	Range        Range                  `json:"range"`
+	Context      CodeActionContext      `json:"context"`
+}
+
+// CodeActionContext carries the client's requested kinds (Only) and the diagnostics at the
+// requested range.
+type CodeActionContext struct {
+	Only        []string     `json:"only,omitempty"`
+	Diagnostics []Diagnostic `json:"diagnostics,omitempty"`
+}
+
+// CodeAction is one offered action; Edit applies directly when the client runs it.
+type CodeAction struct {
+	Title string         `json:"title"`
+	Kind  string         `json:"kind,omitempty"`
+	Edit  *WorkspaceEdit `json:"edit,omitempty"`
+}
+
+// WorkspaceEdit groups document edits. The version-pinned DocumentChanges form lets the
+// client reject the edit if the buffer changed since it was computed.
+type WorkspaceEdit struct {
+	DocumentChanges []TextDocumentEdit `json:"documentChanges"`
+}
+
+// TextDocumentEdit edits one versioned document.
+type TextDocumentEdit struct {
+	TextDocument versionedTextDocumentIdentifier `json:"textDocument"`
+	Edits        []TextEdit                      `json:"edits"`
+}
+
+// TextEdit replaces Range with NewText.
+type TextEdit struct {
+	Range   Range  `json:"range"`
+	NewText string `json:"newText"`
+}
+
+// DocumentSymbolParams is a textDocument/documentSymbol request for one document's outline.
+type DocumentSymbolParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+}
+
+// DocumentSymbol is one outline entry: Range covers the whole declaration, SelectionRange the
+// name to reveal, and Children any nested symbols.
+type DocumentSymbol struct {
+	Name           string           `json:"name"`
+	Detail         string           `json:"detail,omitempty"`
+	Kind           int              `json:"kind"`
+	Range          Range            `json:"range"`
+	SelectionRange Range            `json:"selectionRange"`
+	Children       []DocumentSymbol `json:"children,omitempty"`
+}
+
+// SymbolKind values from the Language Server Protocol.
+const (
+	symClass      = 5
+	symMethod     = 6
+	symField      = 8
+	symEnum       = 10
+	symInterface  = 11
+	symFunction   = 12
+	symEnumMember = 22
+	symStruct     = 23
+)
 
 // ServerInfo identifies the server in client logs.
 type ServerInfo struct {

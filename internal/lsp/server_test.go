@@ -76,4 +76,10 @@ func TestServerInitializeCapabilities(t *testing.T) {
 	if !bytes.Contains(out.Bytes(), []byte(`"textDocumentSync":1`)) {
 		t.Fatalf("initialize did not advertise full sync; output:\n%s", out.String())
 	}
+	if !bytes.Contains(out.Bytes(), []byte(`"documentSymbolProvider":true`)) {
+		t.Fatalf("initialize did not advertise document symbols; output:\n%s", out.String())
+	}
+	if !bytes.Contains(out.Bytes(), []byte(`"source.fixAll.goal"`)) {
+		t.Fatalf("initialize did not advertise the fix-all code action; output:\n%s", out.String())
+	}
 }
