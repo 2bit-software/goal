@@ -1,0 +1,62 @@
+package sample
+
+import "errors"
+
+/// square returns x times itself.
+/// >>> square(3)
+/// 9
+func square(x int) int {
+	return x * x
+}
+
+type Role int
+
+type User struct {
+	name   string
+	role   Role
+	active bool
+}
+
+sealed interface Shape {}
+
+type Circle struct implements Shape {
+	r float64
+}
+
+enum State {
+	Idle
+	Running { pid: int }
+}
+
+from func roleToString(r Role) string {
+	return "role"
+}
+
+func makeUser(name string, age int) Result[User, error] {
+	assert age >= 0, "negative age: %d", age
+	if name == "" {
+		return Result.Err(errors.New("empty name"))
+	}
+	return Result.Ok(User{name: name, ...defaults})
+}
+
+func register(name string, age int) Result[User, error] {
+	u := makeUser(name, age)?
+	return Result.Ok(u)
+}
+
+func describe(s State) string {
+	label := match s {
+		State.Idle => "idle"
+		State.Running(r) => "running"
+		_ => "unknown"
+	}
+	return label
+}
+
+func lookup(id int) Option[User] {
+	if id == 0 {
+		return Option.None
+	}
+	return Option.Some(User{name: "x", ...defaults})
+}

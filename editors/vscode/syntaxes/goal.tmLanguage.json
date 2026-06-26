@@ -1,0 +1,223 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Goal",
+  "scopeName": "source.goal",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#runes" },
+    { "include": "#numbers" },
+    { "include": "#constants" },
+    { "include": "#goal-keywords" },
+    { "include": "#keywords-control" },
+    { "include": "#keywords-storage" },
+    { "include": "#sum-types" },
+    { "include": "#constructors" },
+    { "include": "#variant-access" },
+    { "include": "#builtin-types" },
+    { "include": "#builtin-functions" },
+    { "include": "#function-calls" },
+    { "include": "#operators" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.documentation.goal",
+          "begin": "///",
+          "end": "$",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.comment.documentation.goal" }
+          },
+          "patterns": [
+            {
+              "name": "keyword.control.doctest.goal",
+              "match": ">>>"
+            }
+          ]
+        },
+        {
+          "name": "comment.line.double-slash.goal",
+          "begin": "//",
+          "end": "$",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.comment.goal" }
+          }
+        },
+        {
+          "name": "comment.block.goal",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "captures": {
+            "0": { "name": "punctuation.definition.comment.goal" }
+          }
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.goal",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "include": "#string-escapes" }
+          ]
+        },
+        {
+          "name": "string.quoted.raw.goal",
+          "begin": "`",
+          "end": "`"
+        }
+      ]
+    },
+    "runes": {
+      "name": "string.quoted.single.goal",
+      "begin": "'",
+      "end": "'",
+      "patterns": [
+        { "include": "#string-escapes" }
+      ]
+    },
+    "string-escapes": {
+      "name": "constant.character.escape.goal",
+      "match": "\\\\(?:[abfnrtv\\\\'\"]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|[0-7]{3})"
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.goal",
+          "match": "\\b0[xX][0-9a-fA-F_]+(?:\\.[0-9a-fA-F_]*)?(?:[pP][-+]?[0-9_]+)?i?\\b"
+        },
+        {
+          "name": "constant.numeric.octal.goal",
+          "match": "\\b0[oO][0-7_]+i?\\b"
+        },
+        {
+          "name": "constant.numeric.binary.goal",
+          "match": "\\b0[bB][01_]+i?\\b"
+        },
+        {
+          "name": "constant.numeric.decimal.goal",
+          "match": "(?<![\\w.])(?:[0-9][0-9_]*\\.[0-9_]*|\\.[0-9][0-9_]*|[0-9][0-9_]*)(?:[eE][-+]?[0-9_]+)?i?\\b"
+        }
+      ]
+    },
+    "constants": {
+      "name": "constant.language.goal",
+      "match": "\\b(?:true|false|nil|iota)\\b"
+    },
+    "goal-keywords": {
+      "patterns": [
+        {
+          "comment": "Goal control keywords",
+          "name": "keyword.control.goal",
+          "match": "\\b(?:match|assert)\\b"
+        },
+        {
+          "comment": "Goal declaration keywords",
+          "name": "storage.type.goal",
+          "match": "\\b(?:enum|sealed|from|derive)\\b"
+        },
+        {
+          "comment": "Goal interface-satisfaction clause",
+          "name": "storage.modifier.goal",
+          "match": "\\bimplements\\b"
+        }
+      ]
+    },
+    "keywords-control": {
+      "name": "keyword.control.goal",
+      "match": "\\b(?:break|case|continue|default|defer|else|fallthrough|for|go|goto|if|range|return|select|switch)\\b"
+    },
+    "keywords-storage": {
+      "patterns": [
+        {
+          "name": "keyword.control.import.goal",
+          "match": "\\b(?:package|import)\\b"
+        },
+        {
+          "name": "storage.type.goal",
+          "match": "\\b(?:func|var|const|type|struct|interface|map|chan)\\b"
+        }
+      ]
+    },
+    "sum-types": {
+      "name": "support.type.goal",
+      "match": "\\b(?:Result|Option)\\b"
+    },
+    "constructors": {
+      "name": "variable.other.enummember.goal",
+      "match": "\\b(?:Ok|Err|Some|None)\\b"
+    },
+    "variant-access": {
+      "comment": "Qualified enum/variant construction like Status.Active",
+      "match": "\\b([A-Z][A-Za-z0-9_]*)\\.([A-Z][A-Za-z0-9_]*)\\b",
+      "captures": {
+        "1": { "name": "entity.name.type.goal" },
+        "2": { "name": "variable.other.enummember.goal" }
+      }
+    },
+    "builtin-types": {
+      "name": "support.type.builtin.goal",
+      "match": "\\b(?:bool|byte|complex64|complex128|error|float32|float64|int|int8|int16|int32|int64|rune|string|uint|uint8|uint16|uint32|uint64|uintptr|any|comparable)\\b"
+    },
+    "builtin-functions": {
+      "name": "support.function.builtin.goal",
+      "match": "\\b(?:append|cap|clear|close|complex|copy|delete|imag|len|make|max|min|new|panic|print|println|real|recover)\\b(?=\\s*\\()"
+    },
+    "function-calls": {
+      "comment": "Function declarations and call sites",
+      "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.goal" }
+      }
+    },
+    "operators": {
+      "patterns": [
+        {
+          "comment": "Match arm arrow",
+          "name": "keyword.operator.arrow.goal",
+          "match": "=>"
+        },
+        {
+          "comment": "Defaults / derive spread",
+          "name": "keyword.operator.spread.goal",
+          "match": "\\.\\.\\.(?:defaults|derive)\\b"
+        },
+        {
+          "comment": "Variadic / spread",
+          "name": "keyword.operator.spread.goal",
+          "match": "\\.\\.\\."
+        },
+        {
+          "comment": "Postfix Result/Option unwrap",
+          "name": "keyword.operator.unwrap.goal",
+          "match": "\\?"
+        },
+        {
+          "name": "keyword.operator.channel.goal",
+          "match": "<-"
+        },
+        {
+          "name": "keyword.operator.assignment.goal",
+          "match": ":=|[-+*/%&|^]?=|<<=|>>=|&\\^="
+        },
+        {
+          "name": "keyword.operator.goal",
+          "match": "&&|\\|\\||<<|>>|&\\^|==|!=|<=|>=|[-+*/%&|^!<>]"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.terminator.goal", "match": ";" },
+        { "name": "punctuation.separator.goal", "match": "[,.:]" },
+        { "name": "punctuation.section.brackets.goal", "match": "[\\[\\]]" },
+        { "name": "punctuation.section.parens.goal", "match": "[()]" },
+        { "name": "punctuation.section.braces.goal", "match": "[{}]" }
+      ]
+    }
+  }
+}

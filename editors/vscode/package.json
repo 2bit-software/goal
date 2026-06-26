@@ -1,0 +1,56 @@
+{
+  "name": "goal-lang",
+  "displayName": "Goal",
+  "description": "Syntax highlighting for the Goal language (.goal), a thin orthogonal dialect of Go.",
+  "version": "0.1.0",
+  "publisher": "goal-lang",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "goal",
+    "go",
+    "golang",
+    "syntax"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/2bit-software/goal.git",
+    "directory": "editors/vscode"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "goal",
+        "aliases": [
+          "Goal",
+          "goal"
+        ],
+        "extensions": [
+          ".goal"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "goal",
+        "scopeName": "source.goal",
+        "path": "./syntaxes/goal.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "package": "vsce package",
+    "install-local": "vsce package -o goal-lang.vsix && code --install-extension goal-lang.vsix",
+    "test": "node test/tokenize.test.mjs"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.0.0",
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.0.0"
+  }
+}
