@@ -7,3 +7,6 @@ type Outer struct {
 	ID    string
 	Count int
 }
+
+// Mkdir is an error-only foreign function used to prove arity-aware `?` lowering compiles.
+func Mkdir(p string) error { return nil }

@@ -234,6 +234,26 @@ func LeadIdent(s string) string {
 	return s[:end]
 }
 
+// CalleeKey returns the analyze-table lookup key for the function called at the head of expr:
+// a package-qualified call "os.MkdirAll(p)" yields "os.MkdirAll", a plain call "doThing(x)"
+// yields "doThing", and a generic instantiation "f[T](x)" yields the base "f". It returns ""
+// when expr is not headed by an identifier (a parenthesized or operator-led expression). A
+// chain deeper than one qualifier ("pkg.Sub.Func(x)") is truncated to its first two segments.
+func CalleeKey(expr string) string {
+	expr = strings.TrimSpace(expr)
+	head := LeadIdent(expr)
+	if head == "" {
+		return ""
+	}
+	rest := expr[len(head):]
+	if strings.HasPrefix(rest, ".") {
+		if seg := LeadIdent(rest[1:]); seg != "" {
+			return head + "." + seg
+		}
+	}
+	return head
+}
+
 // IsIdent reports whether s begins like a Go identifier (letter or underscore).
 func IsIdent(s string) bool {
 	if s == "" {
@@ -250,6 +270,40 @@ func SplitAssign(s string) (name, rhs string, ok bool) {
 		return strings.TrimSpace(lhs), strings.TrimSpace(after), true
 	}
 	return "", strings.TrimSpace(s), false
+}
+
+// IsBareQuestionStmt reports whether the `?` token at index qIdx is the whole of a
+// standalone expression statement `expr?` — the binding-free discard form, where the call's
+// only output is the error and there is no `name :=` / `_ :=` to its left. It requires the
+// `?` to be the final token of its line and the line not to begin with a statement keyword,
+// so a `?` used mid-expression (`f(g()?)`) or after a keyword (`return f()?`) is not mistaken
+// for a bare statement. lineStart is the byte offset beginning the `?`'s line.
+func IsBareQuestionStmt(src string, toks []Token, qIdx, lineStart int) bool {
+	if qIdx < 0 || qIdx >= len(toks) || toks[qIdx].Text != "?" {
+		return false
+	}
+	// `?` must terminate the statement: nothing follows it on the same line.
+	if qIdx+1 < len(toks) && toks[qIdx+1].Start < NextNewline(src, toks[qIdx].End) {
+		return false
+	}
+	// Walk back to the first token of the line and reject a leading statement keyword.
+	first := qIdx
+	for first > 0 && toks[first-1].Start >= lineStart {
+		first--
+	}
+	return !IsStmtKeyword(toks[first].Text)
+}
+
+// IsStmtKeyword reports whether s is a Go/goal keyword that can lead a statement, so a line
+// beginning with it is not a bare expression statement.
+func IsStmtKeyword(s string) bool {
+	switch s {
+	case "return", "go", "defer", "if", "else", "for", "switch", "select", "case",
+		"default", "var", "const", "type", "func", "range", "break", "continue",
+		"goto", "fallthrough", "match", "assert", "enum", "import", "package":
+		return true
+	}
+	return false
 }
 
 // Func is the structural skeleton of one top-level function or method, located by

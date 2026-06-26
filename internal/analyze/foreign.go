@@ -68,8 +68,11 @@ func EnrichForeign(t *Tables, srcs []string, fromDir string, resolve DirResolver
 		resolve = DefaultResolver
 	}
 	needed := neededAliases(srcs)
+	for alias := range questionCalleeAliases(srcs) {
+		needed[alias] = true
+	}
 	if len(needed) == 0 {
-		return nil // no derive/from references a qualified type — nothing to load
+		return nil // nothing references a foreign type (derive/from) or `?` callee — nothing to load
 	}
 	var errs []error
 	loaded := map[string]bool{} // import paths already merged, for dedupe across files
@@ -88,7 +91,7 @@ func EnrichForeign(t *Tables, srcs []string, fromDir string, resolve DirResolver
 				errs = append(errs, err)
 				continue
 			}
-			_, structs, err := foreignStructs(dir, imp.Alias)
+			_, structs, funcs, err := foreignDecls(dir, imp.Alias)
 			if err != nil {
 				errs = append(errs, err)
 				continue
@@ -97,9 +100,36 @@ func EnrichForeign(t *Tables, srcs []string, fromDir string, resolve DirResolver
 				t.Structs[name] = fields
 				t.TypeDecls[name] = "struct"
 			}
+			for name, arity := range funcs {
+				// Mode is left at its zero value (ModeNone): a foreign entry carries only
+				// arity, so existing iterations over FuncSignatures (e.g. NeedsResultPrelude)
+				// ignore it.
+				t.FuncSignatures[name] = FuncSig{Arity: arity}
+			}
 		}
 	}
 	return errs
+}
+
+// questionCalleeAliases returns the package qualifiers that head a `?` callee
+// (`alias.Func(...)?`) anywhere in srcs, so an import referenced only through `?` propagation
+// — with no derive/from use — is still loaded for its function arities.
+func questionCalleeAliases(srcs []string) map[string]bool {
+	out := map[string]bool{}
+	for _, src := range srcs {
+		toks := scan.Lex(src)
+		for q := range toks {
+			if toks[q].Text != "?" {
+				continue
+			}
+			lineStart := strings.LastIndexByte(src[:toks[q].Start], '\n') + 1
+			_, rhs, _ := scan.SplitAssign(src[lineStart:toks[q].Start])
+			if alias, _, ok := strings.Cut(scan.CalleeKey(rhs), "."); ok {
+				out[alias] = true
+			}
+		}
+	}
+	return out
 }
 
 // ParseImports returns the entries of a `.goal` file's import block(s). It lexes rather
@@ -200,14 +230,15 @@ func neededAliases(srcs []string) map[string]bool {
 	return out
 }
 
-// foreignStructs parses the Go source files in dir and returns its exported struct types
-// keyed `alias.Type`, with each field's type rendered qualified by alias. requestedAlias
-// is the qualifier the goal source uses; when empty (an unaliased import) the package's
-// own declared name is used. The effective alias is also returned.
-func foreignStructs(dir, requestedAlias string) (alias string, structs map[string][]Field, err error) {
+// foreignDecls parses the Go source files in dir and returns its exported struct types
+// (keyed `alias.Type`, each field's type rendered qualified by alias) and its exported,
+// receiver-less function return arities (keyed `alias.Func`). requestedAlias is the qualifier
+// the goal source uses; when empty (an unaliased import) the package's own declared name is
+// used. The effective alias is also returned.
+func foreignDecls(dir, requestedAlias string) (alias string, structs map[string][]Field, funcs map[string]int, err error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 	fset := token.NewFileSet()
 	var files []*ast.File
@@ -230,26 +261,52 @@ func foreignStructs(dir, requestedAlias string) (alias string, structs map[strin
 		alias = pkgName
 	}
 	structs = map[string][]Field{}
+	funcs = map[string]int{}
 	for _, f := range files {
 		for _, decl := range f.Decls {
-			gd, ok := decl.(*ast.GenDecl)
-			if !ok || gd.Tok != token.TYPE {
-				continue
-			}
-			for _, spec := range gd.Specs {
-				ts, ok := spec.(*ast.TypeSpec)
-				if !ok || !ts.Name.IsExported() {
+			switch d := decl.(type) {
+			case *ast.GenDecl:
+				if d.Tok != token.TYPE {
 					continue
 				}
-				st, ok := ts.Type.(*ast.StructType)
-				if !ok {
-					continue
+				for _, spec := range d.Specs {
+					ts, ok := spec.(*ast.TypeSpec)
+					if !ok || !ts.Name.IsExported() {
+						continue
+					}
+					st, ok := ts.Type.(*ast.StructType)
+					if !ok {
+						continue
+					}
+					structs[alias+"."+ts.Name.Name] = exportedFields(st, alias)
 				}
-				structs[alias+"."+ts.Name.Name] = exportedFields(st, alias)
+			case *ast.FuncDecl:
+				// Package-level functions only — a method's `?` callee needs receiver-type
+				// inference the analyzer does not do.
+				if d.Recv == nil && d.Name.IsExported() {
+					funcs[alias+"."+d.Name.Name] = resultArity(d.Type)
+				}
 			}
 		}
 	}
-	return alias, structs, nil
+	return alias, structs, funcs, nil
+}
+
+// resultArity reports how many values a foreign function returns: an unnamed result counts
+// once and a named group (`(a, b int)`) counts by name.
+func resultArity(ft *ast.FuncType) int {
+	if ft.Results == nil {
+		return 0
+	}
+	n := 0
+	for _, field := range ft.Results.List {
+		if len(field.Names) == 0 {
+			n++
+			continue
+		}
+		n += len(field.Names)
+	}
+	return n
 }
 
 // exportedFields returns the exported, named fields of a struct (embedded and unexported

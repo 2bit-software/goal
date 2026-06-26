@@ -103,10 +103,11 @@ func checkClosedQuestions(src string, toks []scan.Token, t *analyze.Tables, span
 		}
 		lineStart := strings.LastIndexByte(src[:p], '\n') + 1
 		_, rhs, isAssign := scan.SplitAssign(src[lineStart:p])
-		if !isAssign {
-			// Malformed (`?` not the RHS of an assignment): the lowering rejects it; the
-			// concrete propagated type isn't readable, so defer rather than assert.
-			diags = append(diags, deferQuestion(toks[q].Start, "`?` is not the right-hand side of an assignment (`name := expr?`)"))
+		if !isAssign && !scan.IsBareQuestionStmt(src, toks, q, lineStart) {
+			// Malformed (`?` neither the RHS of an assignment nor a standalone `expr?`
+			// statement): the lowering rejects it; the concrete propagated type isn't
+			// readable, so defer rather than assert.
+			diags = append(diags, deferQuestion(toks[q].Start, "`?` is not the right-hand side of an assignment (`name := expr?`) or a standalone `expr?` statement"))
 			continue
 		}
 		calleeName := scan.LeadIdent(rhs)

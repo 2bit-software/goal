@@ -126,3 +126,59 @@ func keys(m map[string][]Field) []string {
 	}
 	return out
 }
+
+func TestEnrichForeignRecordsFuncArity(t *testing.T) {
+	dir, err := filepath.Abs(filepath.Join("testdata", "extpkg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// ext is referenced ONLY through a `?` callee — no derive/from — so this also proves the
+	// needed-alias collection now picks up `?`-only imports.
+	src := `package consumer
+
+import ext "example.com/ext"
+
+func run() Result[int, error] {
+	ext.Mkdir("d")?
+	return Result.Ok(0)
+}
+`
+	resolve := func(importPath, fromDir string) (string, error) {
+		if importPath != "example.com/ext" {
+			t.Fatalf("unexpected import path %q", importPath)
+		}
+		return dir, nil
+	}
+	tb := newTables()
+	if errs := EnrichForeign(tb, []string{src}, ".", resolve); len(errs) != 0 {
+		t.Fatalf("EnrichForeign errors: %v", errs)
+	}
+
+	want := map[string]int{"ext.Mkdir": 1, "ext.Open": 2, "ext.Triple": 3}
+	for key, arity := range want {
+		sig, ok := tb.FuncSignatures[key]
+		if !ok {
+			t.Fatalf("%s not recorded; have %v", key, funcKeys(tb.FuncSignatures))
+		}
+		if sig.Arity != arity {
+			t.Errorf("%s arity = %d, want %d", key, sig.Arity, arity)
+		}
+		if sig.Mode != ModeNone {
+			t.Errorf("%s Mode = %v, want ModeNone (foreign entries carry only arity)", key, sig.Mode)
+		}
+	}
+	if _, ok := tb.FuncSignatures["ext.hidden"]; ok {
+		t.Error("unexported foreign func must not be recorded")
+	}
+	if _, ok := tb.FuncSignatures["ext.Close"]; ok {
+		t.Error("a method (receiver) must not be recorded as a package-level func")
+	}
+}
+
+func funcKeys(m map[string]FuncSig) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}

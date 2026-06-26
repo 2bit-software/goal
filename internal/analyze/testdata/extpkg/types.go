@@ -24,3 +24,18 @@ type Inner struct {
 
 // unexported must never appear in the extracted set.
 type unexported struct{ x int } //nolint:unused
+
+// Mkdir is an error-only foreign function: its `?` callee arity must read as 1.
+func Mkdir(p string) error { return nil }
+
+// Open is a (value, error) foreign function: its `?` callee arity must read as 2.
+func Open(p string) (int, error) { return 0, nil }
+
+// Triple returns three values: its `?` callee arity must read as 3.
+func Triple() (int, int, error) { return 0, 0, nil }
+
+// hidden is unexported and must never contribute a foreign arity.
+func hidden() error { return nil } //nolint:unused
+
+// Close has a receiver and must be skipped — only package-level functions are recorded.
+func (Inner) Close() error { return nil }

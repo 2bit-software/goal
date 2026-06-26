@@ -152,7 +152,10 @@ func lowerClosedQuestions(src string, toks []scan.Token, t *analyze.Tables, span
 		lineStart := strings.LastIndexByte(src[:p], '\n') + 1
 		name, rhs, ok := scan.SplitAssign(src[lineStart:p])
 		if !ok {
-			return nil, fmt.Errorf("`?` must be the right-hand side of an assignment: `name := expr?`")
+			if !scan.IsBareQuestionStmt(src, toks, q, lineStart) {
+				return nil, fmt.Errorf("`?` must be the right-hand side of an assignment (`name := expr?`) or a standalone `expr?` statement")
+			}
+			name = "_" // bare `expr?`: discard the unwrapped value, propagate only the failure
 		}
 		callee := t.FuncSignatures[scan.LeadIdent(rhs)]
 		if callee.Mode != analyze.ModeResultClosed {

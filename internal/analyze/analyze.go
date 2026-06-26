@@ -34,10 +34,11 @@ const (
 
 // FuncSig is the analyzed return signature of one function.
 type FuncSig struct {
-	Name string
-	Mode Mode
-	T    string // success type (the T in Result[T, E] or Option[T])
-	E    string // error type (the E in Result[T, E]); "" for Option/none
+	Name  string
+	Mode  Mode
+	T     string // success type (the T in Result[T, E] or Option[T])
+	E     string // error type (the E in Result[T, E]); "" for Option/none
+	Arity int    // number of values the function returns at `?`-lowering time; 0 if unknown/void
 }
 
 // Field is one variant field: the goal field name (lowercase) and its type
@@ -630,32 +631,77 @@ func splitTopLevel(s string) []string {
 	return parts
 }
 
-// analyzeSig reads the return mode and type parameters of one function from its
-// (un-lowered) signature.
+// analyzeSig reads the return mode, type parameters, and return arity of one function from
+// its (un-lowered) signature.
 func analyzeSig(src string, toks []scan.Token, f scan.Func) FuncSig {
 	sig := FuncSig{Name: f.Name, Mode: ModeNone}
 	pc := f.ParamsClose
-	if pc < 0 || pc+2 >= f.BodyOpen {
+	if pc < 0 || f.BodyOpen < 0 {
 		return sig
 	}
-	switch {
-	case toks[pc+1].Text == "Result" && toks[pc+2].Text == "[":
-		rb := scan.MatchBracket(toks, pc+2)
-		comma := scan.TopLevelComma(toks, pc+2, rb)
-		if comma < 0 {
-			return sig
+	sig.Arity = inFileArity(src, toks, f)
+	if pc+2 < f.BodyOpen {
+		switch {
+		case toks[pc+1].Text == "Result" && toks[pc+2].Text == "[":
+			rb := scan.MatchBracket(toks, pc+2)
+			comma := scan.TopLevelComma(toks, pc+2, rb)
+			if comma < 0 {
+				return sig
+			}
+			sig.T = strings.TrimSpace(src[toks[pc+3].Start:toks[comma].Start])
+			sig.E = strings.TrimSpace(src[toks[comma+1].Start:toks[rb].Start])
+			if sig.E == "error" {
+				sig.Mode = ModeResult // open-E: native (T, error)
+			} else {
+				sig.Mode = ModeResultClosed // closed-E: Ok[T,E]/Err[T,E] sum
+			}
+		case toks[pc+1].Text == "Option" && toks[pc+2].Text == "[":
+			rb := scan.MatchBracket(toks, pc+2)
+			sig.Mode = ModeOption
+			sig.T = strings.TrimSpace(src[toks[pc+3].Start:toks[rb].Start])
 		}
-		sig.T = strings.TrimSpace(src[toks[pc+3].Start:toks[comma].Start])
-		sig.E = strings.TrimSpace(src[toks[comma+1].Start:toks[rb].Start])
-		if sig.E == "error" {
-			sig.Mode = ModeResult // open-E: native (T, error)
-		} else {
-			sig.Mode = ModeResultClosed // closed-E: Ok[T,E]/Err[T,E] sum
-		}
-	case toks[pc+1].Text == "Option" && toks[pc+2].Text == "[":
-		rb := scan.MatchBracket(toks, pc+2)
-		sig.Mode = ModeOption
-		sig.T = strings.TrimSpace(src[toks[pc+3].Start:toks[rb].Start])
+	}
+	// A Result/Option signature lowers to a fixed call shape — (T, error) or *T — so its
+	// `?`-time arity is the lowered count, not the single syntactic return read above.
+	switch sig.Mode {
+	case ModeResult:
+		sig.Arity = 2
+	case ModeOption, ModeResultClosed:
+		sig.Arity = 1
 	}
 	return sig
+}
+
+// inFileArity reports how many values f returns, read from its un-lowered return clause (the
+// text between the parameter list's close and the body brace). The parameter-list close is
+// derived from the name token because scan.ParamsClose can point at a parenthesized return
+// type's own ")" instead.
+func inFileArity(src string, toks []scan.Token, f scan.Func) int {
+	open := f.NameTok + 1
+	if open >= len(toks) || toks[open].Text != "(" {
+		return 0
+	}
+	cl := scan.MatchParen(toks, open)
+	if cl < 0 || cl >= f.BodyOpen {
+		return 0
+	}
+	return countReturns(strings.TrimSpace(src[toks[cl].End:toks[f.BodyOpen].Start]))
+}
+
+// countReturns reports how many values a function's return clause yields: an empty clause is
+// 0, a single bare type is 1, and a parenthesized list is its count of top-level entries
+// (`(a, b int, err error)` is 3, `(int, error)` is 2).
+func countReturns(ret string) int {
+	ret = strings.TrimSpace(ret)
+	if ret == "" {
+		return 0
+	}
+	if strings.HasPrefix(ret, "(") && strings.HasSuffix(ret, ")") {
+		inner := strings.TrimSpace(ret[1 : len(ret)-1])
+		if inner == "" {
+			return 0
+		}
+		return len(splitTopLevel(inner))
+	}
+	return 1
 }

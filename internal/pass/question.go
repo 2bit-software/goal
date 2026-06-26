@@ -11,9 +11,9 @@ import (
 
 // Question lowers postfix `?` propagation over Result and Option (spec §3.7, §8.3).
 // `?` early-returns the Err/None of the enclosing function and unwraps the Ok/Some
-// otherwise. It is always the RHS of an assignment: `name := expr?` keeps the value,
-// `_ := expr?` discards it and propagates only the failure; a bare `expr?` is
-// rejected.
+// otherwise. It appears as `name := expr?` (keep the value), `_ := expr?` (discard it
+// explicitly), or a standalone `expr?` statement (the binding-free discard form, for a
+// call whose only output is the error); the failure is propagated in every shape.
 //
 // This pass runs after signature lowering, so the enclosing function's original
 // return mode is no longer visible in the source (a Result has become named returns,
@@ -39,16 +39,29 @@ func Question(src string, t *analyze.Tables) (string, error) {
 		}
 		lineStart := strings.LastIndexByte(src[:p], '\n') + 1
 		name, rhs, ok := scan.SplitAssign(src[lineStart:p])
-		if !ok {
-			return "", fmt.Errorf("`?` must be the right-hand side of an assignment; write `name := expr?` to keep the value or `_ := expr?` to discard it")
+		if !ok && !scan.IsBareQuestionStmt(src, toks, q, lineStart) {
+			return "", fmt.Errorf("`?` must be the right-hand side of an assignment (`name := expr?`) or a standalone `expr?` statement")
 		}
-		discard := name == "_"
+		// A bare `expr?` statement (no `:=`) discards the unwrapped value and propagates only
+		// the failure — the same lowering as `_ := expr?`.
+		discard := !ok || name == "_"
 		var text string
 		switch sig.Mode {
 		case analyze.ModeResult:
+			arity, known := calleeArity(t, rhs)
 			if discard {
-				text = fmt.Sprintf("if _, %s := %s; %s != nil {\nreturn %s, %s\n}", errName, rhs, errName, okName, errName)
+				// Emit one blank identifier per discarded value: an error-only callee (arity 1)
+				// needs none, a (value, error) callee needs one, and so on. Unresolved callees
+				// keep today's two-value form.
+				n := 2
+				if known && arity >= 1 {
+					n = arity
+				}
+				text = fmt.Sprintf("if %s%s := %s; %s != nil {\nreturn %s, %s\n}", strings.Repeat("_, ", n-1), errName, rhs, errName, okName, errName)
 			} else {
+				if known && arity != 2 {
+					return "", fmt.Errorf("`?` binds a value but %s returns %d value(s); write a bare `…?` to propagate only the error", scan.CalleeKey(rhs), arity)
+				}
 				text = fmt.Sprintf("%s, %s := %s\nif %s != nil {\nreturn %s, %s\n}", name, errName, rhs, errName, okName, errName)
 			}
 		case analyze.ModeOption:
@@ -65,4 +78,16 @@ func Question(src string, t *analyze.Tables) (string, error) {
 		reps = append(reps, scan.Replacement{Start: lineStart, End: toks[q].End, Text: text})
 	}
 	return scan.Splice(src, 0, len(src), reps), nil
+}
+
+// calleeArity reports how many values the function called at the head of rhs returns, resolved
+// from the analyzed signatures (in-file by name, foreign by `alias.Func`). The bool is false
+// when the callee cannot be resolved, in which case the caller keeps today's two-value form.
+func calleeArity(t *analyze.Tables, rhs string) (int, bool) {
+	key := scan.CalleeKey(rhs)
+	if key == "" {
+		return 0, false
+	}
+	sig, ok := t.FuncSignatures[key]
+	return sig.Arity, ok
 }

@@ -77,3 +77,26 @@ func TestBuildPackageEmpty(t *testing.T) {
 		t.Errorf("BuildPackage(nil) has %d enums, want 0", len(pkg.Enums))
 	}
 }
+
+func TestFuncSigArity(t *testing.T) {
+	src := `package p
+
+func errOnly() error { return nil }
+func pair() (int, error) { return 0, nil }
+func triple() (a, b int, err error) { return 0, 0, nil }
+func parenSingle() (error) { return nil }
+func void() {}
+func res() Result[int, error] { return Result.Ok(0) }
+func opt() Option[int] { return Option.Some(0) }
+`
+	want := map[string]int{
+		"errOnly": 1, "pair": 2, "triple": 3, "parenSingle": 1,
+		"void": 0, "res": 2, "opt": 1,
+	}
+	got := Build(src).FuncSignatures
+	for name, w := range want {
+		if got[name].Arity != w {
+			t.Errorf("%s arity = %d, want %d", name, got[name].Arity, w)
+		}
+	}
+}

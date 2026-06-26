@@ -1,0 +1,10 @@
+package io
+
+func clean() error {
+    return nil
+}
+
+func sync() Result[int, error] {
+    clean()?
+    return Result.Ok(1)
+}
