@@ -34,6 +34,8 @@ go run ./cmd/goal check ./app        # run the static checker; prints "ok" or lo
 go run ./cmd/goal run   ./app        # transpile + `go run` the sole `package main`
 go run ./cmd/goal build ./app        # transpile + `go build ./...`  (ephemeral, via -overlay)
 go run ./cmd/goal build --emit ./app # ALSO write generated .go (+ _test.go) beside each .goal
+go run ./cmd/goal fix ./app          # rewrite plain-Go patterns into idiomatic goal (stdout)
+go run ./cmd/goal fix -inplace ./app # ... and write the changes back to each file
 
 # single-file primitive (transpiles one file to stdout)
 go run ./cmd/goalc path/to/file.goal       # lowered Go to stdout (checker runs first)
@@ -58,6 +60,27 @@ go run ./cmd/goal build --emit ./app && go test -count=1 ./app/...
 `goalc` output is gofmt-formatted Go; pipe it into a `.go` file in a real package and it
 compiles as-is. **A from-scratch agent guide lives in
 [`AI-KNOWLEDGE-BOOTSTRAP.md`](AI-KNOWLEDGE-BOOTSTRAP.md).**
+
+`goal fix` runs the lowering passes *in reverse*: since goal is a superset of Go, a `.goal`
+file can be written in plain-Go style, and `fix` rewrites those patterns into idiomatic
+goal. The keystone is collapsing manual error propagation — a function written as a
+`(T, error)` tuple with `if err != nil { return zero, err }` blocks becomes one returning
+`Result[T, error]` whose body propagates with `?`:
+
+```goal
+func load(p string) ([]byte, error) {          func load(p string) Result[[]byte, error] {
+    f, err := os.ReadFile(p)                        f := os.ReadFile(p)?
+    if err != nil {              ── goal fix ──▶     return Result.Ok(f)
+        return nil, err                          }
+    }
+    return f, nil
+}
+```
+
+Like `gofmt`, it prints to stdout by default and writes back with `-inplace`. It edits only
+what it can prove equivalent: anything ambiguous (a wrapped error, a multi-value return, a
+`switch` over an enum) is left untouched and reported to stderr as a suggestion, with
+`goal check` remaining the authority on correctness.
 
 ## The 11 features
 

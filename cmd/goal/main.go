@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"goal/internal/check"
+	"goal/internal/fix"
 	"goal/internal/guide"
 	"goal/internal/lsp"
 	"goal/internal/pipeline"
@@ -50,6 +51,12 @@ var guideCommands = []guide.Command{
 		Name:    "check",
 		Summary: "run the static checker over the package(s)",
 		Usage:   "goal check [path]",
+	},
+	{
+		Name:    "fix",
+		Summary: "rewrite plain-Go patterns into idiomatic goal (Result + `?`)",
+		Usage:   "goal fix [-inplace] [path]",
+		Flags:   []guide.Flag{{Name: "-inplace", Summary: "write changes back to each file instead of printing to stdout"}},
 	},
 	{
 		Name:    "ai",
@@ -92,6 +99,12 @@ func run(args []string, out, errOut io.Writer) error {
 		return cmdAI(rest, out)
 	case "lsp":
 		return lsp.NewServer(out).Run(os.Stdin)
+	case "fix":
+		path, inplace, err := parseFixFlags(rest)
+		if err != nil {
+			return err
+		}
+		return cmdFix(path, inplace, out, errOut)
 	case "build", "run", "check":
 		emit, emitDir, root, err := parseFlags(rest)
 		if err != nil {
@@ -150,6 +163,88 @@ func parseFlags(args []string) (emit bool, emitDir, root string, err error) {
 		root = "."
 	}
 	return emit, emitDir, root, nil
+}
+
+// parseFixFlags pulls the -inplace flag and a single optional path (a .goal file or a
+// directory, default ".") out of args.
+func parseFixFlags(args []string) (path string, inplace bool, err error) {
+	path = "."
+	gotPath := false
+	for _, a := range args {
+		switch {
+		case a == "-inplace" || a == "--inplace":
+			inplace = true
+		case strings.HasPrefix(a, "-"):
+			return "", false, fmt.Errorf("unknown flag %q", a)
+		default:
+			if gotPath {
+				return "", false, fmt.Errorf("expected a single path, got extra %q", a)
+			}
+			path, gotPath = a, true
+		}
+	}
+	path = strings.TrimSuffix(strings.TrimSuffix(path, "..."), "/")
+	if path == "" {
+		path = "."
+	}
+	return path, inplace, nil
+}
+
+// cmdFix rewrites plain-Go patterns into idiomatic goal across a .goal file or every .goal
+// file under a directory. By default it prints each rewritten file to stdout and writes
+// nothing; with -inplace it writes changed files back in place and lists them. Suggestions
+// and skip/warning reports always go to stderr; only an operational failure (bad path,
+// unreadable/unwritable file) makes the command fail.
+func cmdFix(path string, inplace bool, out, errOut io.Writer) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	type fileRef struct{ path, src string }
+	var files []fileRef
+	if info.IsDir() {
+		pkgs, err := project.Discover(path)
+		if err != nil {
+			return err
+		}
+		if len(pkgs) == 0 {
+			return fmt.Errorf("no .goal packages found under %s", path)
+		}
+		for _, pkg := range pkgs {
+			for _, f := range pkg.Files {
+				files = append(files, fileRef{f.Path, f.Src})
+			}
+		}
+	} else {
+		if !strings.HasSuffix(path, project.Ext) {
+			return fmt.Errorf("not a .goal file: %s", path)
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		files = append(files, fileRef{path, string(src)})
+	}
+
+	for _, fr := range files {
+		newSrc, _, reports := fix.File(fr.src)
+		for _, r := range reports {
+			fmt.Fprintf(errOut, "%s:%d: %s: [%s] %s\n", fr.path, r.Line, r.Level, r.Rule, r.Msg)
+		}
+		if inplace {
+			if newSrc != fr.src {
+				if err := os.WriteFile(fr.path, []byte(newSrc), 0o644); err != nil {
+					return err
+				}
+				fmt.Fprintln(out, "fixed", fr.path)
+			}
+			continue
+		}
+		if _, err := io.WriteString(out, newSrc); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // transpiled pairs a package's directory with its in-memory Go output.
