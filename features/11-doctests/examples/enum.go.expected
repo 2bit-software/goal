@@ -1,0 +1,27 @@
+package access
+
+import "testing"
+
+func TestDoctest_reason_1(t *testing.T) {
+	got := reason(Rejection(Rejection_MountNotGranted{Path: "/etc"}))
+	want := "mount not granted: /etc"
+	if got != want {
+		t.Errorf("doctest reason: got %v, want %v", got, want)
+	}
+}
+
+func TestDoctest_describe_1(t *testing.T) {
+	got := describe(Decision(Decision_Admit{}))
+	want := "admit"
+	if got != want {
+		t.Errorf("doctest describe: got %v, want %v", got, want)
+	}
+}
+
+func TestDoctest_describe_2(t *testing.T) {
+	got := describe(Decision(Decision_Reject{Reason: Rejection(Rejection_MountNotGranted{Path: "/etc"})}))
+	want := "reject: mount not granted: /etc"
+	if got != want {
+		t.Errorf("doctest describe: got %v, want %v", got, want)
+	}
+}

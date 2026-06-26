@@ -84,25 +84,55 @@ func Transpile(src string) (Output, error) {
 // (analyze.BuildPackage) with SuppressResultPrelude set, so cross-file references
 // resolve and the prelude is emitted once by the package driver rather than per file.
 func transpileWith(src string, tables *analyze.Tables) (Output, error) {
-	cur := src
-	for _, p := range Passes {
-		next, err := p.Run(cur, tables)
-		if err != nil {
-			return Output{}, fmt.Errorf("pass %s: %w", p.Name, err)
-		}
-		cur = next
-	}
-	formatted, err := format.Source([]byte(cur))
+	lowered, err := runPasses(src, tables)
 	if err != nil {
-		return Output{}, fmt.Errorf("generated Go did not parse: %w\n--- generated ---\n%s", err, cur)
+		return Output{}, err
 	}
-	// Doctests read the untouched source: `///` comments are erased by the lexer the
-	// passes use, so extraction must run on the original text, not the lowered Go.
-	test, err := pass.Doctests(src)
+	formatted, err := format.Source([]byte(lowered))
+	if err != nil {
+		return Output{}, fmt.Errorf("generated Go did not parse: %w\n--- generated ---\n%s", err, lowered)
+	}
+	test, err := doctestFile(src, tables)
 	if err != nil {
 		return Output{}, fmt.Errorf("doctests: %w", err)
 	}
 	return Output{Go: string(formatted), Test: test}, nil
+}
+
+// runPasses threads src through every front-end pass in order, naming the failing pass on
+// error. It does not format — an intermediate source need only be lexable.
+func runPasses(src string, tables *analyze.Tables) (string, error) {
+	cur := src
+	for _, p := range Passes {
+		next, err := p.Run(cur, tables)
+		if err != nil {
+			return "", fmt.Errorf("pass %s: %w", p.Name, err)
+		}
+		cur = next
+	}
+	return cur, nil
+}
+
+// doctestFile extracts doctests from the untouched source (`///` comments are erased by
+// the lexer the passes use, so extraction must run on the original text), renders them as
+// a goal-shaped `_test.go`, and lowers that through the SAME passes and tables as the
+// source — so a doctest over enum variants, keyed struct literals, or Result/Option
+// constructors lowers to the same Go the function body would. It returns "" when the
+// source has no doctests.
+func doctestFile(src string, tables *analyze.Tables) (string, error) {
+	goalTest := pass.RenderDoctests(src, pass.ExtractDoctests(src))
+	if goalTest == "" {
+		return "", nil
+	}
+	lowered, err := runPasses(goalTest, tables)
+	if err != nil {
+		return "", err
+	}
+	formatted, err := format.Source([]byte(lowered))
+	if err != nil {
+		return "", fmt.Errorf("generated test file did not parse: %w\n--- generated ---\n%s", err, lowered)
+	}
+	return string(formatted), nil
 }
 
 // GoFile is one generated Go source: the base file name to write and its formatted

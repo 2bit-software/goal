@@ -1,0 +1,33 @@
+package access
+
+enum Rejection {
+	MountNotGranted { path: string }
+}
+
+enum Decision {
+	Admit
+	Reject { reason: Rejection }
+}
+
+/// reason renders why a request was rejected.
+/// >>> reason(Rejection.MountNotGranted(path: "/etc"))
+/// "mount not granted: /etc"
+func reason(r Rejection) string {
+	return match r {
+		Rejection.MountNotGranted(m) => "mount not granted: " + m.path
+	}
+}
+
+/// describe renders a decision as a human-readable line. The doctest constructs a
+/// nested enum payload — `Decision.Reject(reason: Rejection.MountNotGranted(...))` —
+/// proving goal-specific values lower the same way in a doctest as in a function body.
+/// >>> describe(Decision.Admit)
+/// "admit"
+/// >>> describe(Decision.Reject(reason: Rejection.MountNotGranted(path: "/etc")))
+/// "reject: mount not granted: /etc"
+func describe(d Decision) string {
+	return match d {
+		Decision.Admit => "admit"
+		Decision.Reject(r) => "reject: " + reason(r.reason)
+	}
+}
