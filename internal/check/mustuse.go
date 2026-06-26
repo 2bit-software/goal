@@ -57,6 +57,7 @@ import (
 // guarantee reads.
 func checkMustUse(src string, t *analyze.Tables) ([]Diagnostic, error) {
 	toks := scan.Lex(src)
+	ifaceSpans := interfaceBraceSpans(toks)
 	var diags []Diagnostic
 	for i := 0; i+1 < len(toks); i++ {
 		// A direct call is `IDENT (`; the callee must be an in-file Result-returning func.
@@ -65,6 +66,15 @@ func checkMustUse(src string, t *analyze.Tables) ([]Diagnostic, error) {
 		}
 		sig, known := t.FuncSignatures[toks[i].Text]
 		if !known || (sig.Mode != analyze.ModeResult && sig.Mode != analyze.ModeResultClosed) {
+			continue
+		}
+		// A method *signature* inside an `interface { … }` body wears the same
+		// `IDENT ( params ) ReturnType` shape as a statement-leading call — and when the
+		// method name matches a concrete Result-returning func/method registered in
+		// FuncSignatures, it is misread as a dropped/continued call (the token before the
+		// name is the interface's `{`, so isStatementStart is true). It is a declaration,
+		// not a call site: skip it.
+		if inSpans(i, ifaceSpans) {
 			continue
 		}
 		closeIdx := scan.MatchParen(toks, i+1)
@@ -81,8 +91,12 @@ func checkMustUse(src string, t *analyze.Tables) ([]Diagnostic, error) {
 
 		// A call on the RHS of a whole-Result discard `_ := f(...)` / `_ = f(...)`: the
 		// sanctioned explicit-discard surface is not yet defined (feature 03 SYNTAX.md §5),
-		// so this check defers rather than ruling it a use or a drop.
-		if isUnderscoreDiscardRHS(toks, i) {
+		// so this check defers rather than ruling it a use or a drop. But a trailing `?`
+		// (`_ := f(...)?`) consumes the Result by propagation — the `_` then discards only
+		// the unwrapped Ok value, an ordinary value discard — so it is a use, not a
+		// whole-Result discard, and carries no obligation. (Mirrors the statement-leading
+		// `f(...)?` consumed case in classifyStatementCall.)
+		if isUnderscoreDiscardRHS(toks, i) && !(closeIdx+1 < len(toks) && toks[closeIdx+1].Text == "?") {
 			diags = append(diags, Diagnostic{
 				Pos:      toks[i].Start,
 				Severity: Warning,
@@ -96,6 +110,21 @@ func checkMustUse(src string, t *analyze.Tables) ([]Diagnostic, error) {
 		// `return` operand, argument) is a use in place — no obligation here.
 	}
 	return diags, nil
+}
+
+// interfaceBraceSpans returns the body spans of every `interface { … }` declaration
+// (named `type T interface {…}` or anonymous). A method signature inside one wears the
+// `IDENT ( params ) ReturnType` shape of a statement-leading call, so the must-use scan
+// must skip candidate sites that fall inside these spans.
+func interfaceBraceSpans(toks []scan.Token) []span {
+	var spans []span
+	for i := 0; i+1 < len(toks); i++ {
+		if toks[i].Text != "interface" || toks[i+1].Text != "{" {
+			continue
+		}
+		spans = append(spans, span{open: i + 1, close: scan.MatchBrace(toks, i+1)})
+	}
+	return spans
 }
 
 // statementCallKind classifies how a statement-leading Result call disposes of its value.

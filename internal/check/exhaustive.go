@@ -88,8 +88,18 @@ func checkOneMatch(toks []scan.Token, t *analyze.Tables, mi, bo, bc int) []Diagn
 		}
 	}
 
-	// No enum-qualified arm: a Result/Option match or some other construct — not ours.
+	// No enum-qualified arm: a value-position match or some other construct — not ours.
 	if enumName == "" {
+		return nil
+	}
+
+	// `Result`/`Option` are builtin sum types, not user enums declared in any file. Their
+	// match exhaustiveness is owned by their own features: the result/option lowering
+	// passes reject a match missing an Ok/Err (or Some/None) arm outright. Checking them
+	// here only ever fires the unresolved-enum deferral on correct, complete matches —
+	// noise, never a catch. Skip them silently (the defer-boundary above intends this; the
+	// builtin arms are qualified, so they reach here rather than the enumName=="" guard).
+	if enumName == "Result" || enumName == "Option" {
 		return nil
 	}
 
