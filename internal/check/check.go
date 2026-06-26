@@ -124,6 +124,7 @@ var Checks = []Check{
 	{Name: "convert", Run: checkConvert},       // 12-derive-convert: conversion totality
 	{Name: "mustuse", Run: checkMustUse},       // 03-result: must-use
 	{Name: "assert", Run: checkAssert},         // 10-assert: static-provable subset
+	{Name: "question", Run: checkQuestion},     // 05-question-prop: `?` callee propagatability
 }
 
 // Run executes every registered check against pre-built tables and returns the

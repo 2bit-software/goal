@@ -1104,6 +1104,13 @@ The full set of stable codes the checker can emit:
 - `[unresolved-result-discard]` (warning) — a possible `Result` discard can't be resolved lexically; deferred.
 - `[unresolved-result-use]` (warning) — a `Result` use can't be resolved lexically; deferred to the typed stage.
 
+**05-question-prop**
+
+- `[question-binds-nonvalue]` (error) — `name := expr?` binds a value but the callee doesn't return exactly `(value, error)`.
+- `[question-callee-no-error]` (error) — a `?` callee returns nothing or its last result isn't `error`, so there's no failure to propagate.
+- `[question-callee-unresolved]` (warning) — a discarding `?` callee's arity can't be resolved lexically; the two-value form is assumed.
+- `[question-not-statement]` (error) — `?` is neither the RHS of an assignment nor a standalone `expr?` statement.
+
 **06-error-e**
 
 - `[err-outside-closed-enum]` (error) — `Result.Err(...)` is used with a value outside the declared error enum.

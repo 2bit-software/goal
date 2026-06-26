@@ -89,14 +89,26 @@ func void() {}
 func res() Result[int, error] { return Result.Ok(0) }
 func opt() Option[int] { return Option.Some(0) }
 `
+	src += "func twoInts() (int, int) { return 0, 0 }\n"
 	want := map[string]int{
 		"errOnly": 1, "pair": 2, "triple": 3, "parenSingle": 1,
-		"void": 0, "res": 2, "opt": 1,
+		"void": 0, "res": 2, "opt": 1, "twoInts": 2,
+	}
+	// EndsInError marks a callee that carries a trailing error a `?` can propagate: error-only,
+	// (T, error), and Result are true; void, non-error, and Option are false.
+	wantEndsErr := map[string]bool{
+		"errOnly": true, "pair": true, "triple": true, "parenSingle": true, "res": true,
+		"void": false, "opt": false, "twoInts": false,
 	}
 	got := Build(src).FuncSignatures
 	for name, w := range want {
 		if got[name].Arity != w {
 			t.Errorf("%s arity = %d, want %d", name, got[name].Arity, w)
+		}
+	}
+	for name, w := range wantEndsErr {
+		if got[name].EndsInError != w {
+			t.Errorf("%s EndsInError = %v, want %v", name, got[name].EndsInError, w)
 		}
 	}
 }

@@ -48,19 +48,31 @@ func Question(src string, t *analyze.Tables) (string, error) {
 		var text string
 		switch sig.Mode {
 		case analyze.ModeResult:
-			arity, known := calleeArity(t, rhs)
+			csig, known := calleeSig(t, rhs)
+			// A resolved plain/foreign callee is `?`-able in an open-E function only if it
+			// returns a trailing error to propagate. Refuse a void or non-error callee rather
+			// than emit a destructure that will not compile (the question check reports the
+			// same at `goal check` time, with a located diagnostic).
+			if known && csig.Mode == analyze.ModeNone {
+				if csig.Arity == 0 {
+					return "", fmt.Errorf("`?` callee `%s` returns nothing; `?` needs a callee that returns a trailing `error` (or a `Result`)", scan.CalleeKey(rhs))
+				}
+				if !csig.EndsInError {
+					return "", fmt.Errorf("`?` callee `%s` does not return an `error` as its last result; `?` propagates an error", scan.CalleeKey(rhs))
+				}
+			}
 			if discard {
 				// Emit one blank identifier per discarded value: an error-only callee (arity 1)
 				// needs none, a (value, error) callee needs one, and so on. Unresolved callees
 				// keep today's two-value form.
 				n := 2
-				if known && arity >= 1 {
-					n = arity
+				if known && csig.Arity >= 1 {
+					n = csig.Arity
 				}
 				text = fmt.Sprintf("if %s%s := %s; %s != nil {\nreturn %s, %s\n}", strings.Repeat("_, ", n-1), errName, rhs, errName, okName, errName)
 			} else {
-				if known && arity != 2 {
-					return "", fmt.Errorf("`?` binds a value but %s returns %d value(s); write a bare `…?` to propagate only the error", scan.CalleeKey(rhs), arity)
+				if known && csig.Arity != 2 {
+					return "", fmt.Errorf("`?` binds a value but %s returns %d value(s); write a bare `…?` to propagate only the error", scan.CalleeKey(rhs), csig.Arity)
 				}
 				text = fmt.Sprintf("%s, %s := %s\nif %s != nil {\nreturn %s, %s\n}", name, errName, rhs, errName, okName, errName)
 			}
@@ -80,14 +92,15 @@ func Question(src string, t *analyze.Tables) (string, error) {
 	return scan.Splice(src, 0, len(src), reps), nil
 }
 
-// calleeArity reports how many values the function called at the head of rhs returns, resolved
-// from the analyzed signatures (in-file by name, foreign by `alias.Func`). The bool is false
-// when the callee cannot be resolved, in which case the caller keeps today's two-value form.
-func calleeArity(t *analyze.Tables, rhs string) (int, bool) {
+// calleeSig resolves the signature of the function called at the head of rhs from the analyzed
+// tables (in-file by name, foreign by `alias.Func`). The bool is false when the callee cannot
+// be resolved (an unknown name, or a method whose receiver type the analyzer does not infer),
+// in which case the caller keeps today's two-value form.
+func calleeSig(t *analyze.Tables, rhs string) (analyze.FuncSig, bool) {
 	key := scan.CalleeKey(rhs)
 	if key == "" {
-		return 0, false
+		return analyze.FuncSig{}, false
 	}
 	sig, ok := t.FuncSignatures[key]
-	return sig.Arity, ok
+	return sig, ok
 }

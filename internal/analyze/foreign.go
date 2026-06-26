@@ -100,11 +100,11 @@ func EnrichForeign(t *Tables, srcs []string, fromDir string, resolve DirResolver
 				t.Structs[name] = fields
 				t.TypeDecls[name] = "struct"
 			}
-			for name, arity := range funcs {
-				// Mode is left at its zero value (ModeNone): a foreign entry carries only
-				// arity, so existing iterations over FuncSignatures (e.g. NeedsResultPrelude)
-				// ignore it.
-				t.FuncSignatures[name] = FuncSig{Arity: arity}
+			for name, sig := range funcs {
+				// Mode is left at its zero value (ModeNone): a foreign entry carries only the
+				// `?`-relevant facts (arity and whether it ends in error), so existing
+				// iterations over FuncSignatures (e.g. NeedsResultPrelude) ignore it.
+				t.FuncSignatures[name] = sig
 			}
 		}
 	}
@@ -235,7 +235,7 @@ func neededAliases(srcs []string) map[string]bool {
 // receiver-less function return arities (keyed `alias.Func`). requestedAlias is the qualifier
 // the goal source uses; when empty (an unaliased import) the package's own declared name is
 // used. The effective alias is also returned.
-func foreignDecls(dir, requestedAlias string) (alias string, structs map[string][]Field, funcs map[string]int, err error) {
+func foreignDecls(dir, requestedAlias string) (alias string, structs map[string][]Field, funcs map[string]FuncSig, err error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", nil, nil, err
@@ -261,7 +261,7 @@ func foreignDecls(dir, requestedAlias string) (alias string, structs map[string]
 		alias = pkgName
 	}
 	structs = map[string][]Field{}
-	funcs = map[string]int{}
+	funcs = map[string]FuncSig{}
 	for _, f := range files {
 		for _, decl := range f.Decls {
 			switch d := decl.(type) {
@@ -284,12 +284,23 @@ func foreignDecls(dir, requestedAlias string) (alias string, structs map[string]
 				// Package-level functions only — a method's `?` callee needs receiver-type
 				// inference the analyzer does not do.
 				if d.Recv == nil && d.Name.IsExported() {
-					funcs[alias+"."+d.Name.Name] = resultArity(d.Type)
+					funcs[alias+"."+d.Name.Name] = FuncSig{Arity: resultArity(d.Type), EndsInError: endsInErrorAST(d.Type)}
 				}
 			}
 		}
 	}
 	return alias, structs, funcs, nil
+}
+
+// endsInErrorAST reports whether a foreign function's last result is the type `error` — the
+// failure a `?` propagates. A named group's last field (`… err error`) counts by its type.
+func endsInErrorAST(ft *ast.FuncType) bool {
+	if ft.Results == nil || len(ft.Results.List) == 0 {
+		return false
+	}
+	last := ft.Results.List[len(ft.Results.List)-1]
+	id, ok := last.Type.(*ast.Ident)
+	return ok && id.Name == "error"
 }
 
 // resultArity reports how many values a foreign function returns: an unnamed result counts

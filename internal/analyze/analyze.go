@@ -39,6 +39,12 @@ type FuncSig struct {
 	T     string // success type (the T in Result[T, E] or Option[T])
 	E     string // error type (the E in Result[T, E]); "" for Option/none
 	Arity int    // number of values the function returns at `?`-lowering time; 0 if unknown/void
+	// EndsInError reports whether the function's last result is `error` — i.e. it carries a
+	// failure a `?` can propagate in an open-E context. A Result function (which lowers to a
+	// trailing `(…, error)`) is true; a plain `func(…) error` is true; a void or non-error
+	// function is false. The `?` lowering and the question check use it to refuse a callee
+	// that has no error to propagate (rather than emit a destructure that will not compile).
+	EndsInError bool
 }
 
 // Field is one variant field: the goal field name (lowercase) and its type
@@ -639,7 +645,9 @@ func analyzeSig(src string, toks []scan.Token, f scan.Func) FuncSig {
 	if pc < 0 || f.BodyOpen < 0 {
 		return sig
 	}
-	sig.Arity = inFileArity(src, toks, f)
+	ret := inFileReturnClause(src, toks, f)
+	sig.Arity = countReturns(ret)
+	sig.EndsInError = endsInError(ret)
 	if pc+2 < f.BodyOpen {
 		switch {
 		case toks[pc+1].Text == "Result" && toks[pc+2].Text == "[":
@@ -662,30 +670,52 @@ func analyzeSig(src string, toks []scan.Token, f scan.Func) FuncSig {
 		}
 	}
 	// A Result/Option signature lowers to a fixed call shape — (T, error) or *T — so its
-	// `?`-time arity is the lowered count, not the single syntactic return read above.
+	// `?`-time arity is the lowered count, not the single syntactic return read above. A
+	// Result also carries a trailing error to propagate; an Option does not (its `?` is the
+	// nil-check path, lowered separately).
 	switch sig.Mode {
 	case ModeResult:
-		sig.Arity = 2
+		sig.Arity, sig.EndsInError = 2, true
 	case ModeOption, ModeResultClosed:
-		sig.Arity = 1
+		sig.Arity, sig.EndsInError = 1, false
 	}
 	return sig
 }
 
-// inFileArity reports how many values f returns, read from its un-lowered return clause (the
-// text between the parameter list's close and the body brace). The parameter-list close is
-// derived from the name token because scan.ParamsClose can point at a parenthesized return
-// type's own ")" instead.
-func inFileArity(src string, toks []scan.Token, f scan.Func) int {
+// inFileReturnClause returns f's un-lowered return clause: the trimmed text between the
+// parameter list's close and the body brace (e.g. "error", "(int, error)", ""). The
+// parameter-list close is derived from the name token because scan.ParamsClose can point at a
+// parenthesized return type's own ")" instead.
+func inFileReturnClause(src string, toks []scan.Token, f scan.Func) string {
 	open := f.NameTok + 1
 	if open >= len(toks) || toks[open].Text != "(" {
-		return 0
+		return ""
 	}
 	cl := scan.MatchParen(toks, open)
 	if cl < 0 || cl >= f.BodyOpen {
-		return 0
+		return ""
 	}
-	return countReturns(strings.TrimSpace(src[toks[cl].End:toks[f.BodyOpen].Start]))
+	return strings.TrimSpace(src[toks[cl].End:toks[f.BodyOpen].Start])
+}
+
+// endsInError reports whether a return clause's last result is the type `error` — the failure
+// a `?` propagates. It reads the final top-level entry (a tuple's last field, or a single bare
+// type) and checks its type token, so `error`, `(T, error)`, and `(a, b int, err error)` are
+// true while ``, `int`, and `(int, int)` are false.
+func endsInError(ret string) bool {
+	ret = strings.TrimSpace(ret)
+	if ret == "" {
+		return false
+	}
+	if strings.HasPrefix(ret, "(") && strings.HasSuffix(ret, ")") {
+		ret = strings.TrimSpace(ret[1 : len(ret)-1])
+		if ret == "" {
+			return false
+		}
+	}
+	parts := splitTopLevel(ret)
+	last := strings.Fields(strings.TrimSpace(parts[len(parts)-1]))
+	return len(last) > 0 && last[len(last)-1] == "error"
 }
 
 // countReturns reports how many values a function's return clause yields: an empty clause is
