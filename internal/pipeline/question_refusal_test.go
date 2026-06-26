@@ -41,6 +41,34 @@ func f() Result[bool, error] {
 `,
 			want: "does not return an `error`",
 		},
+		{
+			name: "Option callee in a Result function",
+			src: `package x
+
+func find() Option[int] { return Option.Some(1) }
+
+func f() Result[bool, error] {
+	find()?
+	return Result.Ok(true)
+}
+`,
+			want: "returns an `Option`",
+		},
+		{
+			name: "closed-E callee in an open-E function",
+			src: `package x
+
+enum MyErr { Boom }
+
+func sub() Result[int, MyErr] { return Result.Ok(0) }
+
+func f() Result[bool, error] {
+	sub()?
+	return Result.Ok(true)
+}
+`,
+			want: "closed-E `Result`",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

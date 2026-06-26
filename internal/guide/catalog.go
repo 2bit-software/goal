@@ -30,7 +30,7 @@ var diagnosticCatalog = []diagDoc{
 	{"unresolved-dropped-field", "03-result", "warning", "a possibly-dropped stored `Result` field can't be resolved lexically; deferred."},
 	// 05-question-prop
 	{"question-not-statement", "05-question-prop", "error", "`?` is neither the RHS of an assignment nor a standalone `expr?` statement."},
-	{"question-callee-no-error", "05-question-prop", "error", "a `?` callee returns nothing or its last result isn't `error`, so there's no failure to propagate."},
+	{"question-callee-no-error", "05-question-prop", "error", "in a `Result[_, error]` function, a `?` callee yields no `error` to propagate — it returns nothing, a non-error type, an `Option`, or a closed-E `Result`."},
 	{"question-binds-nonvalue", "05-question-prop", "error", "`name := expr?` binds a value but the callee doesn't return exactly `(value, error)`."},
 	{"question-callee-unresolved", "05-question-prop", "warning", "a discarding `?` callee's arity can't be resolved lexically; the two-value form is assumed."},
 	// 06-error-e (closed-E Result)

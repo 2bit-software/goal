@@ -53,10 +53,22 @@ func checkQuestion(src string, t *analyze.Tables) ([]Diagnostic, error) {
 			csig, known = t.FuncSignatures[key]
 		}
 
-		// A resolved plain/foreign callee (no Result/Option mode of its own) is `?`-able here
-		// only if it returns a trailing error. Result-mode callees end in error by construction.
-		if known && csig.Mode == analyze.ModeNone {
+		// In an open-E `Result[_, error]` function `?` propagates a plain `error`, so a resolved
+		// callee is valid only if it yields a trailing error: a `Result[T, error]`, or a
+		// plain/foreign function ending in `error`. An `Option`, a closed-E `Result`, a void,
+		// or a non-error callee has no `error` to propagate.
+		if known {
 			switch {
+			case csig.Mode == analyze.ModeResult:
+				// ok: lowers to a trailing (T, error).
+			case csig.Mode == analyze.ModeOption:
+				diags = append(diags, Diagnostic{Pos: p, Severity: Error, Feature: "05-question-prop",
+					Code:    "question-callee-no-error",
+					Message: fmt.Sprintf("`?` in a `Result[_, error]` function propagates an `error`, but `%s` returns an `Option`; map its `None` to an error first", key)})
+			case csig.Mode == analyze.ModeResultClosed:
+				diags = append(diags, Diagnostic{Pos: p, Severity: Error, Feature: "05-question-prop",
+					Code:    "question-callee-no-error",
+					Message: fmt.Sprintf("`?` in an open-E `Result[_, error]` function propagates `error`, but `%s` returns a closed-E `Result`; convert its error to `error` first", key)})
 			case csig.Arity == 0:
 				diags = append(diags, Diagnostic{Pos: p, Severity: Error, Feature: "05-question-prop",
 					Code:    "question-callee-no-error",

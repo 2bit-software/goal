@@ -64,6 +64,50 @@ func f() Result[bool, error] {
 	}
 }
 
+// A `?` on an `Option`-returning callee inside a `Result` function is rejected: an `Option`
+// has no `error` to propagate (its failure is a `None`).
+func TestQuestionOptionCalleeRejected(t *testing.T) {
+	const src = `package x
+
+func find() Option[int] { return Option.Some(1) }
+
+func f() Result[bool, error] {
+	find()?
+	return Result.Ok(true)
+}
+`
+	diags, err := Analyze(src)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if !hasCode(diags, "question-callee-no-error") {
+		t.Fatalf("expected question-callee-no-error for an Option `?` callee in a Result fn, got %+v", diags)
+	}
+}
+
+// A `?` on a closed-E `Result[T, E]` callee inside an open-E `Result[_, error]` function is
+// rejected: its failure is an `Err[T, E]` sum, not a plain `error`.
+func TestQuestionClosedECalleeRejected(t *testing.T) {
+	const src = `package x
+
+enum MyErr { Boom }
+
+func sub() Result[int, MyErr] { return Result.Ok(0) }
+
+func f() Result[bool, error] {
+	sub()?
+	return Result.Ok(true)
+}
+`
+	diags, err := Analyze(src)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if !hasCode(diags, "question-callee-no-error") {
+		t.Fatalf("expected question-callee-no-error for a closed-E `?` callee in an open-E fn, got %+v", diags)
+	}
+}
+
 // An unresolvable `?` callee (a method whose receiver type is not inferred) in the discard
 // form is surfaced as a Warning, not silently lowered to the two-value form.
 func TestQuestionUnresolvedMethodWarns(t *testing.T) {

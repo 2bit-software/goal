@@ -49,16 +49,24 @@ func Question(src string, t *analyze.Tables) (string, error) {
 		switch sig.Mode {
 		case analyze.ModeResult:
 			csig, known := calleeSig(t, rhs)
-			// A resolved plain/foreign callee is `?`-able in an open-E function only if it
-			// returns a trailing error to propagate. Refuse a void or non-error callee rather
-			// than emit a destructure that will not compile (the question check reports the
-			// same at `goal check` time, with a located diagnostic).
-			if known && csig.Mode == analyze.ModeNone {
-				if csig.Arity == 0 {
-					return "", fmt.Errorf("`?` callee `%s` returns nothing; `?` needs a callee that returns a trailing `error` (or a `Result`)", scan.CalleeKey(rhs))
-				}
-				if !csig.EndsInError {
-					return "", fmt.Errorf("`?` callee `%s` does not return an `error` as its last result; `?` propagates an error", scan.CalleeKey(rhs))
+			// In an open-E `Result[_, error]` function, `?` propagates a plain `error`, so the
+			// callee must yield a trailing `error`: a `Result[T, error]` (ModeResult), or a
+			// plain/foreign function ending in `error`. An `Option` (its failure is a nil
+			// pointer), a closed-E `Result[T, E]` (its failure is an `Err[T, E]` sum, not
+			// `error`), a void, or a non-error callee has no `error` to propagate — refuse
+			// rather than emit a destructure that will not compile. The question check reports
+			// the same at `goal check` time, with a located diagnostic.
+			if known && csig.Mode != analyze.ModeResult {
+				key := scan.CalleeKey(rhs)
+				switch {
+				case csig.Mode == analyze.ModeOption:
+					return "", fmt.Errorf("`?` in a `Result[_, error]` function propagates an `error`, but `%s` returns an `Option`; map its `None` to an error first", key)
+				case csig.Mode == analyze.ModeResultClosed:
+					return "", fmt.Errorf("`?` in an open-E `Result[_, error]` function propagates `error`, but `%s` returns a closed-E `Result`; convert its error to `error` first", key)
+				case csig.Arity == 0:
+					return "", fmt.Errorf("`?` callee `%s` returns nothing; `?` needs a callee that returns a trailing `error` (or a `Result`)", key)
+				case !csig.EndsInError:
+					return "", fmt.Errorf("`?` callee `%s` does not return an `error` as its last result; `?` propagates an error", key)
 				}
 			}
 			if discard {
