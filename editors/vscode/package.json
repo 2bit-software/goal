@@ -1,14 +1,15 @@
 {
   "name": "goal-lang",
   "displayName": "Goal",
-  "description": "Syntax highlighting for the Goal language (.goal), a thin orthogonal dialect of Go.",
-  "version": "0.1.0",
+  "description": "Language support for the Goal language (.goal): syntax highlighting plus inline diagnostics from the goal language server.",
+  "version": "0.2.0",
   "publisher": "goal-lang",
   "engines": {
-    "vscode": "^1.75.0"
+    "vscode": "^1.82.0"
   },
   "categories": [
-    "Programming Languages"
+    "Programming Languages",
+    "Linters"
   ],
   "keywords": [
     "goal",
@@ -21,6 +22,10 @@
     "url": "https://github.com/2bit-software/goal.git",
     "directory": "editors/vscode"
   },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:goal"
+  ],
   "contributes": {
     "languages": [
       {
@@ -41,15 +46,40 @@
         "scopeName": "source.goal",
         "path": "./syntaxes/goal.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Goal",
+      "properties": {
+        "goal.lsp.path": {
+          "type": "string",
+          "default": "goal",
+          "description": "Path to the goal binary used to run the language server (`goal lsp`). Resolved on PATH by default."
+        },
+        "goal.lsp.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the goal language server (inline diagnostics)."
+        }
+      }
+    }
   },
   "scripts": {
-    "package": "vsce package",
-    "install-local": "vsce package -o goal-lang.vsix && code --install-extension goal-lang.vsix",
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "vscode:prepublish": "node esbuild.mjs --production",
+    "package": "npm run build && vsce package",
+    "install-local": "npm run build && vsce package -o goal-lang.vsix && code --install-extension goal-lang.vsix --force",
     "test": "node test/tokenize.test.mjs"
   },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
   "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.82.0",
     "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.23.0",
+    "typescript": "^5.4.0",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.0.0"
   }

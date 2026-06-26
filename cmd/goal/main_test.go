@@ -146,6 +146,29 @@ func TestCheckCleanProgramPasses(t *testing.T) {
 	}
 }
 
+// A depth-stage transpile failure (here: a single file checked alone, whose enum
+// constructor references an enum declared in a sibling) is reported as a concise,
+// non-fatal note — not the full "--- generated ---" Go dump, which is reserved for
+// `goal build`, the gate that hard-fails on non-transpiling source.
+func TestCheckDepthNoteOmitsGeneratedDump(t *testing.T) {
+	dir := goalModule(t, map[string]string{
+		"types.goal": "package demo\n\nenum Agent {\n\tOneShot { command: string }\n\tMissing\n}\n",
+		"use.goal":   "package demo\n\nfunc mk() Agent {\n\treturn Agent.OneShot(command: \"x\")\n}\n",
+	})
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"check", filepath.Join(dir, "use.goal")}, &out, &errOut); err != nil {
+		t.Fatalf("single-file check should not hard-fail: %v\nstderr: %s", err, errOut.String())
+	}
+	stderr := errOut.String()
+	if !strings.Contains(stderr, "depth stage unavailable") {
+		t.Fatalf("expected the depth-stage note, got:\n%s", stderr)
+	}
+	if strings.Contains(stderr, "--- generated ---") {
+		t.Errorf("depth-stage note leaked the generated-Go dump:\n%s", stderr)
+	}
+}
+
 func TestParseFlags(t *testing.T) {
 	emit, emitDir, root, err := parseFlags([]string{"--emit=out", "./pkg/..."})
 	if err != nil {

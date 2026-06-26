@@ -24,6 +24,7 @@ import (
 
 	"goal/internal/check"
 	"goal/internal/guide"
+	"goal/internal/lsp"
 	"goal/internal/pipeline"
 	"goal/internal/project"
 	"goal/internal/typecheck"
@@ -55,6 +56,11 @@ var guideCommands = []guide.Command{
 		Summary: "print the AI bootstrap guide (how to write goal) to stdout",
 		Usage:   "goal ai [section]",
 	},
+	{
+		Name:    "lsp",
+		Summary: "run the language server (editor diagnostics) over stdio",
+		Usage:   "goal lsp",
+	},
 }
 
 // topUsage is the one-line usage listing every subcommand.
@@ -84,6 +90,8 @@ func run(args []string, out, errOut io.Writer) error {
 	switch cmd {
 	case "ai":
 		return cmdAI(rest, out)
+	case "lsp":
+		return lsp.NewServer(out).Run(os.Stdin)
 	case "build", "run", "check":
 		emit, emitDir, root, err := parseFlags(rest)
 		if err != nil {
@@ -255,7 +263,7 @@ func checkPackage(pkg *project.Package, errOut io.Writer) ([]checkDiag, error) {
 
 	depth, derr := runDepthChecks(pkg)
 	if derr != nil {
-		fmt.Fprintf(errOut, "goal check: depth stage unavailable for %s: %v\n", pkg.Dir, derr)
+		fmt.Fprintf(errOut, "goal check: depth stage unavailable for %s: %v\n", pkg.Dir, briefDepthErr(derr))
 	}
 
 	// A type-backed finding suppresses a lexical one for the same construct. Key on the
@@ -284,6 +292,15 @@ func checkPackage(pkg *project.Package, errOut io.Writer) ([]checkDiag, error) {
 		})
 	}
 	return diags, nil
+}
+
+// briefDepthErr renders a depth-stage failure for the non-fatal `check` note: it drops the
+// "--- generated ---" Go dump that the transpile error carries for `goal build`'s benefit,
+// keeping only the concise reason. The full dump still surfaces on `goal build`, the gate
+// that hard-fails on non-transpiling source.
+func briefDepthErr(err error) string {
+	brief, _, _ := strings.Cut(err.Error(), "\n--- generated ---\n")
+	return brief
 }
 
 // runDepthChecks loads the package's lowered Go into go/types and runs every depth check.

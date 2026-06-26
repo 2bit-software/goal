@@ -1,12 +1,25 @@
 # Goal — VS Code language support
 
-Syntax highlighting (TextMate grammar) for the Goal language —
-a thin, orthogonal dialect of Go. Provides coloring for `.goal` files plus comment
-toggling, bracket matching, and auto-closing pairs.
+Language support for the Goal language — a thin, orthogonal dialect of Go.
 
-This is the **Layer 1** editor integration: a regex-based TextMate grammar. It does
-not require a running language server. Semantic highlighting / LSP (Layer 2) is a
-future addition tracked in the project ROADMAP.
+- **Layer 1** — syntax highlighting (TextMate grammar): coloring for `.goal` files
+  plus comment toggling, bracket matching, and auto-closing pairs.
+- **Layer 2 (milestone 1)** — **inline diagnostics**: a language client launches
+  `goal lsp` and shows the language's check violations (non-exhaustive `match`,
+  must-use `Result`, no-zero-value, etc.) as squiggles, live as you edit. Hover,
+  go-to-definition, and semantic highlighting are future milestones.
+
+## Requirements for diagnostics
+
+The diagnostics feature runs the `goal` binary as a language server (`goal lsp`).
+Install it so it is on your `PATH`:
+
+```sh
+go install ./cmd/goal   # from the repo root (or: task install)
+```
+
+Then set `goal.lsp.path` if your binary is elsewhere. Disable the server with
+`goal.lsp.enable: false`. Highlighting (Layer 1) works with no binary.
 
 ## What it highlights
 

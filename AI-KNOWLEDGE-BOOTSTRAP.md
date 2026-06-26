@@ -57,6 +57,7 @@ via `//line` directives), then, if you have doctests, `goal build --emit` follow
     - `--emit[=dir]` — also write generated .go beside each .goal (or under dir)
 - `goal check [path]` — run the static checker over the package(s)
 - `goal ai [section]` — print the AI bootstrap guide (how to write goal) to stdout
+- `goal lsp` — run the language server (editor diagnostics) over stdio
 
 ## The features
 
