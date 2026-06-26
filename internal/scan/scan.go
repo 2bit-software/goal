@@ -234,24 +234,35 @@ func LeadIdent(s string) string {
 	return s[:end]
 }
 
-// CalleeKey returns the analyze-table lookup key for the function called at the head of expr:
-// a package-qualified call "os.MkdirAll(p)" yields "os.MkdirAll", a plain call "doThing(x)"
+// CalleeKey returns the analyze-table lookup key for the function expr calls: a
+// package-qualified call "os.MkdirAll(p)" yields "os.MkdirAll", a plain call "doThing(x)"
 // yields "doThing", and a generic instantiation "f[T](x)" yields the base "f". It returns ""
-// when expr is not headed by an identifier (a parenthesized or operator-led expression). A
-// chain deeper than one qualifier ("pkg.Sub.Func(x)") is truncated to its first two segments.
+// when expr is not a direct call to a named function — a value-led or parenthesized
+// expression, or a chained call whose OUTERMOST call is a method ("exec.Command(x).Output()").
+// A chain is deliberately unresolved rather than mis-attributed to the head of the chain
+// ("exec.Command"): the `?` lowering then keeps the safe two-value form for it. Lexing (so the
+// parens of a string argument never miscount) keeps this robust for real call expressions.
 func CalleeKey(expr string) string {
-	expr = strings.TrimSpace(expr)
-	head := LeadIdent(expr)
-	if head == "" {
+	toks := Lex(expr)
+	if len(toks) == 0 || !IsIdent(toks[0].Text) {
 		return ""
 	}
-	rest := expr[len(head):]
-	if strings.HasPrefix(rest, ".") {
-		if seg := LeadIdent(rest[1:]); seg != "" {
-			return head + "." + seg
-		}
+	key := toks[0].Text
+	i := 1
+	if i+1 < len(toks) && toks[i].Text == "." && IsIdent(toks[i+1].Text) {
+		key += "." + toks[i+1].Text // package-qualified callee pkg.Func
+		i += 2
 	}
-	return head
+	if i < len(toks) && toks[i].Text == "[" {
+		i = MatchBracket(toks, i) + 1 // generic instantiation f[T](x) -> base f
+	}
+	if i >= len(toks) || toks[i].Text != "(" {
+		return "" // not a direct call (a bare selector or value)
+	}
+	if MatchParen(toks, i) != len(toks)-1 {
+		return "" // a token follows the call's `)` — a chained method call; unresolvable here
+	}
+	return key
 }
 
 // IsIdent reports whether s begins like a Go identifier (letter or underscore).
