@@ -53,7 +53,7 @@ func checkClosed(src string, t *analyze.Tables) ([]Diagnostic, error) {
 	spans := closedSpans(toks, t)
 	var diags []Diagnostic
 	diags = append(diags, checkClosedQuestions(src, toks, t, spans)...)
-	diags = append(diags, checkClosedErrs(toks, t, spans)...)
+	diags = append(diags, checkClosedErrs(src, toks, t, spans)...)
 	return diags, nil
 }
 
@@ -140,7 +140,7 @@ func checkClosedQuestions(src string, toks []scan.Token, t *analyze.Tables, span
 // An Err of a foreign enum or an unknown variant is an Error; an X that isn't a
 // lexically-resolvable variant construction is deferred. Mirrors lowerClosedCtors's
 // `Result . Err (` location (internal/pass/closed.go).
-func checkClosedErrs(toks []scan.Token, t *analyze.Tables, spans []closedFuncSpan) []Diagnostic {
+func checkClosedErrs(src string, toks []scan.Token, t *analyze.Tables, spans []closedFuncSpan) []Diagnostic {
 	var diags []Diagnostic
 	for i := 0; i+3 < len(toks); i++ {
 		if toks[i].Text != "Result" || toks[i+1].Text != "." || toks[i+2].Text != "Err" || toks[i+3].Text != "(" {
@@ -153,6 +153,14 @@ func checkClosedErrs(toks []scan.Token, t *analyze.Tables, spans []closedFuncSpa
 		}
 		closeIdx := scan.MatchParen(toks, i+3)
 		pos := toks[i].Start
+
+		// A match-arm pattern `Result.Err(b) =>` destructures the scrutinee; it constructs
+		// nothing, so it has no closedness to verify. Skip it (the match lowering, not this
+		// check, owns arm patterns — mirrors lowerClosedCtors skipping in-match occurrences).
+		if isMatchArmPattern(toks, closeIdx) {
+			i = closeIdx
+			continue
+		}
 
 		enum, known := t.Enums[caller.E]
 		if !known {
@@ -173,6 +181,11 @@ func checkClosedErrs(toks []scan.Token, t *analyze.Tables, spans []closedFuncSpa
 		qual, variant, isVariant := errVariant(toks, i+3, closeIdx)
 		switch {
 		case !isVariant:
+			// A passthrough re-wrap `return Result.Err(e)`, where e is the error bound by an
+			// enclosing same-E match arm, keeps the error type closed over E — no diagnostic.
+			if isClosedPassthrough(src, toks, t, caller, i, closeIdx) {
+				break
+			}
 			// X isn't a `E.Variant` construction (a bound var, a call, …): its concrete
 			// error type isn't readable lexically. Defer.
 			diags = append(diags, Diagnostic{
@@ -235,6 +248,80 @@ func errVariant(toks []scan.Token, open, close int) (qual, variant string, ok bo
 		return toks[lo].Text, toks[lo+2].Text, true // `E.Variant(payload…)`
 	}
 	return "", "", false
+}
+
+// isMatchArmPattern reports whether the `Result.Err(...)` whose ")" is at closeIdx is a
+// match-arm pattern — i.e. immediately followed by the `=>` arrow (lexed as `=` `>`) —
+// rather than a constructor call. A pattern binds the error out of the scrutinee; it does
+// not build one, so it carries no closedness obligation.
+func isMatchArmPattern(toks []scan.Token, closeIdx int) bool {
+	return closeIdx >= 0 && closeIdx+2 < len(toks) &&
+		toks[closeIdx+1].Text == "=" && toks[closeIdx+2].Text == ">"
+}
+
+// isClosedPassthrough reports whether `Result.Err(arg)` (arg spanning the parens at
+// toks[open]..toks[close]) is a closed-E passthrough: arg is a single identifier bound by
+// an enclosing `match`'s `Err` arm whose scrutinee is a direct call to a closed-E Result
+// function with the SAME error enum as the enclosing function. Re-wrapping that bound
+// error keeps the sum closed over E, so it needs no diagnostic. Scrutinee resolution
+// mirrors checkClosedQuestions: only direct in-file calls resolve; an unresolvable
+// scrutinee (a method call, a longer expression) returns false and stays deferred.
+func isClosedPassthrough(src string, toks []scan.Token, t *analyze.Tables, caller analyze.FuncSig, open, close int) bool {
+	arg, ok := singleIdentArg(toks, open+3, close)
+	if !ok {
+		return false
+	}
+	// Walk enclosing matches outward from the construction; the binding may come from the
+	// directly enclosing Err arm or an outer one. Suppress only when one is confirmed.
+	for mi := open - 1; mi >= 0; mi-- {
+		if toks[mi].Text != "match" {
+			continue
+		}
+		bo := scan.MatchBodyBrace(toks, mi)
+		if bo < 0 || bo >= open {
+			continue // not this match's arm block, or it opens after the construction
+		}
+		bc := scan.MatchBrace(toks, bo)
+		if bc <= close {
+			continue // the construction is not inside this match's arm block
+		}
+		if matchErrArmBinds(toks, bo, bc, arg) && scrutineeIsSameClosedE(src, toks, t, caller, mi, bo) {
+			return true
+		}
+	}
+	return false
+}
+
+// singleIdentArg returns the lone identifier argument between the parens at toks[open]
+// ("(") and toks[close] (")"), reporting false when the argument is empty, several tokens,
+// or not an identifier.
+func singleIdentArg(toks []scan.Token, open, close int) (string, bool) {
+	if close == open+2 && scan.IsIdent(toks[open+1].Text) {
+		return toks[open+1].Text, true
+	}
+	return "", false
+}
+
+// matchErrArmBinds reports whether the match arm block (its "{" at bo, "}" at bc) has an
+// `Err` arm pattern `Result.Err(arg) =>` that binds the identifier arg.
+func matchErrArmBinds(toks []scan.Token, bo, bc int, arg string) bool {
+	for j := bo + 1; j+7 < bc; j++ {
+		if toks[j].Text == "Result" && toks[j+1].Text == "." && toks[j+2].Text == "Err" &&
+			toks[j+3].Text == "(" && toks[j+4].Text == arg && toks[j+5].Text == ")" &&
+			toks[j+6].Text == "=" && toks[j+7].Text == ">" {
+			return true
+		}
+	}
+	return false
+}
+
+// scrutineeIsSameClosedE reports whether the match at toks[mi] (arm block "{" at bo) has a
+// scrutinee that is a direct call to a closed-E Result function whose error enum equals the
+// enclosing caller's. Mirrors checkClosedQuestions's lexical scrutinee resolution.
+func scrutineeIsSameClosedE(src string, toks []scan.Token, t *analyze.Tables, caller analyze.FuncSig, mi, bo int) bool {
+	scrut := strings.TrimSpace(src[toks[mi].End:toks[bo].Start])
+	callee, ok := t.FuncSignatures[scan.LeadIdent(scrut)]
+	return ok && callee.Mode == analyze.ModeResultClosed && callee.E == caller.E
 }
 
 // deferQuestion builds the located Warning for a `?` whose propagated error type cannot be
