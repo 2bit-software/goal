@@ -2,7 +2,7 @@
   "name": "goal-lang",
   "displayName": "Goal",
   "description": "Language support for the Goal language (.goal): syntax highlighting plus inline diagnostics from the goal language server.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "goal-lang",
   "engines": {
     "vscode": "^1.82.0"
@@ -37,7 +37,11 @@
         "extensions": [
           ".goal"
         ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/goal-file.svg",
+          "dark": "./icons/goal-file.svg"
+        }
       }
     ],
     "grammars": [
