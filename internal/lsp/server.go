@@ -6,8 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"goal/internal/analyze"
+	"goal/internal/project"
 )
 
 const serverVersion = "0.1.0"
@@ -22,6 +27,17 @@ type doc struct {
 	version int
 }
 
+// fileSrc is one on-disk .goal file: its cleaned path and contents.
+type fileSrc struct {
+	path string
+	src  string
+}
+
+// dirReader lists and reads the .goal files directly in a directory. It is injected so the
+// server can be driven in tests without a real filesystem; osDirReader is the production
+// implementation.
+type dirReader func(dir string) ([]fileSrc, error)
+
 // Server is a diagnostics-only goal language server. Construct it with
 // NewServer and drive it with Run.
 type Server struct {
@@ -32,17 +48,56 @@ type Server struct {
 	docs     map[string]*doc
 	timers   map[string]*time.Timer
 	debounce time.Duration
+
+	// analysisMu serializes the package-analysis path so that, when several files'
+	// debounced compiles overlap, the last one to run reads the freshest buffers and
+	// publishes last — the final state is correct even though sibling diagnostics are
+	// published from another file's run.
+	analysisMu sync.Mutex
+	files      dirReader
+	resolve    analyze.DirResolver
 }
 
 // NewServer returns a server that publishes diagnostics to out (the client's
-// stdin). Only framed protocol messages are ever written there.
+// stdin) and resolves a file's package from the real filesystem. Only framed
+// protocol messages are ever written to out.
 func NewServer(out io.Writer) *Server {
+	return NewServerWithIO(out, osDirReader, analyze.DefaultResolver)
+}
+
+// NewServerWithIO is NewServer with the filesystem and import-resolution seams injected, so
+// tests can drive the server across a synthetic package without touching real disk or the
+// go toolchain.
+func NewServerWithIO(out io.Writer, files dirReader, resolve analyze.DirResolver) *Server {
 	return &Server{
 		out:      out,
 		docs:     map[string]*doc{},
 		timers:   map[string]*time.Timer{},
 		debounce: 200 * time.Millisecond,
+		files:    files,
+		resolve:  resolve,
 	}
+}
+
+// osDirReader returns the .goal files directly in dir (non-recursive), each read from disk.
+func osDirReader(dir string) ([]fileSrc, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var out []fileSrc
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), project.Ext) {
+			continue
+		}
+		p := filepath.Join(dir, e.Name())
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, fileSrc{path: filepath.Clean(p), src: string(b)})
+	}
+	return out, nil
 }
 
 // Run serves the protocol over in until the client disconnects or sends exit.
@@ -130,6 +185,13 @@ func (s *Server) didClose(raw json.RawMessage) {
 	}
 	s.mu.Unlock()
 	s.publish(uri, 0, []Diagnostic{})
+	// The closed file reverts to its on-disk contents in the package view, which can change
+	// a still-open sibling's diagnostics; re-analyze the siblings so they don't go stale.
+	if path, ok := uriToPath(uri); ok {
+		for sibURI := range s.openFilesInDir(filepath.Dir(path)) {
+			s.schedule(sibURI)
+		}
+	}
 }
 
 func (s *Server) upsert(uri, text string, version int) {

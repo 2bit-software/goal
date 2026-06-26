@@ -32,7 +32,9 @@ func TestServerPublishesDiagnosticsOnOpen(t *testing.T) {
 	}))
 	in.Write(frame(map[string]any{"jsonrpc": "2.0", "method": "exit"}))
 
-	s := NewServer(&out)
+	// Inject an empty package directory so the open file is analyzed alone without the
+	// production reader touching the real filesystem root.
+	s := NewServerWithIO(&out, func(string) ([]fileSrc, error) { return nil, nil }, fakeResolver(nil))
 	s.debounce = 0 // analyze synchronously so the result is in `out` before Run returns
 	if err := s.Run(&in); err != nil {
 		t.Fatalf("Run: %v", err)

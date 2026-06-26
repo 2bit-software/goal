@@ -167,9 +167,20 @@ func AnalyzePackage(srcs []string) ([][]Diagnostic, error) {
 // completeness instead of warning that the field set is unreadable. Import-resolution
 // failures are non-fatal: an unresolved type simply stays deferred.
 func AnalyzePackageInDir(srcs []string, dir string) ([][]Diagnostic, error) {
+	diags, _, err := AnalyzePackageInDirWith(srcs, dir, nil)
+	return diags, err
+}
+
+// AnalyzePackageInDirWith is AnalyzePackageInDir with the import resolver injected and the
+// per-import enrichment errors surfaced. Callers that drive the checker live — the language
+// server — supply a fake resolver in tests (so no go toolchain is needed) and log the
+// returned enrichment errors, which stay non-fatal: an unresolved import simply leaves its
+// types deferred. A nil resolve uses analyze.DefaultResolver.
+func AnalyzePackageInDirWith(srcs []string, dir string, resolve analyze.DirResolver) ([][]Diagnostic, []error, error) {
 	tables := analyze.BuildPackage(srcs)
-	analyze.EnrichForeign(tables, srcs, dir, nil)
-	return runPackage(srcs, tables)
+	ferrs := analyze.EnrichForeign(tables, srcs, dir, resolve)
+	diags, err := runPackage(srcs, tables)
+	return diags, ferrs, err
 }
 
 // runPackage runs every check over each source against shared tables, returning
