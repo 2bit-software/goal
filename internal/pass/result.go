@@ -59,7 +59,15 @@ func Result(src string, t *analyze.Tables) (string, error) {
 	// to their own passes.
 	for i := 0; i < len(toks); i++ {
 		if toks[i].Text == "match" && scan.MatchQualifier(toks, i) == "Result" && !calleeIsClosed(src, toks, t, i) {
-			rep, next, err := lowerResultMatch(src, toks, i)
+			// An arm body that returns a Result is lowered here only when the enclosing
+			// function is itself open-E; a closed-E enclosing function's `return Result.*`
+			// is a sum construction left for the closed-E pass (which sees it as plain
+			// if/else once this match is lowered).
+			openE := false
+			if sig, ok := sigAt(spans, toks[i].Start); ok {
+				openE = sig.Mode == analyze.ModeResult
+			}
+			rep, next, err := lowerResultMatch(src, toks, i, openE)
 			if err != nil {
 				return "", err
 			}
@@ -122,8 +130,10 @@ type resultArm struct {
 
 // lowerResultMatch lowers a statement-position `match scrut { Result.Ok(b) => ...;
 // Result.Err(b) => ... }` to `v, err := scrut; if err != nil { ... } else { ... }`.
-// It returns the replacement and the token index to continue scanning from.
-func lowerResultMatch(src string, toks []scan.Token, mi int) (scan.Replacement, int, error) {
+// It returns the replacement and the token index to continue scanning from. openE says
+// whether the enclosing function is open-E, so an arm body's `return Result.*` is lowered
+// to the (T, error) pair here rather than left for the closed-E pass.
+func lowerResultMatch(src string, toks []scan.Token, mi int, openE bool) (scan.Replacement, int, error) {
 	if mi > 0 {
 		if p := toks[mi-1].Text; p == "return" || p == "=" {
 			return scan.Replacement{}, 0, fmt.Errorf("value-position Result match is deferred; consume a Result with a statement-position match (open-E keystone, §8.3)")
@@ -161,8 +171,8 @@ found:
 		return scan.Replacement{}, 0, fmt.Errorf("Result match must have both Result.Ok and Result.Err arms")
 	}
 
-	okBody, okUsed := rewriteArmBody(src, toks, *ok, valName)
-	errBody, _ := rewriteArmBody(src, toks, *errArm, errName)
+	okBody, okUsed := rewriteArmBody(src, toks, *ok, valName, openE)
+	errBody, _ := rewriteArmBody(src, toks, *errArm, errName, openE)
 
 	okLHS := "_"
 	if okUsed {
@@ -249,10 +259,11 @@ func parseResultPattern(toks []scan.Token, start, eqIdx int) resultArm {
 	return a
 }
 
-// rewriteArmBody renames the arm's payload binding to target throughout the body.
-// The bool reports whether the binding was referenced (so the caller knows whether
-// to capture the value or discard it with `_`).
-func rewriteArmBody(src string, toks []scan.Token, a resultArm, target string) (string, bool) {
+// rewriteArmBody renames the arm's payload binding to target throughout the body and,
+// when lowerReturns is set, lowers the body's `return Result.Ok/Err` constructors. The
+// bool reports whether the binding was referenced (so the caller knows whether to capture
+// the value or discard it with `_`).
+func rewriteArmBody(src string, toks []scan.Token, a resultArm, target string, lowerReturns bool) (string, bool) {
 	lo, hi := a.bodyLo, a.bodyHi
 	if lo >= hi {
 		return "", false
@@ -267,5 +278,35 @@ func rewriteArmBody(src string, toks []scan.Token, a resultArm, target string) (
 			}
 		}
 	}
+	if lowerReturns {
+		reps = append(reps, resultReturnReps(toks, lo, hi)...)
+	}
 	return scan.Splice(src, toks[lo].Start, toks[hi-1].End, reps), used
+}
+
+// resultReturnReps lowers every `return Result.Ok(X)` / `return Result.Err(X)` in the
+// token range [lo, hi) to the open-E (T, error) pair: `return X, nil` and `return
+// __goal_ok, X`. The argument tokens X are left untouched — only the `Result.Ok(`/`)`
+// delimiters are rewritten — so a binding rename of identifiers inside X composes here
+// without two replacements overlapping (Splice drops overlaps). Mirrors the whole-source
+// Pass 2, scoped to one arm body whose constructor that pass's reps would lose to the
+// enclosing match replacement.
+func resultReturnReps(toks []scan.Token, lo, hi int) []scan.Replacement {
+	var reps []scan.Replacement
+	for i := lo; i+4 < hi; i++ {
+		if toks[i].Text != "return" || toks[i+1].Text != "Result" || toks[i+2].Text != "." ||
+			(toks[i+3].Text != "Ok" && toks[i+3].Text != "Err") || toks[i+4].Text != "(" {
+			continue
+		}
+		closeIdx := scan.MatchParen(toks, i+4)
+		if toks[i+3].Text == "Ok" {
+			reps = append(reps, scan.Replacement{Start: toks[i+1].Start, End: toks[i+4].End, Text: ""})
+			reps = append(reps, scan.Replacement{Start: toks[closeIdx].Start, End: toks[closeIdx].End, Text: ", nil"})
+		} else {
+			reps = append(reps, scan.Replacement{Start: toks[i+1].Start, End: toks[i+4].End, Text: okName + ", "})
+			reps = append(reps, scan.Replacement{Start: toks[closeIdx].Start, End: toks[closeIdx].End, Text: ""})
+		}
+		i = closeIdx
+	}
+	return reps
 }

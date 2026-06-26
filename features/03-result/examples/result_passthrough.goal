@@ -1,0 +1,13 @@
+package resx
+
+func mkRes() Result[int, error] { return Result.Ok(7) }
+
+// passthrough constructs a Result inside each match arm body — the constructor must
+// lower to the open-E (T, error) pair (§8.3), composing with the arm binding rename,
+// not be left as a bare `Result.Ok`/`Result.Err`.
+func passthrough() Result[int, error] {
+	match mkRes() {
+		Result.Ok(n)  => { return Result.Ok(n) }
+		Result.Err(e) => { return Result.Err(e) }
+	}
+}

@@ -1,0 +1,12 @@
+package optx
+
+func mkOpt() Option[int] { return Option.Some(1) }
+
+// passthrough constructs an Option inside each match arm body — the constructor must
+// lower the same way it does at top level (§8.4), not be left as a bare `Option.Some`.
+func passthrough() Option[int] {
+	match mkOpt() {
+		Option.Some(n) => { return Option.Some(n) }
+		Option.None    => { return Option.None }
+	}
+}

@@ -28,31 +28,11 @@ func Option(src string, _ *analyze.Tables) (string, error) {
 		}
 	}
 
-	// `return Option.None` / `return Option.Some(x)`.
-	for i := 0; i+3 < len(toks); i++ {
-		if toks[i].Text != "return" || toks[i+1].Text != "Option" || toks[i+2].Text != "." {
-			continue
-		}
-		switch toks[i+3].Text {
-		case "None":
-			reps = append(reps, scan.Replacement{Start: toks[i+1].Start, End: toks[i+3].End, Text: "nil"})
-			i += 3
-		case "Some":
-			if i+4 >= len(toks) || toks[i+4].Text != "(" {
-				continue
-			}
-			closeIdx := scan.MatchParen(toks, i+4)
-			x := strings.TrimSpace(src[toks[i+4].End:toks[closeIdx].Start])
-			var text string
-			if closeIdx == i+6 && scan.IsIdent(toks[i+5].Text) {
-				text = "return &" + x // addressable identifier -> &x directly (§8.4)
-			} else {
-				text = fmt.Sprintf("%s := %s\nreturn &%s", someName, x, someName) // box
-			}
-			reps = append(reps, scan.Replacement{Start: toks[i].Start, End: toks[closeIdx].End, Text: text})
-			i = closeIdx
-		}
-	}
+	// `return Option.None` / `return Option.Some(x)`, everywhere they appear. The reps
+	// that land inside an Option match's arm body are dropped by Splice (the match
+	// replacement below subsumes them); Pass C re-lowers those bodies with the same
+	// helper so an arm-body constructor is not left verbatim (`undefined: Option`).
+	reps = append(reps, optionReturnReps(src, toks, 0, len(toks))...)
 
 	// Pass C: lower statement-position `match opt { Option.Some/None arms }`. Only
 	// matches whose arms are Option patterns are claimed here.
@@ -111,11 +91,56 @@ func lowerOptionMatch(src string, toks []scan.Token, mi int) (scan.Replacement, 
 	if some.binding != "" && bodyUses(toks, some.bodyLo, some.bodyHi, some.binding) {
 		fmt.Fprintf(&b, "%s := *%s\n", some.binding, optBase)
 	}
-	b.WriteString(bodySrc(src, toks, some.bodyLo, some.bodyHi))
+	b.WriteString(optionArmBody(src, toks, some.bodyLo, some.bodyHi))
 	b.WriteString("\n} else {\n")
-	b.WriteString(bodySrc(src, toks, none.bodyLo, none.bodyHi))
+	b.WriteString(optionArmBody(src, toks, none.bodyLo, none.bodyHi))
 	b.WriteString("\n}")
 	return scan.Replacement{Start: toks[mi].Start, End: toks[bc].End, Text: b.String()}, bc + 1, nil
+}
+
+// optionReturnReps lowers every `return Option.None` / `return Option.Some(x)` in the
+// token range [lo, hi) to the §8.4 pointer form: `return nil` and `return &x` (or a boxed
+// `tmp := x; return &tmp` for a non-identifier x). Shared by the whole-source pass and by
+// arm-body lowering so a constructor in a match arm lowers identically to a top-level one.
+func optionReturnReps(src string, toks []scan.Token, lo, hi int) []scan.Replacement {
+	var reps []scan.Replacement
+	for i := lo; i+3 < hi; i++ {
+		if toks[i].Text != "return" || toks[i+1].Text != "Option" || toks[i+2].Text != "." {
+			continue
+		}
+		switch toks[i+3].Text {
+		case "None":
+			reps = append(reps, scan.Replacement{Start: toks[i+1].Start, End: toks[i+3].End, Text: "nil"})
+			i += 3
+		case "Some":
+			if i+4 >= hi || toks[i+4].Text != "(" {
+				continue
+			}
+			closeIdx := scan.MatchParen(toks, i+4)
+			x := strings.TrimSpace(src[toks[i+4].End:toks[closeIdx].Start])
+			var text string
+			if closeIdx == i+6 && scan.IsIdent(toks[i+5].Text) {
+				text = "return &" + x // addressable identifier -> &x directly (§8.4)
+			} else {
+				text = fmt.Sprintf("%s := %s\nreturn &%s", someName, x, someName) // box
+			}
+			reps = append(reps, scan.Replacement{Start: toks[i].Start, End: toks[closeIdx].End, Text: text})
+			i = closeIdx
+		}
+	}
+	return reps
+}
+
+// optionArmBody returns the arm-body source spanned by [lo, hi) with its `return
+// Option.*` constructors lowered. It is the recursive step the verbatim bodySrc could not
+// do: an arm body's constructor sits inside the match replacement, so it must be lowered
+// while the body string is built, not by the (dropped) whole-source reps.
+func optionArmBody(src string, toks []scan.Token, lo, hi int) string {
+	if lo >= hi {
+		return ""
+	}
+	reps := optionReturnReps(src, toks, lo, hi)
+	return strings.TrimSpace(scan.Splice(src, toks[lo].Start, toks[hi-1].End, reps))
 }
 
 // parseOptionArms splits arm-block tokens [lo, hi) into arms, delimited by `=>`.
