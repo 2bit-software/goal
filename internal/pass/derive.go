@@ -136,9 +136,25 @@ func genConversion(name, srcName, srcType, tgtType, retType string, fallible boo
 		overridden[strings.ToLower(o.Name)] = true
 	}
 
+	ret := "out"
+	if strings.HasPrefix(strings.TrimSpace(tgtType), "*") {
+		ret = "&out" // pointer target: built as a value, returned by address
+	}
+	returnStmt := "return " + ret + "\n}"
+	if fallible {
+		returnStmt = "return " + ret + ", nil\n}"
+	}
+
 	var b strings.Builder
 	fmt.Fprintf(&b, "func %s(%s %s) %s {\n", name, srcName, srcType, retType)
 	b.WriteString("var out " + tgtVal + "\n")
+
+	// A pointer source (e.g. a proto sub-message `*hobv1.LifecyclePolicy`) may be nil; a nil
+	// source yields the zero target rather than panicking on field access. Field assignments
+	// below dereference the now-known-non-nil pointer (Go auto-derefs `src.Field`).
+	if strings.HasPrefix(strings.TrimSpace(srcType), "*") {
+		fmt.Fprintf(&b, "if %s == nil {\n%s\n}\n", srcName, strings.TrimSuffix(returnStmt, "\n}"))
+	}
 
 	for _, o := range overrides { // explicit overrides first, `_` => leave zero
 		if strings.TrimSpace(o.Type) == "_" {
@@ -165,15 +181,7 @@ func genConversion(name, srcName, srcType, tgtType, retType string, fallible boo
 		}
 	}
 
-	ret := "out"
-	if strings.HasPrefix(strings.TrimSpace(tgtType), "*") {
-		ret = "&out" // pointer target: built as a value, returned by address
-	}
-	if fallible {
-		b.WriteString("return " + ret + ", nil\n}")
-	} else {
-		b.WriteString("return " + ret + "\n}")
-	}
+	b.WriteString(returnStmt)
 	return b.String(), nil
 }
 

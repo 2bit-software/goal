@@ -174,6 +174,7 @@ func Build(src string) *Tables {
 		t.FuncSignatures[f.Name] = analyzeSig(src, toks, f)
 	}
 	analyzeFromFuncs(src, toks, t)
+	analyzeDeriveFuncs(src, toks, t)
 	analyzeMethods(src, toks, t)
 	for i := 0; i+1 < len(toks); i++ {
 		switch {
@@ -336,6 +337,40 @@ func analyzeFromFuncs(src string, toks []scan.Token, t *Tables) {
 		closeP := scan.MatchParen(toks, open)
 		srcType := strings.TrimSpace(src[toks[open+1].End:toks[closeP].Start])
 		retType := strings.TrimSpace(src[toks[closeP].End:firstBraceAfter(src, toks[closeP].End)])
+		tgt, fallible := parseReturn(retType)
+		t.FromRegistry[[2]string{srcType, tgt}] = ConvEntry{Name: toks[i+2].Text, Fallible: fallible}
+	}
+}
+
+// analyzeDeriveFuncs records each `derive func NAME(p SRC) RET` as a conversion in the From
+// registry, keyed by (SRC, target) exactly like a `from func`. The derive pass lowers the
+// declaration to an ordinary Go function of the same name, so a derived conversion is callable
+// as a registry leaf — letting one `derive func` source a field (or slice element) of another.
+// A bodyless decl ends the return type at the line break (there is no body brace to bound it).
+func analyzeDeriveFuncs(src string, toks []scan.Token, t *Tables) {
+	for i := 0; i+2 < len(toks); i++ {
+		if toks[i].Text != "derive" || toks[i+1].Text != "func" {
+			continue
+		}
+		open := indexOf(toks, i+2, "(")
+		if open < 0 {
+			continue
+		}
+		closeP := scan.MatchParen(toks, open)
+		if closeP < 0 {
+			continue
+		}
+		srcType := strings.TrimSpace(src[toks[open+1].End:toks[closeP].Start])
+		afterParams := toks[closeP].End
+		brace := strings.IndexByte(src[afterParams:], '{')
+		nl := strings.IndexByte(src[afterParams:], '\n')
+		end := len(src)
+		if brace >= 0 && (nl < 0 || brace < nl) {
+			end = afterParams + brace // bodied: return type runs to the body `{`
+		} else if nl >= 0 {
+			end = afterParams + nl // bodyless: return type runs to end of line
+		}
+		retType := strings.TrimSpace(src[afterParams:end])
 		tgt, fallible := parseReturn(retType)
 		t.FromRegistry[[2]string{srcType, tgt}] = ConvEntry{Name: toks[i+2].Text, Fallible: fallible}
 	}
