@@ -142,6 +142,7 @@ func checkClosedQuestions(src string, toks []scan.Token, t *analyze.Tables, span
 // `Result . Err (` location (internal/pass/closed.go).
 func checkClosedErrs(src string, toks []scan.Token, t *analyze.Tables, spans []closedFuncSpan) []Diagnostic {
 	var diags []Diagnostic
+	funcs := scan.ScanFuncs(toks)
 	for i := 0; i+3 < len(toks); i++ {
 		if toks[i].Text != "Result" || toks[i+1].Text != "." || toks[i+2].Text != "Err" || toks[i+3].Text != "(" {
 			continue
@@ -181,9 +182,10 @@ func checkClosedErrs(src string, toks []scan.Token, t *analyze.Tables, spans []c
 		qual, variant, isVariant := errVariant(toks, i+3, closeIdx)
 		switch {
 		case !isVariant:
-			// A passthrough re-wrap `return Result.Err(e)`, where e is the error bound by an
-			// enclosing same-E match arm, keeps the error type closed over E — no diagnostic.
-			if isClosedPassthrough(src, toks, t, caller, i, closeIdx) {
+			// A passthrough re-wrap `return Result.Err(e)`, where e is provably the function's
+			// error type E (a same-E match binding, or a parameter/var typed E), keeps the sum
+			// closed over E — no diagnostic.
+			if isClosedPassthrough(src, toks, t, caller, funcs, i, closeIdx) {
 				break
 			}
 			// X isn't a `E.Variant` construction (a bound var, a call, …): its concrete
@@ -260,16 +262,25 @@ func isMatchArmPattern(toks []scan.Token, closeIdx int) bool {
 }
 
 // isClosedPassthrough reports whether `Result.Err(arg)` (arg spanning the parens at
-// toks[open]..toks[close]) is a closed-E passthrough: arg is a single identifier bound by
-// an enclosing `match`'s `Err` arm whose scrutinee is a direct call to a closed-E Result
-// function with the SAME error enum as the enclosing function. Re-wrapping that bound
-// error keeps the sum closed over E, so it needs no diagnostic. Scrutinee resolution
-// mirrors checkClosedQuestions: only direct in-file calls resolve; an unresolvable
-// scrutinee (a method call, a longer expression) returns false and stays deferred.
-func isClosedPassthrough(src string, toks []scan.Token, t *analyze.Tables, caller analyze.FuncSig, open, close int) bool {
+// toks[open]..toks[close]) re-wraps a value that is provably the enclosing function's error
+// type E, so the sum stays closed over E and needs no diagnostic. arg qualifies when it is a
+// single identifier that is either:
+//   - a parameter or `var` of the enclosing function declared with type E, or
+//   - bound by an enclosing `match`'s `Err` arm whose scrutinee is a direct call to a
+//     closed-E Result function with the SAME error enum (resolution mirrors
+//     checkClosedQuestions: only direct in-file calls resolve).
+//
+// Anything unprovable lexically (a foreign-typed binding, a method-call scrutinee, a longer
+// expression) returns false and stays deferred.
+func isClosedPassthrough(src string, toks []scan.Token, t *analyze.Tables, caller analyze.FuncSig, funcs []scan.Func, open, close int) bool {
 	arg, ok := singleIdentArg(toks, open+3, close)
 	if !ok {
 		return false
+	}
+	// arg is the enclosing function's own error type E (a parameter or typed local).
+	if fn, ok := enclosingFunc(funcs, open); ok &&
+		(paramTypedAs(toks, fn, arg, caller.E) || varTypedAs(toks, fn.BodyOpen, fn.BodyClose, arg, caller.E)) {
+		return true
 	}
 	// Walk enclosing matches outward from the construction; the binding may come from the
 	// directly enclosing Err arm or an outer one. Suppress only when one is confirmed.
@@ -300,6 +311,46 @@ func singleIdentArg(toks []scan.Token, open, close int) (string, bool) {
 		return toks[open+1].Text, true
 	}
 	return "", false
+}
+
+// enclosingFunc returns the function whose body token range (BodyOpen, BodyClose) contains
+// token index i.
+func enclosingFunc(funcs []scan.Func, i int) (scan.Func, bool) {
+	for _, f := range funcs {
+		if f.BodyOpen < i && i < f.BodyClose {
+			return f, true
+		}
+	}
+	return scan.Func{}, false
+}
+
+// paramTypedAs reports whether function fn declares a parameter named name with the single
+// identifier type typ (e.g. `e ProvisionError`). It reads the parameter list between the "("
+// after the name and fn.ParamsClose, matching `name typ` immediately before a "," or the
+// closing ")", which also covers the trailing member of a grouped parameter (`a, e E`).
+func paramTypedAs(toks []scan.Token, fn scan.Func, name, typ string) bool {
+	open := fn.NameTok + 1
+	if open >= len(toks) || toks[open].Text != "(" || fn.ParamsClose <= open {
+		return false
+	}
+	for k := open + 1; k+1 < fn.ParamsClose; k++ {
+		if toks[k].Text == name && toks[k+1].Text == typ &&
+			(k+2 == fn.ParamsClose || toks[k+2].Text == ",") {
+			return true
+		}
+	}
+	return false
+}
+
+// varTypedAs reports whether the token range [lo, hi) declares `var name typ` — a local
+// variable explicitly typed as typ.
+func varTypedAs(toks []scan.Token, lo, hi int, name, typ string) bool {
+	for k := lo; k+2 < hi; k++ {
+		if toks[k].Text == "var" && toks[k+1].Text == name && toks[k+2].Text == typ {
+			return true
+		}
+	}
+	return false
 }
 
 // matchErrArmBinds reports whether the match arm block (its "{" at bo, "}" at bc) has an

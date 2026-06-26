@@ -80,6 +80,56 @@ func badVariant() Result[T, E] {
 	}
 }
 
+// Re-wrapping a value that is provably the function's own error type E — a parameter or a
+// `var` typed E — is a closed passthrough and must not defer.
+func TestClosedPassthroughTypedAsENotDeferred(t *testing.T) {
+	const src = `package demo
+
+enum E { Bad { why: string }  Worse }
+
+type T struct{ v int }
+
+func rewrapParam(e E) Result[T, E] {
+	return Result.Err(e)
+}
+
+func rewrapVar() Result[T, E] {
+	var e E
+	return Result.Err(e)
+}
+`
+	diags, err := Analyze(src)
+	if err != nil {
+		t.Fatalf("Analyze errored: %v", err)
+	}
+	if hasDiagCode(diags, "unresolved-err-value") {
+		t.Errorf("re-wrap of an E-typed parameter/var should not defer:\n%v", diags)
+	}
+}
+
+// A parameter typed as a DIFFERENT enum than the function's E is not a safe passthrough;
+// re-wrapping it must stay deferred rather than be suppressed.
+func TestClosedPassthroughForeignParamStaysDeferred(t *testing.T) {
+	const src = `package demo
+
+enum E { Bad { why: string }  Worse }
+enum Other { Nope }
+
+type T struct{ v int }
+
+func rewrapWrong(e Other) Result[T, E] {
+	return Result.Err(e)
+}
+`
+	diags, err := Analyze(src)
+	if err != nil {
+		t.Fatalf("Analyze errored: %v", err)
+	}
+	if !hasDiagCode(diags, "unresolved-err-value") {
+		t.Errorf("foreign-enum parameter re-wrap should remain deferred:\n%v", diags)
+	}
+}
+
 // Passthrough is suppressed only when the scrutinee's error enum matches the function's.
 // A re-wrap of an error bound from a different-E scrutinee cannot be confirmed closed, so
 // it must stay deferred (a warning) rather than be silently suppressed.
