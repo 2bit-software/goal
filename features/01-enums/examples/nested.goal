@@ -1,0 +1,14 @@
+package access
+
+enum Rejection {
+	MountNotGranted { path: string }
+}
+
+enum Decision {
+	Admit
+	Reject { reason: Rejection }
+}
+
+func denyMount(path string) Decision {
+	return Decision.Reject(reason: Rejection.MountNotGranted(path: path))
+}

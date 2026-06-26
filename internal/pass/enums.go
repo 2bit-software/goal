@@ -48,6 +48,18 @@ func Enums(src string, t *analyze.Tables) (string, error) {
 
 	// Pass B: rewrite variant constructions `Enum.V[(...)]` now that all enums are
 	// known. Match patterns have already been consumed by the match pass.
+	reps = append(reps, constructionReps(src, toks, t)...)
+
+	return scan.Splice(src, 0, len(src), reps), nil
+}
+
+// constructionReps returns the replacements that rewrite every variant construction
+// `Enum.V[(...)]` in src (already lexed as toks) to its Go encoding. After rewriting an
+// argument-bearing construction it resumes past the closing ")", so a nested construction
+// inside the arguments is NOT visited here — `construct` lowers those recursively, which
+// also keeps the replacement spans non-overlapping (Splice drops overlaps).
+func constructionReps(src string, toks []scan.Token, t *analyze.Tables) []scan.Replacement {
+	var reps []scan.Replacement
 	for j := 0; j+2 < len(toks); {
 		e, ok := t.Enums[toks[j].Text]
 		if ok && toks[j+1].Text == "." && e.VSet[toks[j+2].Text] {
@@ -55,18 +67,17 @@ func Enums(src string, t *analyze.Tables) (string, error) {
 			if j+3 < len(toks) && toks[j+3].Text == "(" {
 				closeIdx := scan.MatchParen(toks, j+3)
 				args := parseArgs(src, toks, j+4, closeIdx)
-				reps = append(reps, scan.Replacement{Start: toks[j].Start, End: toks[closeIdx].End, Text: construct(e.Name, vname, args)})
+				reps = append(reps, scan.Replacement{Start: toks[j].Start, End: toks[closeIdx].End, Text: construct(e.Name, vname, args, t)})
 				j = closeIdx + 1
 				continue
 			}
-			reps = append(reps, scan.Replacement{Start: toks[j].Start, End: toks[j+2].End, Text: construct(e.Name, vname, nil)})
+			reps = append(reps, scan.Replacement{Start: toks[j].Start, End: toks[j+2].End, Text: construct(e.Name, vname, nil, t)})
 			j += 3
 			continue
 		}
 		j++
 	}
-
-	return scan.Splice(src, 0, len(src), reps), nil
+	return reps
 }
 
 // kv is a labelled construction argument `label: expr`.
@@ -143,16 +154,31 @@ func genMarker(typ, iface string) string {
 	return fmt.Sprintf("func (%s) is%s() {}", typ, iface)
 }
 
-// construct emits a variant construction: Enum(Enum_V{Field: expr, ...}).
-func construct(enum, variant string, args []kv) string {
+// construct emits a variant construction: Enum(Enum_V{Field: expr, ...}). Each argument
+// expression is lowered recursively, so a nested construction in a payload —
+// `Decision.Reject(reason: Rejection.Denied(code: 7))` — is rewritten too; Pass B's outer
+// scan skips the inner tokens, leaving them for this recursion.
+func construct(enum, variant string, args []kv, t *analyze.Tables) string {
 	if len(args) == 0 {
 		return fmt.Sprintf("%s(%s_%s{})", enum, enum, variant)
 	}
 	parts := make([]string, len(args))
 	for i, a := range args {
-		parts[i] = fmt.Sprintf("%s: %s", exported(a.label), a.expr)
+		parts[i] = fmt.Sprintf("%s: %s", exported(a.label), lowerConstructions(a.expr, t))
 	}
 	return fmt.Sprintf("%s(%s_%s{%s})", enum, enum, variant, strings.Join(parts, ", "))
+}
+
+// lowerConstructions rewrites every variant construction in a goal expression fragment to
+// its Go encoding, returning expr unchanged when it holds none. It is the recursive step
+// for nested payloads: the fragment has no `match` block, so the patterns-first ordering
+// the top-level pass relies on does not apply here.
+func lowerConstructions(expr string, t *analyze.Tables) string {
+	reps := constructionReps(expr, scan.Lex(expr), t)
+	if len(reps) == 0 {
+		return expr
+	}
+	return scan.Splice(expr, 0, len(expr), reps)
 }
 
 // exported capitalizes the first rune so a goal field/label maps to an exported Go

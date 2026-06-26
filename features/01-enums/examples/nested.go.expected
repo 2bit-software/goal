@@ -1,0 +1,23 @@
+package access
+
+type Rejection interface{ isRejection() }
+
+type Rejection_MountNotGranted struct {
+	Path string
+}
+
+func (Rejection_MountNotGranted) isRejection() {}
+
+type Decision interface{ isDecision() }
+
+type Decision_Admit struct{}
+type Decision_Reject struct {
+	Reason Rejection
+}
+
+func (Decision_Admit) isDecision()  {}
+func (Decision_Reject) isDecision() {}
+
+func denyMount(path string) Decision {
+	return Decision(Decision_Reject{Reason: Rejection(Rejection_MountNotGranted{Path: path})})
+}
