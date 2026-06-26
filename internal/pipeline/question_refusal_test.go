@@ -55,6 +55,21 @@ func f() Result[bool, error] {
 			want: "returns an `Option`",
 		},
 		{
+			name: "void method via receiver inference",
+			src: `package x
+
+type Conn struct{}
+
+func (c *Conn) Ping() {}
+
+func f(c *Conn) Result[bool, error] {
+	c.Ping()?
+	return Result.Ok(true)
+}
+`,
+			want: "returns nothing",
+		},
+		{
 			name: "closed-E callee in an open-E function",
 			src: `package x
 

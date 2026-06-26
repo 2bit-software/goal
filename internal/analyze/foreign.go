@@ -71,6 +71,11 @@ func EnrichForeign(t *Tables, srcs []string, fromDir string, resolve DirResolver
 	for alias := range questionCalleeAliases(srcs) {
 		needed[alias] = true
 	}
+	for _, src := range srcs {
+		for alias := range QuestionMethodReceiverPkgs(src) {
+			needed[alias] = true // load packages whose types host a `recv.Method()?` receiver
+		}
+	}
 	if len(needed) == 0 {
 		return nil // nothing references a foreign type (derive/from) or `?` callee — nothing to load
 	}
@@ -91,7 +96,7 @@ func EnrichForeign(t *Tables, srcs []string, fromDir string, resolve DirResolver
 				errs = append(errs, err)
 				continue
 			}
-			_, structs, funcs, err := foreignDecls(dir, imp.Alias)
+			_, structs, funcs, methods, err := foreignDecls(dir, imp.Alias)
 			if err != nil {
 				errs = append(errs, err)
 				continue
@@ -105,6 +110,9 @@ func EnrichForeign(t *Tables, srcs []string, fromDir string, resolve DirResolver
 				// `?`-relevant facts (arity and whether it ends in error), so existing
 				// iterations over FuncSignatures (e.g. NeedsResultPrelude) ignore it.
 				t.FuncSignatures[name] = sig
+			}
+			for name, sig := range methods {
+				t.ForeignMethods[name] = sig
 			}
 		}
 	}
@@ -235,10 +243,10 @@ func neededAliases(srcs []string) map[string]bool {
 // receiver-less function return arities (keyed `alias.Func`). requestedAlias is the qualifier
 // the goal source uses; when empty (an unaliased import) the package's own declared name is
 // used. The effective alias is also returned.
-func foreignDecls(dir, requestedAlias string) (alias string, structs map[string][]Field, funcs map[string]FuncSig, err error) {
+func foreignDecls(dir, requestedAlias string) (alias string, structs map[string][]Field, funcs, methods map[string]FuncSig, err error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return "", nil, nil, err
+		return "", nil, nil, nil, err
 	}
 	fset := token.NewFileSet()
 	var files []*ast.File
@@ -262,6 +270,7 @@ func foreignDecls(dir, requestedAlias string) (alias string, structs map[string]
 	}
 	structs = map[string][]Field{}
 	funcs = map[string]FuncSig{}
+	methods = map[string]FuncSig{}
 	for _, f := range files {
 		for _, decl := range f.Decls {
 			switch d := decl.(type) {
@@ -281,15 +290,43 @@ func foreignDecls(dir, requestedAlias string) (alias string, structs map[string]
 					structs[alias+"."+ts.Name.Name] = exportedFields(st, alias)
 				}
 			case *ast.FuncDecl:
-				// Package-level functions only — a method's `?` callee needs receiver-type
-				// inference the analyzer does not do.
-				if d.Recv == nil && d.Name.IsExported() {
-					funcs[alias+"."+d.Name.Name] = FuncSig{Arity: resultArity(d.Type), EndsInError: endsInErrorAST(d.Type)}
+				if !d.Name.IsExported() {
+					continue
+				}
+				sig := FuncSig{Arity: resultArity(d.Type), EndsInError: endsInErrorAST(d.Type)}
+				if d.Recv == nil {
+					funcs[alias+"."+d.Name.Name] = sig
+				} else if base := foreignRecvBase(d.Recv); base != "" {
+					// `os.File.Close` etc. — keyed the way goal source spells the receiver type,
+					// so a `recv.Method()?` whose receiver is `*os.File` resolves to it.
+					methods[alias+"."+base+"."+d.Name.Name] = sig
 				}
 			}
 		}
 	}
-	return alias, structs, funcs, nil
+	return alias, structs, funcs, methods, nil
+}
+
+// foreignRecvBase returns the bare receiver type name of a foreign method (`*File` -> "File",
+// `Tree[T]` -> "Tree"), or "" when it can't be read.
+func foreignRecvBase(recv *ast.FieldList) string {
+	if recv == nil || len(recv.List) == 0 {
+		return ""
+	}
+	expr := recv.List[0].Type
+	if star, ok := expr.(*ast.StarExpr); ok {
+		expr = star.X
+	}
+	switch e := expr.(type) {
+	case *ast.IndexExpr: // generic receiver Type[T]
+		expr = e.X
+	case *ast.IndexListExpr: // generic receiver Type[T, U]
+		expr = e.X
+	}
+	if id, ok := expr.(*ast.Ident); ok {
+		return id.Name
+	}
+	return ""
 }
 
 // endsInErrorAST reports whether a foreign function's last result is the type `error` — the

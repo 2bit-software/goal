@@ -49,10 +49,7 @@ func checkQuestion(src string, t *analyze.Tables) ([]Diagnostic, error) {
 		}
 		discard := !isAssign || name == "_"
 		key := scan.CalleeKey(rhs)
-		csig, known := analyze.FuncSig{}, false
-		if key != "" {
-			csig, known = t.FuncSignatures[key]
-		}
+		csig, known := analyze.ResolveCallee(t, toks, p, rhs)
 
 		// In an open-E `Result[_, error]` function `?` propagates a plain `error`, so a resolved
 		// callee is valid only if it yields a trailing error: a `Result[T, error]`, or a

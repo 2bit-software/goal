@@ -132,6 +132,52 @@ func f(w Closer) Result[bool, error] {
 	}
 }
 
+// A `recv.Method()?` whose receiver is a parameter resolves through the receiver's type — an
+// error-only method is a clean discard (no unresolved warning), while binding a value from it
+// is rejected.
+func TestQuestionInFileMethodResolved(t *testing.T) {
+	const src = `package x
+
+type Tx struct{}
+
+func (tx *Tx) Commit() error { return nil }
+
+func run(tx *Tx) Result[bool, error] {
+	tx.Commit()?
+	return Result.Ok(true)
+}
+`
+	diags, err := Analyze(src)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	for _, d := range diags {
+		if d.Feature == "05-question-prop" {
+			t.Fatalf("unexpected question diagnostic on a resolved method `?`: [%s] %s", d.Code, d.Message)
+		}
+	}
+
+	const bind = `package x
+
+type Tx struct{}
+
+func (tx *Tx) Commit() error { return nil }
+
+func run(tx *Tx) Result[bool, error] {
+	x := tx.Commit()?
+	_ = x
+	return Result.Ok(true)
+}
+`
+	bd, err := Analyze(bind)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if !hasCode(bd, "question-binds-nonvalue") {
+		t.Fatalf("expected question-binds-nonvalue binding a value from an error-only method, got %+v", bd)
+	}
+}
+
 // A valid `?` — bare on an in-file error-only call, and value-bind on a Result call — produces
 // no question diagnostics (guards against false positives).
 func TestQuestionValidCalleesClean(t *testing.T) {

@@ -108,6 +108,11 @@ type Tables struct {
 	// (value- and pointer-receiver alike), name + normalized signature. Read by the
 	// implements check to decide whether a type satisfies an interface's obligation.
 	Methods map[string][]Method
+	// ForeignMethods maps `pkg.Type.Method` (the goal-source spelling of an imported type's
+	// method, e.g. `os.File.Close`) to its `?`-relevant signature, so a `recv.Method()?` whose
+	// receiver is an imported type resolves the same way an in-file method does via Methods.
+	// Populated by EnrichForeign (package mode only); empty for a single-file analyze.
+	ForeignMethods map[string]FuncSig
 
 	// SuppressResultPrelude tells the closed-E Result pass NOT to inject the generic
 	// Ok[T,E]/Err[T,E] preamble inline. The package transpile driver sets it so the
@@ -135,6 +140,11 @@ type Method struct {
 	Name string
 	Sig  string
 	Raw  string
+	// Arity and EndsInError mirror FuncSig's `?`-relevant facts for this method, so a
+	// `recv.Method()?` site can be resolved through the receiver's type the same way a
+	// plain call is resolved through FuncSignatures.
+	Arity       int
+	EndsInError bool
 }
 
 // Build analyzes the original source and returns the populated tables.
@@ -150,6 +160,7 @@ func newTables() *Tables {
 		Interfaces:     map[string][]Method{},
 		EmbeddedIfaces: map[string][]string{},
 		Methods:        map[string][]Method{},
+		ForeignMethods: map[string]FuncSig{},
 	}
 }
 
@@ -207,6 +218,7 @@ func (t *Tables) Merge(o *Tables) {
 	maps.Copy(t.Interfaces, o.Interfaces)
 	maps.Copy(t.EmbeddedIfaces, o.EmbeddedIfaces)
 	maps.Copy(t.Methods, o.Methods)
+	maps.Copy(t.ForeignMethods, o.ForeignMethods)
 }
 
 // analyzeTypeDecls scans top-level `type` declarations, populating Structs (ordered
@@ -497,7 +509,8 @@ func methodFrom(src string, toks []scan.Token, name string, po, pc, limit int) M
 		results = strings.TrimSpace(src[toks[pc].End:toks[resEnd].End])
 	}
 	raw := strings.TrimSpace(params + " " + results)
-	return Method{Name: name, Sig: normalizeSig(params, results), Raw: raw}
+	return Method{Name: name, Sig: normalizeSig(params, results), Raw: raw,
+		Arity: countReturns(results), EndsInError: endsInError(results)}
 }
 
 // endOfSignature returns the index of the last token of a method signature whose

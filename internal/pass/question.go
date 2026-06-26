@@ -48,7 +48,7 @@ func Question(src string, t *analyze.Tables) (string, error) {
 		var text string
 		switch sig.Mode {
 		case analyze.ModeResult:
-			csig, known := calleeSig(t, rhs)
+			csig, known := analyze.ResolveCallee(t, toks, p, rhs)
 			// In an open-E `Result[_, error]` function, `?` propagates a plain `error`, so the
 			// callee must yield a trailing `error`: a `Result[T, error]` (ModeResult), or a
 			// plain/foreign function ending in `error`. An `Option` (its failure is a nil
@@ -100,15 +100,3 @@ func Question(src string, t *analyze.Tables) (string, error) {
 	return scan.Splice(src, 0, len(src), reps), nil
 }
 
-// calleeSig resolves the signature of the function called at the head of rhs from the analyzed
-// tables (in-file by name, foreign by `alias.Func`). The bool is false when the callee cannot
-// be resolved (an unknown name, or a method whose receiver type the analyzer does not infer),
-// in which case the caller keeps today's two-value form.
-func calleeSig(t *analyze.Tables, rhs string) (analyze.FuncSig, bool) {
-	key := scan.CalleeKey(rhs)
-	if key == "" {
-		return analyze.FuncSig{}, false
-	}
-	sig, ok := t.FuncSignatures[key]
-	return sig, ok
-}
