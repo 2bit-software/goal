@@ -1,0 +1,22 @@
+{
+  "name": "tree-sitter-goal",
+  "version": "0.1.0",
+  "description": "tree-sitter grammar for the Goal language (.goal), a thin dialect of Go.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/2bit-software/goal.git",
+    "directory": "editors/tree-sitter-goal"
+  },
+  "scripts": {
+    "generate": "tree-sitter generate",
+    "test": "tree-sitter test",
+    "parse": "tree-sitter parse"
+  },
+  "tree-sitter": [
+    {
+      "scope": "source.goal",
+      "file-types": ["goal"],
+      "highlights": ["queries/highlights.scm"]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://tree-sitter.github.io/tree-sitter/assets/schemas/config.schema.json",
+  "grammars": [
+    {
+      "name": "goal",
+      "camelcase": "Goal",
+      "scope": "source.goal",
+      "file-types": ["goal"],
+      "highlights": ["queries/highlights.scm"]
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "SEE LICENSE IN repository",
+    "description": "tree-sitter grammar for the Goal language (.goal), a thin dialect of Go.",
+    "authors": [{ "name": "Goal contributors" }],
+    "links": {
+      "repository": "https://github.com/2bit-software/goal"
+    }
+  }
+}

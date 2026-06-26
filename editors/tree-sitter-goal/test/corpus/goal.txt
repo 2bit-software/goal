@@ -1,0 +1,404 @@
+==================
+enum declaration with payload
+==================
+
+package p
+
+enum Status {
+	Active { since: Time }
+	Closed
+}
+
+---
+
+(source_file
+  (package_clause
+    (identifier))
+  (enum_declaration
+    (identifier)
+    (enum_variant
+      (identifier)
+      (variant_payload
+        (payload_field
+          (identifier)
+          (type_identifier
+            (type_identifier)))))
+    (enum_variant
+      (identifier))))
+
+==================
+match expression with arms and rest
+==================
+
+package p
+
+func d(s Status) string {
+	return match s {
+		Status.Active(a) => "a"
+		Status.Closed => "c"
+		_ => "x"
+	}
+}
+
+---
+
+(source_file
+  (package_clause
+    (identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_identifier
+          (type_identifier))))
+    (type_identifier
+      (type_identifier))
+    (block
+      (return_statement
+        (match_expression
+          (identifier)
+          (match_arm
+            (call_expression
+              (selector_expression
+                (identifier)
+                (identifier))
+              (argument_list
+                (identifier)))
+            (expression_statement
+              (interpreted_string_literal)))
+          (match_arm
+            (selector_expression
+              (identifier)
+              (identifier))
+            (expression_statement
+              (interpreted_string_literal)))
+          (match_arm
+            (rest_pattern)
+            (expression_statement
+              (interpreted_string_literal))))))))
+
+==================
+Result type, constructor, and ? unwrap
+==================
+
+package p
+
+func load(p string) Result[Config, error] {
+	raw := read(p)?
+	return Result.Ok(raw)
+}
+
+---
+
+(source_file
+  (package_clause
+    (identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_identifier
+          (type_identifier))))
+    (generic_type
+      (type_identifier
+        (type_identifier))
+      (type_arguments
+        (type_identifier
+          (type_identifier))
+        (type_identifier
+          (type_identifier))))
+    (block
+      (short_var_declaration
+        (identifier)
+        (unwrap_expression
+          (call_expression
+            (identifier)
+            (argument_list
+              (identifier)))))
+      (return_statement
+        (call_expression
+          (selector_expression
+            (identifier)
+            (identifier))
+          (argument_list
+            (identifier)))))))
+
+==================
+Option type and constructors
+==================
+
+package p
+
+func find(id int) Option[User] {
+	if id == 0 {
+		return Option.None
+	}
+	return Option.Some(User{id: id})
+}
+
+---
+
+(source_file
+  (package_clause
+    (identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_identifier
+          (type_identifier))))
+    (generic_type
+      (type_identifier
+        (type_identifier))
+      (type_arguments
+        (type_identifier
+          (type_identifier))))
+    (block
+      (if_statement
+        (binary_expression
+          (identifier)
+          (int_literal))
+        (block
+          (return_statement
+            (selector_expression
+              (identifier)
+              (identifier)))))
+      (return_statement
+        (call_expression
+          (selector_expression
+            (identifier)
+            (identifier))
+          (argument_list
+            (composite_literal
+              (type_identifier
+                (type_identifier))
+              (literal_value
+                (keyed_element
+                  (identifier)
+                  (identifier))))))))))
+
+==================
+struct implements and sealed interface
+==================
+
+package p
+
+sealed interface Shape {}
+
+type Circle struct implements Shape {
+	r float64
+}
+
+---
+
+(source_file
+  (package_clause
+    (identifier))
+  (sealed_interface_declaration
+    (identifier))
+  (type_declaration
+    (identifier)
+    (struct_type
+      (implements_clause
+        (type_identifier
+          (type_identifier)))
+      (field_declaration
+        (identifier)
+        (type_identifier
+          (type_identifier))))))
+
+==================
+from and derive conversions with spreads
+==================
+
+package p
+
+from func toStr(u UUID) string { return u.String() }
+
+derive func toStorage(e E) S {
+	return S{
+		ExternalID: e.ID.String(),
+		Audit:      _,
+		...derive(e),
+	}
+}
+
+---
+
+(source_file
+  (package_clause
+    (identifier))
+  (from_declaration
+    (function_declaration
+      (identifier)
+      (parameter_list
+        (parameter
+          (identifier)
+          (type_identifier
+            (type_identifier))))
+      (type_identifier
+        (type_identifier))
+      (block
+        (return_statement
+          (call_expression
+            (selector_expression
+              (identifier)
+              (identifier))
+            (argument_list))))))
+  (derive_declaration
+    (function_declaration
+      (identifier)
+      (parameter_list
+        (parameter
+          (identifier)
+          (type_identifier
+            (type_identifier))))
+      (type_identifier
+        (type_identifier))
+      (block
+        (return_statement
+          (composite_literal
+            (type_identifier
+              (type_identifier))
+            (literal_value
+              (keyed_element
+                (identifier)
+                (call_expression
+                  (selector_expression
+                    (selector_expression
+                      (identifier)
+                      (identifier))
+                    (identifier))
+                  (argument_list)))
+              (keyed_element
+                (identifier)
+                (identifier))
+              (spread_element
+                (argument_list
+                  (identifier))))))))))
+
+==================
+defaults spread in composite literal
+==================
+
+package p
+
+func mk(name string) User {
+	return User{name: name, ...defaults}
+}
+
+---
+
+(source_file
+  (package_clause
+    (identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_identifier
+          (type_identifier))))
+    (type_identifier
+      (type_identifier))
+    (block
+      (return_statement
+        (composite_literal
+          (type_identifier
+            (type_identifier))
+          (literal_value
+            (keyed_element
+              (identifier)
+              (identifier))
+            (spread_element)))))))
+
+==================
+doc comment with doctest
+==================
+
+package p
+
+/// square returns x squared.
+/// >>> square(3)
+/// 9
+func square(x int) int {
+	return x * x
+}
+
+---
+
+(source_file
+  (package_clause
+    (identifier))
+  (doc_comment)
+  (doc_comment)
+  (doc_comment)
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_identifier
+          (type_identifier))))
+    (type_identifier
+      (type_identifier))
+    (block
+      (return_statement
+        (binary_expression
+          (identifier)
+          (identifier))))))
+
+==================
+go switch (expression and type)
+==================
+
+package p
+
+func classify(x any) string {
+	switch v := x.(type) {
+	case int:
+		return "i"
+	case string, bool:
+		return "sb"
+	default:
+		return "o"
+	}
+}
+
+---
+
+(source_file
+  (package_clause
+    (identifier))
+  (function_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_identifier
+          (type_identifier))))
+    (type_identifier
+      (type_identifier))
+    (block
+      (switch_statement
+        (short_var_declaration
+          (identifier)
+          (type_assertion
+            (identifier)))
+        (case_clause
+          (type_identifier
+            (type_identifier))
+          (return_statement
+            (interpreted_string_literal)))
+        (case_clause
+          (type_identifier
+            (type_identifier))
+          (identifier)
+          (return_statement
+            (interpreted_string_literal)))
+        (default_clause
+          (return_statement
+            (interpreted_string_literal)))))))
