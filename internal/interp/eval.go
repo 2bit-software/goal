@@ -36,6 +36,14 @@ func (ip *Interp) evalExpr(expr ast.Expr, scope *Env) (Value, error) {
 			return BoolVal(true), nil
 		case "false":
 			return BoolVal(false), nil
+		case "nil":
+			// The predeclared `nil` identifier — the zero of pointer/map/interface/
+			// error types. A `from func ... (T, error)` returns it on success, so it
+			// must evaluate to the nil Value rather than a not-found error.
+			if _, err := scope.Lookup("nil"); err != nil {
+				return NilVal(), nil
+			}
+			return scope.Lookup("nil")
 		default:
 			// Any other identifier resolves to its current binding in the
 			// lexical scope chain; an undefined name surfaces the located
@@ -690,6 +698,16 @@ func (ip *Interp) evalCallMulti(call *ast.CallExpr, scope *Env) ([]Value, error)
 		if pkg, ok := sel.X.(*ast.Ident); ok && ip.imports[pkg.Name] != "" {
 			if _, err := scope.Lookup(pkg.Name); err != nil {
 				return ip.evalHostCall(sel, call, scope)
+			}
+		}
+	}
+	// A call to a registered `derive func` (an Ident callee, not shadowed by a
+	// local binding) is intercepted here: a derive is not an ordinary callable, so
+	// it is built field-by-field by evalDerive from the resolved sema facts.
+	if id, ok := call.Fun.(*ast.Ident); ok {
+		if decl, ok := ip.derives[id.Name]; ok {
+			if _, err := scope.Lookup(id.Name); err != nil {
+				return ip.evalDerive(decl, call, scope)
 			}
 		}
 	}

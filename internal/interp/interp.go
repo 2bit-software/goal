@@ -90,6 +90,14 @@ type Interp struct {
 	// routed to the host-function bridge (host.go).
 	imports map[string]string
 
+	// derives maps a `derive func` name to its declaration. A derive is NOT an
+	// ordinary callable: a bodyless derive has no body to run, and a bodied
+	// derive's body carries `_` skips and a `...derive(src)` fill marker the
+	// ordinary evaluator cannot execute. A call to a derive name is intercepted in
+	// evalCallMulti and routed to evalDerive, which builds the target struct value
+	// field-by-field from the resolved sema facts (US-021).
+	derives map[string]*ast.FuncDecl
+
 	// fnStack is the stack of the currently-executing functions' analyzed
 	// signatures (innermost last). callFunc pushes the callee's FuncSig and
 	// callMethod pushes a none-shaped sig; both pop via defer. A postfix `?`
@@ -109,7 +117,7 @@ type Interp struct {
 // function is visible to its own body (recursion), to forward references, and to
 // unit tests that evaluate a call against the root scope.
 func New(file *ast.File, info *sema.Info) *Interp {
-	ip := &Interp{file: file, info: info, root: NewEnv(), methods: map[string]map[string]*ast.FuncDecl{}, imports: map[string]string{}}
+	ip := &Interp{file: file, info: info, root: NewEnv(), methods: map[string]map[string]*ast.FuncDecl{}, imports: map[string]string{}, derives: map[string]*ast.FuncDecl{}}
 	ip.registerImports()
 	ip.registerFuncs()
 	ip.registerMethods()
@@ -149,14 +157,26 @@ func (ip *Interp) registerImports() {
 
 // registerFuncs binds every top-level plain function declaration in the root
 // scope as a function value closing over that root scope. Methods (Recv != nil),
-// nameless decls, and bodyless declarations are skipped.
+// nameless decls, and bodyless declarations are skipped. A `derive func`
+// (Mod == ast.FuncDerive) is NOT an ordinary callable — it is recorded in the
+// derives registry instead (even when bodyless), so a call to it is intercepted
+// and built field-by-field by evalDerive rather than executed as a body. A
+// `from func` keeps its ordinary registration: it has a real body and is invoked
+// by name as the registry conversion for bridged fields.
 func (ip *Interp) registerFuncs() {
 	if ip.file == nil {
 		return
 	}
 	for _, d := range ip.file.Decls {
 		fn, ok := d.(*ast.FuncDecl)
-		if !ok || fn.Recv != nil || fn.Name == nil || fn.Body == nil {
+		if !ok || fn.Recv != nil || fn.Name == nil {
+			continue
+		}
+		if fn.Mod == ast.FuncDerive {
+			ip.derives[fn.Name.Name] = fn
+			continue
+		}
+		if fn.Body == nil {
 			continue
 		}
 		ip.root.Define(fn.Name.Name, FuncDeclVal(fn, ip.root))
