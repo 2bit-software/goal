@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"goal/internal/check"
+	"goal/internal/lexer"
 	"goal/internal/project"
-	"goal/internal/scan"
 )
 
 // compile runs goal's static checks for the open document uri and publishes the findings,
@@ -230,12 +230,13 @@ func toLSP(text string, tokEnd map[int]int, d check.Diagnostic) Diagnostic {
 }
 
 // tokenEnds maps each token's start offset to its end offset, so a diagnostic located at a
-// token start can be given a range that covers exactly that token.
+// token start can be given a range that covers exactly that token. It tokenizes through the
+// AST front-end's lexer; a token ends one byte-length of its literal past its start offset.
 func tokenEnds(text string) map[int]int {
-	toks := scan.Lex(text)
+	toks := lexer.Tokens(text)
 	m := make(map[int]int, len(toks))
 	for _, t := range toks {
-		m[t.Start] = t.End
+		m[t.Pos.Offset] = t.Pos.Offset + len(t.Lit)
 	}
 	return m
 }

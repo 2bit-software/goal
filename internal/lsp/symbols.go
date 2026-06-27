@@ -3,8 +3,10 @@ package lsp
 import (
 	"encoding/json"
 
+	"goal/internal/ast"
 	"goal/internal/check"
-	"goal/internal/scan"
+	"goal/internal/parser"
+	"goal/internal/token"
 )
 
 // documentSymbols answers a textDocument/documentSymbol request with the open file's outline:
@@ -24,126 +26,97 @@ func (s *Server) documentSymbols(raw json.RawMessage) []DocumentSymbol {
 	return collectSymbols(text)
 }
 
-// decl is a top-level declaration located during the first pass: its symbol kind, optional
-// detail, the token of its leading keyword, and the token of its name.
-type decl struct {
-	kind    int
-	detail  string
-	kwTok   int
-	nameTok int
-}
-
-// collectSymbols extracts the top-level declarations of src as outline symbols. The range of
-// each declaration is bounded by the next declaration's keyword so a bodyless `from`/`derive
-// func` or `type X = …` alias never absorbs the declaration that follows it.
+// collectSymbols extracts the top-level declarations of src as outline symbols by parsing the
+// file and walking its declarations. Each declaration carries its own source positions, so the
+// full range is the declaration's span and the selection range is its name — a bodyless
+// `from`/`derive func` or `type X = …` alias therefore cannot absorb the declaration that
+// follows it (its End() stops at its own last token). Source that does not parse yields an
+// empty (non-nil) slice rather than an error, matching the LSP's best-effort contract.
 func collectSymbols(src string) []DocumentSymbol {
-	toks := scan.Lex(src)
-	decls := scanDecls(src, toks)
-
 	out := []DocumentSymbol{}
-	for k, d := range decls {
-		if d.nameTok < 0 || d.nameTok >= len(toks) || !scan.IsIdent(toks[d.nameTok].Text) {
-			continue // unreadable name — skip, don't guess
-		}
-		limit := len(toks)
-		if k+1 < len(decls) {
-			limit = decls[k+1].kwTok
-		}
-		startOff := toks[d.kwTok].Start
-		endOff := declEnd(src, toks, d.kwTok, limit)
-		name := toks[d.nameTok]
-		out = append(out, DocumentSymbol{
-			Name:           name.Text,
-			Detail:         d.detail,
-			Kind:           d.kind,
-			Range:          rangeOf(src, startOff, endOff),
-			SelectionRange: rangeOf(src, name.Start, name.End),
-		})
+	file, err := parser.ParseFile(src)
+	if err != nil || file == nil {
+		return out
+	}
+	for _, d := range file.Decls {
+		out = append(out, symbolsFor(src, d)...)
 	}
 	return out
 }
 
-// scanDecls walks toks once, recording each top-level declaration in source order. It tracks
-// bracket nesting and only acts on a keyword seen at depth zero; a declaration's own body
-// raises the depth, so members are naturally skipped. A `type X = …` alias's whole line is
-// stepped over so a `func(...)` type in its right-hand side is not mistaken for a function.
-func scanDecls(srcText string, toks []scan.Token) []decl {
-	var decls []decl
-	depth := 0
-	for i := 0; i < len(toks); i++ {
-		switch toks[i].Text {
-		case "{", "(", "[":
-			depth++
-			continue
-		case "}", ")", "]":
-			depth--
-			continue
+// symbolsFor maps one top-level declaration to its outline symbols. A type declaration may
+// hold several specs (a grouped `type ( … )`) and so yields one symbol per spec; every other
+// declaration yields a single symbol. A declaration whose name is missing is skipped.
+func symbolsFor(src string, d ast.Decl) []DocumentSymbol {
+	switch decl := d.(type) {
+	case *ast.EnumDecl:
+		return single(src, decl.Name, symEnum, "", decl.Pos(), decl.End())
+	case *ast.SealedInterfaceDecl:
+		return single(src, decl.Name, symInterface, "sealed interface", decl.Pos(), decl.End())
+	case *ast.FuncDecl:
+		kind := symFunction
+		if decl.Recv != nil {
+			kind = symMethod // func (recv T) name(...)
 		}
-		if depth != 0 {
-			continue
+		detail := ""
+		switch decl.Mod {
+		case ast.FuncFrom:
+			detail = "from func"
+		case ast.FuncDerive:
+			detail = "derive func"
 		}
-		switch {
-		case toks[i].Text == "enum":
-			decls = append(decls, decl{kind: symEnum, kwTok: i, nameTok: i + 1})
-		case toks[i].Text == "sealed" && i+1 < len(toks) && toks[i+1].Text == "interface":
-			decls = append(decls, decl{kind: symInterface, detail: "sealed interface", kwTok: i, nameTok: i + 2})
-		case toks[i].Text == "type":
-			d := decl{kind: symClass, kwTok: i, nameTok: i + 1}
-			alias := false
-			if i+2 < len(toks) {
-				switch toks[i+2].Text {
-				case "struct":
-					d.kind = symStruct
-				case "interface":
-					d.kind = symInterface
-				case "=":
-					alias = true
-				}
-			}
-			decls = append(decls, d)
-			if alias {
-				i = skipLine(srcText, toks, i) // step past the alias's RHS so its func(...) type isn't a decl
-			}
-		case toks[i].Text == "func" && (i == 0 || toks[i-1].Text != "="):
-			d := decl{kind: symFunction, kwTok: i, nameTok: i + 1}
-			if i > 0 && (toks[i-1].Text == "from" || toks[i-1].Text == "derive") {
-				d.kwTok = i - 1
-				d.detail = toks[i-1].Text + " func"
-			} else if i+1 < len(toks) && toks[i+1].Text == "(" {
-				d.kind = symMethod // func (recv T) name(...)
-				d.nameTok = scan.MatchParen(toks, i+1) + 1
-			}
-			decls = append(decls, d)
+		return single(src, decl.Name, kind, detail, decl.Pos(), decl.End())
+	case *ast.GenDecl:
+		if decl.Tok != token.TYPE {
+			return nil // import/const/var declarations are not part of the outline
 		}
+		var out []DocumentSymbol
+		for _, sp := range decl.Specs {
+			ts, ok := sp.(*ast.TypeSpec)
+			if !ok {
+				continue
+			}
+			start := ts.Pos()
+			if len(decl.Specs) == 1 {
+				start = decl.Pos() // keep the `type` keyword in range for a single-spec decl
+			}
+			out = append(out, single(src, ts.Name, typeSpecKind(ts), "", start, ts.End())...)
+		}
+		return out
 	}
-	return decls
+	return nil
 }
 
-// skipLine returns the token index to resume from after stepping over the rest of the line
-// that token i begins on, so a single-line construct (a `type X = …` alias) is consumed whole.
-// The parentheses on such a line are balanced, so bracket depth is unaffected by the skip.
-func skipLine(srcText string, toks []scan.Token, i int) int {
-	lineEnd := scan.NextNewline(srcText, toks[i].Start)
-	j := i + 1
-	for j < len(toks) && toks[j].Start < lineEnd {
-		j++
+// typeSpecKind classifies a type declaration's outline kind: a struct, an interface, or — for
+// an alias or any other underlying type — a plain class symbol.
+func typeSpecKind(ts *ast.TypeSpec) int {
+	if ts.Assign != (token.Pos{}) {
+		return symClass // type X = … alias
 	}
-	return j - 1 // the loop's i++ advances to j
+	switch ts.Type.(type) {
+	case *ast.StructType:
+		return symStruct
+	case *ast.InterfaceType:
+		return symInterface
+	default:
+		return symClass
+	}
 }
 
-// declEnd returns the byte offset where the declaration starting at keyword token kwTok ends:
-// the close of its body brace when one appears before limit (the next declaration's keyword),
-// or the end of the keyword's line for a bodyless declaration.
-func declEnd(srcText string, toks []scan.Token, kwTok, limit int) int {
-	for b := kwTok + 1; b < limit && b < len(toks); b++ {
-		if toks[b].Text == "{" {
-			if close := scan.MatchBrace(toks, b); close >= 0 && close < len(toks) {
-				return toks[close].End
-			}
-			break
-		}
+// single builds the one-element symbol slice for a declaration whose name is name, spanning
+// [start,end) with the name as its selection range. A nil or unnamed declaration yields no
+// symbol so the outline never reports an unreadable entry.
+func single(src string, name *ast.Ident, kind int, detail string, start, end token.Pos) []DocumentSymbol {
+	if name == nil || name.Name == "" {
+		return nil
 	}
-	return scan.NextNewline(srcText, toks[kwTok].Start)
+	return []DocumentSymbol{{
+		Name:           name.Name,
+		Detail:         detail,
+		Kind:           kind,
+		Range:          rangeOf(src, start.Offset, end.Offset),
+		SelectionRange: rangeOf(src, name.Pos().Offset, name.End().Offset),
+	}}
 }
 
 // rangeOf converts a byte span into a 0-based protocol range.

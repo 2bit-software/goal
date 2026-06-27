@@ -262,6 +262,49 @@
   the token stream/AST/meaning is invariant and it is idempotent by construction. Any
   future fmt enhancement (struct-field alignment, switch-case dedent) must keep that
   raw-source, position-driven discipline — do NOT switch to AST printing.
+- The LSP document model is AST-derived (US-046). internal/lsp/symbols.go
+  collectSymbols PARSES (parser.ParseFile) and walks ast.File.Decls — there is no
+  more token scan (scanDecls is gone). Outline ranges come straight off node
+  Pos()/End() offsets via rangeOf, so a bodyless decl never overruns the next
+  (End() stops at its own last token). internal/lsp no longer imports internal/scan:
+  diagnostics.go tokenEnds tokenizes via lexer.Tokens (token end = Pos.Offset +
+  len(Lit)). BUT diagnostic FINDINGS still come from check.Analyze /
+  AnalyzePackageInDirWith — the checker itself is still analyze/scan-based (its
+  package path needs analyze.EnrichForeign), so don't expect sema there yet.
+  rangeOf still uses check.OffsetToPosition, so symbols.go keeps the internal/check
+  import even though the scan import is gone.
+
+## [2026-06-27T15:00:00Z] - US-046
+- Switched the LSP document model to the AST. internal/lsp/symbols.go collectSymbols
+  now parses with parser.ParseFile and walks ast.File.Decls, mapping each top-level
+  declaration to a DocumentSymbol (EnumDecl->enum, SealedInterfaceDecl->interface,
+  GenDecl TYPE TypeSpec->struct/interface/alias-class, FuncDecl->method when Recv!=nil
+  else function; from/derive keep function kind with a detail). Ranges + selection
+  ranges are taken directly off node Pos()/End() offsets; single-spec `type` decls
+  keep the `type` keyword in range (start = GenDecl.Pos()), grouped specs use their
+  own Pos() to avoid overlap. The scanDecls/skipLine/declEnd token walk + decl struct
+  + internal/scan import are deleted. Best-effort preserved: parse error / nil File /
+  nil name -> empty non-nil outline, no panic.
+- Switched internal/lsp/diagnostics.go tokenEnds from scan.Lex to lexer.Tokens
+  (token end = Pos.Offset + len(Lit)), removing internal/scan from internal/lsp
+  entirely so diagnostic range-widening rides the AST front-end lexer. Diagnostic
+  findings are unchanged (check.Analyze / AnalyzePackageInDirWith).
+- Files changed:
+  - internal/lsp/symbols.go (rewritten onto parser.ParseFile + ast walk; scanDecls/
+    skipLine/declEnd/decl removed; imports ast/parser/token; check kept for rangeOf)
+  - internal/lsp/diagnostics.go (tokenEnds -> lexer.Tokens; scan import -> lexer)
+  - prd.json (US-046 passes:true), progress.txt
+  - history/20260627-refactor-us-046-switch-lsp-document-model-to-ast/ (initiative)
+- Learnings for future iterations:
+  - The existing internal/lsp test suite is the behavioral contract; it passed
+    unchanged. No diagnostic-range test asserts a range produced via the live
+    tokenEnds path (diagnostics_test passes tokEnd explicitly), so swapping the
+    lexer is behavior-safe.
+  - US-047..US-050 (semantic tokens, definition, hover, rename) build on this AST
+    document model; collectSymbols' decl walk is the seed of the symbol graph.
+  - check.Analyze is still analyze/scan-based — migrating it to sema is NOT part of
+    the LSP stories and would disturb the package-mode foreign-resolution path.
+---
 
 ## [2026-06-27T11:00:00Z] - US-045
 - Added `goal fmt`, the canonical comment-preserving source formatter (internal/goalfmt).

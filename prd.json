@@ -557,8 +557,8 @@
         "The existing LSP test suite passes"
       ],
       "priority": 46,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "internal/lsp document symbols are now AST-derived: collectSymbols (lsp/symbols.go) parses with parser.ParseFile and walks ast.File.Decls, mapping each top-level decl to a DocumentSymbol (EnumDecl->enum, SealedInterfaceDecl->interface, GenDecl TYPE TypeSpec->struct/interface/alias-class, FuncDecl->method when Recv!=nil else function; from/derive keep function kind, detail set). Ranges/selection come straight off node Pos()/End() offsets via rangeOf — a bodyless alias/from/derive func cannot overrun the next decl (End() stops at its own last token). The scanDecls/skipLine/declEnd token walk + decl struct + internal/scan import are DELETED. Best-effort: a parse error / nil File / nil name yields an empty non-nil outline, never a panic. Also switched diagnostics.go tokenEnds from scan.Lex to lexer.Tokens (token end = Pos.Offset+len(Lit)), removing internal/scan from internal/lsp entirely so diagnostic range-widening rides the AST front-end lexer. Diagnostic FINDINGS still come from check.Analyze/AnalyzePackageInDirWith (migrating the checker off analyze is out of scope — the LSP package path needs analyze.EnrichForeign foreign resolution). Existing internal/lsp suite green unchanged; full build/vet/test green. GOTCHA: rangeOf still uses check.OffsetToPosition, so keep the internal/check import in symbols.go."
     },
     {
       "id": "US-047",
