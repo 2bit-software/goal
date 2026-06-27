@@ -157,6 +157,54 @@
   routes from/derive to the registry, NOT FuncSignatures), so the emitted func is just
   a callable conversion. funcDecl's modifier guard allows FuncPlain+FuncFrom; FuncDerive
   still fails (US-039).
+- `...defaults` (feature 08, §8.5) and `assert` (feature 10) lower in internal/backend
+  the same encoder-in-lower.go + dispatch-in-emit.go way. `...defaults` is parsed as
+  *ast.SpreadElement{X: Ident "defaults"} inside a *ast.CompositeLit, so route ALL
+  composite literals through emitter.compositeLit (not the inline exprList): it expands
+  a `...defaults` element via defaultEntries (one `name: zeroLit(type)` per omitted
+  declared field; an unsafe zero — nil pointer/map/chan/func, sum type, method-iface —
+  is a located e.fail). A non-`defaults` spread (`...derive`) is US-039. zeroLit/
+  zeroSafety/baseType are mirrored VERBATIM from analyze.ZeroLit/internal/pass.zeroSafety
+  into lower.go, but read a `typeDecls map[string]string` (emitter.buildTypeDecls walks
+  File TypeSpecs: struct->"struct", interface->"interface", alias->exprText(underlying))
+  + sema enum/sealed sets — the AST-native replacement for analyze.Tables.TypeDecls.
+- emitter.exprText(x) renders an expr to text WITHOUT touching the main output: it uses
+  a FRESH sub-emitter (sharing info/renames/typeDecls), NOT a swap of e.b. Swapping a
+  used strings.Builder by value panics ("illegal use of non-zero Builder copied by
+  value") via copyCheck — never `saved := e.b`. exprText powers the assert panic-message
+  text and an alias's underlying-type text.
+- `assert` (*ast.AssertStmt) lowers in stmt()'s new AssertStmt case (assertStmt):
+  `if !(cond) { panic("assertion failed: "+condtext[ +": "+fmt.Sprintf(msg,args...)]) }`,
+  condtext = exprText(Cond), the real cond re-emitted via e.expr. The printf-message form
+  needs fmt: file() injects `import "fmt"` ONCE right after the package clause when
+  needsFmtImport(f) (Walk finds any AssertStmt with Msg!=nil) && !importsPkg(f,"fmt").
+  Imports must precede other decls, so inject before the closed-E prelude / first decl.
+
+## [2026-06-27T09:30:00Z] - US-038
+- Lowered `...defaults` (feature 08, §8.5) and `assert` (feature 10, §4.3/§8.6) on the
+  AST backend. `...defaults` expands to explicit per-field zero values for the omitted
+  fields of a named struct literal (safe-zero only; an unsafe zero is a located error);
+  `assert` becomes an `if !(cond) { panic(...) }` runtime guard, with `fmt.Sprintf` and an
+  injected `import "fmt"` for the printf-message form. Reads struct fields + sum-type
+  membership off sema.Info and alias chains off an AST-built typeDecls map (no token scan).
+- Files changed:
+  - internal/backend/lower.go (baseType/zeroLit/zeroSafety; needsFmtImport/importsPkg;
+    presentFieldNames/structFieldsOf)
+  - internal/backend/emit.go (emitter.typeDecls; emitFile wires buildTypeDecls; file()
+    fmt-import injection; stmt() AssertStmt -> assertStmt; CompositeLit -> compositeLit
+    + defaultEntries; exprText/buildTypeDecls helpers)
+  - internal/backend/backend_test.go (TestASTEngineDefaultsAssertBehavioralTier over the
+    6 08/10 cases; TestASTEngineDefaultsAssertEncoding; TestASTEngineDefaultsUnsafeZeroRejected)
+  - prd.json (US-038 passes:true), progress.txt
+  - history/20260627-feature-us-038-lower-emit-defaults-and-assert/ (initiative)
+- Learnings for future iterations:
+  - US-039 (derive/from) extends the SAME compositeLit seam: a `...derive(s)` spread is
+    the other *ast.SpreadElement case (currently e.fail), and `derive func` lowering turns
+    the funcDecl FuncDerive guard into field-by-field synthesis. The typeDecls map +
+    zeroLit are reusable for derive's per-field defaults.
+  - Behavioral tier (build+vet) is the gate; exact goldens are US-042. The AST backend
+    drops `//` comments (only `///` doc/doctests are retained), and `type Name = string`
+    emits as `type Name string` (TypeSpec.Assign not carried) — both build+vet clean.
 
 ## [2026-06-27T08:27:00Z] - US-037
 - Lowered closed-E Result[T,E] (E != error, feature 06) on the AST backend: the

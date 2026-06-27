@@ -59,6 +59,11 @@ type emitter struct {
 	// constructors and `?` propagation render `Ok[closedT, closedE]{…}` /
 	// `Err[closedT, closedE]{…}` from them; empty outside a closed-E function.
 	closedT, closedE string
+	// typeDecls maps each in-file `type X …` name to its underlying form ("struct",
+	// "interface", or an alias's underlying type text), so the §8.5 `...defaults`
+	// zero recovery can resolve a field type through alias chains. Built once per
+	// file by buildTypeDecls; the AST-native replacement for analyze's TypeDecls.
+	typeDecls map[string]string
 }
 
 // emitFile renders a whole *ast.File to Go source text, lowering goal-specific
@@ -66,6 +71,7 @@ type emitter struct {
 // encountered.
 func emitFile(f *ast.File, info *sema.Info) (string, error) {
 	e := emitter{info: info, pointerRecv: pointerReceiverSet(f), fileIdents: fileIdentSet(f)}
+	e.typeDecls = e.buildTypeDecls(f)
 	e.file(f)
 	if e.err != nil {
 		return "", e.err
@@ -122,6 +128,12 @@ func (e *emitter) file(f *ast.File) {
 	e.p("package ")
 	e.p(f.Name.Name)
 	e.p("\n\n")
+	// A printf-message `assert` lowers to `fmt.Sprintf`, so the file needs the fmt
+	// import. Inject it once, right after the package clause (imports must precede
+	// other declarations), when the file uses fmt but does not already import it.
+	if needsFmtImport(f) && !importsPkg(f, "fmt") {
+		e.p("import \"fmt\"\n\n")
+	}
 	// When any function returns a closed-E Result, the generic sum encoding
 	// (resultPrelude, §8.1) must be in scope. It is emitted once, after the import
 	// declarations (imports must precede other decls) and before the first non-import
@@ -544,11 +556,43 @@ func (e *emitter) stmt(s ast.Stmt) {
 			e.p(" ")
 			e.p(s.Label.Name)
 		}
+	case *ast.AssertStmt:
+		e.assertStmt(s)
 	case *ast.EmptyStmt:
 		// nothing
 	default:
 		e.fail("unsupported statement %T", s)
 	}
+}
+
+// assertStmt lowers a goal `assert` to a runtime guard `if !(<cond>) { panic(...) }`
+// (§4.3/§8.6). Unlike the erased static guarantees, the check survives into the
+// generated Go; the panic message always carries the source-expression text (the
+// located-feedback rule), and the printf-message form appends
+// `: " + fmt.Sprintf(fmt, args…)`. Mirrors internal/pass.Assert but reads the
+// parsed Cond/Msg/Args rather than re-scanning the source line.
+func (e *emitter) assertStmt(s *ast.AssertStmt) {
+	if s.Cond == nil {
+		e.fail("assert statement has no condition")
+		return
+	}
+	condText := e.exprText(s.Cond)
+	e.p("if !(")
+	e.expr(s.Cond)
+	e.p(") { panic(")
+	if s.Msg == nil {
+		e.p(strconv.Quote("assertion failed: " + condText))
+	} else {
+		e.p(strconv.Quote("assertion failed: " + condText + ": "))
+		e.p(" + fmt.Sprintf(")
+		e.expr(s.Msg)
+		for _, a := range s.Args {
+			e.p(", ")
+			e.expr(a)
+		}
+		e.p(")")
+	}
+	e.p(") }")
 }
 
 func (e *emitter) ifStmt(s *ast.IfStmt) {
@@ -702,12 +746,7 @@ func (e *emitter) expr(x ast.Expr) {
 		e.p(": ")
 		e.expr(x.Value)
 	case *ast.CompositeLit:
-		if x.Type != nil {
-			e.expr(x.Type)
-		}
-		e.p("{")
-		e.exprList(x.Elts)
-		e.p("}")
+		e.compositeLit(x)
 	case *ast.FuncLit:
 		e.p("func")
 		e.funcSig(x.Type)
@@ -801,6 +840,123 @@ func (e *emitter) variantLit(x *ast.VariantLit) {
 		e.expr(la.Value)
 	}
 	e.p("})")
+}
+
+// exprText renders an expression to its Go source text without writing it to the
+// main output — used for the `assert` panic message (the source-expression text)
+// and an alias's underlying type. It renders through a fresh sub-emitter that shares
+// the lowering context (info/renames/typeDecls), so a copied-Builder panic from
+// swapping e.b is avoided and any lowering inside the expression is applied.
+func (e *emitter) exprText(x ast.Expr) string {
+	sub := &emitter{
+		info:        e.info,
+		pointerRecv: e.pointerRecv,
+		renames:     e.renames,
+		armBinding:  e.armBinding,
+		armFields:   e.armFields,
+		fileIdents:  e.fileIdents,
+		typeDecls:   e.typeDecls,
+	}
+	sub.expr(x)
+	return sub.b.String()
+}
+
+// buildTypeDecls maps each in-file `type X …` to its underlying form: "struct",
+// "interface", or — for an alias — the rendered underlying type text. The §8.5
+// `...defaults` zero recovery resolves a field type through these alias chains. It
+// is the AST-native replacement for analyze.Tables.TypeDecls (token-scanned).
+func (e *emitter) buildTypeDecls(f *ast.File) map[string]string {
+	m := map[string]string{}
+	if f == nil {
+		return m
+	}
+	for _, d := range f.Decls {
+		gd, ok := d.(*ast.GenDecl)
+		if !ok || gd.Tok.String() != "type" {
+			continue
+		}
+		for _, s := range gd.Specs {
+			ts, ok := s.(*ast.TypeSpec)
+			if !ok || ts.Name == nil {
+				continue
+			}
+			switch ts.Type.(type) {
+			case *ast.StructType:
+				m[ts.Name.Name] = "struct"
+			case *ast.InterfaceType:
+				m[ts.Name.Name] = "interface"
+			default:
+				m[ts.Name.Name] = e.exprText(ts.Type)
+			}
+		}
+	}
+	return m
+}
+
+// compositeLit emits a composite literal, expanding a `...defaults` spread element
+// (§8.5) into explicit per-field zero values for the struct's omitted fields so the
+// generated literal is complete. Every other element emits verbatim; a non-`defaults`
+// spread (`...derive`) is a later story (US-039).
+func (e *emitter) compositeLit(x *ast.CompositeLit) {
+	if x.Type != nil {
+		e.expr(x.Type)
+	}
+	e.p("{")
+	first := true
+	sep := func() {
+		if !first {
+			e.p(", ")
+		}
+		first = false
+	}
+	for _, el := range x.Elts {
+		if sp, ok := el.(*ast.SpreadElement); ok {
+			id, ok := sp.X.(*ast.Ident)
+			if !ok || id.Name != "defaults" {
+				e.fail("unsupported spread element in composite literal: only `...defaults` is lowered (`...derive` is a later story)")
+				return
+			}
+			for _, entry := range e.defaultEntries(x) {
+				sep()
+				e.p(entry)
+			}
+			continue
+		}
+		sep()
+		e.expr(el)
+	}
+	e.p("}")
+}
+
+// defaultEntries returns the `name: <zero>` entries a `...defaults` element expands
+// to: one per declared struct field not already set in the literal, each filled with
+// its type's safe Go zero. A field whose zero is unsafe (a nil pointer/map/chan/func,
+// a sum type, or a method-bearing interface) is a located error, not a silent zero.
+// Mirrors internal/pass.Defaults over the resolved AST + sema facts.
+func (e *emitter) defaultEntries(x *ast.CompositeLit) []string {
+	id, ok := x.Type.(*ast.Ident)
+	if !ok {
+		e.fail("`...defaults` is not inside a named struct literal")
+		return nil
+	}
+	fields, ok := structFieldsOf(e.info, id.Name)
+	if !ok {
+		e.fail("`...defaults` for unknown struct type %q (no `type %s struct{…}` in this file)", id.Name, id.Name)
+		return nil
+	}
+	present := presentFieldNames(x.Elts)
+	var entries []string
+	for _, f := range fields {
+		if present[f.Name] {
+			continue
+		}
+		if reason := zeroSafety(f.Type, e.typeDecls, e.info, 0); reason != "" {
+			e.fail("`...defaults` cannot default field `%s` of type `%s`: %s", f.Name, f.Type, reason)
+			return nil
+		}
+		entries = append(entries, fmt.Sprintf("%s: %s", f.Name, zeroLit(f.Type, e.typeDecls, 0)))
+	}
+	return entries
 }
 
 // indexExpr emits a single-index expression, lowering an `Option[T]` type to its

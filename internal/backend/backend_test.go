@@ -572,6 +572,103 @@ func TestASTEngineClosedResultEncoding(t *testing.T) {
 	}
 }
 
+// defaultsAssertCases lists the 08-no-zero-value and 10-assert transpile cases the
+// US-038 lowering must carry through the new backend: `...defaults` expansion (a
+// complete literal, primitive zeros, and reference/alias zeros with some fields set
+// explicitly because their zero is unsafe) and `assert` (bare, printf-message, and a
+// mix with internal commas / a `%` in the expr text).
+var defaultsAssertCases = []string{
+	"features/08-no-zero-value/examples/complete.goal",
+	"features/08-no-zero-value/examples/defaults_primitives.goal",
+	"features/08-no-zero-value/examples/defaults_refs.goal",
+	"features/10-assert/examples/bank.goal",
+	"features/10-assert/examples/message.goal",
+	"features/10-assert/examples/multiple.goal",
+}
+
+// TestASTEngineDefaultsAssertBehavioralTier is US-038 AC2: every 08-no-zero-value
+// and 10-assert case passes the behavioral tier (temp-module go build + go vet)
+// through the new AST backend, proving the `...defaults` zero expansion and the
+// `assert` if-panic lowering (with its injected fmt import) produce build+vet-clean
+// Go.
+func TestASTEngineDefaultsAssertBehavioralTier(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns the go toolchain; skipped under -short")
+	}
+	if len(defaultsAssertCases) == 0 {
+		t.Fatal("no defaults/assert cases to run")
+	}
+	for _, input := range defaultsAssertCases {
+		t.Run(input, func(t *testing.T) {
+			c := corpus.Case{
+				ID:    input,
+				Kind:  corpus.KindTranspile,
+				Mode:  corpus.ModeFile,
+				Input: input,
+			}
+			if err := corpus.RunCompile(repoRoot, c, corpus.TranspilerFunc(backend.Transpile)); err != nil {
+				t.Fatalf("behavioral tier failed: %v", err)
+			}
+		})
+	}
+}
+
+// TestASTEngineDefaultsAssertEncoding pins the US-038 lowering shapes (AC1): a
+// `...defaults` element expands to explicit `name: <zero>` entries for the omitted
+// fields (primitive zeros, a named-struct `T{}`, a nil slice, and an alias's `""`),
+// a bare `assert` becomes `if !(cond) { panic("assertion failed: cond") }`, and the
+// printf-message form appends `fmt.Sprintf(...)` with the fmt import injected.
+func TestASTEngineDefaultsAssertEncoding(t *testing.T) {
+	cases := []struct {
+		file  string
+		wants []string
+	}{
+		{"../../features/08-no-zero-value/examples/defaults_primitives.goal", []string{
+			"return User{name: name, role: RoleMember, email: \"\", active: false, logins: 0}",
+		}},
+		{"../../features/08-no-zero-value/examples/defaults_refs.goal", []string{
+			// The expanded literal stays on one line, so gofmt does not column-align.
+			"meta: Addr{}, tags: nil, label: \"\", retries: 0",
+		}},
+		{"../../features/08-no-zero-value/examples/complete.goal", []string{
+			// A complete literal has no `...defaults`, so it passes through verbatim.
+			"return User{name: \"root\", email: \"root@x\", role: RoleAdmin, admin: true}",
+		}},
+		{"../../features/10-assert/examples/bank.goal", []string{
+			`if !(amount > 0) {`,
+			`panic("assertion failed: amount > 0")`,
+		}},
+		{"../../features/10-assert/examples/message.goal", []string{
+			`import "fmt"`,
+			`if !(age >= 0) {`,
+			`panic("assertion failed: age >= 0: " + fmt.Sprintf("age must be non-negative, got %d", age))`,
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.file, func(t *testing.T) {
+			out, err := backend.Transpile(mustRead(t, c.file))
+			if err != nil {
+				t.Fatalf("Transpile: %v", err)
+			}
+			for _, want := range c.wants {
+				if !strings.Contains(out.Go, want) {
+					t.Errorf("missing %q in:\n%s", want, out.Go)
+				}
+			}
+		})
+	}
+}
+
+// TestASTEngineDefaultsUnsafeZeroRejected pins the located-error behavior: a
+// `...defaults` cannot fill a field whose zero is unsafe (a nil map here), so the
+// emitter fails loudly rather than emitting a silent nil that panics on write.
+func TestASTEngineDefaultsUnsafeZeroRejected(t *testing.T) {
+	src := "package p\n\ntype Cfg struct {\n\tname string\n\tm    map[string]int\n}\n\nfunc mk() Cfg {\n\treturn Cfg{name: \"x\", ...defaults}\n}\n"
+	if _, err := backend.Transpile(src); err == nil {
+		t.Fatal("expected an error defaulting a nil-map field, got nil")
+	}
+}
+
 func mustRead(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)

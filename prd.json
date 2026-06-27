@@ -461,8 +461,8 @@
         "The 08-no-zero-value and 10-assert cases pass the behavioral tier through the new backend"
       ],
       "priority": 38,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "AST backend lowers `...defaults` (feature 08, §8.5) and `assert` (feature 10, §4.3/§8.6) in internal/backend (emit.go dispatch + lower.go helpers; no separate lower pkg). `...defaults` (parsed as *ast.SpreadElement{X: Ident\"defaults\"} in a *ast.CompositeLit) expands via compositeLit/defaultEntries: for each declared struct field (sema.Info.Structs[name]) not already keyed, append `name: zeroLit(type)`; a field whose zero is unsafe (nil pointer/map/chan/func, sum type, method-iface) is a located e.fail, mirroring internal/pass.zeroSafety. zeroLit/zeroSafety/baseType mirrored into lower.go reading a `typeDecls` map (built by emitter.buildTypeDecls walking File TypeSpecs: struct->\"struct\", interface->\"interface\", alias->exprText(underlying)) + sema enum/sealed sets — the AST-native replacement for analyze.Tables.TypeDecls. `assert` (*ast.AssertStmt) lowers in stmt() via assertStmt to `if !(cond) { panic(\"assertion failed: <condtext>\"[ + fmt.Sprintf(msg, args...)]) }`; condtext is exprText(Cond) (a fresh sub-emitter, NOT a Builder-copy swap). file() injects `import \"fmt\"` once after the package clause when needsFmtImport(f) (any AssertStmt with Msg) && !importsPkg(f,\"fmt\"). AC2: TestASTEngineDefaultsAssertBehavioralTier runs all 6 (3 08-no-zero-value + 3 10-assert) cases through backend.Transpile + corpus.RunCompile (build+vet). Output matches goldens modulo dropped `//` comments and the `type Name = string` alias gap (US-042); both build+vet clean."
     },
     {
       "id": "US-039",

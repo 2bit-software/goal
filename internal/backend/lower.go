@@ -2,6 +2,7 @@ package backend
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -214,6 +215,178 @@ func exported(name string) string {
 	r := []rune(name)
 	r[0] = unicode.ToUpper(r[0])
 	return string(r)
+}
+
+// baseType strips a leading "*" and any "pkg." qualifier, yielding the bare type
+// name (used to look up a local type). Mirrors scan.BaseType so lower.go need not
+// import internal/scan.
+func baseType(t string) string {
+	t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
+	if i := strings.LastIndexByte(t, '.'); i >= 0 {
+		t = t[i+1:]
+	}
+	return t
+}
+
+// zeroLit returns the explicit Go zero literal for a declared type (§8.5). Mirrors
+// analyze.ZeroLit: an untyped constant (`0`, `""`, `false`, `nil`) assignable to the
+// field's defined type. decls maps a named type to its underlying form ("struct",
+// "interface", or a type expression) so the zero is recoverable through alias
+// chains; depth guards those chains. The `...defaults` expansion uses it.
+func zeroLit(typ string, decls map[string]string, depth int) string {
+	typ = strings.TrimSpace(typ)
+	switch {
+	case strings.HasPrefix(typ, "*"), strings.HasPrefix(typ, "[]"),
+		strings.HasPrefix(typ, "map["), strings.HasPrefix(typ, "chan"),
+		strings.HasPrefix(typ, "func"), strings.HasPrefix(typ, "interface"),
+		typ == "any", typ == "error":
+		return "nil"
+	case strings.HasPrefix(typ, "["): // array `[N]T` — composite zero
+		return typ + "{}"
+	}
+	switch typ {
+	case "string":
+		return `""`
+	case "bool":
+		return "false"
+	case "int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+		"byte", "rune", "float32", "float64", "complex64", "complex128":
+		return "0"
+	}
+	if depth < 8 {
+		if under, ok := decls[baseType(typ)]; ok {
+			switch under {
+			case "struct":
+				return typ + "{}"
+			case "interface":
+				return "nil"
+			default:
+				return zeroLit(under, decls, depth+1)
+			}
+		}
+	}
+	// Unknown named type with no local declaration: assume a struct-like composite zero.
+	return typ + "{}"
+}
+
+// zeroSafety reports why a field of type typ has no safe zero to fill via
+// `...defaults`, or "" when its zero is safe. Mirrors internal/pass.zeroSafety, but
+// reads sum-type membership off sema.Info and alias chains off decls. A type whose
+// nil zero panics/deadlocks on normal use (pointer, map, chan, func, method-bearing
+// interface) or a sum type with no valid zero variant (enum / sealed interface) is
+// rejected; a primitive, struct, array, nil slice, error, or bare interface is safe.
+// depth guards alias chains.
+func zeroSafety(typ string, decls map[string]string, info *sema.Info, depth int) string {
+	typ = strings.TrimSpace(typ)
+	switch {
+	case strings.HasPrefix(typ, "*"):
+		return "a nil pointer has no safe zero — set it explicitly, or use Option[T] for an optional value"
+	case strings.HasPrefix(typ, "map["):
+		return "a nil map panics on write — set it explicitly (e.g. `" + typ + "{}`)"
+	case strings.HasPrefix(typ, "chan"):
+		return "a nil channel blocks forever — set it explicitly"
+	case strings.HasPrefix(typ, "func"):
+		return "a nil func panics when called — set it explicitly"
+	case strings.HasPrefix(typ, "interface"):
+		// Bare `interface{}` has no methods, so its nil is harmless; a method-bearing
+		// interface literal panics on a nil method call.
+		if strings.TrimSpace(typ[len("interface"):]) == "{}" {
+			return ""
+		}
+		return "a nil interface has no safe zero — set it explicitly"
+	case typ == "any", typ == "error":
+		return "" // bare any: no methods; nil error is the success value
+	case strings.HasPrefix(typ, "[]"):
+		return "" // a nil slice is safe: range/len/append all work on it
+	case strings.HasPrefix(typ, "["):
+		return "" // array: composite zero is a usable value
+	}
+	switch typ {
+	case "string", "bool",
+		"int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+		"byte", "rune", "float32", "float64", "complex64", "complex128":
+		return ""
+	}
+	base := baseType(typ)
+	if enumOf(info, base) != nil || isSealed(info, base) {
+		return "a sum type has no valid zero variant — set it explicitly"
+	}
+	if depth < 8 {
+		if under, ok := decls[base]; ok {
+			switch under {
+			case "struct":
+				return ""
+			case "interface":
+				return "a nil interface has no safe zero — set it explicitly"
+			default:
+				return zeroSafety(under, decls, info, depth+1)
+			}
+		}
+	}
+	// Unknown external named type: assume struct-like (as zeroLit does) — treat as safe.
+	return ""
+}
+
+// needsFmtImport reports whether f contains a printf-message `assert` (one whose
+// lowering emits `fmt.Sprintf`), so the emitter can inject `import "fmt"`.
+func needsFmtImport(f *ast.File) bool {
+	need := false
+	ast.Walk(identFinder(func(n ast.Node) bool {
+		if a, ok := n.(*ast.AssertStmt); ok && a.Msg != nil {
+			need = true
+		}
+		return !need // stop walking once found
+	}), f)
+	return need
+}
+
+// importsPkg reports whether f already imports the package at the given path (e.g.
+// "fmt"), so a duplicate import is not injected.
+func importsPkg(f *ast.File, path string) bool {
+	if f == nil {
+		return false
+	}
+	quoted := strconv.Quote(path)
+	for _, d := range f.Decls {
+		gd, ok := d.(*ast.GenDecl)
+		if !ok || gd.Tok.String() != "import" {
+			continue
+		}
+		for _, s := range gd.Specs {
+			if is, ok := s.(*ast.ImportSpec); ok && is.Path != nil && is.Path.Value == quoted {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// presentFieldNames returns the set of keyed field names already set in a struct
+// composite literal's element list (the `name:` keys), so `...defaults` fills only
+// the omitted fields.
+func presentFieldNames(elts []ast.Expr) map[string]bool {
+	present := map[string]bool{}
+	for _, el := range elts {
+		kv, ok := el.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		if id, ok := kv.Key.(*ast.Ident); ok {
+			present[id.Name] = true
+		}
+	}
+	return present
+}
+
+// structFieldsOf returns the ordered fields of the named struct, nil-safe.
+func structFieldsOf(info *sema.Info, name string) ([]sema.Field, bool) {
+	if info == nil || info.Structs == nil {
+		return nil, false
+	}
+	fs, ok := info.Structs[name]
+	return fs, ok
 }
 
 // pointerReceiverSet returns the set of type names that have at least one
