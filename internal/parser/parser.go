@@ -1016,14 +1016,22 @@ func compositeOK(x ast.Expr) bool {
 	return false
 }
 
-// parseCallSuffix parses a call argument list applied to fun.
+// parseCallSuffix parses a call argument list applied to fun. A list containing
+// at least one labeled argument (`Label: Value`) is variant construction and
+// yields an *ast.VariantLit; an all-positional list yields an ordinary
+// *ast.CallExpr.
 func (p *parser) parseCallSuffix(fun ast.Expr) ast.Expr {
 	lp := p.expect(token.LPAREN)
-	call := &ast.CallExpr{Fun: fun, Lparen: lp.Pos}
 	prev := p.exprLev
 	p.exprLev++
+	var args []ast.Expr
+	labeled := false
 	for !p.at(token.RPAREN) && !p.at(token.EOF) {
-		call.Args = append(call.Args, p.parseExpr())
+		arg := p.parseCallArg()
+		if _, ok := arg.(*ast.LabeledArg); ok {
+			labeled = true
+		}
+		args = append(args, arg)
 		if p.at(token.COMMA) {
 			p.advance()
 		} else {
@@ -1032,8 +1040,10 @@ func (p *parser) parseCallSuffix(fun ast.Expr) ast.Expr {
 	}
 	p.exprLev = prev
 	rp := p.expect(token.RPAREN)
-	call.Rparen = rp.Pos
-	return call
+	if labeled {
+		return p.makeVariantLit(fun, lp.Pos, args, rp.Pos)
+	}
+	return &ast.CallExpr{Fun: fun, Lparen: lp.Pos, Args: args, Rparen: rp.Pos}
 }
 
 // parseIndexSuffix parses a single index applied to x.
@@ -1068,8 +1078,12 @@ func (p *parser) parseCompositeLit(typ ast.Expr) ast.Expr {
 	return cl
 }
 
-// parseElement parses one composite-literal element: a value or a key:value pair.
+// parseElement parses one composite-literal element: a spread (`...X`), a value,
+// or a key:value pair.
 func (p *parser) parseElement() ast.Expr {
+	if p.at(token.ELLIPSIS) {
+		return p.parseSpreadElement()
+	}
 	x := p.parseElementValue()
 	if p.at(token.COLON) {
 		colon := p.advance()

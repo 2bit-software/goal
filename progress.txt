@@ -766,3 +766,42 @@
     parser via parsePostfix/parseOperand; the VariantLit/LabeledArg/SpreadElement
     nodes from US-016 are still unused until then.
 ---
+
+## [2026-06-27T09:30:00Z] - US-022
+- Parsed goal's variant CONSTRUCTION surface in internal/parser (Phase 1.4):
+  labeled-argument construction `Enum.Variant(label: value)` into *ast.VariantLit
+  with *ast.LabeledArg args, and composite-literal spread `...X` into
+  *ast.SpreadElement (`...defaults`, `...derive(e)`). The VariantLit/LabeledArg/
+  SpreadElement nodes existed since US-016 and were unused until now.
+- parseCallSuffix now parses each argument via parseCallArg: an IDENT immediately
+  followed by COLON is a LabeledArg; if ANY arg is labeled the whole call becomes
+  a VariantLit (Enum=Fun's selector X / nil for bare ident, Variant=last segment),
+  otherwise it stays an ordinary *ast.CallExpr. parseElement now checks a leading
+  token.ELLIPSIS first and produces a SpreadElement over parseExpr() (so
+  `...defaults` -> Ident, `...derive(e)` -> CallExpr).
+- Files changed:
+  - internal/parser/goal_construct.go (new: parseCallArg, makeVariantLit,
+    parseSpreadElement)
+  - internal/parser/parser.go (parseCallSuffix labeled-arg detection;
+    parseElement ELLIPSIS hook)
+  - internal/parser/goal_construct_test.go (new: VariantLit + LabeledArg from
+    status.goal; positional call stays CallExpr; SpreadElement from
+    defaults_primitives.goal; ...derive(e) spread call)
+  - prd.json (US-022 passes:true)
+  - history/20260627-feature-us-022-parse-construction-labeled-args-spread/
+- Learnings for future iterations:
+  - A `Label: Value` call argument is unambiguous (Go calls have no colon), so a
+    one-token lookahead (IDENT then COLON) is enough to distinguish construction
+    from an ordinary call without backtracking. Data-less `Status.Pending` stays a
+    SelectorExpr — only the parenthesized labeled form becomes a VariantLit.
+  - goal's spread is PREFIX (`...X` as a composite element), distinct from Go's
+    trailing variadic call spread (`f(xs...)`); it is detected in parseElement,
+    not the postfix chain. Keep them separate.
+  - With US-022 done, features/01-enums/examples/status.goal now parses with ZERO
+    errors (US-020's TestParseEnumDecl noted it errored on labeled-arg bodies);
+    that test reads `f, _ :=` so it is unaffected, but US-024 (parse 100% of
+    corpus) now has these construction inputs covered.
+  - US-023 (from/derive func decls, assert, doctests) is the next unpassed story;
+    to_storage.goal's `...derive(e)` already parses, but its `from func`/`derive
+    func` declarations are US-023's grammar.
+---
