@@ -354,6 +354,34 @@
   edits don't shift later offsets. Still single-document (locals/params/qualified
   imports/cross-file out of scope, consistent with US-048/049).
 
+## [2026-06-27T15:27:00Z] - US-003
+- Added internal/interp/env.go, the interpreter's lexical environment: a
+  parent-linked scope chain of name -> Value bindings. NewEnv() makes a root
+  scope; (*Env).NewChild() opens an inner scope (parent = receiver);
+  (*Env).Define(name, v) binds in THIS scope (overwrites a same-scope binding,
+  never writes to a parent); (*Env).Lookup(name) walks this scope then parents,
+  first hit wins, and on a miss returns the zero Value + a *NotFoundError naming
+  the missing symbol (Error() == "undefined: <name>"). Inner scopes shadow outer
+  ones non-destructively.
+- Files changed:
+  - internal/interp/env.go (new: NotFoundError, Env, NewEnv, NewChild, Define,
+    Lookup)
+  - internal/interp/env_test.go (new: TestDefineAndLookupSameScope,
+    TestParentFallThrough, TestShadowing, TestLookupUndefinedReturnsNotFound,
+    TestDefineOverwriteSameScope — stdlib testing, no testify)
+  - prd.json (US-003 passes:true), progress.txt
+  - history/20260627-feature-us-003-define-environment-and-scopes/ (initiative)
+- Learnings for future iterations:
+  - Value (value.go) holds a []Value slice, so it is NOT comparable with == /
+    != — `got != Value{}` is a vet error. Compare runtime values with
+    v.Equal(other) everywhere (tests included); two zero Values are Equal via the
+    KindNil case.
+  - Lookup returns (Value, error) not (Value, bool) so the missing name rides in
+    *NotFoundError (errors.As-detectable). The eval stories (US-004+) read/write
+    program state through this Env; assignment-through-chain semantics (write to
+    an existing outer binding vs. define-in-place) are deferred to US-006.
+---
+
 ## [2026-06-27T20:30:00Z] - US-002
 - Added internal/interp, the goscript interpreter's uniform runtime VALUE model
   (value.go). A single Value{Kind, ...payload} covers int, float, string, bool,

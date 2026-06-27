@@ -41,7 +41,7 @@
         "A unit test asserts shadowing, parent fall-through, and that Lookup of an undefined name returns a not-found error"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
