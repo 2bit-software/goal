@@ -317,8 +317,8 @@
         "A test transpiles a goal file that uses no goal-specific constructs through the new engine and the output compiles via the behavioral tier"
       ],
       "priority": 26,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Phase 2 seam. internal/sema (placeholder Info+New, filled by US-027); internal/backend defines Backend{Emit(*ast.File,*sema.Info)(pipeline.Output,error)} + Formatter{Format([]byte)([]byte,error)} + GoFormatter (go/format) + goBackend (minimal plain-Go emitter, emit.go) + Transpile engine (parse->sema->Emit->format, satisfies corpus.Transpiler). Driver --engine=splice|ast flag in parseFlags; ast routes per-file via backend.Transpile (transpilePackageAST); splice unchanged + default. AC2 proven by corpus.RunCompile over testdata/plain.goal. Emitter errors on goal-specific/unsupported nodes (US-032+)."
     },
     {
       "id": "US-027",

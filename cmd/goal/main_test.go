@@ -74,6 +74,19 @@ func TestRunExecutesMain(t *testing.T) {
 	}
 }
 
+// TestBuildWithASTEngine drives `goal build --engine=ast` over a plain-Go (no
+// goal-specific constructs) package through the real command path, proving the
+// new engine is wired into the driver and produces buildable Go (FR-5/FR-6).
+func TestBuildWithASTEngine(t *testing.T) {
+	const plain = "package main\n\nimport \"fmt\"\n\nfunc add(a int, b int) int {\n\treturn a + b\n}\n\nfunc main() {\n\tfmt.Println(add(2, 3))\n}\n"
+	dir := goalModule(t, map[string]string{"main.goal": plain})
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"build", "--engine=ast", dir}, &out, &errOut); err != nil {
+		t.Fatalf("build --engine=ast failed: %v\n%s", err, errOut.String())
+	}
+}
+
 func TestBuildErrorMapsToGoalSource(t *testing.T) {
 	// A plain Go type error in a passed-through body, on line 4 of the file.
 	const bad = "package main\n\nfunc f() int {\n\tvar x int = \"nope\"\n\treturn x\n}\n"
@@ -170,11 +183,40 @@ func TestCheckDepthNoteOmitsGeneratedDump(t *testing.T) {
 }
 
 func TestParseFlags(t *testing.T) {
-	emit, emitDir, root, err := parseFlags([]string{"--emit=out", "./pkg/..."})
+	emit, emitDir, root, engine, err := parseFlags([]string{"--emit=out", "./pkg/..."})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !emit || emitDir != "out" || root != "./pkg" {
 		t.Errorf("parseFlags = (%v, %q, %q), want (true, out, ./pkg)", emit, emitDir, root)
+	}
+	if engine != engineSplice {
+		t.Errorf("default engine = %q, want %q", engine, engineSplice)
+	}
+}
+
+func TestParseFlagsEngine(t *testing.T) {
+	// Explicit AST engine selection.
+	_, _, root, engine, err := parseFlags([]string{"--engine=ast", "./pkg"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if engine != engineAST || root != "./pkg" {
+		t.Errorf("parseFlags engine = (%q, %q), want (%q, ./pkg)", engine, root, engineAST)
+	}
+
+	// Explicit splice engine is accepted.
+	if _, _, _, engine, err := parseFlags([]string{"--engine=splice"}); err != nil || engine != engineSplice {
+		t.Errorf("--engine=splice = (%q, %v), want (%q, nil)", engine, err, engineSplice)
+	}
+
+	// An unknown engine value is a usage error naming the offender.
+	if _, _, _, _, err := parseFlags([]string{"--engine=bogus"}); err == nil || !strings.Contains(err.Error(), "bogus") {
+		t.Errorf("--engine=bogus error = %v, want one mentioning %q", err, "bogus")
+	}
+
+	// A bare --engine without a value is a usage error.
+	if _, _, _, _, err := parseFlags([]string{"--engine"}); err == nil {
+		t.Error("--engine without a value should error")
 	}
 }

@@ -55,6 +55,22 @@
   an INTENTIONAL grammar/AST change regenerate with
   `go test ./internal/parser -run TestASTSnapshots -update-snapshots` and review
   the diff before committing.
+- The AST engine seam (Phase 2): internal/backend defines Backend{Emit(*ast.File,
+  *sema.Info)(pipeline.Output,error)} + Formatter{Format([]byte)([]byte,error)} +
+  GoFormatter (go/format) + the Transpile entry (parse->sema->Emit->format) that
+  satisfies corpus.Transpiler. The Go emitter is the position-FREE, format-once
+  model: emit.go writes only syntactically valid, token-correct Go (spaces between
+  tokens, balanced braces) and lets GoFormatter normalize layout — so emit code
+  need not pretty-print, only parse. Operators/keywords render via token.Kind's
+  String() (e.g. d.Tok.String(), x.Op.String()), no token import needed in emit.go.
+  Unsupported nodes (every goal-specific node, plus any not-yet-wired Go form)
+  return a descriptive `backend: unsupported <kind> %T` error — later stories
+  (US-032+) fill them in. internal/backend's test is EXTERNAL (package
+  backend_test) so it can import internal/corpus (corpus does not import backend).
+- After changing cmd/goal subcommand/flag docs (guideCommands), regenerate the
+  checked-in golden: `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`
+  (TestBootstrapGoldenMatches fails otherwise). No CLI flag-drift test exists; the
+  guide drift test only covers diagnostic codes.
 
 ## [2026-06-27T01:56:33Z] - US-001
 - Implemented internal/corpus: a runner-independent Case model and JSON manifest
@@ -972,4 +988,57 @@
   - Snapshot inputs are read from ../../features/NN/examples (cwd =
     internal/parser); all parse with zero errors since US-024 gated 100% corpus
     parsing.
+---
+
+## [2026-06-26T00:00:00Z] - US-026
+- Phase 2 begins: landed the pluggable back-end seams the AST engine plugs into,
+  behind a driver flag, with the splice engine untouched and still the default.
+- New internal/sema: a placeholder Info type + New() so Backend.Emit's second
+  parameter (*sema.Info) is expressible; US-027 fills Info by AST walk.
+- New internal/backend:
+  - Backend interface { Emit(file *ast.File, info *sema.Info) (pipeline.Output, error) }
+  - Formatter interface { Format(src []byte) ([]byte, error) } + GoFormatter
+    (wraps go/format.Source).
+  - goBackend (unexported) implements Backend over a minimal plain-Go emitter
+    (emit.go): File/GenDecl/FuncDecl + the basic stmts/exprs/type forms a
+    no-goal-constructs file uses. Goal-specific nodes and not-yet-wired Go forms
+    return `backend: unsupported ... %T` (US-032+).
+  - Transpile(src) (pipeline.Output, error): parse (parser.ParseFile) -> sema.New
+    -> goBackend.Emit -> GoFormatter.Format. Satisfies corpus.Transpiler via
+    corpus.TranspilerFunc, so it runs through the same behavioral tier.
+- Driver (cmd/goal/main.go): parseFlags gained --engine=splice|ast (default
+  splice; unknown value / bare --engine are usage errors). build/run thread the
+  engine to transpileAll(root, engine); engine=ast routes each file through
+  backend.Transpile (transpilePackageAST, one GoFile per source). engine=splice
+  (default/absent) calls pipeline.TranspilePackage byte-for-byte as before.
+  --engine is accepted on check too (shared parseFlags) but inert there for now.
+- Tests: internal/sema TestNewReturnsInfo; internal/backend (external package
+  backend_test) TestInterfacesExist / TestGoFormatterFormats /
+  TestASTEngineTranspilesPlainGo / TestASTEngineBehavioralTier (AC2 — runs
+  testdata/plain.goal through backend.Transpile + corpus.RunCompile, -short
+  skipped); cmd/goal TestParseFlags (default engine) + TestParseFlagsEngine
+  (ast/splice/unknown/bare) + TestBuildWithASTEngine (end-to-end
+  `goal build --engine=ast`). Regenerated AI-KNOWLEDGE-BOOTSTRAP.md for the new
+  flag docs.
+- Files changed:
+  - internal/sema/sema.go, internal/sema/sema_test.go (new)
+  - internal/backend/backend.go, internal/backend/emit.go,
+    internal/backend/backend_test.go, internal/backend/testdata/plain.goal (new)
+  - cmd/goal/main.go (--engine flag + transpilePackageAST + engine threading +
+    guideCommands docs), cmd/goal/main_test.go (engine tests)
+  - AI-KNOWLEDGE-BOOTSTRAP.md (regenerated)
+  - prd.json (US-026 passes:true), progress.txt
+  - history/20260627-feature-us-026-backend-formatter-interfaces/ (initiative)
+- Learnings for future iterations:
+  - The emitter is intentionally minimal (seam-proving), NOT the full Go subset —
+    US-032 extends emit.go to cover all plain-Go forms across the corpus, and
+    US-033+ add the goal-construct lowering (which will likely need sema.Info
+    populated by US-027 + a lower step). Keep emit.go's "valid tokens, let gofmt
+    format" discipline.
+  - corpus.RunCompile + corpus.TranspilerFunc(backend.Transpile) is the reusable
+    way to behaviorally gate ANY front-end on a single ad-hoc Case (build a
+    corpus.Case{Kind:KindTranspile, Mode:ModeFile, Input:<repo-rel path>} and
+    pass root="../.."). US-032/US-041 reuse this against the whole manifest.
+  - parseFlags now returns 5 values (added engine); any new caller must thread it.
+    engine constants live in main.go (engineSplice/engineAST).
 ---

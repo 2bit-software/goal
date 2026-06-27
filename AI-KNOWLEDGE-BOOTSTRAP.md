@@ -51,10 +51,12 @@ via `//line` directives), then, if you have doctests, `goal build --emit` follow
 
 **Commands:**
 
-- `goal build [--emit[=dir]] [path]` — transpile and `go build` the package(s)
+- `goal build [--emit[=dir]] [--engine=splice|ast] [path]` — transpile and `go build` the package(s)
     - `--emit[=dir]` — also write generated .go beside each .goal (or under dir)
-- `goal run [--emit[=dir]] [path]` — transpile and `go run` the sole main package
+    - `--engine=splice|ast` — front-end engine: splice (default) or the new AST engine
+- `goal run [--emit[=dir]] [--engine=splice|ast] [path]` — transpile and `go run` the sole main package
     - `--emit[=dir]` — also write generated .go beside each .goal (or under dir)
+    - `--engine=splice|ast` — front-end engine: splice (default) or the new AST engine
 - `goal check [path]` — run the static checker over the package(s)
 - `goal fix [-inplace] [path]` — rewrite plain-Go patterns into idiomatic goal (Result + `?`)
     - `-inplace` — write changes back to each file instead of printing to stdout

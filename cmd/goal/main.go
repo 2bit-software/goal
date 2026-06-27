@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 
+	"goal/internal/backend"
 	"goal/internal/check"
 	"goal/internal/fix"
 	"goal/internal/guide"
@@ -38,14 +39,20 @@ var guideCommands = []guide.Command{
 	{
 		Name:    "build",
 		Summary: "transpile and `go build` the package(s)",
-		Usage:   "goal build [--emit[=dir]] [path]",
-		Flags:   []guide.Flag{{Name: "--emit[=dir]", Summary: "also write generated .go beside each .goal (or under dir)"}},
+		Usage:   "goal build [--emit[=dir]] [--engine=splice|ast] [path]",
+		Flags: []guide.Flag{
+			{Name: "--emit[=dir]", Summary: "also write generated .go beside each .goal (or under dir)"},
+			{Name: "--engine=splice|ast", Summary: "front-end engine: splice (default) or the new AST engine"},
+		},
 	},
 	{
 		Name:    "run",
 		Summary: "transpile and `go run` the sole main package",
-		Usage:   "goal run [--emit[=dir]] [path]",
-		Flags:   []guide.Flag{{Name: "--emit[=dir]", Summary: "also write generated .go beside each .goal (or under dir)"}},
+		Usage:   "goal run [--emit[=dir]] [--engine=splice|ast] [path]",
+		Flags: []guide.Flag{
+			{Name: "--emit[=dir]", Summary: "also write generated .go beside each .goal (or under dir)"},
+			{Name: "--engine=splice|ast", Summary: "front-end engine: splice (default) or the new AST engine"},
+		},
 	},
 	{
 		Name:    "check",
@@ -106,15 +113,15 @@ func run(args []string, out, errOut io.Writer) error {
 		}
 		return cmdFix(path, inplace, out, errOut)
 	case "build", "run", "check":
-		emit, emitDir, root, err := parseFlags(rest)
+		emit, emitDir, root, engine, err := parseFlags(rest)
 		if err != nil {
 			return err
 		}
 		switch cmd {
 		case "build":
-			return cmdBuild(root, emit, emitDir, out, errOut)
+			return cmdBuild(root, engine, emit, emitDir, out, errOut)
 		case "run":
-			return cmdRun(root, emit, emitDir, out, errOut)
+			return cmdRun(root, engine, emit, emitDir, out, errOut)
 		default: // check
 			return cmdCheck(root, out, errOut)
 		}
@@ -137,11 +144,23 @@ func cmdAI(args []string, out io.Writer) error {
 	return guide.Render(out, section, guideCommands)
 }
 
-// parseFlags pulls --emit[=dir] and a single optional path argument out of args. The
-// path defaults to "." and a trailing "/..." (or bare "...") is stripped, since
-// discovery is already recursive.
-func parseFlags(args []string) (emit bool, emitDir, root string, err error) {
+// Transpile engines selectable via --engine. engineSplice is the token-splice
+// front-end (today's default); engineAST is the new AST-based engine
+// (REWRITE-ARCHITECTURE.md Phase 2), wired here behind the flag while it is built
+// up story by story. The splice engine stays the default until the AST engine is
+// behaviorally complete (US-042).
+const (
+	engineSplice = "splice"
+	engineAST    = "ast"
+)
+
+// parseFlags pulls --emit[=dir], --engine=<splice|ast>, and a single optional path
+// argument out of args. The path defaults to "." and a trailing "/..." (or bare
+// "...") is stripped, since discovery is already recursive. The engine defaults to
+// the splice front-end; an unrecognized --engine value is a usage error.
+func parseFlags(args []string) (emit bool, emitDir, root, engine string, err error) {
 	root = "."
+	engine = engineSplice
 	gotPath := false
 	for _, a := range args {
 		switch {
@@ -149,11 +168,18 @@ func parseFlags(args []string) (emit bool, emitDir, root string, err error) {
 			emit = true
 		case strings.HasPrefix(a, "--emit="):
 			emit, emitDir = true, strings.TrimPrefix(a, "--emit=")
+		case strings.HasPrefix(a, "--engine="):
+			engine = strings.TrimPrefix(a, "--engine=")
+			if engine != engineSplice && engine != engineAST {
+				return false, "", "", "", fmt.Errorf("unknown engine %q (want %q or %q)", engine, engineSplice, engineAST)
+			}
+		case a == "--engine":
+			return false, "", "", "", fmt.Errorf("--engine requires a value (%q or %q)", engineSplice, engineAST)
 		case strings.HasPrefix(a, "-"):
-			return false, "", "", fmt.Errorf("unknown flag %q", a)
+			return false, "", "", "", fmt.Errorf("unknown flag %q", a)
 		default:
 			if gotPath {
-				return false, "", "", fmt.Errorf("expected a single path, got extra %q", a)
+				return false, "", "", "", fmt.Errorf("expected a single path, got extra %q", a)
 			}
 			root, gotPath = a, true
 		}
@@ -162,7 +188,7 @@ func parseFlags(args []string) (emit bool, emitDir, root string, err error) {
 	if root == "" {
 		root = "."
 	}
-	return emit, emitDir, root, nil
+	return emit, emitDir, root, engine, nil
 }
 
 // parseFixFlags pulls the -inplace flag and a single optional path (a .goal file or a
@@ -253,8 +279,13 @@ type transpiled struct {
 	out pipeline.PackageOutput
 }
 
-// transpileAll discovers and transpiles every package under root.
-func transpileAll(root string) ([]transpiled, error) {
+// transpileAll discovers and transpiles every package under root with the selected
+// engine. The splice engine uses pipeline.TranspilePackage (cross-file tables,
+// shared prelude) exactly as before; the AST engine transpiles each file through
+// backend.Transpile (single-file, plain-Go subset for now — cross-file/prelude
+// support on the AST path is a later story). The splice path is unchanged when the
+// flag is absent.
+func transpileAll(root, engine string) ([]transpiled, error) {
 	pkgs, err := project.Discover(root)
 	if err != nil {
 		return nil, err
@@ -264,7 +295,12 @@ func transpileAll(root string) ([]transpiled, error) {
 	}
 	var ts []transpiled
 	for _, pkg := range pkgs {
-		out, err := pipeline.TranspilePackage(pkg)
+		var out pipeline.PackageOutput
+		if engine == engineAST {
+			out, err = transpilePackageAST(pkg)
+		} else {
+			out, err = pipeline.TranspilePackage(pkg)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -273,8 +309,30 @@ func transpileAll(root string) ([]transpiled, error) {
 	return ts, nil
 }
 
-func cmdBuild(root string, emit bool, emitDir string, out, errOut io.Writer) error {
-	ts, err := transpileAll(root)
+// transpilePackageAST transpiles each file in pkg through the AST engine
+// (backend.Transpile), assembling a PackageOutput with one generated Go file per
+// source (and a doctest sidecar when present). It does no cross-file table merge or
+// shared-prelude emission yet — that is later AST-backend work; the splice engine
+// remains the default for packages that need it.
+func transpilePackageAST(pkg *project.Package) (pipeline.PackageOutput, error) {
+	var out pipeline.PackageOutput
+	for _, f := range pkg.Files {
+		res, err := backend.Transpile(f.Src)
+		if err != nil {
+			return pipeline.PackageOutput{}, fmt.Errorf("%s: %w", f.Name, err)
+		}
+		gen := strings.TrimSuffix(f.Name, project.Ext) + ".go"
+		out.Files = append(out.Files, pipeline.GoFile{Name: gen, Go: res.Go})
+		if res.Test != "" {
+			test := strings.TrimSuffix(f.Name, project.Ext) + "_test.go"
+			out.Tests = append(out.Tests, pipeline.GoFile{Name: test, Go: res.Test})
+		}
+	}
+	return out, nil
+}
+
+func cmdBuild(root, engine string, emit bool, emitDir string, out, errOut io.Writer) error {
+	ts, err := transpileAll(root, engine)
 	if err != nil {
 		return err
 	}
@@ -284,8 +342,8 @@ func cmdBuild(root string, emit bool, emitDir string, out, errOut io.Writer) err
 	return goToolchain(root, ts, out, errOut, "build", "./...")
 }
 
-func cmdRun(root string, emit bool, emitDir string, out, errOut io.Writer) error {
-	ts, err := transpileAll(root)
+func cmdRun(root, engine string, emit bool, emitDir string, out, errOut io.Writer) error {
+	ts, err := transpileAll(root, engine)
 	if err != nil {
 		return err
 	}
