@@ -1,6 +1,15 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- The goscript-runtime PRD (US-001..US-028) builds the tree-walking interpreter
+  (planned internal/interp) + capability model (internal/cap) over the shared
+  AST+sema front-end. internal/cap (US-001) is the authority seam: a Capability
+  iota enum + CapabilitySet{bits uint64} bitset with Has (value recv) / Grant
+  (ptr recv) + GrantAll()/DenyAll() constructors + package-private
+  allCapabilities() (single source of truth for "every capability", mirrored to
+  the enum — the exhaustive test and GrantAll both iterate it). v1 grants
+  everything by default; deny is host opt-in, enforcement deferred to later
+  stories. Doc: docs/goscript/restriction-diff.md.
 - Zero-dependency: stdlib only. Tests use stdlib `testing` (NO testify), even
   though the injected go.md rule mentions testify — the project constraint wins.
 - LSP go-to-definition (US-048) introduces the AST SYMBOL GRAPH the later editor
@@ -344,6 +353,34 @@
   TextEdits by byte offset RIGHT-TO-LEFT (sort spans by descending start) so earlier
   edits don't shift later offsets. Still single-document (locals/params/qualified
   imports/cross-file out of scope, consistent with US-048/049).
+
+## [2026-06-27T15:14:00Z] - US-001
+- First story of the goscript-runtime PRD. Added internal/cap, the capability/
+  authority seam: a Capability iota enum (Stdout, Stdin, FileRead, FileWrite, Net,
+  Concurrency, Time, Env) + CapabilitySet{bits uint64} with Has (value recv) /
+  Grant (ptr recv) + GrantAll()/DenyAll() constructors, plus package-private
+  allCapabilities(). Added docs/goscript/restriction-diff.md enumerating each
+  capability (all Granted by default in v1).
+- Files changed:
+  - internal/cap/cap.go (new: Capability enum + String + allCapabilities +
+    CapabilitySet + Has/Grant/GrantAll/DenyAll + itoa helper)
+  - internal/cap/cap_test.go (new: TestGrantAllHasEvery, TestDenyAllHasNone,
+    TestGrantAddsCapability, TestStringNonEmpty — stdlib testing, no testify)
+  - docs/goscript/restriction-diff.md (new)
+  - prd.json (US-001 passes:true), progress.txt
+  - history/20260627-feature-us-001-define-cap-capability-model/ (initiative)
+- Learnings for future iterations:
+  - The injected go.md rule says "use testify", but the project is zero-dependency
+    (MEMORY.md no-testify) — the project constraint wins, stdlib testing only.
+  - allCapabilities() is the single source of truth for "every capability": both
+    GrantAll and the exhaustive tests iterate it. Adding a Capability means adding
+    to the enum, allCapabilities(), the String switch, and the doc table.
+  - cap.go keeps itself dependency-free (a tiny itoa for the unknown-capability
+    String fallback rather than importing strconv) — consistent with the project's
+    zero-dependency stance, though strconv would also have been stdlib-safe.
+  - v1 GrantAll-by-default keeps behavior unchanged; US-023/US-024 add the
+    effect-site routing and denial enforcement that consume this seam.
+---
 
 ## [2026-06-27T19:30:00Z] - US-050
 - Added textDocument/references and textDocument/rename to the goal LSP, both

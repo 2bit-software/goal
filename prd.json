@@ -1,7 +1,7 @@
 {
   "project": "goal",
-  "branchName": "ralph/ast-frontend-rewrite",
-  "description": "Replace the token-splice transpiler with a real lexer/parser/AST front-end, retire the splice passes behind a new Go backend, and move every tool (check, fix, fmt, LSP) onto the shared AST.",
+  "branchName": "ralph/goscript-runtime",
+  "description": "Build the goscript tree-walking interpreter (backend/interp) over the shared AST + sema front-end, with a capability model and a universal tagged-union value model, proven by the existing behavioral conformance tier run under interpretation.",
   "verifyCommands": [
     "go build ./...",
     "go vet ./...",
@@ -10,603 +10,339 @@
   "userStories": [
     {
       "id": "US-001",
-      "title": "Add corpus Case model and loader",
-      "description": "As a compiler engineer, I need a runner-independent model of golden cases so the suite is decoupled from package layout.",
+      "title": "Define cap capability model",
+      "description": "As a runtime author, I need an explicit capability/authority model so goscript restricts power by what the host grants, not by a different grammar.",
       "acceptanceCriteria": [
-        "internal/corpus defines Case{ID, Kind(transpile|check|doctest), Input, Expected, Mode(file|package), Normalize} and Load(path)(Manifest,error)",
-        "A unit test loads a small fixture manifest from internal/corpus/testdata and asserts every field of one case of each Kind"
+        "internal/cap defines a Capability enumeration covering at least Stdout, Stdin, FileRead, FileWrite, Net, Concurrency, Time, and Env, plus a CapabilitySet with Has/Grant and GrantAll() and DenyAll() constructors",
+        "A unit test asserts GrantAll().Has(c) is true and DenyAll().Has(c) is false for every defined Capability, and docs/goscript/restriction-diff.md enumerates each capability and whether goscript grants it by default"
       ],
       "priority": 1,
       "passes": true,
-      "notes": ""
+      "notes": "Implements the REWRITE-ARCHITECTURE.md §4 / §6 open spec item: the goscript restriction diff is 'capabilities are authority, not language difference'. v1 may grant everything via GrantAll, but the seam must exist now."
     },
     {
       "id": "US-002",
-      "title": "Generate manifest over existing corpus",
-      "description": "As a maintainer, I need the existing golden files indexed into one manifest so any runner can consume them.",
+      "title": "Define interp value model",
+      "description": "As a runtime author, I need a uniform runtime value representation so enums, Result, and Option share one tagged-union encoding distinct from the Go backend's optimizations.",
       "acceptanceCriteria": [
-        "A generator walks features/NN/examples, testdata, and testdata/check and writes corpus/manifest.json without moving any source file",
-        "A test asserts the generated manifest contains 51 transpile pairs and 50 check cases (the current corpus counts)"
+        "internal/interp defines a Value type covering int, float, string, bool, nil, struct, slice, map, and function, plus a universal tagged-union Variant{TypeID, Tag, Fields} used uniformly for enum/Result/Option",
+        "A unit test constructs a Variant and each primitive/composite Value, reads a Variant field back by name, and asserts Value equality and String() rendering"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Counts from audit: 40 feature examples + 11 testdata = 51 transpile pairs; 50 check cases."
+      "passes": false,
+      "notes": "REWRITE-ARCHITECTURE.md §4: the interpreter IGNORES the Go-codegen optimizations (Result->(T,error), Option->*T) and uses the universal tagged-union. Do not reuse backend/go's lowering."
     },
     {
       "id": "US-003",
-      "title": "Build interface-based transpile runner",
-      "description": "As a compiler engineer, I need a transpile runner behind an interface so multiple front-ends can be judged identically.",
+      "title": "Define environment and scopes",
+      "description": "As a runtime author, I need lexical scoping so variables resolve and shadow correctly during evaluation.",
       "acceptanceCriteria": [
-        "internal/corpus defines Transpiler interface{ Transpile(src string)(pipeline.Output,error) } and a runner that gofmt-normalizes both got and want before comparing",
-        "A test runs every transpile case in the manifest against pipeline.Transpile and all pass"
+        "internal/interp Env supports Define, Lookup, and NewChild with inner scopes shadowing outer scopes and lookups falling through to parents",
+        "A unit test asserts shadowing, parent fall-through, and that Lookup of an undefined name returns a not-found error"
       ],
       "priority": 3,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-004",
-      "title": "Build interface-based check runner",
-      "description": "As a compiler engineer, I need a check runner that honors inline // want markers so checker cases are runner-independent.",
+      "title": "Interpreter entry over AST and sema",
+      "description": "As a runtime author, I need the interpreter to consume the shared front-end so goscript is a back-end over the same AST, not a fork.",
       "acceptanceCriteria": [
-        "Runner defines Checker interface and matches each // want \"substr\" marker against a diagnostic on the same line, failing on any unclaimed Error-severity diagnostic",
-        "A test runs every check case in the manifest against check.Analyze and all pass"
+        "internal/interp exposes a constructor taking a parsed *ast.File (or package) plus *sema.Info and a Run entry that executes func main",
+        "A unit test parses and resolves a trivial `package main\\nfunc main() {}` goal program through internal/parser + internal/sema and runs it through the interpreter with no error, demonstrating the interpreter consumes the shared AST+sema front-end rather than Go-lowered output"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": ""
+      "passes": false,
+      "notes": "This is the load-bearing seam from REWRITE-ARCHITECTURE.md §3.1 (Backend interface): the interpreter reads typed AST + sema.Info, NOT the Go backend's lowered form."
     },
     {
       "id": "US-005",
-      "title": "Build doctest sidecar runner",
-      "description": "As a compiler engineer, I need doctest cases compared via the manifest so the doctest output is part of the same suite.",
+      "title": "Eval literals and operators",
+      "description": "As a runtime author, I need expression evaluation so ordinary computation runs under interpretation.",
       "acceptanceCriteria": [
-        "Runner compares Output.Test to the .go.expected sidecar (gofmt-normalized) for every doctest case in the manifest",
-        "A test runs all doctest cases against pipeline.Transpile and all pass"
+        "The interpreter evaluates int/float/string/bool literals and arithmetic (+ - * / %), comparison (== != < <= > >=), logical (&& ||), and unary (- !) operators with Go semantics including && / || short-circuiting",
+        "A table-driven unit test evaluates at least 12 expression programs and asserts each result value"
       ],
       "priority": 5,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-006",
-      "title": "Rewire existing harnesses to runner",
-      "description": "As a maintainer, I need the old test harnesses to delegate to the corpus runner so hardcoded paths disappear.",
+      "title": "Eval variables and assignment",
+      "description": "As a runtime author, I need declaration and assignment so state evolves during evaluation.",
       "acceptanceCriteria": [
-        "pipeline_test.go and check_test.go contain no hardcoded feature-dir lists or filepath.Join(\"..\",\"..\",\"features\",...) paths (grep returns nothing)",
-        "The full suite remains green after the rewrite"
+        "The interpreter evaluates var declarations, short-var :=, const, and plain plus compound (+=, -=, etc.) assignment, reading and writing through Env",
+        "A unit test asserts a program that declares, reassigns, and compound-assigns variables yields the expected final values"
       ],
       "priority": 6,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-007",
-      "title": "Add behavioral tier: compile output",
-      "description": "As a compiler engineer, I need generated Go compiled per case so conformance is judged by behavior, not Go spelling.",
+      "title": "Eval functions and calls",
+      "description": "As a runtime author, I need function values and calls so programs can be structured and recursive.",
       "acceptanceCriteria": [
-        "For every transpile case the runner writes Output.Go to a temp module and runs go build + go vet on it",
-        "A test asserts every transpile case's generated Go builds and vets cleanly"
+        "The interpreter evaluates function declarations as values, binds parameters, supports multiple return values, and supports recursion",
+        "A unit test runs recursive factorial and fibonacci goal functions and asserts their returned values"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "Reuse the temp-dir machinery from goal build. This tier is implementation-independent and gates all later phases."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-008",
-      "title": "Add behavioral tier: run doctests",
-      "description": "As a compiler engineer, I need doctest sidecars executed so behavior is proven, not just compiled.",
+      "title": "Eval control flow",
+      "description": "As a runtime author, I need control-flow statements so branching and looping run correctly.",
       "acceptanceCriteria": [
-        "For each case that has a doctest sidecar, the runner writes both files to a temp module and runs go test on it",
-        "A test asserts every doctest-bearing case passes go test in its temp module"
+        "The interpreter evaluates if/else, three-clause and condition-only for loops, switch (with cases and default), nested block scoping, and break/continue",
+        "A unit test runs programs exercising each control-flow form (e.g. a summation loop and a switch dispatch) and asserts the observable results"
       ],
       "priority": 8,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-009",
-      "title": "Reify package-mode tests as fixtures",
-      "description": "As a maintainer, I need the inline package-mode tests as on-disk fixtures so they live in the manifest.",
+      "title": "Eval composite types",
+      "description": "As a runtime author, I need structs, slices, and maps so real data structures evaluate.",
       "acceptanceCriteria": [
-        "foreign_test.go and pipeline_package_test.go inline sources become on-disk multi-file fixtures with a declared import map, indexed as Mode=package cases",
-        "The runner executes the package-mode cases and they pass"
+        "The interpreter evaluates struct composite literals + field access, slice literals + indexing, map literals + indexing + key assignment, and range-for over slices and maps",
+        "A unit test builds and reads structs, slices, and maps, ranges over a slice and a map, and asserts the collected results"
       ],
       "priority": 9,
-      "passes": true,
-      "notes": "Fixtures under testdata/package/<name>/ with a pkg.json (name + import map). Generate indexes them as Kind=transpile, Mode=package via Case.Package (PackageSpec). corpus.RunPackage transpiles + validates Go + builds each package (foreign import wired into a temp module). Manifest now 107 cases (51+50+4+2)."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-010",
-      "title": "Archive legacy per-feature transpilers",
-      "description": "As a maintainer, I need the superseded standalone transpilers archived so they stop implying they are live.",
+      "title": "Eval builtins and methods",
+      "description": "As a runtime author, I need builtins and method dispatch so idiomatic Go-subset code runs.",
       "acceptanceCriteria": [
-        "features/NN/transpiler directories are moved under attic/ and no features/*/transpiler path remains",
-        "go build ./... and go test ./... remain green (these were separate modules excluded from the root module)"
+        "The interpreter implements the len, append, make, and panic builtins and dispatches both value-receiver and pointer-receiver methods declared on goal types",
+        "A unit test asserts append/len on a slice, make of a map, a recovered panic, and a method call mutating a pointer receiver"
       ],
       "priority": 10,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-011",
-      "title": "Add token package with positions",
-      "description": "As a compiler engineer, I need a token type with line/col positions so the AST can carry real source positions.",
+      "title": "Add host-function bridge for stdlib",
+      "description": "As a runtime author, I need a registry of native host functions so corpus programs that call the stdlib can run under interpretation.",
       "acceptanceCriteria": [
-        "internal/token defines Kind constants for every goal lexeme and Pos{Offset,Line,Col}",
-        "A unit test asserts Kind/String round-trips and Pos ordering"
+        "internal/interp provides a host-function registry resolving at least fmt.Sprintf, fmt.Sprint, fmt.Println, fmt.Errorf, and errors.New to native Go implementations; an unresolved imported call produces a located, named error rather than a silent nil",
+        "A unit test runs a goal program calling fmt.Sprintf and asserts the produced string, and asserts an unregistered imported call yields a descriptive error naming the missing symbol"
       ],
       "priority": 11,
-      "passes": true,
-      "notes": ""
+      "passes": false,
+      "notes": "The behavioral gate (US-027) needs this for doctests/programs that call the stdlib. Unshimmed symbols are an explicit, named refusal, never a silent failure."
     },
     {
       "id": "US-012",
-      "title": "Lex core Go tokens with positions",
-      "description": "As a compiler engineer, I need a lexer for the Go subset so ordinary source tokenizes with correct positions.",
+      "title": "Eval enum construction",
+      "description": "As a runtime author, I need enum values so goal's sum types exist at runtime as tagged unions.",
       "acceptanceCriteria": [
-        "internal/lexer tokenizes identifiers, literals, operators, and delimiters with accurate Offset/Line/Col",
-        "A test tokenizes a multi-line sample and asserts the kind and position of each token"
+        "The interpreter constructs enum variant values (data-less and payload-carrying) via Enum.Variant(...) into tagged-union Values and reads their payload fields",
+        "A unit test over a 01-enums-shaped program constructs each variant kind and asserts the tag and field values"
       ],
       "priority": 12,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-013",
-      "title": "Lex goal-specific lexemes and trivia",
-      "description": "As a compiler engineer, I need the lexer to emit goal lexemes so the parser need not fake them.",
+      "title": "Eval statement-position match",
+      "description": "As a runtime author, I need match dispatch so sum types are consumed by tag at runtime.",
       "acceptanceCriteria": [
-        "Lexer emits single tokens for ? , => , and ... ; retains /// doc-comment content as trivia; and lexes implements/sealed/from/derive as identifiers",
-        "A test asserts each of these lexemes produces exactly one token of the expected kind and that comments attach as trivia"
+        "The interpreter evaluates statement-position match: it dispatches on the variant tag, binds the matched payload into scope, runs the selected arm, and panics 'unreachable' on the defensive default of a proven-exhaustive match",
+        "A unit test over a 02-match-shaped program asserts the correct arm runs for each variant and that the default arm is unreachable"
       ],
       "priority": 13,
-      "passes": true,
-      "notes": "=> must be one token, not '=' then '>' as the splice passes treat it."
+      "passes": false,
+      "notes": "Preserve the 'erase the guarantee, panic-not-silent' stance: the proven-exhaustive default arm is a loud panic."
     },
     {
       "id": "US-014",
-      "title": "Define core AST nodes and Walk",
-      "description": "As a compiler engineer, I need AST node types for the Go subset plus a visitor so tools can traverse one tree.",
+      "title": "Eval value-position match",
+      "description": "As a runtime author, I need match as an expression so value-position match yields a value, one of the two non-Go runtime mechanics.",
       "acceptanceCriteria": [
-        "internal/ast defines File, the Go decl/stmt/expr/type nodes goal uses, and Walk(Visitor,Node)",
-        "A test builds a tree by hand and asserts Walk visits every node exactly once"
+        "The interpreter evaluates value-position match — `return match`, `x := match`, and `var x = match` — yielding the selected arm's value as an expression result",
+        "A unit test asserts a function returning `match` and a variable bound to `match` produce the expected values for each input variant"
       ],
       "priority": 14,
-      "passes": true,
-      "notes": ""
+      "passes": false,
+      "notes": "REWRITE-ARCHITECTURE.md §4: value-position match is one of only two genuinely non-Go runtime mechanics."
     },
     {
       "id": "US-015",
-      "title": "Add goal declaration AST nodes",
-      "description": "As a compiler engineer, I need AST nodes for goal declarations so enums and friends are first-class.",
+      "title": "Eval Result as tagged union",
+      "description": "As a runtime author, I need Result represented uniformly so the interpreter need not encode it as (T,error).",
       "acceptanceCriteria": [
-        "ast defines EnumDecl/Variant/PayloadField, SealedInterfaceDecl, ImplementsClause, and from/derive FuncDecl modifiers",
-        "A test asserts Walk descends into each new node's children"
+        "The interpreter represents Result.Ok/Result.Err as tagged-union Values, uniformly for both open-E and closed-E (no (T,error) optimization), and matches over them",
+        "A unit test over 03-result and 06-error-e shapes constructs Ok and Err and asserts match arms bind the payload and error correctly"
       ],
       "priority": 15,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-016",
-      "title": "Add goal expression and pattern nodes",
-      "description": "As a compiler engineer, I need AST nodes for match, ? and construction so the three meanings of Enum.Variant(x) are distinct node types.",
+      "title": "Eval Option as tagged union",
+      "description": "As a runtime author, I need Option represented uniformly so the interpreter need not encode it as *T.",
       "acceptanceCriteria": [
-        "ast defines MatchExpr/MatchArm, VariantPattern/RestPattern, UnwrapExpr, VariantLit/LabeledArg, and SpreadElement",
-        "A test asserts a construction VariantLit and a destructuring VariantPattern are distinct node types and both walk correctly"
+        "The interpreter represents Option.Some/Option.None as tagged-union Values and matches over them",
+        "A unit test over a 04-option shape constructs Some and None and asserts the match arms behave correctly"
       ],
       "priority": 16,
-      "passes": true,
-      "notes": "This is the structural fix for the Match-before-Enums ordering hack."
-    },
-    {
-      "id": "US-017",
-      "title": "Parse package, imports, declarations",
-      "description": "As a compiler engineer, I need top-level declaration parsing so a file's structure becomes an AST.",
-      "acceptanceCriteria": [
-        "internal/parser parses package clause, imports, and func/type/var/const declarations of the Go subset into ast.File",
-        "A test parses a sample file and asserts the declaration list shape"
-      ],
-      "priority": 17,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
-      "id": "US-018",
-      "title": "Parse statements",
-      "description": "As a compiler engineer, I need statement parsing so function bodies become AST.",
+      "id": "US-017",
+      "title": "Eval question-mark unwinding",
+      "description": "As a runtime author, I need postfix ? as early-return unwinding, the second non-Go runtime mechanic, so error propagation works under interpretation.",
       "acceptanceCriteria": [
-        "Parser handles assignment, short-var, if/for/switch/return/defer/go and block statements",
-        "A test parses a function body with each statement form and asserts the statement list"
+        "The interpreter evaluates postfix ? as non-local early return: on Err/None it unwinds to the enclosing function's error/none return; on Ok/Some it yields the unwrapped value; closed-E `from` conversions are applied during propagation",
+        "A unit test over 05-question-prop and 06-error-e shapes asserts ? returns early on Err/None, continues on Ok/Some, and applies the converted error for closed-E"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "REWRITE-ARCHITECTURE.md §4: ? early-return unwinding is the second non-Go mechanic; thread it through eval as non-local control flow (e.g. a sentinel panic/recover or an explicit signal)."
+    },
+    {
+      "id": "US-018",
+      "title": "Eval implements dispatch",
+      "description": "As a runtime author, I need interface satisfaction so sealed-interface method dispatch runs at runtime.",
+      "acceptanceCriteria": [
+        "The interpreter honors implements: a struct satisfying a sealed interface is dispatched through the interface, calling the correct concrete method at runtime",
+        "A unit test over a 07-implements shape calls an interface method on differently-typed values and asserts each concrete implementation runs"
       ],
       "priority": 18,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-019",
-      "title": "Parse expressions with Pratt and postfix ?",
-      "description": "As a compiler engineer, I need precedence-correct expression parsing so postfix ? falls out of the grammar.",
+      "title": "Eval assert at runtime",
+      "description": "As a runtime author, I need assert so erased static guarantees still fail loudly at runtime.",
       "acceptanceCriteria": [
-        "Parser parses binary/unary/selector/call/index expressions with correct precedence and postfix ? as UnwrapExpr",
-        "A test asserts f(x)? , a.b? , and a mixed-precedence binary expression parse to the expected tree shape"
+        "The interpreter evaluates assert: a false condition panics with the located assertion message; a true condition is a no-op",
+        "A unit test over a 10-assert shape asserts the panic on a false assertion and normal completion on a true one"
       ],
       "priority": 19,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-020",
-      "title": "Parse enum, sealed, implements",
-      "description": "As a compiler engineer, I need enum-family parsing so closed types become AST.",
+      "title": "Eval defaults expansion",
+      "description": "As a runtime author, I need ...defaults so no-zero-value construction fills fields at runtime.",
       "acceptanceCriteria": [
-        "Parser parses enum declarations (data-less and payload variants), sealed interface, and struct implements clauses",
-        "A test parses the 01-enums and 07-implements example inputs and asserts variant/field/implements structure"
+        "The interpreter expands ...defaults at construction, filling unset struct fields with their safe zero values while preserving explicitly set fields",
+        "A unit test over an 08-no-zero-value/defaults shape asserts unset fields receive defaults and set fields are preserved"
       ],
       "priority": 20,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
       "id": "US-021",
-      "title": "Parse match and patterns",
-      "description": "As a compiler engineer, I need match parsing in both positions so value-position match is representable.",
+      "title": "Eval derive and from",
+      "description": "As a runtime author, I need derive/from conversions so generated conversions run under interpretation.",
       "acceptanceCriteria": [
-        "Parser parses match as both a statement and an expression (var x = match ...), including binding and rest patterns",
-        "A test asserts a statement-position and a value-position match both parse with the expected arms"
+        "The interpreter evaluates derive func conversions field-by-field using resolved sema types, applying from-registry conversions for bridged fields",
+        "A unit test over a 12-derive-convert shape asserts a derived conversion produces the expected target struct"
       ],
       "priority": 21,
-      "passes": true,
-      "notes": "Value-position match is refused by the current splice approach; it must parse here."
-    },
-    {
-      "id": "US-022",
-      "title": "Parse construction, labeled args, spread",
-      "description": "As a compiler engineer, I need construction parsing so Enum.Variant(field: v) and ...defaults become AST.",
-      "acceptanceCriteria": [
-        "Parser parses VariantLit with LabeledArg arguments and SpreadElement (...defaults, ...derive(s)) inside composite literals",
-        "A test parses Status.Active(since: now()) and a literal containing ...defaults and asserts the nodes"
-      ],
-      "priority": 22,
-      "passes": true,
+      "passes": false,
       "notes": ""
     },
     {
-      "id": "US-023",
-      "title": "Parse from/derive, assert, doctests",
-      "description": "As a compiler engineer, I need the remaining goal constructs parsed so the grammar is complete.",
+      "id": "US-022",
+      "title": "Gate interp on native sema only",
+      "description": "As a runtime author, I need the interpreter to depend only on native checks so goscript runs in a host with no Go toolchain.",
       "acceptanceCriteria": [
-        "Parser parses from func and derive func (bodyless and bodied), assert statements, and /// doctest comments as structured nodes",
-        "A test parses the 10-assert, 11-doctests, and 12-derive-convert example inputs and asserts their nodes"
+        "The interpreter run path validates input solely through internal/sema (native AST checks) and refuses a program that fails a sema guarantee before evaluation",
+        "A unit test asserts a non-exhaustive-match program is refused with a located diagnostic, and a dependency test (via `go list -deps` or a source scan) asserts internal/interp does not depend on internal/typecheck or go/types"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": "REWRITE-ARCHITECTURE.md §3.2: the go/types-over-lowered-Go crutch is fine for the Go-transpile path but NOT for the interpreter. Static checks must be native; types are checked statically and erased at runtime."
+    },
+    {
+      "id": "US-023",
+      "title": "Route runtime IO through cap",
+      "description": "As a runtime author, I need all host effects mediated by capabilities so authority is explicit and revocable.",
+      "acceptanceCriteria": [
+        "All interpreter host effects (stdout writes from print/fmt, time reads, env reads) are routed through a cap.CapabilitySet, and the default Run uses GrantAll()",
+        "A unit test runs a program that prints under GrantAll and captures the expected stdout through the capability sink"
       ],
       "priority": 23,
-      "passes": true,
-      "notes": "Parser now parses from/derive func modifiers (reusing FuncDecl.Mod/ModPos + optional body), assert (bare + printf-message, top-level-comma split), and /// doctests as structured nodes (DocComment/Doctest attached to FuncDecl.Doc). New ast.AssertStmt. DOC_COMMENT tokens are retained in the stream (not stripped) and collected before each decl."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-024",
-      "title": "Gate: parse 100% of corpus",
-      "description": "As a compiler engineer, I need every corpus input to parse so the parser is proven complete against the spec.",
+      "title": "Enforce capability denial",
+      "description": "As a runtime author, I need denied capabilities to refuse effects so the sandbox is real.",
       "acceptanceCriteria": [
-        "A test iterates every .goal input in the corpus manifest and parses it with zero errors",
-        "The test fails loudly listing any input that does not parse"
+        "Running the interpreter with a CapabilitySet that denies a capability causes the corresponding effect to fail with a located, named capability error instead of performing it",
+        "A unit test runs a printing program under a set with Stdout denied and asserts a capability-denied error is raised and nothing is written"
       ],
       "priority": 24,
-      "passes": true,
-      "notes": "Parser now parses 100% of the corpus (104 unique .goal inputs across 107 manifest cases). Closed 4 grammar gaps: multi-element type-arg/index lists (new ast.IndexListExpr; single index keeps IndexExpr); type-literal operands in expression position ([]byte(p) conversions, map[K]V{}/[]T{} composites) via parseOperand+compositeOK; optional-colon enum payload fields (Active { since int }); brace-less statement match-arm bodies (=> return true) via parseMatchArm dispatching parseStmt on statement keywords. Gate test: corpus.TestParseGate enumerates every unique input and lists any that fail."
+      "passes": false,
+      "notes": ""
     },
     {
       "id": "US-025",
-      "title": "Add AST snapshot tests",
-      "description": "As a compiler engineer, I need stable AST snapshots so parser structure is pinned per construct.",
+      "title": "Add corpus interpreter runner",
+      "description": "As a runtime author, I need a corpus runner for the interpreter so the existing behavioral tier becomes the interpreter's acceptance suite.",
       "acceptanceCriteria": [
-        "Parser can render an AST to a deterministic textual form (e.g. s-expression) and snapshot goldens exist for one input per goal construct",
-        "A test compares the rendered AST of each representative input to its checked-in snapshot"
+        "internal/corpus provides RunInterp: it loads a corpus case, runs it through the interpreter, and compares observable behavior (doctest output / asserted result) the same way the Go behavioral tier does",
+        "A unit test runs the doctest corpus cases through RunInterp and asserts they pass"
       ],
       "priority": 25,
-      "passes": true,
-      "notes": "Replaces the tree-sitter differential as the loop-ready gate; grammar.js remains a manual cross-check reference. ast.Sexpr (internal/ast/dump.go) renders a position-free, deterministic s-expression via reflection (skips token.Pos, names token.Kind/FuncMod/ChanDir, elides zero fields); internal/parser TestASTSnapshots parses one representative input per goal construct and diffs against testdata/snapshots/*.sexpr (-update-snapshots regenerates)."
+      "passes": false,
+      "notes": "REWRITE-ARCHITECTURE.md §6: the behavioral conformance tier was built to be implementation-independent — 'the conformance suite the self-hosted compiler and the interpreter both run'. Reuse it, do not invent a new oracle."
     },
     {
       "id": "US-026",
-      "title": "Add Backend and Formatter interfaces",
-      "description": "As a compiler engineer, I need pluggable backend/formatter seams so the new engine can run behind a flag.",
+      "title": "Wire interpreter into the CLI",
+      "description": "As a goal user, I need to run a program under the interpreter so goscript is usable from the command line.",
       "acceptanceCriteria": [
-        "Backend interface{ Emit(*ast.File,*sema.Info)(Output,error) } and Formatter interface exist; the driver selects engine via a flag (e.g. --engine=ast)",
-        "A test transpiles a goal file that uses no goal-specific constructs through the new engine and the output compiles via the behavioral tier"
+        "cmd/goal executes a .goal program via the interpreter (e.g. `goal run --engine=interp <file>`), running func main and exiting 0 on success",
+        "A cmd/goal test runs a sample .goal program through the interpreter path and asserts exit code 0 and the expected stdout"
       ],
       "priority": 26,
-      "passes": true,
-      "notes": "Phase 2 seam. internal/sema (placeholder Info+New, filled by US-027); internal/backend defines Backend{Emit(*ast.File,*sema.Info)(pipeline.Output,error)} + Formatter{Format([]byte)([]byte,error)} + GoFormatter (go/format) + goBackend (minimal plain-Go emitter, emit.go) + Transpile engine (parse->sema->Emit->format, satisfies corpus.Transpiler). Driver --engine=splice|ast flag in parseFlags; ast routes per-file via backend.Transpile (transpilePackageAST); splice unchanged + default. AC2 proven by corpus.RunCompile over testdata/plain.goal. Emitter errors on goal-specific/unsupported nodes (US-032+)."
+      "passes": false,
+      "notes": "Mirror the existing `--engine=splice|ast` flag convention; interp becomes a third engine value."
     },
     {
       "id": "US-027",
-      "title": "Resolve symbols by AST walk",
-      "description": "As a compiler engineer, I need name-keyed facts derived from the AST so analyze's token scanning is retired.",
+      "title": "Gate: behavioral parity under interp",
+      "description": "As a runtime author, I need the whole corpus to behave identically under interpretation so the interpreter is proven against the same yardstick as the Go backend.",
       "acceptanceCriteria": [
-        "internal/sema builds enums/structs/signatures/from-registry/methods by walking the AST",
-        "A test asserts sema resolves the same symbols as analyze.Build for a set of representative inputs, including a struct field whose type contains an embedded comma (the analyze comma-split bug)"
+        "A gate test runs every applicable corpus case through the interpreter via RunInterp with zero behavioral failures; any excluded case is enumerated in an explicit, justified skip list in the test (e.g. uses an unshimmed stdlib symbol), never silently dropped",
+        "The gate test fails if a case fails behaviorally or if the skip list is missing a recorded reason for any entry"
       ],
       "priority": 27,
-      "passes": true,
-      "notes": "Fixes the known analyze.parseStructBody comma-split bug structurally."
+      "passes": false,
+      "notes": "Gate corresponding to REWRITE-ARCHITECTURE.md §7 Phase 5: 'behavioral tier green under interpretation'. Honest deferral over false completion: a justified, enumerated skip list is allowed; silent drops are not."
     },
     {
       "id": "US-028",
-      "title": "Wrap go/types depth checks behind interface",
-      "description": "As a compiler engineer, I need the go/types crutch behind a TypeChecker interface so it can be swapped later without caller changes.",
+      "title": "Gate: script-to-module no-op",
+      "description": "As a goal user, I need a goscript program to graduate to a Go+ module unchanged so the script-to-binary upgrade path is frictionless.",
       "acceptanceCriteria": [
-        "TypeChecker interface is defined and the existing typecheck (transpile then go/types) implements it",
-        "A test exercises the depth checks through the interface and the existing typecheck cases still pass"
+        "A sample goscript program runs under the interpreter and, unchanged, transpiles and builds as a Go+ module via the existing AST backend, producing equivalent observable behavior",
+        "A test asserts the interpreter run and the transpiled-then-built binary of the same source produce the same output (the upgrade is a no-op)"
       ],
       "priority": 28,
-      "passes": true,
-      "notes": "Decision 4: no native goal type checker until the runtime forces it. internal/typecheck now defines TypeChecker{Check(pkg *project.Package)([]Diagnostic,error)} keyed on diagnostics (NOT Load's *types.Package, so a native checker with no go/types view can satisfy it); GoTypesChecker is the transpile-then-go/types crutch (Load + CheckImplements/CheckMustUse/CheckNoZeroValue). cmd/goal runDepthChecks routes through the interface value, so the implementation can flip with no caller change. Load + Check* stay exported and unchanged."
-    },
-    {
-      "id": "US-029",
-      "title": "Reimplement exhaustiveness check on AST",
-      "description": "As a goal developer, I need exhaustiveness checking over the AST so match diagnostics survive the front-end change.",
-      "acceptanceCriteria": [
-        "sema implements the match exhaustiveness check over the AST",
-        "Every exhaustiveness-related case in testdata/check passes through the sema checker via the corpus runner"
-      ],
-      "priority": 29,
-      "passes": true,
-      "notes": "internal/sema/check.go adds the AST exhaustiveness check (CheckExhaustive + the Check aggregator US-030/031 extend) plus sema's own Diagnostic/Severity spine, keeping sema independent of analyze/check. Enum resolved from the first variant-qualified arm (position-independent); Result/Option skipped; unknown enum -> Warning deferral; missing variants w/o `_` -> Error, message wording matched to the legacy check so the inline // want markers pass. corpus/sema_checker.go (SemaCheck) parses->Resolve->sema.Check->converts to check.Diagnostic via Pos.Offset, satisfying corpus.Checker; corpus.TestSemaExhaustiveRunner drives the 7 testdata/check/02-match cases through RunCheck and all pass."
-    },
-    {
-      "id": "US-030",
-      "title": "Reimplement field-completeness check on AST",
-      "description": "As a goal developer, I need no-zero-value (section 8) checking over the AST so field diagnostics survive.",
-      "acceptanceCriteria": [
-        "sema implements the field-completeness check over the AST (deferrals as Warnings, violations as Errors)",
-        "Every field-completeness case in testdata/check passes through the sema checker via the corpus runner"
-      ],
-      "priority": 30,
-      "passes": true,
-      "notes": "internal/sema/fields.go adds CheckFields (struct-literal + variant-construction §8 completeness) wired into sema.Check. Correct by construction on the AST: a struct literal is *ast.CompositeLit (Ident type), a construction is *ast.VariantLit (parser builds it only for labeled-arg calls), and a match-arm binding is *ast.VariantPattern — so walking VariantLit alone cannot mis-read a binding as a construction (the legacy match_binding false positive is impossible). Struct tags ride on the AST field; non-Ident composite types (slice/map) are skipped. ...defaults/...derive SpreadElement => complete-by-construction; unknown keyed literal type => Warning deferral; omission => Error. Messages mirror internal/check/fields.go verbatim for // want parity. corpus.TestSemaFieldsRunner drives all 9 testdata/check/08-no-zero-value cases through SemaCheck via RunCheck; all pass."
-    },
-    {
-      "id": "US-031",
-      "title": "Reimplement mustuse/implements/question checks",
-      "description": "As a goal developer, I need the remaining lexical checks over the AST so all diagnostics survive.",
-      "acceptanceCriteria": [
-        "sema implements must-use, implements, and ?-arity/refusal checks over the AST",
-        "Every must-use, implements, and question case in testdata/check passes through the sema checker via the corpus runner"
-      ],
-      "priority": 31,
-      "passes": true,
-      "notes": "Ported must-use (03), implements (07), and the ?-checks (05 open-E CheckQuestion + 06 closed-E CheckClosed) onto the AST in internal/sema, wired into sema.Check. Correct by construction: a dropped Result is ExprStmt{X:CallExpr}, a consumed `f()?` is ExprStmt{X:UnwrapExpr} (X is the UnwrapExpr, not the call), so the drop walk never misreads a propagation; a match-arm Result.Err(b) is a VariantPattern, a constructed Result.Err(E.V) is CallExpr{Fun:SelectorExpr}, so the closedness walk never misreads a binding (legacy false positives structurally impossible). Extended Info with Interfaces/EmbeddedIfaces (resolveInterface) so implements folds embedded interfaces; interface method Sig uses the same paramTypeListFL/joinTypes normalization as concrete methods, Raw left empty so the missing-method suggestion renders `Name() results`. ?-sites are read only at well-formed statement positions (AssignStmt RHS / ExprStmt X). Messages mirror internal/check/{mustuse,implements,question,closed}.go verbatim for // want parity. corpus.TestSemaQuestionImplementsRunner drives all 03-result/06-error-e/07-implements cases (21) through SemaCheck via RunCheck; all pass. sema.Check now runs the new checks for the 02/08 runners too (verified no false Error)."
-    },
-    {
-      "id": "US-032",
-      "title": "Emit the Go subset from AST",
-      "description": "As a compiler engineer, I need a code emitter for ordinary Go so the backend can print non-goal code.",
-      "acceptanceCriteria": [
-        "backend/go walks the AST and emits Go source text for the Go subset, formatted once via Formatter",
-        "A goal file using only plain-Go constructs transpiles through the new backend and passes the behavioral tier"
-      ],
-      "priority": 32,
-      "passes": true,
-      "notes": "internal/backend/emit.go now covers the full ordinary-Go subset the parser produces: added *ast.SwitchStmt/*ast.CaseClause emission (switchStmt/caseClause: optional init + tag, case e1,e2:/default: clauses) — the US-026 seed emitter omitted them. Also fixed a latent US-026 bug: fieldList joined struct fields / interface methods with COMMAS (invalid Go gofmt can't repair) — replaced the StructType/InterfaceType expr cases with newline-separating structType/interfaceType emitters; interface methods now render `Name(params) results` not `Name func(...)`. AC2 proven by corpus.RunCompile (temp-module go build+vet) over new testdata/plain_full.goal (switch, struct+composite, interface, map+range, slice, defer, multi-return, const/var). Func-literal IIFEs and trailing variadic call spread are NOT in goal's parsed subset (parser rejects them) — out of scope. Format-once discipline unchanged (GoFormatter). Goal-specific nodes still return descriptive unsupported errors (US-033+)."
-    },
-    {
-      "id": "US-033",
-      "title": "Lower and emit enums and implements",
-      "description": "As a goal developer, I need enum/sealed/implements lowering on the new backend so closed types work.",
-      "acceptanceCriteria": [
-        "lower+backend produce the sum encoding for enums and the assertion/marker for implements",
-        "The 01-enums and 07-implements transpile cases pass the behavioral tier through the new backend"
-      ],
-      "priority": 33,
-      "passes": true,
-      "notes": "Folded goal-construct lowering into internal/backend (no separate lower pkg; arch doc marks lower/ir optional). New internal/backend/lower.go holds the encoders mirrored from internal/pass (genEnum/genSealedInterface/genMarkerMethod/exported/pointerReceiverSet + nil-safe enumOf/isSealed over sema.Info). backend.Transpile now calls sema.Resolve(file) (was sema.New()) so the emitter has Enums/Sealed facts; goBackend.Emit threads info into emitFile(file, info). emit.go: decl() dispatches EnumDecl->genEnum and SealedInterfaceDecl->genSealedInterface; structType drops the implements clause (emits plain struct); implementsMarkers emits the §8.5 marker AFTER the type decl (sealed->func (T) isI(){}; else pointerRecv->var _ I=(*T)(nil); else var _ I=T{}); selectorExpr lowers a data-less enum variant (Status.Pending->Status(Status_Pending{}), guarded by info.Enums membership so io.Writer/c.n are untouched); variantLit lowers payload construction (Status.Active(since: now())->Status(Status_Active{Since: now()}), labels exported, values recursive so nested constructions lower for free). AC2: TestASTEngineEnumsImplementsBehavioralTier runs all 7 (4 01-enums + 3 07-implements) cases through backend.Transpile + corpus.RunCompile (build+vet). Output matches goldens modulo `type Time int64` vs golden `type Time = int64` alias (pre-existing US-032 TypeSpec.Assign gap; both build+vet; exact parity is US-042)."
-    },
-    {
-      "id": "US-034",
-      "title": "Lower and emit Result and Option",
-      "description": "As a goal developer, I need open-E Result and Option lowering on the new backend so the core types work.",
-      "acceptanceCriteria": [
-        "lower+backend produce (T,error) for open-E Result and *T for Option, including statement-position match over them",
-        "The 03-result and 04-option transpile cases pass the behavioral tier through the new backend"
-      ],
-      "priority": 34,
-      "passes": true,
-      "notes": "AST backend lowers open-E Result[T,error]->native named (__goal_ok T, __goal_err error) returns and Option[T]->*T in internal/backend (emit.go dispatch + lower.go helpers; no separate lower pkg). return Result.Ok(X)->`X, nil`, Result.Err(X)->`__goal_ok, X`; return Option.None->nil, Option.Some(id)->&id else box `__goal_some := x; return &__goal_some`. Statement-position match intercepted in ExprStmt: Result->`lhs, __goal_err := scrut; if __goal_err != nil {errBody} else {okBody}` (Ok binding renamed to __goal_v via emitter.renames, _ when unused; Err binding renamed to __goal_err); Option->`if __goal_o := scrut; __goal_o != nil { [bind := *__goal_o] someBody } else { noneBody }`. fnKind on the emitter scopes constructor lowering; closed-E Result match guarded via sema FuncSignatures mode (US-037). Output is byte-identical to the checked-in 03/04 goldens. AC2: TestASTEngineResultOptionBehavioralTier runs all 8 03-result/04-option cases through backend.Transpile + corpus.RunCompile (build+vet)."
-    },
-    {
-      "id": "US-035",
-      "title": "Lower and emit ? with real gensym",
-      "description": "As a compiler engineer, I need ? propagation lowered with proper gensym so the magic __goal_ prefix is retired.",
-      "acceptanceCriteria": [
-        "? propagation is lowered using scope-aware generated identifiers, not the literal __goal_ prefix",
-        "The 05-question-prop cases pass the behavioral tier and a test asserts the generated Go contains no __goal_ substring"
-      ],
-      "priority": 35,
-      "passes": true,
-      "notes": "AST backend now lowers postfix `?` (ast.UnwrapExpr) at statement position in internal/backend/emit.go (unwrap/unwrapResult/unwrapOption + calleeSig), wired into stmt()'s AssignStmt (name:=expr? / _:=expr?) and ExprStmt (bare expr?) cases. The whole __goal_ gensym family is retired in favor of a scope-aware allocator: emitFile seeds emitter.fileIdents via fileIdentSet(f) (lower.go); funcDecl opens a per-function scope (newScope copy) and mints the open-E Result success/error returns up front (e.gensym(\"ok\"/\"err\")) so the signature and body agree; match/Option-box temps are local gensyms (v/err/o/some) since a statement-position match may sit in a non-Result function (e.g. handle). gensym(want) appends the least integer suffix that avoids any in-scope name — so result_int's user `err` forces the named error return to `err1` (scope-aware witness). Result `?` destructures the callee's lowered arity via sema.FuncSig (plain-error callee -> 1 value, Result callee -> 2); Option `?` mints a fresh pointer temp per site (o, o1) and returns nil. Updated US-034's TestASTEngineResultOptionEncoding to the new names. AC tests: TestASTEngineQuestionBehavioralTier (build+vet over all 5 05-question-prop cases), TestASTEngineQuestionNoMagicPrefix (no __goal_), TestASTEngineQuestionScopeAware (err1 witness), TestASTEngineQuestionEncoding (shapes). Closed-E `?` still deferred to US-037 (closed-E Result functions are roNone, so a `?` there hits the descriptive `?` outside Result/Option error)."
-    },
-    {
-      "id": "US-036",
-      "title": "Lower and emit match including value position",
-      "description": "As a goal developer, I need full match lowering so value-position match finally works.",
-      "acceptanceCriteria": [
-        "lower+backend emit a type-switch for enum match in both statement and value position",
-        "The 02-match cases plus a new value-position-match corpus case pass the behavioral tier through the new backend"
-      ],
-      "priority": 36,
-      "passes": true,
-      "notes": "AST backend lowers enum `match` to a Go type-switch over the §8.1 encoding in statement AND value position (internal/backend/emit.go enumMatch + matchPos posStmt/posReturn/posVar). Dispatch: matchStmt default branch (statement), returnStmt (`return match`), new tryVarMatch off the DeclStmt case (`var name T = match` -> emit `var name T` then the switch). usesBinding mints a scope-aware guard gensym `v` only when some arm references its payload binding; emitEnumArm renames the binding to the guard (existing renames map) and sets armBinding/armFields so a field access on the binding exports (`a.since`->`v.Since`) via a new selectorExpr branch. `_` rest arm -> real `default:`; else panicking default with the §8.2 non-exhaustive message. Mirrors internal/pass/match.go but reads parsed arms + sema.Enum.FieldSet (no token scan). New corpus case features/02-match/examples/shape_value.goal (+.go.expected, golden from the canonical splice engine; manifest regenerated 107->108; generate_test 51->52). AC tests: TestASTEngineEnumMatchBehavioralTier (build+vet over the 4 02-match + shape_value) and TestASTEngineEnumMatchEncoding. Output matches goldens modulo gensym name (`v` vs `__goal_v`, US-035) and the pre-existing `type Time int64` vs `= int64` alias gap (US-042); both build+vet clean."
-    },
-    {
-      "id": "US-037",
-      "title": "Lower and emit closed-E Result",
-      "description": "As a goal developer, I need closed-E Result lowering so sum-encoded errors work on the new backend.",
-      "acceptanceCriteria": [
-        "lower+backend emit the Ok/Err sum constructors, closed match, closed ?, and the From-conversion, with the prelude emitted once",
-        "The 06-error-e cases pass the behavioral tier through the new backend"
-      ],
-      "priority": 37,
-      "passes": true,
-      "notes": "AST backend lowers closed-E Result[T,E] (E!=error, feature 06) in internal/backend (emit.go dispatch + lower.go facts; no separate lower pkg). lower.go: roResultClosed roKind, resultPrelude (the generic Ok/Err sum, mirrored from internal/pass.ResultPreamble), needsResultPrelude(info). emit.go: file() emits the prelude once after import decls (isImportDecl guard) when any func is closed-E; emitter gains closedT/closedE; funcDecl sets fnKind=roResultClosed + closedT/closedE from sema.FuncSig[name] (Mode==ModeResultClosed) and now allows ast.FuncFrom (emits `from func` as a plain Go func — its src->tgt registration lives in sema.FromRegistry, no syntactic residue; FuncDerive still fails, US-039). returnStmt roResultClosed -> emitClosedResultReturn (Result.Ok/Err(X) -> return Ok/Err[closedT,closedE]{Value: X}, X recursive so a nested ParseError.Empty lowers for free). unwrap roResultClosed -> unwrapClosed (`var name T` + type-switch over Ok/Err[calleeT,calleeE]; Err arm returns Err[closedT,closedE]{Value: errValue} where errValue is guard.Value, or conv(guard.Value) via FromRegistry[[2]string{callee.E, caller.E}] when error types differ — fails loudly if the from func is absent). resultMatch routes calleeMode==ModeResultClosed -> closedResultMatch (type-switch on Ok/Err with `binding := guard.Value` per used arm, guard minted only when some arm uses its binding, panicking §8.2 default). Reads T/E + the from-registry off sema.Info, not token scans (mirrors internal/pass/closed.go shapes). AC tests: TestASTEngineClosedResultBehavioralTier (build+vet via corpus.RunCompile over the 3 06-error-e cases) + TestASTEngineClosedResultEncoding (prelude/sum-ctor/closed-match/closed-?/from-conv shapes). Output matches the goldens modulo the scope-aware gensym (`r` vs `__goal_e`, US-035) — exact parity is US-042."
-    },
-    {
-      "id": "US-038",
-      "title": "Lower and emit defaults and assert",
-      "description": "As a goal developer, I need ...defaults and assert lowering so those constructs work on the new backend.",
-      "acceptanceCriteria": [
-        "lower+backend expand ...defaults to explicit zero values and assert to an if-panic guard",
-        "The 08-no-zero-value and 10-assert cases pass the behavioral tier through the new backend"
-      ],
-      "priority": 38,
-      "passes": true,
-      "notes": "AST backend lowers `...defaults` (feature 08, §8.5) and `assert` (feature 10, §4.3/§8.6) in internal/backend (emit.go dispatch + lower.go helpers; no separate lower pkg). `...defaults` (parsed as *ast.SpreadElement{X: Ident\"defaults\"} in a *ast.CompositeLit) expands via compositeLit/defaultEntries: for each declared struct field (sema.Info.Structs[name]) not already keyed, append `name: zeroLit(type)`; a field whose zero is unsafe (nil pointer/map/chan/func, sum type, method-iface) is a located e.fail, mirroring internal/pass.zeroSafety. zeroLit/zeroSafety/baseType mirrored into lower.go reading a `typeDecls` map (built by emitter.buildTypeDecls walking File TypeSpecs: struct->\"struct\", interface->\"interface\", alias->exprText(underlying)) + sema enum/sealed sets — the AST-native replacement for analyze.Tables.TypeDecls. `assert` (*ast.AssertStmt) lowers in stmt() via assertStmt to `if !(cond) { panic(\"assertion failed: <condtext>\"[ + fmt.Sprintf(msg, args...)]) }`; condtext is exprText(Cond) (a fresh sub-emitter, NOT a Builder-copy swap). file() injects `import \"fmt\"` once after the package clause when needsFmtImport(f) (any AssertStmt with Msg) && !importsPkg(f,\"fmt\"). AC2: TestASTEngineDefaultsAssertBehavioralTier runs all 6 (3 08-no-zero-value + 3 10-assert) cases through backend.Transpile + corpus.RunCompile (build+vet). Output matches goldens modulo dropped `//` comments and the `type Name = string` alias gap (US-042); both build+vet clean."
-    },
-    {
-      "id": "US-039",
-      "title": "Lower and emit derive/from",
-      "description": "As a goal developer, I need derive/from lowering so type-directed conversion works on the new backend.",
-      "acceptanceCriteria": [
-        "lower+backend expand derive func field-by-field using resolved types (not string parsing) and strip the from modifier",
-        "The 12-derive-convert cases pass the behavioral tier through the new backend"
-      ],
-      "priority": 39,
-      "passes": true,
-      "notes": "AST backend lowers `derive func` (feature 12, §12) field-by-field in internal/backend (emit.go dispatch + lower.go helpers; no separate lower pkg). funcDecl's d.Mod switch routes ast.FuncDerive -> deriveDecl (FuncFrom already strips to a plain func, US-037). deriveDecl reads source name+type (first param), target type+fallibility (deriveTarget over the result list: single result total, (T,error) fallible), and overrides from a bodied derive (deriveOverrides walks Body->ReturnStmt->CompositeLit: KeyValueExpr override, value Ident `_` => skip; the `...derive(src)` SpreadElement is the implicit fill). genConversion emits `func name(src S) <ret> { var out T; <overrides>; <fields>; return out[, nil] }`; resolveField mirrors internal/pass.resolveField over sema.Info.Structs/FromRegistry (identity src==tgt; registry total `out.F=conv(src.F)`; registry fallible `v,err:=conv(...); if err!=nil {return out,err}; out.F=v`; ptr/Option `*A->*B`; slice `[]A->[]B` make+indexed loop; array `[N]A->[N]B`; map; nested in-file struct recursion via deriveBody). Reads resolved fields/registry, NOT source text (FR-6); an unsourced/unconvertible field is a located e.fail, never a silent zero. Temp names are scope-aware gensyms (`v`/`v1`/`p`/`i`/`s`) not `__goal_v0` (US-035), and one shared error name per fallible derive. typeExprString renders source/target type exprs to sema-canonical keys. AC: TestASTEngineDeriveBehavioralTier runs all 3 12-derive-convert cases (slice/from_storage/to_storage) through backend.Transpile + corpus.RunCompile (build+vet); TestASTEngineDeriveEncoding pins the from-strip/identity/total-leaf/fallible/slice shapes + the `_`-skip absence. Output matches goldens modulo gensym names + dropped `//` comments (US-042). Foreign-package derive (US-009) stays on the splice engine via corpus.RunPackage — out of scope here."
-    },
-    {
-      "id": "US-040",
-      "title": "Emit doctest sidecars on new path",
-      "description": "As a goal developer, I need doctests extracted and emitted by the new backend so executable docs survive.",
-      "acceptanceCriteria": [
-        "The new backend extracts /// doctests and emits the _test.go sidecar lowered through the same path",
-        "The 11-doctests cases pass the doctest tier through the new backend"
-      ],
-      "priority": 40,
-      "passes": true,
-      "notes": "AST backend now emits the doctest `_test.go` sidecar (internal/backend/doctest.go: renderDoctests + emitDoctests), wired into goBackend.Emit so backend.Transpile populates Output.Test (Transpile already gofmt-formats it). Extraction is AST-native: it reads the structured ast.FuncDecl.Doc.Doctests the parser attached in US-023 (no re-lexing), renders the same goal-shaped TestDoctest_<fn>_<n> sidecar shape as internal/pass.RenderDoctests, then lowers it through the SAME emit path by parsing the rendered source back to an *ast.File and calling emitFile with the ORIGINAL file's *sema.Info — so a doctest body's (nested) variant construction / keyed literal lowers to the §8.1 sum encoding exactly as the documented function body does (the emitter's variantLit/selectorExpr read info.Enums by name; the original info, not sema.Resolve(testFile), is what carries those facts). AC tests in internal/backend/backend_test.go: TestASTEngineDoctestTier (sidecar vs golden, gofmt-normalized) + TestASTEngineDoctestExecTier (behavioral: go test in a temp module) over all 4 features/11-doctests cases, plus TestASTEngineDoctestEnumLowering pinning the enum case's nested construction lowering. Output matches the checked-in 11-doctests goldens byte-for-byte (doctest bodies use no gensym temporaries, so the US-035 naming divergence does not apply here)."
-    },
-    {
-      "id": "US-041",
-      "title": "Gate: full behavioral parity",
-      "description": "As a maintainer, I need the entire corpus green through the new backend so the flip is safe.",
-      "acceptanceCriteria": [
-        "Every transpile, check, and doctest case passes the behavioral conformance tier through the new (AST) engine",
-        "A single test runs the whole manifest under the new engine and reports zero failures"
-      ],
-      "priority": 41,
-      "passes": true,
-      "notes": "Closed the 3 under-scoped gaps then made the whole-corpus behavioral gate green on the AST engine. Gap 1 (value-position `:=` match): backend/emit.go now lowers a short-var/assignment `name := match` over an enum (tryAssignMatch + inferMatchType/armBodyType mirror internal/pass.inferMatchType — arms must all be one string lit, one bool lit, or constructions of one enum) to `var name T` + the existing posVar value-position type-switch. Gap 2 (assert-static + derive diagnostics on the AST): new internal/sema/assert.go (CheckAssert: constant-fold a bare bool literal or an int-literal comparison; always-false Error, always-true Warning) and internal/sema/convert.go (CheckConvert: derive-convert totality over file.Decls FuncDerive + Info.Structs/FromRegistry — unsourced/unbridged/fallible-in-total Errors, deferral Warnings), both wired into sema.Check; messages mirror internal/check/{assert,convert}.go verbatim for // want parity. Gap 3 (AST package mode): internal/sema.ResolvePackage+Merge merge name-keyed facts across files (analyze.Merge analogue); internal/backend/package.go TranspilePackage emits each file with the inline closed-E prelude suppressed (new emitter.suppressPrelude / emitFileWith) and appends one shared goal_prelude.go, and enrichForeign reuses analyze.EnrichForeign (the IO seam) to fold imported Go struct fields into the merged sema.Info so a foreign `derive func` resolves. Gate: corpus.TestASTEngineWholeCorpusBehavioralGate runs ALL 108 manifest cases through the AST engine at the per-kind behavioral tier (transpile->RunCompile, package->RunPackage via backend.TranspilePackage, check->RunCheck via SemaCheck, doctest->RunDoctestExec) with zero failures, and guards its own scope (must span every tier). Per-check runner tests TestSemaAssertRunner/TestSemaConvertRunner + sema unit tests assert_test.go/convert_test.go + backend TestASTEngineAssignMatch*/TestASTEnginePackageBehavioralTier."
-    },
-    {
-      "id": "US-042",
-      "title": "Regenerate goldens and make AST default",
-      "description": "As a maintainer, I need exact goldens regenerated and the new engine defaulted so the new path is canonical.",
-      "acceptanceCriteria": [
-        "The .go.expected goldens are regenerated from the new backend and the manifest exact tier is green against the new default engine",
-        "The old splice engine remains available behind a flag for one release"
-      ],
-      "priority": 42,
-      "passes": true,
-      "notes": "Regenerated all 52 file-mode exact goldens FROM the AST backend (backend.Transpile) via a durable, off-by-default `-update-goldens` flag (internal/corpus/update_goldens_test.go, mirrors parser's -update-snapshots; gofmt-normalized; Output.Test for doctest sidecars per isDoctestSidecar, else Output.Go) — 42 changed (scope-aware gensym `ok`/`err1` vs `__goal_ok`, `type T int64` vs `= int64` alias, dropped `//` comments), 10 already byte-identical. Switched the 4 exact-tier tests (corpus TestTranspileRunner/TestDoctestRunner, pipeline_test TestCorpusTranspile/TestCorpusDoctest) from pipeline.Transpile to backend.Transpile — green by construction. Flipped cmd/goal default engine to engineAST (parseFlags + usage/Summary text + main_test default assertion) and routed the default package path through backend.TranspilePackage (cross-file merge + single shared prelude) instead of the per-file helper (removed transpilePackageAST). Exported pipeline.AddLineDirectives (name-based, engine-agnostic) and applied it in backend.TranspilePackage so AST-default build errors still map to .goal source (fixed TestBuildErrorMapsToGoalSource regression). Regenerated AI-KNOWLEDGE-BOOTSTRAP.md (ast default text). Splice stays behind --engine=splice and is still behaviorally exercised (RunCompile/RunDoctestExec/RunPackage via pipeline.Transpile). Whole-corpus behavioral gate (108 cases) + full suite green."
-    },
-    {
-      "id": "US-043",
-      "title": "Delete splice passes and dead scanning",
-      "description": "As a maintainer, I need the obsolete splice machinery removed so there is one front-end.",
-      "acceptanceCriteria": [
-        "internal/pass, scan's Splice machinery, and the analyze token-scan tables subsumed by sema are deleted; grep finds no references to them",
-        "Build, vet, and the full suite are green after removal"
-      ],
-      "priority": 43,
-      "passes": true,
-      "notes": "Deleted internal/pass (20 files) and the pipeline splice ENGINE (Transpile/TranspilePackage/runPasses/doctestFile/preludeFile/Passes), keeping only the engine-independent pipeline.Output/GoFile/PackageOutput types + sourcemap (AddLineDirectives). Re-pointed every remaining splice call site onto the AST backend (cmd/goalc, cmd/build-playground, cmd/goal-wasm, internal/guide, internal/typecheck, and the corpus behavioral runners behavior_runner_test/doctest_behavior_runner_test/package_runner_test) and removed the --engine=splice flag from cmd/goal (parseFlags now returns no engine; transpileAll always uses backend.TranspilePackage). grep finds NO import of internal/pass and NO call to pipeline.Transpile/TranspilePackage on the live path. GOTCHA discovered: internal/typecheck ran depth checks (on the default `goal build/check` path) THROUGH the splice engine, which passed generics + type aliases through verbatim; moving it to backend.TranspilePackage exposed two real AST parity gaps that had to be closed in-story: (1) the parser now parses generic type-parameter DECLARATIONS `type Box[T any]` (new ast.TypeSpec.TypeParams *FieldList + parser.parseTypeParams + atTypeParams disambiguation vs `[N]T`/`[]T`/`[3]T` arrays using kindAt(2) lookahead; instantiation `Box[int]` already parsed via IndexExpr) and (2) the backend emits type aliases faithfully `type T = U` (new ast.TypeSpec.Assign token.Pos, parser records it, emit.go emits `= `), so go/types sees identical types again. Regenerated 7 alias goldens (status*, defaults_refs, enum_match_result) via -update-goldens (alias `type Time int64`->`type Time = int64`) and the AI-KNOWLEDGE-BOOTSTRAP.md (--engine flag gone). SCAN/ANALYZE NOT pruned: scan.Splice/Replacement stay (internal/fix still uses them), and every analyze fact-table symbol is still consumed by check/typecheck/lsp/fix/backend — nothing was used SOLELY by the deleted passes, so there is no dead scanning code to remove at this point in the sequence (it frees up only once US-044 fix->AST and US-046 lsp->AST land). Deleted the 4 splice-only pipeline internal tests (foreign/pipeline_package/question_arity/question_refusal) and the splice half of sourcemap_test (AddLineDirectives unit test kept; the U5 end-to-end source-map proof is covered on the AST path by cmd/goal TestBuildErrorMapsToGoalSource). Whole-corpus behavioral gate + full suite (18 pkgs) green; build/vet incl. js/wasm green."
-    },
-    {
-      "id": "US-044",
-      "title": "Move goal fix onto the AST",
-      "description": "As a goal developer, I need fix to operate on the AST so it shares one model with the compiler.",
-      "acceptanceCriteria": [
-        "internal/fix consumes the AST instead of re-lexing, and emits the same rewrites",
-        "The existing fix test suite passes unchanged in observable behavior"
-      ],
-      "priority": 44,
-      "passes": true,
-      "notes": "internal/fix now drives every rule off the parsed AST: fix.File parses each fixed-point pass with parser.ParseFile and resolves name-keyed facts with sema.Resolve (FuncSignatures.Mode/T, Enums), replacing scan.Lex + analyze.Build + analyze.FuncSpans/SigAt + scan.ScanFuncs (grep confirms none remain in internal/fix). Detection is structural: result-sig reads FuncType.Results (FieldList Opening/Closing parens; all-unnamed (T,error) tuple only) and classifies ReturnStmts (walkReturns skips nested FuncLit by not descending into exprs); propagate matches consecutive AssignStmt+IfStmt (value-binding) and IfStmt.Init (init-guard) over BinaryExpr nil-guards + one valid propagation ReturnStmt (Result.Err(v) CallExpr / zero,err / Option.None SelectorExpr / nil); Option `*o`->`o` deref via StarExpr walk with escape detection; switch-over-enum walks SwitchStmt first CaseClause SelectorExpr label vs info.Enums; call-site walks ModeNone IfStmt value-binding guards. Edits stay minimal scan.Replacement byte splices applied with scan.Splice (pure string utils, NOT lexing) so untouched code/comments are byte-preserved — printing the AST would reflow. GOTCHA: the parser drops // and /* comments, so the comment-block refusal must stay a raw byte-range spanHasComment scan over the source offsets (token.Pos.Offset), not an AST check. analyze.ZeroLit is kept (a pure helper) fed by an AST-built typeDecls map. Public API (File/Change/Report/Level) unchanged; cmd/goal + internal/lsp consume it as-is. fix_test.go is byte-identical (no diff) and green; full suite (build/vet/test) green. On unparseable source fix.File no-ops the iteration (conservative contract)."
-    },
-    {
-      "id": "US-045",
-      "title": "Add goal fmt source printer",
-      "description": "As a goal developer, I need goal fmt so goal source has a canonical, comment-preserving format.",
-      "acceptanceCriteria": [
-        "goal fmt prints goal source from the AST preserving comments, and is idempotent",
-        "A test asserts fmt(fmt(src)) == fmt(src) for every corpus .goal input and that comments are retained on a sample"
-      ],
-      "priority": 45,
-      "passes": true,
-      "notes": "internal/goalfmt.Source(src)(string,error) is `goal fmt`: it parses with parser.ParseFile ONLY as a validity gate (malformed source -> error, untouched, like internal/fix) then reformats by rewriting RAW SOURCE LINES — it never prints the bare AST (the parser drops // and /* comments, so AST-printing would delete them). reindent walks lexer.Tokens to compute leading-indent depth from delimiter nesting ((/[/{ vs )/]/}) over the TOKEN stream (so braces inside comments/strings never miscount), then per non-protected line trims leading+trailing whitespace and re-prefixes one tab per depth (dedent when the line's first token is a closer); multi-line string/comment continuation lines stay verbatim. collapseBlanks drops leading/trailing blanks and dedupes blank runs; output ends with exactly one \\n. Comments, string contents, operator spacing, and struct-field alignment are preserved byte-for-byte (only insignificant whitespace changes), so the token stream/AST/meaning is invariant and a second pass re-derives identical indentation -> idempotent BY CONSTRUCTION. TestIdempotentOverCorpus asserts fmt(fmt(src))==fmt(src) AND no Source error for every unique manifest .goal input (via corpus.Load+CaseInputs, mirroring TestParseGate); TestPreservesComments pins //+/// retention; TestReindentsAndIsStable pins space->tab normalization; TestRejectsUnparseable pins the error path. cmd/goal gains `goal fmt [-w] [path]` (parseFmtFlags/cmdFmt mirror parseFixFlags/cmdFix: stdout by default, -w writes back changed files). AI-KNOWLEDGE-BOOTSTRAP.md regenerated (new subcommand, +2 lines) so TestBootstrapGoldenMatches stays green. NOTE: corpus has NO block comments / raw strings / switch, so multi-line-token protection + switch-case dedent are guarded but not corpus-exercised; switch bodies indent by pure delimiter nesting (no case-dedent)."
-    },
-    {
-      "id": "US-046",
-      "title": "Switch LSP document model to AST",
-      "description": "As an editor user, I need the LSP backed by the AST so richer features become possible.",
-      "acceptanceCriteria": [
-        "internal/lsp diagnostics and document symbols are derived from the AST (lsp/symbols.go scanDecls token walk removed)",
-        "The existing LSP test suite passes"
-      ],
-      "priority": 46,
-      "passes": true,
-      "notes": "internal/lsp document symbols are now AST-derived: collectSymbols (lsp/symbols.go) parses with parser.ParseFile and walks ast.File.Decls, mapping each top-level decl to a DocumentSymbol (EnumDecl->enum, SealedInterfaceDecl->interface, GenDecl TYPE TypeSpec->struct/interface/alias-class, FuncDecl->method when Recv!=nil else function; from/derive keep function kind, detail set). Ranges/selection come straight off node Pos()/End() offsets via rangeOf — a bodyless alias/from/derive func cannot overrun the next decl (End() stops at its own last token). The scanDecls/skipLine/declEnd token walk + decl struct + internal/scan import are DELETED. Best-effort: a parse error / nil File / nil name yields an empty non-nil outline, never a panic. Also switched diagnostics.go tokenEnds from scan.Lex to lexer.Tokens (token end = Pos.Offset+len(Lit)), removing internal/scan from internal/lsp entirely so diagnostic range-widening rides the AST front-end lexer. Diagnostic FINDINGS still come from check.Analyze/AnalyzePackageInDirWith (migrating the checker off analyze is out of scope — the LSP package path needs analyze.EnrichForeign foreign resolution). Existing internal/lsp suite green unchanged; full build/vet/test green. GOTCHA: rangeOf still uses check.OffsetToPosition, so keep the internal/check import in symbols.go."
-    },
-    {
-      "id": "US-047",
-      "title": "Add LSP semantic tokens",
-      "description": "As an editor user, I need semantic tokens so goal constructs are highlighted by role.",
-      "acceptanceCriteria": [
-        "The server advertises and serves textDocument/semanticTokens classified from the AST",
-        "A test asserts the token classification of a sample containing an enum, a match, and a ? expression"
-      ],
-      "priority": 47,
-      "passes": true,
-      "notes": "internal/lsp now serves textDocument/semanticTokens/full, classified from the AST. New internal/lsp/semantictokens.go: computeSemanticTokens lexes the buffer (lexer.Tokens) for ordered positions+lengths and overlays an AST-derived role map (astRoles: parser.ParseFile + ast.Walk via roleVisitor) to colour identifiers by their STRUCTURAL parent — enum name->enum, Variant.Name->enumMember, SealedInterfaceDecl->interface, TypeSpec->struct/interface/type(alias), FuncDecl->function/method + params->parameter, struct fields->property, VariantLit/VariantPattern .Variant->enumMember and bare .Enum->enum, VariantPattern.Binding->variable, CallExpr.Fun Ident->function / SelectorExpr.Sel->method. classifyToken handles the lexer-confident classes (comments, string/char, int/float/imag, IsKeyword incl. match/enum/assert, QUESTION/FAT_ARROW/ELLIPSIS->operator); an IDENT with no AST role is intentionally NOT emitted (so builtins like int are not miscoloured). Output is the LSP delta-encoded 5-tuple stream [dLine,dStartChar,length,type,modifiers], 0-based via check.OffsetToPosition; tokenLen uses len(Lit) or len(Kind.String()) for empty-Lit operators. protocol.go adds SemanticTokensOptions/Legend/Params/SemanticTokens + the sem* legend index constants and the ordered semanticTokenTypes/Modifiers slices + defaultSemanticLegend() (single source of truth shared by the advertised capability and the encoder). server.go advertises SemanticTokensProvider{Legend,Full:true} at initialize and routes textDocument/semanticTokens/full -> s.semanticTokens (empty non-nil set on unknown URI / parse failure, best-effort like documentSymbols). AC2: TestComputeSemanticTokensEnumMatchQuestion pins enum->enum, variants->enumMember, match->keyword, ?->operator, func->function over an enum+match+? sample; plus TestSemanticTokensWellFormed (multiple-of-5, in-legend, non-overlapping doc order), TestSemanticTokensEmptyAndUnparseable, TestSemanticTokensHandler, and a server_test assertion that initialize advertises semanticTokensProvider. GOTCHA: a `?` inside a string literal (return \"?\") lexes as STRING not QUESTION, so the AC sample avoids a stray `?` string when locating the postfix operator by substring. Range/delta requests out of scope (full:true only); modifiers declared but not yet emitted."
-    },
-    {
-      "id": "US-048",
-      "title": "Add LSP go-to-definition",
-      "description": "As an editor user, I need go-to-definition so I can navigate goal symbols.",
-      "acceptanceCriteria": [
-        "textDocument/definition resolves a referenced symbol to its declaration position via the AST symbol graph",
-        "A test asserts definition of a function call and an enum variant resolve to the expected positions"
-      ],
-      "priority": 48,
-      "passes": true,
-      "notes": "internal/lsp now serves textDocument/definition, resolved from the AST symbol graph of the open buffer. New internal/lsp/definition.go: definition handler + resolveDefinition(src,line,char) which parses (parser.ParseFile), builds a name-keyed declIndex over file.Decls (funcs: FuncDecl names; types: EnumDecl/SealedInterfaceDecl/GenDecl-TYPE TypeSpec names; variants: enum name -> variant name -> range), then collectRefs walks the AST (refVisitor, mirroring semantictokens roleVisitor) recording each reference identifier's byte span -> declaration Range, keyed by structural parent: CallExpr.Fun Ident -> func / SelectorExpr.Sel -> method; SelectorExpr over a known enum -> enum (X) + variant (Sel); VariantLit/VariantPattern -> enum + variant; type-position idents (Field/PayloadField/ValueSpec/TypeSpec/ImplementsClause Type, bare *Ident only) -> type. Index is built BEFORE refs so a forward call (run() before func run) resolves. The handler maps the 0-based cursor to a byte offset via a new offsetForPosition (inverse of check.OffsetToPosition; none existed), finds the ref span [start,end) covering it, and returns *Location{URI,Range} (declaration name range via rangeOf) — nil marshals to JSON null for unknown URI / no-symbol / unparseable (best-effort, like documentSymbol/semanticTokens). protocol.go adds Location/DefinitionParams + ServerCapabilities.DefinitionProvider; server.go advertises definitionProvider:true and routes textDocument/definition. AC tests in definition_test.go: TestDefinitionFunctionCall (forward call -> func decl), TestDefinitionEnumVariant (Color.Red -> variant decl in enum), TestDefinitionTypeName (Color -> enum decl), TestDefinitionNoSymbol/Unparseable (null fallbacks), TestDefinitionHandler (open URI -> Location, unknown -> null), TestServerAdvertisesDefinition. Resolution is single-document; locals/params/qualified-imports/cross-file are out of scope (US-049 hover, US-050 references/rename build on this same symbol graph). GOTCHA: enum variant tags also appear as the variant DECLARATION ident, so the index keys variants under their enclosing enum (variants[enum][tag]) to keep same-named tags in two enums distinct, and tests locate the reference occurrence (not the 1st decl occurrence) via offsetOfNth."
-    },
-    {
-      "id": "US-049",
-      "title": "Add LSP hover with types",
-      "description": "As an editor user, I need hover so I can see a symbol's type and doc.",
-      "acceptanceCriteria": [
-        "textDocument/hover returns the type and any doc comment for a symbol under the cursor",
-        "A test asserts hover over a Result-returning function reports its signature"
-      ],
-      "priority": 49,
-      "passes": true,
-      "notes": "internal/lsp now serves textDocument/hover, resolved from the AST symbol graph of the open buffer (the same parse+index+walk seam US-048 built for go-to-definition). New internal/lsp/hover.go: hover handler + resolveHover(src,line,char) which parses (parser.ParseFile), builds a name-keyed hoverIndex (funcs/types/variants[enum][tag] -> hoverInfo{signature,doc}) over file.Decls, then collects covering spans = declaration-name idents (seeded first so hovering the decl itself resolves) + reference idents (hoverVisitor keyed by structural parent exactly like definition.go's refVisitor: CallExpr.Fun/SelectorExpr.Sel -> func/method; SelectorExpr over a known enum -> enum+variant; VariantLit/VariantPattern -> enum+variant; Field/PayloadField/ValueSpec/TypeSpec/ImplementsClause Type -> bare type ident). The handler maps the 0-based cursor to a byte offset via offsetForPosition (reused from definition.go) and returns the hoverInfo whose [start,end) covers it, rendered as LSP MarkupContent (markdown: a ```goal signature fence + doc text). funcSignature renders a func/method signature as the raw source slice src[d.Pos().Offset:d.Type.End().Offset] (Pos() already accounts for the from/derive modifier + func keyword; body excluded) whitespace-collapsed, so a Result[T,error]/Option[T] result type shows verbatim. docText joins FuncDecl.Doc.Lines; enum/sealed/type/variant nodes carry no AST doc so they render a header only (enum Name / sealed interface Name / type Name[ =][ struct|interface] / Enum.Variant). Nil *Hover marshals to JSON null (best-effort, like definition/semanticTokens/documentSymbol). protocol.go adds HoverParams/Hover/MarkupContent + ServerCapabilities.HoverProvider; server.go advertises hoverProvider:true and routes textDocument/hover. AC tests in hover_test.go: TestHoverResultFunctionSignature (call -> `func parse(s string) Result[int, error]`), TestHoverReportsDocComment (/// lines + rendered fence), TestHoverEnumVariant, TestHoverNoSymbol/Unparseable nulls, TestHoverHandler (open URI -> Hover, unknown -> null), TestServerAdvertisesHover. Single-document; locals/params/qualified-imports/cross-file out of scope (shared with US-048, extended by US-050 references/rename off the same symbol graph). GOTCHA: a word in a /// doc line is NOT an indexable identifier, so a test locating the function-name occurrence must word the doc to avoid the symbol name (the doc here says \"Convert\" not \"parse\")."
-    },
-    {
-      "id": "US-050",
-      "title": "Add LSP rename and find references",
-      "description": "As an editor user, I need rename and find-references so I can refactor goal safely.",
-      "acceptanceCriteria": [
-        "textDocument/references and textDocument/rename return all reference sites / workspace edits via the AST symbol graph",
-        "A test asserts renaming a symbol produces edits at every reference in a sample"
-      ],
-      "priority": 50,
-      "passes": true,
-      "notes": "internal/lsp now serves textDocument/references and textDocument/rename, inverting the US-048/049 AST symbol graph. New internal/lsp/references.go: resolveOccurrences parses (parser.ParseFile) + buildDeclIndex (reused from definition.go) then collectOccurrences records EVERY occurrence of EVERY top-level symbol as occurrence{start,end,key symKey,isDecl} — declaration names seeded first (isDecl=true, mirroring hover.go) then references via occVisitor whose structural keying is IDENTICAL to definition.go's refVisitor (CallExpr.Fun ident/method Sel, SelectorExpr over a known enum, VariantLit/VariantPattern, Field/PayloadField/ValueSpec/TypeSpec/ImplementsClause type idents), so reference coverage == go-to-definition coverage by construction. symKey{kind(func|type|variant),enum,name} is the stable symbol identity; variants are keyed UNDER their enum (enum field) so a tag shared by two enums stays distinct and a variant query never leaks into the enum type or a sibling variant. The cursor maps to a byte offset via offsetForPosition (reused from definition.go); the covering occurrence's key selects all same-key occurrences. references() maps them to []Location, dropping isDecl ones when !context.includeDeclaration (with==without+1); rename() validates NewName via isIdent (letter/_ then letter/digit/_; empty/illegal -> null) and returns *WorkspaceEdit{DocumentChanges:[TextDocumentEdit{versioned URI from s.buffer, one TextEdit{rangeOf(span),newName} per occurrence}]}. Best-effort nil->JSON null on unknown URI / no symbol / unparseable / invalid name (shared with definition/hover/semanticTokens). protocol.go adds ReferenceParams/ReferenceContext{IncludeDeclaration}/RenameParams + ServerCapabilities.ReferencesProvider/RenameProvider (WorkspaceEdit/TextDocumentEdit/TextEdit/versionedTextDocumentIdentifier already existed, reused from codeaction.go); server.go advertises referencesProvider:true+renameProvider:true and routes both methods. AC test TestRenameProducesEditsAtEveryReference asserts an edit at every label occurrence (decl + 2 calls) AND that applying the edits replaces every occurrence; plus TestReferencesFunction/TypeName/EnumVariant, IncludeDeclarationToggle, RenameInvalidName, NoSymbolAndUnparseable, HandlersNullForUnknownURI, AdvertisesReferencesAndRename. Single-document; locals/params/qualified-imports/cross-file out of scope (consistent with US-048/049)."
+      "passes": false,
+      "notes": "Gate corresponding to REWRITE-ARCHITECTURE.md §7 Phase 5: 'a sample script graduates to a Go+ module as ~no-op'."
     }
   ]
 }
