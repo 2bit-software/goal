@@ -354,6 +354,43 @@
   edits don't shift later offsets. Still single-document (locals/params/qualified
   imports/cross-file out of scope, consistent with US-048/049).
 
+## [2026-06-27T15:47:00Z] - US-005
+- Added internal/interp/eval.go, expression evaluation for the goscript
+  interpreter: evalExpr(expr, scope)(Value,error) walks the SHARED AST directly
+  (*ast.BasicLit, *ast.BinaryExpr, *ast.UnaryExpr, *ast.ParenExpr, and the
+  predeclared true/false *ast.Ident) and produces the universal Value with Go
+  semantics — int division truncates, `+` concatenates strings, `&&`/`||`
+  SHORT-CIRCUIT (evaluate left, only touch right when undecided). Divide/rem by
+  zero and operator/operand-kind mismatch are descriptive named errors, never
+  panics or silent nils. interp.go execBlock now dispatches statements via a new
+  execStmt (ExprStmt -> evalExpr; EmptyStmt no-op; everything else a loud
+  "unsupported statement %T" refusal) — the seam US-006+ extend.
+- Files changed:
+  - internal/interp/eval.go (new: evalExpr, evalBasicLit, evalBinary/applyBinary,
+    intBinary/floatBinary/stringBinary, evalUnary)
+  - internal/interp/interp.go (execBlock loops via new execStmt; fmt import)
+  - internal/interp/eval_test.go (new: TestEvalExpressions [27 rows, AC],
+    TestShortCircuit, TestShortCircuitDoesEvaluateRightWhenNeeded, TestEvalErrors,
+    TestExecBlockEvaluatesExprStmt — stdlib testing, no testify)
+  - prd.json (US-005 passes:true), progress.txt
+  - history/20260627-feature-us-005-eval-literals-and-operators/ (initiative)
+- Learnings for future iterations:
+  - A bare expression in a function body parses to *ast.ExprStmt{X: expr}
+    (parser parseSimpleStmt default case). A test reaches it via
+    findMain().Body.List[0].(*ast.ExprStmt).X and calls evalExpr directly — no
+    new parser entry point needed. This is the standard way the eval stories
+    (US-006+) can unit-test expression/statement evaluation in `package interp`.
+  - == / != are dispatched BEFORE the same-kind guard in applyBinary and delegate
+    to Value.Equal (which compares Kind first), so cross-kind == is a clean false,
+    not an error; all other binary ops require matching operand kinds.
+  - Short-circuit is implemented by evaluating b.X first and returning early for
+    `&& false` / `|| true` before b.Y is ever evaluated — proven by guarding the
+    right operand with `1/0` in TestShortCircuit.
+  - internal/interp still depends only on errors/fmt/strconv + goal/internal/{ast,
+    sema,token} — no internal/backend, internal/typecheck, or go/types (verified
+    via go list -deps). Keep it that way for the US-022 dependency gate.
+---
+
 ## [2026-06-27T21:30:00Z] - US-004
 - Added internal/interp/interp.go, the interpreter ENTRY seam: goscript is a
   back-end over the SHARED front-end (REWRITE-ARCHITECTURE.md §3.1). New(file

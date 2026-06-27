@@ -65,7 +65,7 @@
         "A table-driven unit test evaluates at least 12 expression programs and asserts each result value"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
