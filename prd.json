@@ -161,7 +161,7 @@
         "A unit test over a 02-match-shaped program asserts the correct arm runs for each variant and that the default arm is unreachable"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "Preserve the 'erase the guarantee, panic-not-silent' stance: the proven-exhaustive default arm is a loud panic."
     },
     {

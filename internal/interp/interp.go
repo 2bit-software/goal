@@ -365,6 +365,12 @@ func (ip *Interp) execBlock(block *ast.BlockStmt, scope *Env) error {
 func (ip *Interp) execStmt(stmt ast.Stmt, scope *Env) error {
 	switch s := stmt.(type) {
 	case *ast.ExprStmt:
+		// A statement-position match parses to an ExprStmt wrapping a MatchExpr;
+		// it is intercepted here (NOT in evalExpr — value-position match is a
+		// later story) and dispatched by variant tag.
+		if m, ok := s.X.(*ast.MatchExpr); ok {
+			return ip.execMatch(m, scope)
+		}
 		// A call in statement position may produce zero or several values (e.g. a
 		// void method or function call); evaluate it through the multi-value path
 		// and discard the results rather than forcing a single-value context.
@@ -458,6 +464,73 @@ func (ip *Interp) execIf(s *ast.IfStmt, scope *Env) error {
 		return ip.execIf(e, ifScope)
 	default:
 		return ip.execStmt(s.Else, ifScope.NewChild())
+	}
+}
+
+// execMatch evaluates a statement-position match: it evaluates the scrutinee to
+// a tagged-union value, dispatches on its variant tag to the matching arm, binds
+// the matched payload into a fresh child scope, and runs the selected arm. A
+// `_` rest arm is the explicit catch-all. A proven-exhaustive match (sema has
+// verified every variant is covered) always selects a variant or rest arm; the
+// defensive default — reached only if a value's tag matches no arm, which a
+// sema-checked program cannot produce — is a loud `unreachable` panic, never a
+// silent fall-through (the "erase the guarantee, panic-not-silent" stance).
+func (ip *Interp) execMatch(m *ast.MatchExpr, scope *Env) error {
+	subj, err := ip.evalExpr(m.Subject, scope)
+	if err != nil {
+		return err
+	}
+	if subj.Kind != KindVariant || subj.Variant == nil {
+		return fmt.Errorf("interp: match subject must be a variant, got %s", subj.Kind)
+	}
+	var restArm *ast.MatchArm
+	for _, arm := range m.Arms {
+		switch p := arm.Pattern.(type) {
+		case *ast.VariantPattern:
+			if p.Variant != nil && p.Variant.Name == subj.Variant.Tag {
+				return ip.execArm(arm, p, subj, scope)
+			}
+		case *ast.RestPattern:
+			restArm = arm
+		}
+	}
+	if restArm != nil {
+		return ip.execArm(restArm, nil, subj, scope)
+	}
+	return panicSignal{value: StrVal(fmt.Sprintf(
+		"unreachable: non-exhaustive match on %s (compiler invariant violated)", subj.Variant.TypeID))}
+}
+
+// execArm binds the arm's payload binding (when its VariantPattern names one)
+// into a fresh child scope — the binding is the whole variant value, so payload
+// fields read through it as `binding.field` (evalSelector reads variant fields)
+// — then runs the arm body. A rest arm (vp == nil) binds nothing.
+func (ip *Interp) execArm(arm *ast.MatchArm, vp *ast.VariantPattern, subj Value, scope *Env) error {
+	armScope := scope.NewChild()
+	if vp != nil && vp.Binding != nil {
+		armScope.Define(vp.Binding.Name, subj)
+	}
+	return ip.execArmBody(arm.Body, armScope)
+}
+
+// execArmBody runs a match arm body, which is a generic ast.Node: a statement
+// (incl. a block, a `return`, or an assignment) executes via execStmt, and an
+// expression (typically a void call) is evaluated for its effect. A non-local
+// control signal (return/break/continue/panic) raised by the body propagates.
+func (ip *Interp) execArmBody(body ast.Node, scope *Env) error {
+	switch b := body.(type) {
+	case nil:
+		return nil
+	case ast.Stmt:
+		return ip.execStmt(b, scope)
+	case *ast.CallExpr:
+		_, err := ip.evalCallMulti(b, scope)
+		return err
+	case ast.Expr:
+		_, err := ip.evalExpr(b, scope)
+		return err
+	default:
+		return fmt.Errorf("interp: unsupported match arm body %T", body)
 	}
 }
 

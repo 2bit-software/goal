@@ -149,14 +149,30 @@ func (ip *Interp) evalSelector(s *ast.SelectorExpr, scope *Env) (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
-	if recv.Kind != KindStruct || recv.Struct == nil {
+	switch recv.Kind {
+	case KindStruct:
+		if recv.Struct == nil {
+			return Value{}, fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
+		}
+		v, ok := recv.Struct.Fields[s.Sel.Name]
+		if !ok {
+			return Value{}, fmt.Errorf("interp: %s has no field %s", recv.Struct.TypeID, s.Sel.Name)
+		}
+		return v, nil
+	case KindVariant:
+		// A match arm binds the whole variant value to its payload name, so a
+		// payload field is read as `binding.field` off the tagged union.
+		if recv.Variant == nil {
+			return Value{}, fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
+		}
+		v, ok := recv.Field(s.Sel.Name)
+		if !ok {
+			return Value{}, fmt.Errorf("interp: %s.%s has no payload field %s", recv.Variant.TypeID, recv.Variant.Tag, s.Sel.Name)
+		}
+		return v, nil
+	default:
 		return Value{}, fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
 	}
-	v, ok := recv.Struct.Fields[s.Sel.Name]
-	if !ok {
-		return Value{}, fmt.Errorf("interp: %s has no field %s", recv.Struct.TypeID, s.Sel.Name)
-	}
-	return v, nil
 }
 
 // evalVariantLit evaluates a payload-carrying enum construction

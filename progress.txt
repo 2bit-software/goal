@@ -354,6 +354,56 @@
   edits don't shift later offsets. Still single-document (locals/params/qualified
   imports/cross-file out of scope, consistent with US-048/049).
 
+## [2026-06-28T01:05:00Z] - US-013
+- Added STATEMENT-POSITION match to the goscript interpreter: a `match` in
+  statement position dispatches on the scrutinee variant's tag, binds the matched
+  payload into a child scope, runs the selected arm, and panics 'unreachable' on
+  the defensive default of a proven-exhaustive match (loud, never silent).
+- internal/interp/interp.go:
+  - execStmt's ExprStmt case now intercepts `*ast.MatchExpr` and routes to
+    execMatch BEFORE the CallExpr path (a statement-position match parses to
+    ExprStmt{X: *ast.MatchExpr}). Value-position match stays out of scope (US-014).
+  - execMatch evaluates m.Subject (must be KindVariant), walks the arms, runs the
+    arm whose *ast.VariantPattern.Variant.Name == subj.Variant.Tag, else a
+    *ast.RestPattern (`_`) arm; with neither it raises panicSignal carrying an
+    "unreachable: non-exhaustive match on <TypeID> ..." message — the same
+    loud-not-silent stance as the backend's panicking default.
+  - execArm binds vp.Binding (when present) to the WHOLE variant value in a fresh
+    scope.NewChild(); execArmBody dispatches the generic ast.Node arm body
+    (ast.Stmt -> execStmt incl. block/return; *ast.CallExpr -> evalCallMulti for
+    void calls; other ast.Expr -> evalExpr). A return/break/continue/panic raised
+    by the body propagates up the established control-signal seam.
+- internal/interp/eval.go: evalSelector now reads a payload field off a
+  KindVariant receiver via Value.Field (so a match binding `a` reads `a.since`),
+  in addition to the existing struct-field read; non-struct/non-variant stays a
+  descriptive refusal. The data-less enum-construction guard at the top is
+  unaffected (a binding name is not an enum name, and the shadow check protects).
+- internal/interp/match_test.go (new): TestMatchDispatchesDataLessArm,
+  TestMatchDispatchesPayloadArmAndBindsPayload, TestMatchRestArmRunsWhenNoVariantMatches,
+  TestMatchDefaultArmIsUnreachable (hand-built match over an uncovered tag ->
+  panicSignal mentioning "unreachable"), TestMatchOnNonVariantIsRefused. Drives a
+  02-match-shaped program (Shape{Point, Circle{radius}, Square{side}}) through
+  newInterp + evalFn. stdlib testing, no testify.
+- prd.json (US-013 passes:true), progress.txt
+- history/20260627-feature-us-013-eval-statement-position-match/ (initiative)
+- Learnings for future iterations:
+  - Match dispatch is UNIFORM over the tagged union: execMatch keys on
+    subj.Variant.Tag, so once US-015/US-016 construct Result.Ok/Err and
+    Option.Some/None as VariantVals, the SAME execMatch dispatches them by tag
+    (Ok/Err/Some/None) with NO match-specific code — only construction + `?` are
+    new there. Keep match tag-keyed, not enum-specific.
+  - A match arm body is a generic ast.Node: `=> return x` is an ast.Stmt (run via
+    execStmt), `=> f()` is an *ast.CallExpr (run via evalCallMulti for void), a
+    value-position arm `=> expr` is an ast.Expr. execArmBody is the one seam;
+    value-position match (US-014) will COLLECT the arm expr's VALUE instead of
+    discarding it, but reuse the same tag dispatch + payload binding.
+  - A variant payload is read through the match binding as `binding.field`
+    (evalSelector KindVariant case via Value.Field) — there is still no other path
+    to a variant's fields (construction is US-012, match binding is the consumer).
+  - interp deps stay clean for the US-022 gate (go list -deps ./internal/interp:
+    no go/types, internal/backend, internal/typecheck).
+---
+
 ## [2026-06-28T00:20:00Z] - US-012
 - Added enum CONSTRUCTION to the goscript interpreter: data-less
   (`Status.Pending`) and payload-carrying (`Status.Active(since: now())`)
