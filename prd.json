@@ -449,8 +449,8 @@
         "The 06-error-e cases pass the behavioral tier through the new backend"
       ],
       "priority": 37,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "AST backend lowers closed-E Result[T,E] (E!=error, feature 06) in internal/backend (emit.go dispatch + lower.go facts; no separate lower pkg). lower.go: roResultClosed roKind, resultPrelude (the generic Ok/Err sum, mirrored from internal/pass.ResultPreamble), needsResultPrelude(info). emit.go: file() emits the prelude once after import decls (isImportDecl guard) when any func is closed-E; emitter gains closedT/closedE; funcDecl sets fnKind=roResultClosed + closedT/closedE from sema.FuncSig[name] (Mode==ModeResultClosed) and now allows ast.FuncFrom (emits `from func` as a plain Go func — its src->tgt registration lives in sema.FromRegistry, no syntactic residue; FuncDerive still fails, US-039). returnStmt roResultClosed -> emitClosedResultReturn (Result.Ok/Err(X) -> return Ok/Err[closedT,closedE]{Value: X}, X recursive so a nested ParseError.Empty lowers for free). unwrap roResultClosed -> unwrapClosed (`var name T` + type-switch over Ok/Err[calleeT,calleeE]; Err arm returns Err[closedT,closedE]{Value: errValue} where errValue is guard.Value, or conv(guard.Value) via FromRegistry[[2]string{callee.E, caller.E}] when error types differ — fails loudly if the from func is absent). resultMatch routes calleeMode==ModeResultClosed -> closedResultMatch (type-switch on Ok/Err with `binding := guard.Value` per used arm, guard minted only when some arm uses its binding, panicking §8.2 default). Reads T/E + the from-registry off sema.Info, not token scans (mirrors internal/pass/closed.go shapes). AC tests: TestASTEngineClosedResultBehavioralTier (build+vet via corpus.RunCompile over the 3 06-error-e cases) + TestASTEngineClosedResultEncoding (prelude/sum-ctor/closed-match/closed-?/from-conv shapes). Output matches the goldens modulo the scope-aware gensym (`r` vs `__goal_e`, US-035) — exact parity is US-042."
     },
     {
       "id": "US-038",

@@ -135,8 +135,62 @@
   `func()error` callee -> 1 value -> `if err := f(); err != nil`, a Result callee ->
   2 -> `if _, err := f(); err != nil`) and on failure returns the function's own
   (okName, errName). An Option `?` mints a fresh pointer temp per site and returns
-  nil. A `?` in a roNone function (incl. a closed-E Result function, which is roNone
-  until US-037) hits the descriptive "`?` outside Result/Option" error.
+  nil. A `?` in a roNone function hits the descriptive "`?` outside Result/Option"
+  error. A closed-E Result function (E != error) is its OWN roKind (roResultClosed),
+  set in funcDecl from sema.FuncSig[name].Mode==ModeResultClosed (NOT resultOptionKind,
+  which returns roNone for closed-E so funcSig emits the `Result[T,E]` type verbatim).
+  closedT/closedE ride on the emitter (saved/restored like okName/errName) and feed the
+  Ok/Err sum constructors + closed `?` propagation.
+- Closed-E Result (feature 06) lowers to the §8.1 GENERIC SUM, not a native tuple:
+  the `resultPrelude` (Result[T,E] iface + Ok/Err carriers + marker methods, in
+  lower.go) is emitted ONCE per file by file(), after import decls (isImportDecl
+  guard) and before the first other decl, gated by needsResultPrelude(info) (any
+  func is ModeResultClosed). `Result.Ok/Err(X)` -> `Ok/Err[T,E]{Value: X}`; a closed
+  `match` and closed `?` are type-switches over `Ok[T,E]`/`Err[T,E]` with a panicking
+  §8.2 default. Closed-E match is dispatched on the SCRUTINEE CALLEE's mode
+  (calleeMode==ModeResultClosed), NOT the enclosing function — the matching function
+  may be void (e.g. `handle`). Closed `?` returns the enclosing function's own
+  Err[closedT,closedE], applying the `from func` conversion
+  (FromRegistry[[2]string{callee.E, caller.E}].Name) when the error types differ.
+- A `from func` (ast.FuncFrom) emits as an ORDINARY Go function (the modifier is
+  stripped): its src->tgt registration already lives in sema.FromRegistry (sema.Resolve
+  routes from/derive to the registry, NOT FuncSignatures), so the emitted func is just
+  a callable conversion. funcDecl's modifier guard allows FuncPlain+FuncFrom; FuncDerive
+  still fails (US-039).
+
+## [2026-06-27T08:27:00Z] - US-037
+- Lowered closed-E Result[T,E] (E != error, feature 06) on the AST backend: the
+  §8.1 Ok/Err sum prelude (once per file), the Ok/Err sum constructors, the closed
+  `match` type-switch, and closed `?` propagation with the auto-invoked `from func`
+  conversion across differing error types. Reads T/E and the from-registry off
+  sema.Info, mirroring the known-good internal/pass/closed.go shapes (no token scan).
+- Files changed:
+  - internal/backend/lower.go (roResultClosed roKind; resultPrelude const;
+    needsResultPrelude)
+  - internal/backend/emit.go (emitter.closedT/closedE; file() prelude emission +
+    isImportDecl; funcDecl closed-E setup + FuncFrom passthrough; returnStmt
+    roResultClosed -> emitClosedResultReturn; unwrap roResultClosed -> unwrapClosed;
+    resultMatch -> closedResultMatch)
+  - internal/backend/backend_test.go (errorEClosedCases;
+    TestASTEngineClosedResultBehavioralTier; TestASTEngineClosedResultEncoding)
+  - prd.json (US-037 passes:true), progress.txt
+  - history/20260627-feature-us-037-lower-emit-closed-e-result/ (initiative)
+- Commit: 5295d52
+- Learnings for future iterations:
+  - The closed-E function's signature is emitted VERBATIM (`Result[Config,
+    ParseError]`) — it is satisfied by the injected generic prelude. resultOptionKind
+    already returns roNone for closed-E (E != error), so funcSig needs NO change; the
+    roResultClosed kind is set separately in funcDecl from the sema sig.
+  - Closed-E match dispatch keys on the SCRUTINEE CALLEE's mode, not the enclosing
+    function's — `handle` (void) matches a closed-E `parse()`. Route via calleeMode in
+    resultMatch (the same seam US-034 used to REFUSE closed-E; now it ROUTES).
+  - The carried-value alias (`binding := guard.Value`) and the guard gensym are minted
+    only when an arm USES its binding (usesIdent) — an unused guard or alias would be a
+    compile error. Same discipline as the open-E match/`?` lowerings.
+  - Output is build+vet-clean and matches the goldens modulo the scope-aware gensym
+    (`r` vs the splice engine's `__goal_e`); exact golden parity is US-042. US-038/039
+    extend the same seam (encoder in lower.go + dispatch case in emit.go); US-039
+    turns the FuncDerive guard (still failing) into derive synthesis.
 
 ## [2026-06-27T08:05:00Z] - US-035
 - Lowered postfix `?` propagation on the AST backend with a real, scope-aware
