@@ -178,6 +178,111 @@ func TestWalkNilNodeIsNoop(t *testing.T) {
 	}
 }
 
+// TestWalkGoalDeclChildren asserts Walk descends into the children of each goal
+// declaration node added in US-015 (EnumDecl/Variant/PayloadField,
+// SealedInterfaceDecl, ImplementsClause) and that a from/derive FuncDecl carries
+// its modifier and reports the modifier keyword as its start position.
+func TestWalkGoalDeclChildren(t *testing.T) {
+	// collect walks root and returns how many times each non-nil node was visited.
+	collect := func(root Node) map[Node]int {
+		c := &collector{visits: make(map[Node]int)}
+		Walk(c, root)
+		return c.visits
+	}
+	// assertChildren asserts parent and each listed child were each visited once.
+	assertChildren := func(t *testing.T, visits map[Node]int, parent Node, children ...Node) {
+		t.Helper()
+		if got := visits[parent]; got != 1 {
+			t.Errorf("parent %T visited %d times, want 1", parent, got)
+		}
+		for _, ch := range children {
+			if got := visits[ch]; got != 1 {
+				t.Errorf("Walk did not descend from %T into child %T (visited %d times, want 1)", parent, ch, got)
+			}
+		}
+	}
+
+	// enum Decision { Admit; Reject { reason: Rejection } }
+	admit := &Variant{Name: &Ident{Name: "Admit"}}
+	reasonType := &Ident{Name: "Rejection"}
+	reasonField := &PayloadField{Name: &Ident{Name: "reason"}, Type: reasonType}
+	reject := &Variant{
+		Name:    &Ident{Name: "Reject"},
+		Lbrace:  token.Pos{Offset: 1, Line: 1, Col: 2},
+		Payload: []*PayloadField{reasonField},
+		Rbrace:  token.Pos{Offset: 2, Line: 1, Col: 3},
+	}
+	enumName := &Ident{Name: "Decision"}
+	enum := &EnumDecl{Name: enumName, Variants: []*Variant{admit, reject}}
+	{
+		visits := collect(enum)
+		assertChildren(t, visits, enum, enumName, admit, reject)
+		assertChildren(t, visits, admit, admit.Name)
+		assertChildren(t, visits, reject, reject.Name, reasonField)
+		assertChildren(t, visits, reasonField, reasonField.Name, reasonType)
+	}
+
+	// sealed interface Shape { Area() float64 }
+	areaField := &Field{Names: []*Ident{{Name: "Area"}}, Type: &FuncType{}}
+	methods := &FieldList{List: []*Field{areaField}}
+	shapeName := &Ident{Name: "Shape"}
+	sealed := &SealedInterfaceDecl{Name: shapeName, Methods: methods}
+	{
+		visits := collect(sealed)
+		assertChildren(t, visits, sealed, shapeName, methods, areaField)
+	}
+
+	// type Circle struct implements geom.Shape { Radius float64 }
+	ifaceType := &SelectorExpr{X: &Ident{Name: "geom"}, Sel: &Ident{Name: "Shape"}}
+	impl := &ImplementsClause{Type: ifaceType}
+	radius := &Field{Names: []*Ident{{Name: "Radius"}}, Type: &Ident{Name: "float64"}}
+	structType := &StructType{Implements: impl, Fields: &FieldList{List: []*Field{radius}}}
+	{
+		visits := collect(structType)
+		assertChildren(t, visits, structType, impl, structType.Fields)
+		assertChildren(t, visits, impl, ifaceType)
+	}
+
+	// from func uuidToString(u UUID) string { ... }
+	fromName := &Ident{Name: "uuidToString"}
+	modPos := token.Pos{Offset: 0, Line: 1, Col: 1}
+	fromFunc := &FuncDecl{Mod: FuncFrom, ModPos: modPos, Name: fromName, Type: &FuncType{}}
+	{
+		visits := collect(fromFunc)
+		assertChildren(t, visits, fromFunc, fromName)
+		if fromFunc.Mod != FuncFrom {
+			t.Errorf("from-func Mod = %v, want FuncFrom", fromFunc.Mod)
+		}
+		if fromFunc.Pos() != modPos {
+			t.Errorf("from-func Pos() = %v, want ModPos %v", fromFunc.Pos(), modPos)
+		}
+	}
+
+	// derive func fromStorage(s StoredEvent) (EventExecution, error)  — bodyless
+	deriveName := &Ident{Name: "fromStorage"}
+	deriveFunc := &FuncDecl{Mod: FuncDerive, ModPos: modPos, Name: deriveName, Type: &FuncType{}}
+	{
+		visits := collect(deriveFunc)
+		assertChildren(t, visits, deriveFunc, deriveName)
+		if deriveFunc.Mod != FuncDerive {
+			t.Errorf("derive-func Mod = %v, want FuncDerive", deriveFunc.Mod)
+		}
+		if deriveFunc.Pos() != modPos {
+			t.Errorf("derive-func Pos() = %v, want ModPos %v", deriveFunc.Pos(), modPos)
+		}
+	}
+
+	// A plain FuncDecl must NOT report ModPos as its start position.
+	plainName := &Ident{Name: "plain"}
+	plainFunc := &FuncDecl{Name: plainName, Type: &FuncType{Func: token.Pos{Offset: 5, Line: 1, Col: 6}}}
+	if plainFunc.Mod != FuncPlain {
+		t.Errorf("plain-func Mod = %v, want FuncPlain", plainFunc.Mod)
+	}
+	if plainFunc.Pos() != plainFunc.Type.Pos() {
+		t.Errorf("plain-func Pos() = %v, want Type.Pos() %v", plainFunc.Pos(), plainFunc.Type.Pos())
+	}
+}
+
 func contains(list []Node, target Node) bool {
 	for _, n := range list {
 		if n == target {

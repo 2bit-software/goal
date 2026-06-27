@@ -64,6 +64,36 @@ func Walk(v Visitor, node Node) {
 			Walk(v, n.Body)
 		}
 
+	// Goal declarations.
+	case *EnumDecl:
+		if n.Name != nil {
+			Walk(v, n.Name)
+		}
+		for _, vr := range n.Variants {
+			Walk(v, vr)
+		}
+	case *Variant:
+		if n.Name != nil {
+			Walk(v, n.Name)
+		}
+		for _, f := range n.Payload {
+			Walk(v, f)
+		}
+	case *PayloadField:
+		if n.Name != nil {
+			Walk(v, n.Name)
+		}
+		walkExpr(v, n.Type)
+	case *SealedInterfaceDecl:
+		if n.Name != nil {
+			Walk(v, n.Name)
+		}
+		if n.Methods != nil {
+			Walk(v, n.Methods)
+		}
+	case *ImplementsClause:
+		walkExpr(v, n.Type)
+
 	// Specs.
 	case *ImportSpec:
 		if n.Name != nil {
@@ -133,6 +163,9 @@ func Walk(v Visitor, node Node) {
 		walkExpr(v, n.Key)
 		walkExpr(v, n.Value)
 	case *StructType:
+		if n.Implements != nil {
+			Walk(v, n.Implements)
+		}
 		if n.Fields != nil {
 			Walk(v, n.Fields)
 		}

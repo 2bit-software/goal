@@ -185,7 +185,7 @@
         "A test asserts Walk descends into each new node's children"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

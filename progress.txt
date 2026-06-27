@@ -481,3 +481,38 @@
   - token.Pos zero value is token.Pos{} (all-zero); FieldList/FuncType guard
     "Opening/Func is set" by comparing against token.Pos{}.
 ---
+
+## [2026-06-27T08:30:00Z] - US-015
+- Added goal's declaration surface to internal/ast (Phase 1.5 nodes): the
+  closed-type and conversion declarations layered on the Go subset. New file
+  internal/ast/goal_decl.go declares EnumDecl/Variant/PayloadField (enum with
+  data-less and payload variants), SealedInterfaceDecl, ImplementsClause, and a
+  FuncMod enum (FuncPlain/FuncFrom/FuncDerive). Per REWRITE-ARCHITECTURE.md §1.3
+  from/derive are contextual keywords (lexed as IDENT), so they are recorded as
+  a modifier on FuncDecl (Mod + ModPos fields), NOT as token kinds.
+- EnumDecl and SealedInterfaceDecl are Decl (carry declNode()), slotting into
+  File.Decls. Variant/PayloadField/ImplementsClause are support nodes (implement
+  Node only, like Field/FieldList). ImplementsClause attaches to the existing
+  StructType via a new optional Implements field (no separate StructDecl) —
+  goal's `type T struct implements I { ... }`.
+- Walk gained cases for all five new nodes and the *StructType case now descends
+  into Implements (before Fields). FuncDecl.Pos() returns ModPos when modified.
+- Files changed:
+  - internal/ast/goal_decl.go (new: nodes + FuncMod)
+  - internal/ast/ast.go (FuncDecl.Mod/ModPos + Pos(); StructType.Implements)
+  - internal/ast/walk.go (5 new cases + StructType.Implements descent)
+  - internal/ast/ast_test.go (TestWalkGoalDeclChildren)
+  - history/20260627-feature-us-015-goal-declaration-ast-nodes/ (initiative)
+- Learnings for future iterations:
+  - Adding fields to existing ast nodes (FuncDecl, StructType) is safe ONLY
+    because every construction is a KEYED struct literal (ast_test.go is the sole
+    consumer); a positional literal would break. Keep ast literals keyed.
+  - New support nodes (Node, not Decl/Stmt/Expr) walk fine — Walk takes Node, so
+    Variant/PayloadField/ImplementsClause need no category marker; only the two
+    top-level decls carry declNode().
+  - US-016 ADDS the goal EXPRESSION/pattern nodes (MatchExpr/MatchArm,
+    VariantPattern/RestPattern, UnwrapExpr, VariantLit/LabeledArg, SpreadElement)
+    the same way: define in a new file, add Walk cases, assert Walk descent.
+  - The Walk-descent test pattern: collect(root) -> map[Node]int via the existing
+    collector, then assert parent + each declared child == 1 visit. Reuse it.
+---

@@ -153,14 +153,21 @@ func (d *GenDecl) End() token.Pos {
 func (*GenDecl) declNode() {}
 
 // FuncDecl is a function or method declaration. Recv is nil for a plain function.
+// Mod records a goal `from`/`derive` modifier (FuncPlain when absent); ModPos is
+// the position of that modifier keyword.
 type FuncDecl struct {
-	Recv *FieldList // receiver (methods); or nil
-	Name *Ident     // function/method name
-	Type *FuncType  // signature (params and results)
-	Body *BlockStmt // body; or nil for a bodyless declaration
+	Mod    FuncMod    // goal modifier: FuncPlain, FuncFrom, or FuncDerive
+	ModPos token.Pos  // position of the from/derive keyword; zero when FuncPlain
+	Recv   *FieldList // receiver (methods); or nil
+	Name   *Ident     // function/method name
+	Type   *FuncType  // signature (params and results)
+	Body   *BlockStmt // body; or nil for a bodyless declaration
 }
 
 func (d *FuncDecl) Pos() token.Pos {
+	if d.Mod != FuncPlain && d.ModPos != (token.Pos{}) {
+		return d.ModPos
+	}
 	if d.Type != nil {
 		return d.Type.Pos()
 	}
@@ -547,10 +554,13 @@ func (e *MapType) End() token.Pos {
 }
 func (*MapType) exprNode() {}
 
-// StructType is a struct type struct{ Fields }.
+// StructType is a struct type struct{ Fields }. Implements carries a goal
+// `implements Iface` clause (`type T struct implements I { ... }`) when present;
+// it is nil for an ordinary Go struct type.
 type StructType struct {
-	Struct token.Pos  // position of "struct"
-	Fields *FieldList // list of field declarations
+	Struct     token.Pos         // position of "struct"
+	Implements *ImplementsClause // goal implements clause; or nil
+	Fields     *FieldList        // list of field declarations
 }
 
 func (e *StructType) Pos() token.Pos { return e.Struct }
