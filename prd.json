@@ -485,8 +485,8 @@
         "The 11-doctests cases pass the doctest tier through the new backend"
       ],
       "priority": 40,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "AST backend now emits the doctest `_test.go` sidecar (internal/backend/doctest.go: renderDoctests + emitDoctests), wired into goBackend.Emit so backend.Transpile populates Output.Test (Transpile already gofmt-formats it). Extraction is AST-native: it reads the structured ast.FuncDecl.Doc.Doctests the parser attached in US-023 (no re-lexing), renders the same goal-shaped TestDoctest_<fn>_<n> sidecar shape as internal/pass.RenderDoctests, then lowers it through the SAME emit path by parsing the rendered source back to an *ast.File and calling emitFile with the ORIGINAL file's *sema.Info — so a doctest body's (nested) variant construction / keyed literal lowers to the §8.1 sum encoding exactly as the documented function body does (the emitter's variantLit/selectorExpr read info.Enums by name; the original info, not sema.Resolve(testFile), is what carries those facts). AC tests in internal/backend/backend_test.go: TestASTEngineDoctestTier (sidecar vs golden, gofmt-normalized) + TestASTEngineDoctestExecTier (behavioral: go test in a temp module) over all 4 features/11-doctests cases, plus TestASTEngineDoctestEnumLowering pinning the enum case's nested construction lowering. Output matches the checked-in 11-doctests goldens byte-for-byte (doctest bodies use no gensym temporaries, so the US-035 naming divergence does not apply here)."
     },
     {
       "id": "US-041",

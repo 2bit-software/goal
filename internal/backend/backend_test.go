@@ -761,6 +761,89 @@ func TestASTEngineDeriveEncoding(t *testing.T) {
 	}
 }
 
+// doctestCases are the four features/11-doctests fixtures: a plain function, a
+// multi-doctest function, a mixed file (a doc block with no `>>>` yields no
+// test), and an enum file whose doctests construct (nested) enum payloads.
+var doctestCases = []string{
+	"features/11-doctests/examples/add.goal",
+	"features/11-doctests/examples/enum.goal",
+	"features/11-doctests/examples/mixed.goal",
+	"features/11-doctests/examples/multi.goal",
+}
+
+// TestASTEngineDoctestTier is US-040 AC: every 11-doctests case passes the
+// doctest tier through the new AST backend. The runner transpiles each case via
+// backend.Transpile and asserts the emitted `_test.go` sidecar (Output.Test)
+// matches the checked-in golden (gofmt-normalized both sides) — proving the AST
+// backend extracts `///` doctests and emits the sidecar lowered through the same
+// path as the function bodies (the enum case's variant constructions lower).
+func TestASTEngineDoctestTier(t *testing.T) {
+	if len(doctestCases) == 0 {
+		t.Fatal("no doctest cases to run")
+	}
+	for _, input := range doctestCases {
+		t.Run(input, func(t *testing.T) {
+			c := corpus.Case{
+				ID:       input,
+				Kind:     corpus.KindDoctest,
+				Mode:     corpus.ModeFile,
+				Input:    input,
+				Expected: strings.TrimSuffix(input, ".goal") + ".go.expected",
+			}
+			if err := corpus.RunDoctest(repoRoot, c, corpus.TranspilerFunc(backend.Transpile)); err != nil {
+				t.Fatalf("doctest tier failed: %v", err)
+			}
+		})
+	}
+}
+
+// TestASTEngineDoctestExecTier is the behavioral doctest tier for the AST
+// backend: each 11-doctests case's generated package plus its emitted doctest
+// sidecar must pass `go test` in an isolated temp module — proving the doctests
+// are not merely emitted but actually run green through the new engine.
+func TestASTEngineDoctestExecTier(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns the go toolchain per case; skipped under -short")
+	}
+	for _, input := range doctestCases {
+		t.Run(input, func(t *testing.T) {
+			c := corpus.Case{
+				ID:    input,
+				Kind:  corpus.KindDoctest,
+				Mode:  corpus.ModeFile,
+				Input: input,
+			}
+			if err := corpus.RunDoctestExec(repoRoot, c, corpus.TranspilerFunc(backend.Transpile)); err != nil {
+				t.Fatalf("behavioral doctest tier failed: %v", err)
+			}
+		})
+	}
+}
+
+// TestASTEngineDoctestEnumLowering pins that a doctest body lowers goal-specific
+// values through the SAME path as a function body: the enum.goal sidecar must
+// lower the (nested) variant constructions in its doctest examples to the §8.1
+// sum encoding, not leave them as the surface `Enum.Variant(field: …)` syntax.
+func TestASTEngineDoctestEnumLowering(t *testing.T) {
+	out, err := backend.Transpile(mustRead(t, "../../features/11-doctests/examples/enum.goal"))
+	if err != nil {
+		t.Fatalf("Transpile: %v", err)
+	}
+	if out.Test == "" {
+		t.Fatal("enum.goal produced no doctest sidecar")
+	}
+	wants := []string{
+		"Rejection(Rejection_MountNotGranted{Path: \"/etc\"})",                       // construction lowered
+		"Decision(Decision_Admit{})",                                                 // data-less variant lowered
+		"Decision(Decision_Reject{Reason: Rejection(Rejection_MountNotGranted{Path:", // nested construction lowered
+	}
+	for _, w := range wants {
+		if !strings.Contains(out.Test, w) {
+			t.Errorf("missing %q in sidecar:\n%s", w, out.Test)
+		}
+	}
+}
+
 func mustRead(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)

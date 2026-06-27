@@ -59,7 +59,11 @@ func (goBackend) Emit(file *ast.File, info *sema.Info) (pipeline.Output, error) 
 	if err != nil {
 		return pipeline.Output{}, err
 	}
-	return pipeline.Output{Go: src}, nil
+	test, err := emitDoctests(file, info)
+	if err != nil {
+		return pipeline.Output{}, fmt.Errorf("doctests: %w", err)
+	}
+	return pipeline.Output{Go: src, Test: test}, nil
 }
 
 // Transpile is the AST engine entry point: it parses goal source to an *ast.File,

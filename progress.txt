@@ -1752,3 +1752,43 @@
     (US-036) until US-042 regenerates exact goldens. Adding a file-mode transpile
     pair requires bumping internal/corpus/generate_test.go's count assertion.
 ---
+
+## [2026-06-27T10:30:00Z] - US-040
+- The AST backend now extracts `///` doctests and emits the `_test.go` sidecar,
+  lowered through the SAME emit path as function bodies, so the 11-doctests cases
+  pass the doctest tier through the new (AST) engine.
+- Extraction is AST-native: emitDoctests reads the structured doctest nodes the
+  parser attached in US-023 (ast.FuncDecl.Doc.Doctests, []*ast.Doctest{Input,
+  Expected}) — NOT a re-lex of the source. renderDoctests rebuilds the same
+  goal-shaped `TestDoctest_<fn>_<n>` sidecar shape as internal/pass.RenderDoctests
+  (package clause + `import "testing"` + got/want/inequality per example), then
+  emitDoctests parses that rendered source back to an *ast.File and runs it
+  through emitFile with the ORIGINAL file's *sema.Info. Passing the source's info
+  (not sema.Resolve(testFile), which would be empty of the source's enums) is the
+  hinge: the emitter's variantLit/selectorExpr lower a construction by info.Enums
+  membership keyed on name, so a doctest body's `Rejection.MountNotGranted(path:)`
+  lowers to `Rejection(Rejection_MountNotGranted{Path:})` exactly as the body does.
+- goBackend.Emit now also calls emitDoctests and sets pipeline.Output.Test;
+  backend.Transpile already gofmt-formats a non-empty Output.Test.
+- Files changed:
+  - internal/backend/doctest.go (new: renderDoctests + emitDoctests)
+  - internal/backend/backend.go (goBackend.Emit sets Output.Test)
+  - internal/backend/backend_test.go (doctestCases; TestASTEngineDoctestTier;
+    TestASTEngineDoctestExecTier; TestASTEngineDoctestEnumLowering)
+  - prd.json (US-040 passes:true), progress.txt
+  - history/20260627-feature-us-040-emit-doctest-sidecars-ast-backend/ (initiative)
+- Learnings for future iterations:
+  - Doctest bodies lower for FREE through the existing emit path once you feed the
+    rendered sidecar the ORIGINAL file's sema.Info — there is no separate doctest
+    lowering. The splice path (pipeline.doctestFile) does the same thing by running
+    the rendered goal test through the same passes + tables; the AST analogue is
+    "parse rendered sidecar, emitFile with source info".
+  - Output is byte-identical to the checked-in 11-doctests goldens (unlike most
+    AST-engine stories, which diverge by gensym name): doctest bodies declare no
+    generated temporaries, so the US-035 `v` vs `__goal_v` divergence never arises.
+    So both corpus.RunDoctest (text-vs-golden) AND corpus.RunDoctestExec
+    (behavioral) pass against the existing goldens — no golden regen needed here.
+  - The AST already carries doctests structurally (US-023), so any future doctest
+    consumer (US-045 goal fmt, LSP) should read ast.FuncDecl.Doc.Doctests rather
+    than re-scanning `///` lines.
+---
