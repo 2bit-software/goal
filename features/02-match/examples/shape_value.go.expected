@@ -13,11 +13,11 @@ func (Shape_Circle) isShape() {}
 func (Shape_Square) isShape() {}
 
 func area(s Shape) int {
-	switch __goal_v := s.(type) {
+	switch v := s.(type) {
 	case Shape_Circle:
-		return __goal_v.Radius * __goal_v.Radius * 3
+		return v.Radius * v.Radius * 3
 	case Shape_Square:
-		return __goal_v.Side * __goal_v.Side
+		return v.Side * v.Side
 	default:
 		panic("unreachable: non-exhaustive Shape (compiler invariant violated)")
 	}

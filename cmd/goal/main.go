@@ -42,7 +42,7 @@ var guideCommands = []guide.Command{
 		Usage:   "goal build [--emit[=dir]] [--engine=splice|ast] [path]",
 		Flags: []guide.Flag{
 			{Name: "--emit[=dir]", Summary: "also write generated .go beside each .goal (or under dir)"},
-			{Name: "--engine=splice|ast", Summary: "front-end engine: splice (default) or the new AST engine"},
+			{Name: "--engine=splice|ast", Summary: "front-end engine: ast (default) or the legacy splice engine"},
 		},
 	},
 	{
@@ -51,7 +51,7 @@ var guideCommands = []guide.Command{
 		Usage:   "goal run [--emit[=dir]] [--engine=splice|ast] [path]",
 		Flags: []guide.Flag{
 			{Name: "--emit[=dir]", Summary: "also write generated .go beside each .goal (or under dir)"},
-			{Name: "--engine=splice|ast", Summary: "front-end engine: splice (default) or the new AST engine"},
+			{Name: "--engine=splice|ast", Summary: "front-end engine: ast (default) or the legacy splice engine"},
 		},
 	},
 	{
@@ -144,11 +144,11 @@ func cmdAI(args []string, out io.Writer) error {
 	return guide.Render(out, section, guideCommands)
 }
 
-// Transpile engines selectable via --engine. engineSplice is the token-splice
-// front-end (today's default); engineAST is the new AST-based engine
-// (REWRITE-ARCHITECTURE.md Phase 2), wired here behind the flag while it is built
-// up story by story. The splice engine stays the default until the AST engine is
-// behaviorally complete (US-042).
+// Transpile engines selectable via --engine. engineAST is the AST-based
+// front-end (REWRITE-ARCHITECTURE.md Phase 2) and is now the default, the
+// canonical path whose output the corpus goldens are regenerated from (US-042).
+// engineSplice is the legacy token-splice front-end, retained behind the flag
+// for one release as a fallback.
 const (
 	engineSplice = "splice"
 	engineAST    = "ast"
@@ -157,10 +157,10 @@ const (
 // parseFlags pulls --emit[=dir], --engine=<splice|ast>, and a single optional path
 // argument out of args. The path defaults to "." and a trailing "/..." (or bare
 // "...") is stripped, since discovery is already recursive. The engine defaults to
-// the splice front-end; an unrecognized --engine value is a usage error.
+// the AST front-end; an unrecognized --engine value is a usage error.
 func parseFlags(args []string) (emit bool, emitDir, root, engine string, err error) {
 	root = "."
-	engine = engineSplice
+	engine = engineAST
 	gotPath := false
 	for _, a := range args {
 		switch {
@@ -280,11 +280,10 @@ type transpiled struct {
 }
 
 // transpileAll discovers and transpiles every package under root with the selected
-// engine. The splice engine uses pipeline.TranspilePackage (cross-file tables,
-// shared prelude) exactly as before; the AST engine transpiles each file through
-// backend.Transpile (single-file, plain-Go subset for now — cross-file/prelude
-// support on the AST path is a later story). The splice path is unchanged when the
-// flag is absent.
+// engine. The AST engine (the default) uses backend.TranspilePackage — cross-file
+// fact merge plus a single shared prelude per package; the legacy splice engine
+// uses pipeline.TranspilePackage. Both have the same signature, so the selection
+// is a single branch.
 func transpileAll(root, engine string) ([]transpiled, error) {
 	pkgs, err := project.Discover(root)
 	if err != nil {
@@ -297,7 +296,7 @@ func transpileAll(root, engine string) ([]transpiled, error) {
 	for _, pkg := range pkgs {
 		var out pipeline.PackageOutput
 		if engine == engineAST {
-			out, err = transpilePackageAST(pkg)
+			out, err = backend.TranspilePackage(pkg)
 		} else {
 			out, err = pipeline.TranspilePackage(pkg)
 		}
@@ -307,28 +306,6 @@ func transpileAll(root, engine string) ([]transpiled, error) {
 		ts = append(ts, transpiled{pkg: pkg, out: out})
 	}
 	return ts, nil
-}
-
-// transpilePackageAST transpiles each file in pkg through the AST engine
-// (backend.Transpile), assembling a PackageOutput with one generated Go file per
-// source (and a doctest sidecar when present). It does no cross-file table merge or
-// shared-prelude emission yet — that is later AST-backend work; the splice engine
-// remains the default for packages that need it.
-func transpilePackageAST(pkg *project.Package) (pipeline.PackageOutput, error) {
-	var out pipeline.PackageOutput
-	for _, f := range pkg.Files {
-		res, err := backend.Transpile(f.Src)
-		if err != nil {
-			return pipeline.PackageOutput{}, fmt.Errorf("%s: %w", f.Name, err)
-		}
-		gen := strings.TrimSuffix(f.Name, project.Ext) + ".go"
-		out.Files = append(out.Files, pipeline.GoFile{Name: gen, Go: res.Go})
-		if res.Test != "" {
-			test := strings.TrimSuffix(f.Name, project.Ext) + "_test.go"
-			out.Tests = append(out.Tests, pipeline.GoFile{Name: test, Go: res.Test})
-		}
-	}
-	return out, nil
 }
 
 func cmdBuild(root, engine string, emit bool, emitDir string, out, errOut io.Writer) error {

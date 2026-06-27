@@ -7,7 +7,7 @@ import (
 	"goal/internal/scan"
 )
 
-// addLineDirectives inserts a Go `//line` directive before every top-level declaration
+// AddLineDirectives inserts a Go `//line` directive before every top-level declaration
 // in the generated Go, so the Go toolchain reports errors at goal positions (SPIKE-1
 // proved the compiler honors these and gofmt preserves them).
 //
@@ -21,7 +21,10 @@ import (
 //
 // goalFile is the path reported for mapped decls; genFile is the generated file's name
 // (its path in the build/emit directory) reported for synthesized decls.
-func addLineDirectives(goalSrc, genGo, goalFile, genFile string) string {
+//
+// It is name-based and therefore engine-agnostic: both the splice front-end and the
+// AST backend (backend.TranspilePackage) apply it to their formatted Go output.
+func AddLineDirectives(goalSrc, genGo, goalFile, genFile string) string {
 	goalLine := declLines(goalSrc)
 	sites := declSites(genGo)
 	if len(sites) == 0 {

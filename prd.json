@@ -509,8 +509,8 @@
         "The old splice engine remains available behind a flag for one release"
       ],
       "priority": 42,
-      "passes": false,
-      "notes": "New gensym names and equivalent encodings mean exact goldens necessarily change here."
+      "passes": true,
+      "notes": "Regenerated all 52 file-mode exact goldens FROM the AST backend (backend.Transpile) via a durable, off-by-default `-update-goldens` flag (internal/corpus/update_goldens_test.go, mirrors parser's -update-snapshots; gofmt-normalized; Output.Test for doctest sidecars per isDoctestSidecar, else Output.Go) — 42 changed (scope-aware gensym `ok`/`err1` vs `__goal_ok`, `type T int64` vs `= int64` alias, dropped `//` comments), 10 already byte-identical. Switched the 4 exact-tier tests (corpus TestTranspileRunner/TestDoctestRunner, pipeline_test TestCorpusTranspile/TestCorpusDoctest) from pipeline.Transpile to backend.Transpile — green by construction. Flipped cmd/goal default engine to engineAST (parseFlags + usage/Summary text + main_test default assertion) and routed the default package path through backend.TranspilePackage (cross-file merge + single shared prelude) instead of the per-file helper (removed transpilePackageAST). Exported pipeline.AddLineDirectives (name-based, engine-agnostic) and applied it in backend.TranspilePackage so AST-default build errors still map to .goal source (fixed TestBuildErrorMapsToGoalSource regression). Regenerated AI-KNOWLEDGE-BOOTSTRAP.md (ast default text). Splice stays behind --engine=splice and is still behaviorally exercised (RunCompile/RunDoctestExec/RunPackage via pipeline.Transpile). Whole-corpus behavioral gate (108 cases) + full suite green."
     },
     {
       "id": "US-043",

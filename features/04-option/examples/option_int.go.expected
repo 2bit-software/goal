@@ -4,6 +4,6 @@ func first(xs []int) *int {
 	if len(xs) == 0 {
 		return nil
 	}
-	__goal_some := xs[0]
-	return &__goal_some
+	some := xs[0]
+	return &some
 }

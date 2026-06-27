@@ -190,8 +190,8 @@ func TestParseFlags(t *testing.T) {
 	if !emit || emitDir != "out" || root != "./pkg" {
 		t.Errorf("parseFlags = (%v, %q, %q), want (true, out, ./pkg)", emit, emitDir, root)
 	}
-	if engine != engineSplice {
-		t.Errorf("default engine = %q, want %q", engine, engineSplice)
+	if engine != engineAST {
+		t.Errorf("default engine = %q, want %q", engine, engineAST)
 	}
 }
 

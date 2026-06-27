@@ -2,7 +2,8 @@ package writers
 
 import "io"
 
-type Discard struct{}
+type Discard struct {
+}
 
 var _ io.Writer = Discard{}
 

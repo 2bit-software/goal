@@ -1,11 +1,16 @@
 package conv
 
-// Local stand-in (see to_storage.goal / SYNTAX.md).
-type UUID struct{ s string }
+type UUID struct {
+	s string
+}
 
-func (u UUID) String() string { return u.s }
+func (u UUID) String() string {
+	return u.s
+}
 
-func uuidToString(u UUID) string { return u.String() }
+func uuidToString(u UUID) string {
+	return u.String()
+}
 
 type Group struct {
 	Name    string
@@ -17,8 +22,6 @@ type IDList struct {
 	Members []string
 }
 
-// Container recursion (built-in deriver rule): Members []UUID -> []string is filled
-// automatically from the registered UUID -> string; the user writes only the leaf.
 func toIDs(g Group) IDList {
 	var out IDList
 	out.Name = g.Name

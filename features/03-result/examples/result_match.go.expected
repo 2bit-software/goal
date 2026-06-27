@@ -6,30 +6,35 @@ type Config struct {
 	Raw string
 }
 
-func parse(s string) (__goal_ok Config, __goal_err error) {
+func parse(s string) (ok Config, err error) {
 	if s == "" {
-		return __goal_ok, errors.New("empty input")
+		return ok, errors.New("empty input")
 	}
 	return Config{Raw: s}, nil
 }
 
-func run(c Config)   {}
-func report(e error) {}
-func done()          {}
+func run(c Config) {
+}
+
+func report(e error) {
+}
+
+func done() {
+}
 
 func handle(input string) {
-	__goal_v, __goal_err := parse(input)
-	if __goal_err != nil {
-		report(__goal_err)
+	v, err := parse(input)
+	if err != nil {
+		report(err)
 	} else {
-		run(__goal_v)
+		run(v)
 	}
 }
 
 func handle2(input string) {
-	_, __goal_err := parse(input)
-	if __goal_err != nil {
-		report(__goal_err)
+	_, err := parse(input)
+	if err != nil {
+		report(err)
 	} else {
 		done()
 	}

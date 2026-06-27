@@ -34,16 +34,16 @@ func toTyped(r Raw) Typed {
 	for k, v := range r.Index {
 		out.Index[k] = parseID(v)
 	}
-	for i := range r.Pair {
-		out.Pair[i] = parseID(r.Pair[i])
+	for i1 := range r.Pair {
+		out.Pair[i1] = parseID(r.Pair[i1])
 	}
 	if r.Lead != nil {
-		__goal_p0 := parseID(*r.Lead)
-		out.Lead = &__goal_p0
+		p := parseID(*r.Lead)
+		out.Lead = &p
 	}
 	if r.Maybe != nil {
-		__goal_p1 := parseID(*r.Maybe)
-		out.Maybe = &__goal_p1
+		p1 := parseID(*r.Maybe)
+		out.Maybe = &p1
 	}
 	return out
 }

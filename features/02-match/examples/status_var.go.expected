@@ -1,6 +1,6 @@
 package status
 
-type Time = int64
+type Time int64
 
 type Status interface{ isStatus() }
 
@@ -19,13 +19,13 @@ func (Status_Cancelled) isStatus() {}
 
 func describe(s Status) string {
 	var d string
-	switch __goal_v := s.(type) {
+	switch v := s.(type) {
 	case Status_Pending:
 		d = "pending"
 	case Status_Active:
 		d = "active"
 	case Status_Cancelled:
-		d = __goal_v.Reason
+		d = v.Reason
 	default:
 		panic("unreachable: non-exhaustive Status (compiler invariant violated)")
 	}

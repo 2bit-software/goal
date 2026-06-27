@@ -61,7 +61,12 @@ func TranspilePackage(pkg *project.Package) (pipeline.PackageOutput, error) {
 		if err != nil {
 			return pipeline.PackageOutput{}, fmt.Errorf("%s: generated Go did not parse: %w\n--- generated ---\n%s", f.Name, err, goSrc)
 		}
-		out.Files = append(out.Files, pipeline.GoFile{Name: goName(f.Name), Go: string(formatted)})
+		// Anchor generated decls back to the .goal file (by name) so toolchain build
+		// errors land on source positions, matching the splice engine. The shared
+		// prelude below carries no directives (errors there are compiler bugs).
+		gen := goName(f.Name)
+		mapped := pipeline.AddLineDirectives(f.Src, string(formatted), f.Name, gen)
+		out.Files = append(out.Files, pipeline.GoFile{Name: gen, Go: mapped})
 
 		testSrc, err := emitDoctests(files[i], info)
 		if err != nil {

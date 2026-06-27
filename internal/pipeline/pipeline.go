@@ -179,7 +179,7 @@ func TranspilePackage(pkg *project.Package) (PackageOutput, error) {
 		// Map generated decls back to the .goal file so toolchain errors land on source
 		// positions (U5); the synthesized prelude keeps no directives (errors there are
 		// compiler bugs, honestly reported against goal_prelude.go).
-		mapped := addLineDirectives(f.Src, res.Go, f.Name, gen)
+		mapped := AddLineDirectives(f.Src, res.Go, f.Name, gen)
 		out.Files = append(out.Files, GoFile{Name: gen, Go: mapped})
 		if res.Test != "" {
 			out.Tests = append(out.Tests, GoFile{Name: testName(f.Name), Go: res.Test})

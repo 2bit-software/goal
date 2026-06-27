@@ -13,15 +13,15 @@ func parent(name string) *User {
 }
 
 func grandparent(name string) *User {
-	__goal_o1 := find(name)
-	if __goal_o1 == nil {
+	o := find(name)
+	if o == nil {
 		return nil
 	}
-	u := *__goal_o1
-	__goal_o2 := parent(u.Name)
-	if __goal_o2 == nil {
+	u := *o
+	o1 := parent(u.Name)
+	if o1 == nil {
 		return nil
 	}
-	p := *__goal_o2
+	p := *o1
 	return &p
 }

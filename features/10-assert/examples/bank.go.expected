@@ -1,7 +1,5 @@
 package bank
 
-// withdraw asserts an invariant the type system can't capture (amount > 0). The
-// bare form needs no message: the panic carries the source expression text.
 func withdraw(balance int, amount int) int {
 	if !(amount > 0) {
 		panic("assertion failed: amount > 0")

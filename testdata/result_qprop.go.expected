@@ -11,25 +11,25 @@ type Page struct {
 	Title string
 }
 
-func lookup(id string) (__goal_ok User, __goal_err error) {
+func lookup(id string) (ok User, err error) {
 	if id == "" {
-		return __goal_ok, errors.New("empty id")
+		return ok, errors.New("empty id")
 	}
 	return User{ID: id, Name: "n"}, nil
 }
 
-func render(u User) (__goal_ok Page, __goal_err error) {
+func render(u User) (ok Page, err error) {
 	return Page{Title: u.Name}, nil
 }
 
-func handler(id string) (__goal_ok Page, __goal_err error) {
-	u, __goal_err := lookup(id)
-	if __goal_err != nil {
-		return __goal_ok, __goal_err
+func handler(id string) (ok Page, err error) {
+	u, err := lookup(id)
+	if err != nil {
+		return ok, err
 	}
-	p, __goal_err := render(u)
-	if __goal_err != nil {
-		return __goal_ok, __goal_err
+	p, err := render(u)
+	if err != nil {
+		return ok, err
 	}
 	return p, nil
 }

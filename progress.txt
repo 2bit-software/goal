@@ -205,6 +205,48 @@
   sema type strings. NOTE the foreign-package derive fixture (US-009) still runs through the
   SPLICE engine via corpus.RunPackage; this AST lowering covers only the file-mode features/12
   cases.
+- The AST engine is now the DEFAULT (US-042). cmd/goal parseFlags defaults engine=engineAST;
+  the default package path routes through backend.TranspilePackage (cross-file merge + ONE
+  shared prelude), NOT a per-file loop. The exact-tier corpus tests (TestTranspileRunner,
+  TestDoctestRunner, TestCorpusTranspile, TestCorpusDoctest) run backend.Transpile and compare
+  against goldens regenerated FROM the backend; splice keeps only behavioral-tier coverage
+  (RunCompile/RunDoctestExec/RunPackage via pipeline.Transpile) + the --engine=splice flag.
+- Regenerate the .go.expected goldens with the off-by-default flag:
+  `go test ./internal/corpus -run TestUpdateGoldens -update-goldens` (internal/corpus/
+  update_goldens_test.go, mirrors parser's -update-snapshots). It writes gofmt(backend Output.Go),
+  or gofmt(Output.Test) when the existing golden is a doctest sidecar (isDoctestSidecar). Goldens
+  are produced ONLY from real backend output — never hand-edit them. The exact tier uses
+  single-file backend.Transpile (no //line directives), so regen output matches by construction.
+- Source-position mapping is engine-agnostic: pipeline.AddLineDirectives (exported) inserts
+  name-anchored `//line` directives and is applied by BOTH pipeline.TranspilePackage and
+  backend.TranspilePackage. Any new package-mode emit path must apply it or `goal build` errors
+  stop mapping back to .goal source (TestBuildErrorMapsToGoalSource guards this).
+
+## [2026-06-27T13:30:00Z] - US-042
+- Made the AST backend the canonical/default front-end and regenerated every exact golden
+  from its real output. Added a durable `-update-goldens` regeneration test, switched the
+  four exact-tier corpus tests to backend.Transpile, flipped the CLI default engine to AST
+  (routing the package path through backend.TranspilePackage), exported and reused
+  pipeline.AddLineDirectives on the AST path so build errors still map to .goal source, and
+  regenerated AI-KNOWLEDGE-BOOTSTRAP.md. Splice remains available behind --engine=splice.
+- Files changed:
+  - internal/corpus/update_goldens_test.go (new: -update-goldens flag + TestUpdateGoldens)
+  - internal/corpus/runner_test.go, internal/corpus/doctest_runner_test.go,
+    internal/pipeline/pipeline_test.go (exact-tier transpiler -> backend.Transpile)
+  - features/**/*.go.expected, testdata/**/*.go.expected (42 of 52 regenerated from backend)
+  - cmd/goal/main.go (default engine=engineAST; usage/Summary text; transpileAll ->
+    backend.TranspilePackage; removed transpilePackageAST), cmd/goal/main_test.go (default assert)
+  - internal/pipeline/sourcemap.go + pipeline.go + sourcemap_test.go (export AddLineDirectives)
+  - internal/backend/package.go (apply AddLineDirectives to each mapped file)
+  - AI-KNOWLEDGE-BOOTSTRAP.md (regenerated), prd.json (US-042 passes:true), progress.txt
+  - history/20260627-feature-us-042-regenerate-goldens-make-ast-default/ (initiative)
+- Learnings for future iterations:
+  - Golden diffs are exactly the documented AST divergences (scope-aware gensym, `type T int64`
+    vs `= int64` alias, dropped `//` comments) — all build+vet clean.
+  - Flipping the default surfaced a non-test-covered path: the per-file AST CLI helper lacked
+    cross-file/prelude support AND source mapping. backend.TranspilePackage already had the
+    former (US-041); the latter needed AddLineDirectives applied. US-043 (delete splice) will
+    remove the now-behavioral-only splice exact path entirely.
 
 ## [2026-06-27T10:30:00Z] - US-039
 - Lowered `derive func` (feature 12) on the AST backend: field-by-field struct conversion

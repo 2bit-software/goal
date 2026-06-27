@@ -4,22 +4,22 @@ type Config struct {
 	Raw string
 }
 
-func readFile(p string) (__goal_ok []byte, __goal_err error) {
+func readFile(p string) (ok []byte, err error) {
 	return []byte(p), nil
 }
 
-func parse(raw []byte) (__goal_ok Config, __goal_err error) {
+func parse(raw []byte) (ok Config, err error) {
 	return Config{Raw: string(raw)}, nil
 }
 
-func loadConfig(p string) (__goal_ok Config, __goal_err error) {
-	raw, __goal_err := readFile(p)
-	if __goal_err != nil {
-		return __goal_ok, __goal_err
+func loadConfig(p string) (ok Config, err error) {
+	raw, err := readFile(p)
+	if err != nil {
+		return ok, err
 	}
-	cfg, __goal_err := parse(raw)
-	if __goal_err != nil {
-		return __goal_ok, __goal_err
+	cfg, err := parse(raw)
+	if err != nil {
+		return ok, err
 	}
 	return cfg, nil
 }

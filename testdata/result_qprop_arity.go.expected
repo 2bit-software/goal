@@ -4,17 +4,17 @@ func mkdir(path string) error {
 	return nil
 }
 
-func lookup(id string) (__goal_ok string, __goal_err error) {
+func lookup(id string) (ok string, err error) {
 	return id, nil
 }
 
-func handler(id string) (__goal_ok string, __goal_err error) {
-	if __goal_err := mkdir(id); __goal_err != nil {
-		return __goal_ok, __goal_err
+func handler(id string) (ok string, err error) {
+	if err := mkdir(id); err != nil {
+		return ok, err
 	}
-	u, __goal_err := lookup(id)
-	if __goal_err != nil {
-		return __goal_ok, __goal_err
+	u, err := lookup(id)
+	if err != nil {
+		return ok, err
 	}
 	return u, nil
 }
