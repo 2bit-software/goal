@@ -55,6 +55,19 @@ type continueSignal struct{}
 // Error implements error so continueSignal can ride the (… error) return channel.
 func (continueSignal) Error() string { return "interp: continue outside loop" }
 
+// panicSignal is the non-local control signal raised by the `panic` builtin. It
+// rides the (… error) return channel like the other signals, but — unlike
+// returnSignal/breakSignal/continueSignal — NO loop, switch, or call boundary
+// recovers it: it propagates straight up to Run and out to the host, which is
+// where it is observed (a "recovered panic" is one caught at that Go boundary).
+// It carries the panic operand value.
+type panicSignal struct {
+	value Value
+}
+
+// Error implements error so panicSignal can ride the (… error) return channel.
+func (p panicSignal) Error() string { return "interp: panic: " + p.value.String() }
+
 // Interp runs a parsed, sema-resolved goal program under interpretation. It
 // holds the shared front-end artifacts (the AST + native semantic facts) and the
 // root lexical scope.
@@ -62,6 +75,12 @@ type Interp struct {
 	file *ast.File
 	info *sema.Info
 	root *Env
+
+	// methods indexes every method declaration by its receiver type name
+	// (star-stripped) then method name, so a method call x.M(...) can resolve
+	// the concrete declaration for the runtime type of x. Both value-receiver
+	// and pointer-receiver methods are registered here.
+	methods map[string]map[string]*ast.FuncDecl
 }
 
 // New constructs an interpreter over the shared AST + sema front-end. file is the
@@ -73,8 +92,9 @@ type Interp struct {
 // function is visible to its own body (recursion), to forward references, and to
 // unit tests that evaluate a call against the root scope.
 func New(file *ast.File, info *sema.Info) *Interp {
-	ip := &Interp{file: file, info: info, root: NewEnv()}
+	ip := &Interp{file: file, info: info, root: NewEnv(), methods: map[string]map[string]*ast.FuncDecl{}}
 	ip.registerFuncs()
+	ip.registerMethods()
 	return ip
 }
 
@@ -92,6 +112,70 @@ func (ip *Interp) registerFuncs() {
 		}
 		ip.root.Define(fn.Name.Name, FuncDeclVal(fn, ip.root))
 	}
+}
+
+// registerMethods indexes every top-level method declaration (Recv != nil, with
+// a name and a body) under its receiver type name (star-stripped, so a value
+// receiver `(s T)` and a pointer receiver `(s *T)` register under the same T)
+// and method name. A method whose receiver type cannot be resolved to a plain
+// name is skipped.
+func (ip *Interp) registerMethods() {
+	if ip.file == nil {
+		return
+	}
+	for _, d := range ip.file.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Recv == nil || fn.Name == nil || fn.Body == nil {
+			continue
+		}
+		typeName := recvTypeName(fn)
+		if typeName == "" {
+			continue
+		}
+		byName := ip.methods[typeName]
+		if byName == nil {
+			byName = map[string]*ast.FuncDecl{}
+			ip.methods[typeName] = byName
+		}
+		byName[fn.Name.Name] = fn
+	}
+}
+
+// recvTypeName returns the star-stripped receiver type name of a method
+// declaration (`(s T)` and `(s *T)` both yield "T"), or "" if the receiver is
+// absent or not a plain (optionally pointer-to) named type.
+func recvTypeName(fn *ast.FuncDecl) string {
+	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return ""
+	}
+	t := fn.Recv.List[0].Type
+	if star, ok := t.(*ast.StarExpr); ok {
+		t = star.X
+	}
+	if id, ok := t.(*ast.Ident); ok {
+		return id.Name
+	}
+	return ""
+}
+
+// recvName returns the receiver parameter name of a method declaration (the `s`
+// in `(s T)`), or "" if the receiver is unnamed.
+func recvName(fn *ast.FuncDecl) string {
+	if fn.Recv == nil || len(fn.Recv.List) == 0 || len(fn.Recv.List[0].Names) == 0 {
+		return ""
+	}
+	return fn.Recv.List[0].Names[0].Name
+}
+
+// recvIsPointer reports whether a method has a pointer receiver (`(s *T)`). A
+// pointer receiver shares the caller's pointer-backed struct, so field mutations
+// are visible to the caller; a value receiver operates on a copy.
+func recvIsPointer(fn *ast.FuncDecl) bool {
+	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return false
+	}
+	_, ok := fn.Recv.List[0].Type.(*ast.StarExpr)
+	return ok
 }
 
 // Run executes the program's entry point: the top-level `func main` (a plain
@@ -141,6 +225,39 @@ func (ip *Interp) callFunc(fn *FuncValue, args []Value) ([]Value, error) {
 		return nil, err
 	}
 	// Fell off the end of the body without an explicit return: no values.
+	return nil, nil
+}
+
+// callMethod invokes a method declaration with an already-evaluated receiver
+// value and argument values. The receiver binds in a fresh child of the root
+// (package) scope under the method's receiver name: a pointer receiver shares
+// the caller's pointer-backed struct (so field mutations are visible to the
+// caller), while a value receiver binds a shallow COPY (so its mutations do not
+// leak, matching Go value semantics). It then binds parameters, runs the body,
+// and recovers the returnSignal like callFunc; a panicSignal (or a genuine
+// error) propagates.
+func (ip *Interp) callMethod(decl *ast.FuncDecl, recv Value, args []Value) ([]Value, error) {
+	params := flattenParams(decl.Type)
+	if len(args) != len(params) {
+		return nil, fmt.Errorf("interp: %s.%s expects %d args, got %d", recvTypeName(decl), decl.Name.Name, len(params), len(args))
+	}
+	if !recvIsPointer(decl) {
+		recv = copyStructValue(recv)
+	}
+	scope := ip.root.NewChild()
+	if name := recvName(decl); name != "" && name != "_" {
+		scope.Define(name, recv)
+	}
+	for i, name := range params {
+		scope.Define(name, args[i])
+	}
+	if err := ip.execBlock(decl.Body, scope); err != nil {
+		var ret returnSignal
+		if errors.As(err, &ret) {
+			return ret.vals, nil
+		}
+		return nil, err
+	}
 	return nil, nil
 }
 
@@ -208,6 +325,13 @@ func (ip *Interp) execBlock(block *ast.BlockStmt, scope *Env) error {
 func (ip *Interp) execStmt(stmt ast.Stmt, scope *Env) error {
 	switch s := stmt.(type) {
 	case *ast.ExprStmt:
+		// A call in statement position may produce zero or several values (e.g. a
+		// void method or function call); evaluate it through the multi-value path
+		// and discard the results rather than forcing a single-value context.
+		if c, ok := s.X.(*ast.CallExpr); ok {
+			_, err := ip.evalCallMulti(c, scope)
+			return err
+		}
 		_, err := ip.evalExpr(s.X, scope)
 		return err
 	case *ast.DeclStmt:

@@ -125,7 +125,7 @@
         "A unit test asserts append/len on a slice, make of a map, a recovered panic, and a method call mutating a pointer receiver"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

@@ -213,6 +213,25 @@ func (ip *Interp) evalCall(call *ast.CallExpr, scope *Env) (Value, error) {
 // non-function callee is a descriptive refusal; an undefined callee surfaces the
 // located *NotFoundError from the scope lookup.
 func (ip *Interp) evalCallMulti(call *ast.CallExpr, scope *Env) ([]Value, error) {
+	// A builtin call (len/append/make/panic) is intercepted before the generic
+	// function-value path, but only when the name is not shadowed by a binding
+	// in scope (a user value bound to that name wins, matching Go's shadowing).
+	if id, ok := call.Fun.(*ast.Ident); ok && isBuiltin(id.Name) {
+		if _, err := scope.Lookup(id.Name); err != nil {
+			return ip.evalBuiltin(id.Name, call, scope)
+		}
+	}
+	// A method call x.M(...) is a selector whose receiver evaluates to a struct
+	// value with a method M declared on its type. If that resolves, dispatch the
+	// method; otherwise fall through to the generic path (so a struct field
+	// holding a function value, or a package-qualified call deferred to US-011,
+	// is handled as before).
+	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+		if vals, handled, err := ip.tryMethodCall(sel, call, scope); handled {
+			return vals, err
+		}
+	}
+
 	callee, err := ip.evalExpr(call.Fun, scope)
 	if err != nil {
 		return nil, err
@@ -464,6 +483,187 @@ func zeroValue(typeExpr ast.Expr) Value {
 	default:
 		return NilVal()
 	}
+}
+
+// isBuiltin reports whether name is one of the interpreter's builtin functions.
+func isBuiltin(name string) bool {
+	switch name {
+	case "len", "append", "make", "panic":
+		return true
+	default:
+		return false
+	}
+}
+
+// evalBuiltin evaluates a call to a builtin function (len/append/make/panic).
+// make reads its first argument as a TYPE expression; the others evaluate their
+// arguments as ordinary values. Each builtin validates its argument count and
+// operand kinds and yields a descriptive refusal rather than a silent nil.
+func (ip *Interp) evalBuiltin(name string, call *ast.CallExpr, scope *Env) ([]Value, error) {
+	switch name {
+	case "len":
+		return ip.builtinLen(call, scope)
+	case "append":
+		return ip.builtinAppend(call, scope)
+	case "make":
+		return ip.builtinMake(call, scope)
+	case "panic":
+		return ip.builtinPanic(call, scope)
+	default:
+		return nil, fmt.Errorf("interp: unknown builtin %s", name)
+	}
+}
+
+// builtinLen evaluates len(x): the number of elements in a slice, bytes in a
+// string, or entries in a map. Any other operand kind is a descriptive refusal.
+func (ip *Interp) builtinLen(call *ast.CallExpr, scope *Env) ([]Value, error) {
+	if len(call.Args) != 1 {
+		return nil, fmt.Errorf("interp: len expects 1 argument, got %d", len(call.Args))
+	}
+	v, err := ip.evalExpr(call.Args[0], scope)
+	if err != nil {
+		return nil, err
+	}
+	switch v.Kind {
+	case KindSlice:
+		return []Value{IntVal(int64(len(v.Slice)))}, nil
+	case KindString:
+		return []Value{IntVal(int64(len(v.Str)))}, nil
+	case KindMap:
+		if v.Map == nil {
+			return []Value{IntVal(0)}, nil
+		}
+		return []Value{IntVal(int64(len(v.Map.Entries)))}, nil
+	default:
+		return nil, fmt.Errorf("interp: len of %s is not defined", v.Kind)
+	}
+}
+
+// builtinAppend evaluates append(s, elems...): it copies the first (slice)
+// argument and appends each subsequent argument value, returning a NEW slice
+// value (the interpreter does not model backing-array aliasing). A non-slice
+// first argument is a descriptive refusal.
+func (ip *Interp) builtinAppend(call *ast.CallExpr, scope *Env) ([]Value, error) {
+	if len(call.Args) < 1 {
+		return nil, fmt.Errorf("interp: append expects at least 1 argument, got %d", len(call.Args))
+	}
+	base, err := ip.evalExpr(call.Args[0], scope)
+	if err != nil {
+		return nil, err
+	}
+	if base.Kind != KindSlice {
+		return nil, fmt.Errorf("interp: append of %s (first argument must be a slice)", base.Kind)
+	}
+	out := make([]Value, len(base.Slice), len(base.Slice)+len(call.Args)-1)
+	copy(out, base.Slice)
+	for _, a := range call.Args[1:] {
+		v, err := ip.evalExpr(a, scope)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return []Value{SliceVal(out...)}, nil
+}
+
+// builtinMake evaluates make(T, sizes...): its first argument is a TYPE
+// expression. A map type yields an empty map; an array/slice type yields a slice
+// of length n (the optional second argument, default 0) filled with the element
+// type's safe zero value. Any other type is a descriptive refusal.
+func (ip *Interp) builtinMake(call *ast.CallExpr, scope *Env) ([]Value, error) {
+	if len(call.Args) < 1 {
+		return nil, fmt.Errorf("interp: make expects at least 1 argument, got %d", len(call.Args))
+	}
+	switch t := call.Args[0].(type) {
+	case *ast.MapType:
+		return []Value{MapVal(nil)}, nil
+	case *ast.ArrayType:
+		n := 0
+		if len(call.Args) >= 2 {
+			sz, err := ip.evalExpr(call.Args[1], scope)
+			if err != nil {
+				return nil, err
+			}
+			if sz.Kind != KindInt {
+				return nil, fmt.Errorf("interp: make length must be int, got %s", sz.Kind)
+			}
+			if sz.Int < 0 {
+				return nil, fmt.Errorf("interp: make length %d is negative", sz.Int)
+			}
+			n = int(sz.Int)
+		}
+		zero := zeroValue(t.Elt)
+		elems := make([]Value, n)
+		for i := range elems {
+			elems[i] = zero
+		}
+		return []Value{SliceVal(elems...)}, nil
+	default:
+		return nil, fmt.Errorf("interp: make of %T is not supported", call.Args[0])
+	}
+}
+
+// builtinPanic evaluates panic(x): it evaluates the operand and raises a
+// panicSignal carrying its value, unwinding past every loop, switch, and call
+// boundary to the host (which observes it as the "recovered panic").
+func (ip *Interp) builtinPanic(call *ast.CallExpr, scope *Env) ([]Value, error) {
+	if len(call.Args) != 1 {
+		return nil, fmt.Errorf("interp: panic expects 1 argument, got %d", len(call.Args))
+	}
+	v, err := ip.evalExpr(call.Args[0], scope)
+	if err != nil {
+		return nil, err
+	}
+	return nil, panicSignal{value: v}
+}
+
+// tryMethodCall attempts to dispatch a selector call x.M(...) as a method on a
+// struct receiver. handled is true only when the receiver evaluates to a struct
+// value whose type declares a method M; otherwise (a non-struct receiver, an
+// unknown method, or a receiver-evaluation error) it returns handled=false so
+// evalCallMulti falls through to its generic function-value path, which surfaces
+// the right error or calls a struct field that holds a function value.
+func (ip *Interp) tryMethodCall(sel *ast.SelectorExpr, call *ast.CallExpr, scope *Env) (vals []Value, handled bool, err error) {
+	recv, rerr := ip.evalExpr(sel.X, scope)
+	if rerr != nil {
+		return nil, false, nil
+	}
+	if recv.Kind != KindStruct || recv.Struct == nil {
+		return nil, false, nil
+	}
+	byName := ip.methods[recv.Struct.TypeID]
+	if byName == nil {
+		return nil, false, nil
+	}
+	decl, ok := byName[sel.Sel.Name]
+	if !ok {
+		return nil, false, nil
+	}
+	args := make([]Value, len(call.Args))
+	for i, a := range call.Args {
+		v, aerr := ip.evalExpr(a, scope)
+		if aerr != nil {
+			return nil, true, aerr
+		}
+		args[i] = v
+	}
+	out, merr := ip.callMethod(decl, recv, args)
+	return out, true, merr
+}
+
+// copyStructValue returns a shallow copy of a struct value (a fresh
+// StructValue with a fresh Fields map sharing the field values), so a
+// value-receiver method's field writes do not leak to the caller. A non-struct
+// value is returned unchanged.
+func copyStructValue(v Value) Value {
+	if v.Kind != KindStruct || v.Struct == nil {
+		return v
+	}
+	fields := make(map[string]Value, len(v.Struct.Fields))
+	for k, fv := range v.Struct.Fields {
+		fields[k] = fv
+	}
+	return StructVal(v.Struct.TypeID, fields)
 }
 
 // compoundBinOp maps a compound-assignment token to the binary operator it

@@ -354,6 +354,67 @@
   edits don't shift later offsets. Still single-document (locals/params/qualified
   imports/cross-file out of scope, consistent with US-048/049).
 
+## [2026-06-27T23:00:00Z] - US-010
+- Added the len/append/make/panic builtins and value- + pointer-receiver method
+  dispatch to the goscript interpreter.
+- evalCallMulti (eval.go) is the single interception point: an *ast.Ident callee
+  whose name isBuiltin AND is not shadowed in scope routes to evalBuiltin; an
+  *ast.SelectorExpr callee routes to tryMethodCall (struct receiver + a method on
+  its type) BEFORE the generic function-value path, so a struct field holding a
+  func and a deferred package call (fmt.Println, US-011) still fall through
+  unchanged. builtinLen (slice/string/map), builtinAppend (returns a NEW slice;
+  no backing-array aliasing, no variadic spread), builtinMake (arg[0] is a TYPE
+  expr: *ast.MapType -> empty map, *ast.ArrayType -> slice of n element-zeros via
+  zeroValue), builtinPanic (raises panicSignal).
+- panic uses the established error-sentinel control pattern: panicSignal{value}
+  (interp.go) rides the (… error) channel like returnSignal/break/continue, but
+  NO boundary (execFor/execSwitch/callFunc/callMethod) recovers it — it
+  propagates to Run and the host, which is the "recovered panic" (a test
+  errors.As-es it at the Go boundary and reads .value).
+- Method registry: registerMethods (called from New) indexes every method decl
+  by star-stripped receiver type name -> method name -> *ast.FuncDecl
+  (recvTypeName/recvName/recvIsPointer helpers off ast.FuncDecl.Recv: a
+  *ast.StarExpr receiver type is a pointer receiver). callMethod binds the
+  receiver in a fresh child of root (package scope), then params, runs the body,
+  recovers returnSignal like callFunc. A POINTER receiver shares the caller's
+  pointer-backed StructValue (mutations visible to caller); a VALUE receiver
+  binds a shallow copyStructValue (mutations do NOT leak — Go value semantics).
+- execStmt's ExprStmt case now routes a CallExpr through evalCallMulti and
+  discards results, so a VOID call statement (a void method/function call) is
+  valid — previously evalExpr->evalCall forced a single-value context and errored
+  on a 0-value call.
+- Files changed:
+  - internal/interp/interp.go (panicSignal; methods registry field;
+    registerMethods + recvTypeName/recvName/recvIsPointer; callMethod;
+    ExprStmt-call routing through evalCallMulti)
+  - internal/interp/eval.go (evalCallMulti builtin/method interception;
+    evalBuiltin + builtinLen/Append/Make/Panic; isBuiltin; tryMethodCall;
+    copyStructValue)
+  - internal/interp/builtins_test.go (new: TestBuiltinLen, TestBuiltinAppendValue,
+    TestBuiltinMakeMapReadBack, TestBuiltinPanicRecovered,
+    TestBuiltinLenUndefinedOperand, TestPointerReceiverMethodMutates,
+    TestValueReceiverMethodReads, TestValueReceiverMethodDoesNotLeak — stdlib
+    testing, no testify)
+  - prd.json (US-010 passes:true), progress.txt
+  - history/20260627-feature-us-010-eval-builtins-and-methods/ (initiative)
+- Learnings for future iterations:
+  - Builtins are intercepted in evalCallMulti by NAME, guarded by a failed
+    scope.Lookup so a user binding of the same name shadows the builtin. Add a
+    new builtin by extending isBuiltin + evalBuiltin's switch.
+  - Method dispatch is struct-receiver only for now (tryMethodCall returns
+    handled=false on a non-struct/no-method receiver, so the generic path
+    surfaces the right error). US-018 (implements dispatch) builds on this
+    registry; an interface value dispatched to a concrete method reuses
+    callMethod. The value-vs-pointer copy distinction (copyStructValue) is the
+    seam that makes pointer-receiver mutation observable — keep it.
+  - panicSignal is the loud-not-silent panic seam US-019 (assert) reuses: assert
+    on a false condition should raise a panic the same error-sentinel way.
+  - A void call as a statement now works (ExprStmt routes CallExpr through
+    evalCallMulti); single-value contexts still go through evalExpr->evalCall.
+  - interp deps stay clean for US-022 (go list -deps: no go/types,
+    internal/backend, internal/typecheck).
+---
+
 ## [2026-06-27T22:10:00Z] - US-009
 - Added composite-type evaluation to the goscript interpreter: struct composite
   literals + field access, slice literals + indexing, map literals + indexing +
