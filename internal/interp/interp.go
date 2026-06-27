@@ -89,6 +89,15 @@ type Interp struct {
 	// selector call `pkg.Sym(...)` be recognized as a host-package call and
 	// routed to the host-function bridge (host.go).
 	imports map[string]string
+
+	// fnStack is the stack of the currently-executing functions' analyzed
+	// signatures (innermost last). callFunc pushes the callee's FuncSig and
+	// callMethod pushes a none-shaped sig; both pop via defer. A postfix `?`
+	// reads the top (curSig) at propagation time to know whether to early-return
+	// the enclosing function's open-E `Result.Err`, closed-E `Result.Err` (with
+	// the `from` conversion), or `Option.None`. A `?` with no propagating
+	// enclosing function is a loud refusal, never a silent value.
+	fnStack []sema.FuncSig
 }
 
 // New constructs an interpreter over the shared AST + sema front-end. file is the
@@ -257,6 +266,10 @@ func (ip *Interp) callFunc(fn *FuncValue, args []Value) ([]Value, error) {
 	for i, name := range params {
 		scope.Define(name, args[i])
 	}
+	// Record the callee's signature so a `?` in its body knows the function's
+	// error-propagation shape; pop via defer so any unwind still balances.
+	ip.fnStack = append(ip.fnStack, ip.sigFor(fn.Name))
+	defer func() { ip.fnStack = ip.fnStack[:len(ip.fnStack)-1] }()
 	if err := ip.execBlock(fn.Decl.Body, scope); err != nil {
 		var ret returnSignal
 		if errors.As(err, &ret) {
@@ -291,6 +304,11 @@ func (ip *Interp) callMethod(decl *ast.FuncDecl, recv Value, args []Value) ([]Va
 	for i, name := range params {
 		scope.Define(name, args[i])
 	}
+	// A method pushes a none-shaped signature: a `?` inside a method body is out
+	// of scope for this story and is the loud "outside a Result/Option function"
+	// refusal rather than a silent propagation.
+	ip.fnStack = append(ip.fnStack, sema.FuncSig{})
+	defer func() { ip.fnStack = ip.fnStack[:len(ip.fnStack)-1] }()
 	if err := ip.execBlock(decl.Body, scope); err != nil {
 		var ret returnSignal
 		if errors.As(err, &ret) {
@@ -341,6 +359,26 @@ func (ip *Interp) findMain() *ast.FuncDecl {
 		}
 	}
 	return nil
+}
+
+// sigFor returns the analyzed signature of the named top-level function, or a
+// zero (ModeNone) signature when the interpreter has no sema info or the name is
+// unknown. It is the nil-safe gate the function-signature stack consults.
+func (ip *Interp) sigFor(name string) sema.FuncSig {
+	if ip.info == nil || ip.info.FuncSignatures == nil {
+		return sema.FuncSig{}
+	}
+	return ip.info.FuncSignatures[name]
+}
+
+// curSig returns the signature of the innermost currently-executing function and
+// ok=true, or ok=false when no function is on the stack (so a `?` evaluated with
+// no enclosing call boundary is the loud refusal rather than a panic).
+func (ip *Interp) curSig() (sema.FuncSig, bool) {
+	if len(ip.fnStack) == 0 {
+		return sema.FuncSig{}, false
+	}
+	return ip.fnStack[len(ip.fnStack)-1], true
 }
 
 // execBlock executes a block's statements in the given scope. This is the

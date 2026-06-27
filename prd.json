@@ -209,7 +209,7 @@
         "A unit test over 05-question-prop and 06-error-e shapes asserts ? returns early on Err/None, continues on Ok/Some, and applies the converted error for closed-E"
       ],
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "notes": "REWRITE-ARCHITECTURE.md §4: ? early-return unwinding is the second non-Go mechanic; thread it through eval as non-local control flow (e.g. a sentinel panic/recover or an explicit signal)."
     },
     {

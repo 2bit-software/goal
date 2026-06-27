@@ -60,6 +60,11 @@ func (ip *Interp) evalExpr(expr ast.Expr, scope *Env) (Value, error) {
 		// yields the selected arm's value. A statement-position match is
 		// intercepted earlier in execStmt and never reaches here.
 		return ip.evalMatch(e, scope)
+	case *ast.UnwrapExpr:
+		// Postfix `?`: unwrap-and-continue on Ok/Some, or non-local early return
+		// on Err/None. Reached from every statement position (`x := expr?`,
+		// `_ := expr?`, bare `expr?`) through evalExpr's existing callers.
+		return ip.evalUnwrap(e, scope)
 	default:
 		return Value{}, fmt.Errorf("interp: unsupported expression %T", expr)
 	}
@@ -96,6 +101,126 @@ func (ip *Interp) evalArmValue(body ast.Node, scope *Env) (Value, error) {
 		return ip.evalExpr(e, scope)
 	}
 	return Value{}, fmt.Errorf("interp: value-position match arm body must be an expression, got %T", body)
+}
+
+// evalUnwrap evaluates the postfix `?` operator (the second of the two
+// genuinely non-Go runtime mechanics). It evaluates the operand to a Result or
+// Option tagged-union value and either yields the unwrapped success
+// (Ok/Some) so evaluation continues, or performs a NON-LOCAL early return on
+// failure (Err/None) by raising the enclosing function's own error/none result
+// as a returnSignal — recovered at the call boundary exactly like an explicit
+// `return Result.Err(...)`. An operand that is not a Result or Option variant is
+// a located, descriptive refusal rather than a silent value.
+func (ip *Interp) evalUnwrap(u *ast.UnwrapExpr, scope *Env) (Value, error) {
+	v, err := ip.evalExpr(u.X, scope)
+	if err != nil {
+		return Value{}, err
+	}
+	if v.Kind != KindVariant || v.Variant == nil {
+		return Value{}, fmt.Errorf("interp: %s: cannot use ? on %s (operand is not a Result or Option)", u.Question, v.Kind)
+	}
+	sig, _ := ip.curSig()
+	switch v.Variant.TypeID {
+	case resultTypeID:
+		// `?` on a Result requires a Result-returning enclosing function — checked
+		// up front so the erased static guarantee fails loudly on BOTH the success
+		// and failure paths, not only on propagation.
+		if sig.Mode != sema.ModeResult && sig.Mode != sema.ModeResultClosed {
+			return Value{}, fmt.Errorf("interp: %s: ? used on a Result outside a Result-returning function", u.Question)
+		}
+		if v.Variant.Tag == resultOkTag {
+			if pv, ok := payloadValue(v.Variant); ok {
+				return pv, nil
+			}
+			return NilVal(), nil
+		}
+		errVal, _ := payloadValue(v.Variant)
+		return Value{}, ip.propagateErr(u, errVal, sig)
+	case optionTypeID:
+		if sig.Mode != sema.ModeOption {
+			return Value{}, fmt.Errorf("interp: %s: ? used on an Option outside an Option-returning function", u.Question)
+		}
+		if v.Variant.Tag == optionSomeTag {
+			if pv, ok := payloadValue(v.Variant); ok {
+				return pv, nil
+			}
+			return NilVal(), nil
+		}
+		return Value{}, ip.propagateNone()
+	default:
+		return Value{}, fmt.Errorf("interp: %s: cannot use ? on %s.%s (operand is not a Result or Option)", u.Question, v.Variant.TypeID, v.Variant.Tag)
+	}
+}
+
+// propagateErr performs the early-return half of `?` on a failed Result: it
+// builds the ENCLOSING function's own `Result.Err(...)` (its validated signature
+// sig) and raises it as a returnSignal, recovered at the call boundary exactly
+// like an explicit `return Result.Err(...)`. For an open-E (`Result[T, error]`)
+// caller the error propagates unchanged; for a closed-E (`Result[T, E]`) caller
+// whose error type differs from the failing callee's, the registered `from func`
+// conversion is applied to the error before it is re-wrapped.
+func (ip *Interp) propagateErr(u *ast.UnwrapExpr, errVal Value, sig sema.FuncSig) error {
+	out := errVal
+	if sig.Mode == sema.ModeResultClosed {
+		calleeE := ip.calleeErrType(u.X)
+		if calleeE != "" && calleeE != sig.E {
+			conv, ok := ip.info.FromRegistry[[2]string{calleeE, sig.E}]
+			if !ok {
+				return fmt.Errorf("interp: %s: ? cannot propagate %s as %s (no from conversion registered)", u.Question, calleeE, sig.E)
+			}
+			converted, err := ip.callConversion(conv.Name, errVal, u)
+			if err != nil {
+				return err
+			}
+			out = converted
+		}
+	}
+	return returnSignal{vals: []Value{VariantVal(resultTypeID, resultErrTag, map[string]Value{resultErrField: out})}}
+}
+
+// propagateNone performs the early-return half of `?` on Option.None: it raises
+// the enclosing function's own `Option.None` as a returnSignal. The enclosing
+// function has already been validated as Option-returning by evalUnwrap.
+func (ip *Interp) propagateNone() error {
+	return returnSignal{vals: []Value{VariantVal(optionTypeID, optionNoneTag, nil)}}
+}
+
+// callConversion invokes a registered `from func` conversion (an ordinary
+// callable bound in the root scope by registerFuncs) on a single error value,
+// returning its single result. A missing or non-callable conversion, or a
+// conversion that does not return exactly one value, is a located refusal.
+func (ip *Interp) callConversion(name string, errVal Value, u *ast.UnwrapExpr) (Value, error) {
+	fn, err := ip.root.Lookup(name)
+	if err != nil {
+		return Value{}, fmt.Errorf("interp: %s: from conversion %s is not callable: %w", u.Question, name, err)
+	}
+	if fn.Kind != KindFunc || fn.Func == nil {
+		return Value{}, fmt.Errorf("interp: %s: from conversion %s is not a function", u.Question, name)
+	}
+	out, err := ip.callFunc(fn.Func, []Value{errVal})
+	if err != nil {
+		return Value{}, err
+	}
+	if len(out) != 1 {
+		return Value{}, fmt.Errorf("interp: %s: from conversion %s returned %d values (want 1)", u.Question, name, len(out))
+	}
+	return out[0], nil
+}
+
+// calleeErrType returns the analyzed error type (the E in Result[T, E]) of the
+// function called in a `?` operand, used to decide whether a closed-E `from`
+// conversion is needed. It resolves only a direct call of a named top-level
+// function (`f(...)?`); any other operand shape yields "" (no conversion).
+func (ip *Interp) calleeErrType(x ast.Expr) string {
+	call, ok := x.(*ast.CallExpr)
+	if !ok {
+		return ""
+	}
+	id, ok := call.Fun.(*ast.Ident)
+	if !ok {
+		return ""
+	}
+	return ip.sigFor(id.Name).E
 }
 
 // evalCompositeLit evaluates a composite literal into a struct, slice, or map

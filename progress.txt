@@ -1,5 +1,60 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-27T00:00:00Z] - US-017
+- Added postfix `?` (ast.UnwrapExpr) to the goscript interpreter as NON-LOCAL
+  early return — the second of the two genuinely non-Go runtime mechanics. On
+  Result.Ok / Option.Some it yields the unwrapped payload and continues; on
+  Result.Err / Option.None it unwinds to the enclosing function's own
+  Result.Err(...) / Option.None; closed-E `from` conversions are applied to the
+  error during propagation.
+- internal/interp/interp.go: added `fnStack []sema.FuncSig` to Interp — the stack
+  of currently-executing function signatures (innermost last). callFunc pushes
+  `sigFor(fn.Name)` and callMethod pushes a zero (none-shaped) sig; BOTH pop via
+  `defer` so any unwind (returnSignal/panicSignal/error) keeps the stack balanced.
+  New nil-safe helpers `sigFor(name)` (reads info.FuncSignatures) and `curSig()`
+  (top of stack, ok=false when empty).
+- internal/interp/eval.go: evalExpr gained `case *ast.UnwrapExpr` -> evalUnwrap.
+  evalUnwrap evaluates the operand, then dispatches on Variant.TypeID: a Result
+  operand REQUIRES a Result-returning enclosing function (ModeResult/
+  ModeResultClosed) checked UP FRONT so the erased static guarantee fails loudly
+  on BOTH the Ok and Err paths; Ok -> payloadValue (unwrapped), Err ->
+  propagateErr. An Option operand requires ModeOption; Some -> payloadValue, None
+  -> propagateNone. A non-variant operand (or a non-Result/Option variant) is a
+  located refusal. propagateErr raises returnSignal{[Result.Err(out)]} — recovered
+  by callFunc exactly like an explicit `return Result.Err(...)`; for
+  ModeResultClosed when calleeErrType(u.X) != caller E it applies the FromRegistry
+  conversion (callConversion looks the `from func` up in the ROOT scope — it is an
+  ordinary callable registered by registerFuncs — and calls it via callFunc).
+  calleeErrType resolves the callee E only for a direct `f(...)?` call.
+- internal/interp/question_test.go (new): TestQuestionResultOkContinues/
+  ...ErrEarlyReturns (post-? statement proven NOT to run), OptionSome/None,
+  ClosedEAppliesFromConversion (ParseError->AppError via `from func toApp`),
+  ClosedEOkContinues, ClosedESameENoConversion (Err payload unchanged),
+  OutsidePropagatingFunctionRefused, OnNonVariantRefused. Programs are MODELED ON
+  the 05/06 fixtures but adapted so the Err/None/conversion branches actually fire
+  (the fixtures return Ok/None unconditionally). stdlib testing, no testify.
+- prd.json (US-017 passes:true), progress.txt
+- history/20260627-feature-us-017-eval-question-mark-unwinding/ (initiative)
+- Learnings for future iterations:
+  - The CURRENT-FUNCTION signature stack (Interp.fnStack, pushed in callFunc/
+    callMethod, popped via defer) is the seam any future construct needing the
+    enclosing function's shape should reuse. At a `?` site, curSig() correctly
+    reflects the ENCLOSING function because the inner operand call already
+    pushed+popped its own sig before evalUnwrap inspects the result.
+  - `?` early-return is just a returnSignal carrying the enclosing function's own
+    Err/None variant — NO new boundary handling: callFunc/callMethod already
+    recover returnSignal. The propagated value is identical in shape to an
+    explicit `return Result.Err(...)`/`return Option.None`.
+  - The closed-E `from` conversion func is an ordinary root-scope callable
+    (registerFuncs binds every FuncDecl incl. `from func`), invoked via callFunc;
+    its src->tgt mapping is sema.FromRegistry[[2]string{calleeE, callerE}].
+  - FR-5 loudness: validate the enclosing function shape UP FRONT (before
+    unwrapping), keyed on the operand's TypeID, so a misplaced `?` refuses on the
+    success path too, not only on Err/None.
+  - interp deps stay clean for the US-022 gate (go list -deps ./internal/interp:
+    no go/types, internal/backend, internal/typecheck).
+---
+
 ## Codebase Patterns
 - The goscript-runtime PRD (US-001..US-028) builds the tree-walking interpreter
   (planned internal/interp) + capability model (internal/cap) over the shared
