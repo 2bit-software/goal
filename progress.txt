@@ -21,6 +21,11 @@
   internal-package test importing corpus will not compile. Internal and external
   test packages coexist fine in one directory. From `internal/<pkg>`, repo root is
   `../..` and the manifest is `../../corpus/manifest.json` (same depth as corpus).
+- Corpus cases share Kind across modes: package-mode cases are also
+  Kind=transpile. Any loop selecting transpile cases for a FILE-mode runner
+  (one that reads Case.Input as a single file) MUST also guard
+  `c.Mode == ModeFile`, or it will misread a package fixture's directory Input.
+  Package cases run through corpus.RunPackage (Mode=package) only.
 
 ## [2026-06-27T01:56:33Z] - US-001
 - Implemented internal/corpus: a runner-independent Case model and JSON manifest
@@ -260,4 +265,50 @@
     from the compile tier is the verb (`go test ./...`) and the extra _test.go.
   - US-009 (package-mode fixtures) and the later AST-backend stories reuse this
     same temp-module + Transpiler-seam pattern for behavioral conformance.
+---
+
+## [2026-06-27T03:03:00Z] - US-009
+- Reified the two formerly-inline package-mode tests as on-disk fixtures and
+  indexed them in the manifest (Phase 0.9). The cross-file demo (enum match +
+  closed-E Result split across math.goal + types.goal sharing one prelude) and
+  the foreign-derive conv package (derive func over an imported Go struct) now
+  live under testdata/package/<name>/, each with a pkg.json descriptor declaring
+  the package name and its import map (import path -> repo-relative foreign dir).
+- Extended the corpus model: Case gained an optional Package *PackageSpec
+  ({Name, Files []string, Imports map[string]string}); package cases are
+  Kind=transpile + Mode=package with Input = the fixture dir. Generate now
+  discovers testdata/package/*/pkg.json, globs each dir's *.goal (sorted), and
+  appends one Mode=package case per fixture. Manifest regenerated: 107 cases
+  (51 file transpile + 50 check + 4 doctest + 2 package).
+- Added the package-mode runner: PackageTranspiler interface +
+  PackageTranspilerFunc adapter over pipeline.TranspilePackage, and
+  RunPackage(root, Case, pt) which builds a *project.Package (Dir = fixture dir,
+  so DefaultResolver finds the module go.mod and resolves in-module foreign
+  imports), transpiles, asserts every emitted file is valid Go, then builds the
+  package in a throwaway `module goal` temp dir with each declared foreign import
+  copied in under its import-path tail. This compiles the foreign-derive output
+  for the first time (the old inline test only string-matched).
+- Files changed:
+  - internal/corpus/corpus.go (Case.Package + PackageSpec)
+  - internal/corpus/generate.go (packageCases discovery)
+  - internal/corpus/package_runner.go (PackageTranspiler + RunPackage)
+  - internal/corpus/package_runner_test.go (whole-corpus package test)
+  - internal/corpus/generate_test.go (count file vs package; shape exemption)
+  - internal/corpus/runner_test.go, behavior_runner_test.go,
+    internal/pipeline/pipeline_test.go (scope file-mode loops to Mode=file)
+  - testdata/package/{cross-file-demo,foreign-derive}/* (fixtures + pkg.json)
+  - corpus/manifest.json (regenerated, +2 package cases)
+  - history/20260627-feature-us-009-reify-package-mode-fixtures/ (initiative)
+- Commit: 15f6a0d
+- Learnings for future iterations:
+  - Package cases share Kind=transpile with file cases, so EVERY existing
+    KindTranspile loop (RunTranspile, RunCompile, pipeline_test) must also guard
+    `c.Mode == ModeFile`, or it will try to read a package fixture's directory
+    Input as a single source file. New file-mode runners should filter by mode.
+  - DefaultResolver resolves an in-module import (goal/...) from ANY fixture dir
+    under the repo — it walks up to the root go.mod (module "goal"). So no special
+    resolveDir is needed; the fixture dir under testdata/package/ suffices.
+  - The temp build module must be named after the repo module ("goal", read from
+    root/go.mod) so the in-module foreign import path links; copy the foreign Go
+    package flat under importPath-minus-modulePrefix.
 ---

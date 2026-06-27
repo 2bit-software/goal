@@ -113,8 +113,8 @@
         "The runner executes the package-mode cases and they pass"
       ],
       "priority": 9,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Fixtures under testdata/package/<name>/ with a pkg.json (name + import map). Generate indexes them as Kind=transpile, Mode=package via Case.Package (PackageSpec). corpus.RunPackage transpiles + validates Go + builds each package (foreign import wired into a temp module). Manifest now 107 cases (51+50+4+2)."
     },
     {
       "id": "US-010",
