@@ -684,3 +684,47 @@
     FuncDecl.Body.List[0].(*ast.AssignStmt).Rhs[0]. Reuse parseExprInBody.
   - Postfix `?` lives in the postfix chain (tightest), so `-x?` is `-(x?)`.
 ---
+
+## [2026-06-27T04:50:00Z] - US-020
+- Wired goal's closed-type DECLARATION surface into internal/parser (Phase 1.4):
+  enum declarations (data-less + payload variants), sealed interface
+  declarations, and the struct `implements` clause. New internal/parser/
+  goal_decl.go holds parseEnumDecl/parseVariant/parsePayloadField/
+  parseSealedInterfaceDecl/parseImplementsClause + an isContextual(word) helper;
+  parser.go gained the dispatch + the struct implements consumption + a
+  parseInterfaceBody() factored out of parseInterfaceType (shared by interface
+  type and sealed interface).
+- Dispatch: token.ENUM -> parseEnumDecl in parseDecl's switch; `sealed`
+  (contextual IDENT) recognized in the default arm -> parseSealedInterfaceDecl.
+  parseStructType now calls parseImplementsClause (returns nil + consumes nothing
+  when `implements` is absent, so inline struct{...} types are unaffected) right
+  after the STRUCT keyword, before the field-list LBRACE.
+- A variant is an IDENT tag optionally followed by `{ name: Type, ... }`; the
+  presence of LBRACE right after the tag distinguishes a payload variant from a
+  data-less one (no inter-variant delimiter — whitespace-separated).
+- Files changed:
+  - internal/parser/goal_decl.go (new: enum/sealed parse methods)
+  - internal/parser/parser.go (dispatch + struct implements + parseInterfaceBody)
+  - internal/parser/goal_decl_test.go (new: 01-enums + 07-implements structural
+    tests)
+  - history/20260627-feature-us-020-parse-enum-sealed-implements/ (initiative)
+- Commit: 327e716
+- Learnings for future iterations:
+  - The 01-enums example bodies (status.goal, nested.goal) use labeled-argument
+    construction `Status.Active(since: now())`, which is US-022's grammar and is
+    NOT yet supported — ParseFile returns a body-level error on those files. The
+    parser is error-tolerant (every loop advances on mismatch), so the EnumDecl
+    is fully built BEFORE the failing body; a declaration-structure test can
+    parse the file and assert the decl while ignoring the body error. traffic/
+    shape/07-implements bodies are within the current grammar and parse clean.
+  - Contextual keywords are matched as `p.at(token.IDENT) && p.cur().Lit==word`
+    (helper p.isContextual). `enum`/`interface` are reserved kinds; `sealed`/
+    `implements`/`from`/`derive` are IDENT and decided positionally.
+  - parser tests are package parser (INTERNAL) — internal/parser imports only
+    lexer+token+ast, so no external-_test dance. Example .goal inputs are read
+    from ../../features/... (cwd = internal/parser).
+  - US-021 (match/patterns), US-022 (construction/labeled-args/spread), US-023
+    (from/derive/assert/doctests) extend the same parser by hooking parseUnary/
+    parseOperand/parsePostfix and parseDecl; US-024 is the parse-100%-of-corpus
+    gate where whole-file clean parsing (incl. labeled args) is finally required.
+---

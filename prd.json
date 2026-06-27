@@ -245,7 +245,7 @@
         "A test parses the 01-enums and 07-implements example inputs and asserts variant/field/implements structure"
       ],
       "priority": 20,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
