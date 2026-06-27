@@ -233,7 +233,7 @@
         "A unit test over a 10-assert shape asserts the panic on a false assertion and normal completion on a true one"
       ],
       "priority": 19,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

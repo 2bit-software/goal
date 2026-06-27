@@ -1,5 +1,54 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T04:40:00Z] - US-019
+- Proved US-019 "Eval assert at runtime": the goscript interpreter now evaluates
+  goal's `assert` statement — a true condition is a no-op (evaluation continues),
+  a false condition raises a LOUD, located panic carrying the assertion message
+  ("erase the guarantee, panic-not-silent"). Both the bare form
+  (`assert amount > 0`) and the printf-message form
+  (`assert age >= 0, "...", age`) are handled.
+- internal/interp/assert.go (new): `execAssert(s, scope)` evaluates s.Cond,
+  refuses a non-bool condition descriptively (`interp: assert condition must be
+  bool, got <kind>`, mirroring execIf), returns nil on true, and on false raises
+  `panicSignal{StrVal("<pos>: assertion failed: <cond>[: <fmt msg>]")}`. The
+  panicSignal reuses the established unrecovered control signal (no call/loop/
+  switch boundary catches it — surfaces to Run/host exactly like the `panic`
+  builtin and the unreachable-match default). The message form evaluates s.Msg
+  (must be string) + s.Args and appends `fmt.Sprintf(format, goArgs(args)...)`,
+  matching the Go backend's assertStmt lowering. exprText (also in assert.go) is a
+  self-contained AST->text renderer for the condition (Ident/BasicLit/Paren/Unary/
+  Star/Binary/Selector/Index/Call; operators via token.Kind.String(); unknown ->
+  "<expr>") — the interp holds NO source bytes (US-022 native-only envelope), so
+  the condition text is rendered from the AST, NOT sliced from source and NOT via
+  internal/backend.
+- internal/interp/interp.go: execStmt's type switch gains
+  `case *ast.AssertStmt: return ip.execAssert(s, scope)`.
+- internal/interp/assert_test.go (new): TestAssertTrueIsNoOp (goodWithdraw=90),
+  TestAssertFalseBarePanicsLocated (panicSignal contains "assertion failed" +
+  "amount > 0" + a located prefix), TestAssertFalseMessageFormFormatsMessage
+  (formatted "age must be non-negative, got -3"), TestAssertMessageFormTrueIsNoOp,
+  TestAssertNonBoolConditionIsRefused (hand-built AssertStmt with an int cond ->
+  descriptive "must be bool" error, NOT a panic). Modeled on
+  features/10-assert/examples/{bank,message}.goal. stdlib testing, no testify.
+- prd.json (US-019 passes:true), progress.txt
+- history/20260627-feature-us-019-eval-assert-at-runtime/ (initiative)
+- Learnings for future iterations:
+  - `assert` is just another loud panic on the existing panicSignal channel —
+    no new boundary handling. Detect it in a test via errors.As(err, &panicSignal).
+    A failing assert in a function body propagates OUT of evalExpr(call(...)) as
+    an error (callFunc does NOT recover panicSignal), so evalFnErr observes it.
+  - The interp has NO source-text renderer of its own and MUST NOT import
+    internal/backend (US-022). When a runtime message needs source-ish text (here
+    the asserted condition), render it from the AST with a small local printer —
+    the same pattern any future "quote the source expression" runtime message
+    should reuse. Operators render via token.Kind.String() (no token import
+    needed: Op is already a token.Kind field on the node).
+  - The printf-message form reuses host.go's goArgs bridge + fmt.Sprintf, so the
+    interpreter's assert message text matches the Go backend's lowered output.
+  - interp deps stay clean for the US-022 gate (go list -deps ./internal/interp:
+    no go/types, internal/backend, internal/typecheck).
+---
+
 ## [2026-06-28T04:00:00Z] - US-018
 - Proved US-018 "Eval implements dispatch": the goscript interpreter honors
   `implements` — a struct satisfying a sealed/ordinary interface is dispatched

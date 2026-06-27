@@ -436,6 +436,8 @@ func (ip *Interp) execStmt(stmt ast.Stmt, scope *Env) error {
 		return ip.execBranch(s, scope)
 	case *ast.IncDecStmt:
 		return ip.execIncDec(s, scope)
+	case *ast.AssertStmt:
+		return ip.execAssert(s, scope)
 	case *ast.BlockStmt:
 		// A bare nested block runs its statements in its own child scope, so a
 		// variable declared inside it does not leak to the enclosing scope.
