@@ -209,7 +209,7 @@
         "A test parses a sample file and asserts the declaration list shape"
       ],
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

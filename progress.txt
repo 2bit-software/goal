@@ -558,3 +558,46 @@
     (enum match, ? gensym, value-position match). The node set is now complete
     for the parser stories.
 ---
+
+## [2026-06-27T05:10:00Z] - US-017
+- Added internal/parser (Phase 1.4, declaration tier): a hand-written, Go-grammar-
+  shaped recursive-descent parser turning the lexer's token stream into an
+  *ast.File. ParseFile(src)(*ast.File,error) parses the package clause, single and
+  grouped imports (incl. named `m "math"`, blank `_ "x"`, dot `. "x"`), and single
+  and grouped func/type/var/const declarations of the Go subset, plus the full
+  Go-subset type expressions (qualified/indexed names, pointer, array/slice, map,
+  struct w/ field list, interface w/ method list, func, chan). It collects every
+  ImportSpec onto File.Imports as well as File.Decls.
+- Scope deferrals (matched to later stories): function bodies are captured as a
+  balanced-brace *ast.BlockStmt with NO statement list (US-018); initializer values
+  use a minimal operand+postfix expr parser — literals/ident/paren/selector/call/
+  index/composite-lit, NO binary/unary/postfix-? (US-019); goal-specific decls
+  (enum/sealed/implements/from/derive) are NOT parsed here (US-020+).
+- Files changed:
+  - internal/parser/parser.go (new: parser + ParseFile + decl/type/expr methods)
+  - internal/parser/parser_test.go (new: declaration-shape test over a 12-decl
+    Go-subset sample + struct/alias/interface + composite-initializer + error-path
+    + well-formed-no-error tests)
+  - prd.json (US-017 passes:true)
+  - history/20260627-feature-us-017-parse-package-imports-declarations/ (initiative)
+- Learnings for future iterations:
+  - NO SEMICOLON INSERTION: the lexer emits no newline/`;` terminators, so the
+    parser delimits structurally — top-level decls dispatch on the leading keyword
+    (PACKAGE/IMPORT/CONST/VAR/TYPE/FUNC); grouped specs / field lists / param lists
+    run until their closing delimiter; minimal value parsing stops at the first
+    token it can't extend. Consequence: a valueless, untyped, multi-spec grouped
+    const/var (`const ( A \n B )`) is ambiguous and unsupported — give specs a
+    value or a type. US-018 (statements) must adopt the same no-`;` discipline.
+  - expect() ALWAYS advances (recording an error on mismatch) so every loop makes
+    progress on malformed input; top-level + spec/field/param loops also guard EOF.
+    ParseFile returns errors.Join(errs...) (nil for well-formed Go-subset input).
+  - Parameter/field name-vs-type disambiguation uses ONE-token lookahead
+    (nameThenType / peekKind): after an IDENT, COMMA/RPAREN/PERIOD ⇒ unnamed or
+    qualified type; a type-start token ⇒ the IDENT was a name. Generic-instantiated
+    *param* types (`x Foo[T]`) are intentionally not disambiguated (IDENT `[` reads
+    as an array-typed named param); avoid them until later type-arg-list support.
+  - internal/parser imports lexer+token+ast only; none import parser, so its tests
+    are package parser (INTERNAL) — no external-_test dance needed (unlike corpus).
+  - Function bodies: parseBlockSkip records Lbrace/Rbrace and balances braces; US-018
+    fills in BlockStmt.List by parsing the token span between them.
+---
