@@ -24,8 +24,8 @@ func TestTranspileRunner(t *testing.T) {
 	tp := TranspilerFunc(pipeline.Transpile)
 	ran := 0
 	for _, c := range m.Cases {
-		if c.Kind != KindTranspile {
-			continue
+		if c.Kind != KindTranspile || c.Mode != ModeFile {
+			continue // package-mode cases run through the package runner
 		}
 		ran++
 		c := c

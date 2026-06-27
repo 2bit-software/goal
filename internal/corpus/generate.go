@@ -1,6 +1,7 @@
 package corpus
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -101,8 +102,91 @@ func Generate(root string) (Manifest, error) {
 		return Manifest{}, fmt.Errorf("corpus: walking %q: %w", checkRoot, err)
 	}
 
+	// Package-mode cases: every testdata/package/<name> directory carrying a
+	// pkg.json descriptor is a multi-file package fixture.
+	pkgCases, err := packageCases(root)
+	if err != nil {
+		return Manifest{}, err
+	}
+	cases = append(cases, pkgCases...)
+
 	sort.Slice(cases, func(i, j int) bool { return cases[i].Input < cases[j].Input })
 	return Manifest{Cases: cases}, nil
+}
+
+// pkgDescriptor is the on-disk pkg.json describing a package fixture: the goal
+// package name and its declared import map (import path -> repo-relative dir of
+// the foreign Go package). The fixture's .goal files are discovered by globbing
+// the descriptor's directory, so they need not be listed here.
+type pkgDescriptor struct {
+	Name    string            `json:"name"`
+	Imports map[string]string `json:"imports"`
+}
+
+// packageCases indexes every package fixture under testdata/package. Each
+// fixture is a directory with a pkg.json descriptor and one or more sibling
+// .goal files; it becomes one [KindTranspile] case with [ModePackage], whose
+// [PackageSpec] carries the file set and the declared import map. The case Input
+// is the fixture directory (repo-relative), so the runner can resolve in-module
+// imports from it. A missing testdata/package directory yields no cases.
+func packageCases(root string) ([]Case, error) {
+	pkgRoot := filepath.Join(root, "testdata", "package")
+	entries, err := os.ReadDir(pkgRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("corpus: reading %q: %w", pkgRoot, err)
+	}
+
+	var cases []Case
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		dir := filepath.Join(pkgRoot, e.Name())
+		descPath := filepath.Join(dir, "pkg.json")
+		data, err := os.ReadFile(descPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue // a directory without a descriptor is not a fixture
+			}
+			return nil, fmt.Errorf("corpus: reading %q: %w", descPath, err)
+		}
+		var desc pkgDescriptor
+		if err := json.Unmarshal(data, &desc); err != nil {
+			return nil, fmt.Errorf("corpus: parsing %q: %w", descPath, err)
+		}
+
+		goals, err := filepath.Glob(filepath.Join(dir, "*.goal"))
+		if err != nil {
+			return nil, fmt.Errorf("corpus: globbing %q: %w", dir, err)
+		}
+		if len(goals) == 0 {
+			return nil, fmt.Errorf("corpus: package fixture %q has no .goal files", relSlash(root, dir))
+		}
+		sort.Strings(goals)
+		files := make([]string, len(goals))
+		for i, g := range goals {
+			files[i] = relSlash(root, g)
+		}
+
+		dirRel := relSlash(root, dir)
+		cases = append(cases, Case{
+			ID:        idFromRel(dirRel),
+			Kind:      KindTranspile,
+			Input:     dirRel,
+			Expected:  "",
+			Mode:      ModePackage,
+			Normalize: NormalizeNone,
+			Package: &PackageSpec{
+				Name:    desc.Name,
+				Files:   files,
+				Imports: desc.Imports,
+			},
+		})
+	}
+	return cases, nil
 }
 
 // fileExists reports whether p names an existing regular file.

@@ -15,11 +15,15 @@ func TestGenerateCounts(t *testing.T) {
 		t.Fatalf("Generate: %v", err)
 	}
 
-	var transpile, check, doctest, other int
+	var transpile, pkg, check, doctest, other int
 	for _, c := range m.Cases {
 		switch c.Kind {
 		case KindTranspile:
-			transpile++
+			if c.Mode == ModePackage {
+				pkg++
+			} else {
+				transpile++
+			}
 		case KindCheck:
 			check++
 		case KindDoctest:
@@ -30,7 +34,12 @@ func TestGenerateCounts(t *testing.T) {
 	}
 
 	if transpile != 51 {
-		t.Errorf("transpile pairs = %d, want 51", transpile)
+		t.Errorf("file-mode transpile pairs = %d, want 51", transpile)
+	}
+	// Package-mode cases reify the formerly-inline cross-file and foreign-derive
+	// package tests as on-disk fixtures.
+	if pkg != 2 {
+		t.Errorf("package-mode cases = %d, want 2", pkg)
 	}
 	if check != 50 {
 		t.Errorf("check cases = %d, want 50", check)
@@ -86,6 +95,16 @@ func TestGenerateNonDestructiveShape(t *testing.T) {
 		}
 		switch c.Kind {
 		case KindTranspile:
+			if c.Mode == ModePackage {
+				// Package cases carry their sources and import map in Package,
+				// not in the single Input/Expected pair.
+				if c.Package == nil {
+					t.Errorf("package case %q has nil Package spec", c.ID)
+				} else if len(c.Package.Files) == 0 {
+					t.Errorf("package case %q has no files", c.ID)
+				}
+				break
+			}
 			if c.Expected == "" {
 				t.Errorf("transpile case %q has empty Expected", c.ID)
 			}

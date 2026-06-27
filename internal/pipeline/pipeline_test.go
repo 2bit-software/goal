@@ -31,8 +31,8 @@ func TestCorpusTranspile(t *testing.T) {
 	tp := corpus.TranspilerFunc(pipeline.Transpile)
 	ran := 0
 	for _, c := range m.Cases {
-		if c.Kind != corpus.KindTranspile {
-			continue
+		if c.Kind != corpus.KindTranspile || c.Mode != corpus.ModeFile {
+			continue // package-mode cases run through the package runner
 		}
 		ran++
 		c := c

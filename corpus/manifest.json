@@ -825,6 +825,38 @@
       "normalize": "gofmt"
     },
     {
+      "id": "testdata-package-cross-file-demo",
+      "kind": "transpile",
+      "input": "testdata/package/cross-file-demo",
+      "expected": "",
+      "mode": "package",
+      "normalize": "none",
+      "package": {
+        "name": "demo",
+        "files": [
+          "testdata/package/cross-file-demo/math.goal",
+          "testdata/package/cross-file-demo/types.goal"
+        ]
+      }
+    },
+    {
+      "id": "testdata-package-foreign-derive",
+      "kind": "transpile",
+      "input": "testdata/package/foreign-derive",
+      "expected": "",
+      "mode": "package",
+      "normalize": "none",
+      "package": {
+        "name": "conv",
+        "files": [
+          "testdata/package/foreign-derive/conv.goal"
+        ],
+        "imports": {
+          "goal/internal/pipeline/testdata/extpkg": "internal/pipeline/testdata/extpkg"
+        }
+      }
+    },
+    {
       "id": "testdata-result_qprop",
       "kind": "transpile",
       "input": "testdata/result_qprop.goal",

@@ -1,0 +1,10 @@
+package conv
+
+import ext "goal/internal/pipeline/testdata/extpkg"
+
+type Local struct {
+	ID    string
+	Count int
+}
+
+derive func make(o *ext.Outer) Local

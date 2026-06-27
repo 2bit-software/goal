@@ -1,0 +1,10 @@
+package demo
+
+enum Shape {
+    Circle { r: float64 }
+    Square { s: float64 }
+}
+
+enum MathErr {
+    DivZero
+}

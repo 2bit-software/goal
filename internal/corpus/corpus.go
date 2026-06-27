@@ -68,6 +68,28 @@ type Case struct {
 	Mode Mode `json:"mode"`
 	// Normalize is how Expected is compared against the produced output.
 	Normalize Normalize `json:"normalize"`
+	// Package carries the multi-file source set and declared import map for a
+	// Mode=package case. It is nil for single-file (Mode=file) cases. A package
+	// case is Kind=transpile with Mode=package: its .goal files and the foreign
+	// Go packages it imports live here rather than in the single Input/Expected
+	// pair, so the package-mode runner can build it and resolve its imports.
+	Package *PackageSpec `json:"package,omitempty"`
+}
+
+// PackageSpec describes a multi-file goal package fixture: the package name, the
+// repo-relative paths of its .goal files, and a declared import map. The import
+// map keys are import paths the sources reference and the values are the
+// repo-relative directories where those foreign Go packages live, so a runner
+// can wire them in when building the package in isolation.
+type PackageSpec struct {
+	// Name is the goal package name every file in the fixture declares.
+	Name string `json:"name"`
+	// Files are the repo-relative, slash-separated paths of the package's .goal
+	// sources, sorted for determinism.
+	Files []string `json:"files"`
+	// Imports is the declared import map: import path -> repo-relative directory
+	// of the foreign Go package. Empty when the package imports nothing foreign.
+	Imports map[string]string `json:"imports,omitempty"`
 }
 
 // Manifest is a collection of golden [Case]s. It is a struct (rather than a bare
