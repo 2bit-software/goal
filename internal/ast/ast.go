@@ -400,6 +400,27 @@ func (e *IndexExpr) End() token.Pos {
 }
 func (*IndexExpr) exprNode() {}
 
+// IndexListExpr is an index expression with multiple indices x[A, B], used for
+// multi-element generic type-argument lists (e.g. Result[int, error]). A single
+// index uses IndexExpr; only two-or-more indices produce an IndexListExpr.
+type IndexListExpr struct {
+	X       Expr      // expression
+	Lbrack  token.Pos // position of "["
+	Indices []Expr    // index expressions
+	Rbrack  token.Pos // position of "]"
+}
+
+func (e *IndexListExpr) Pos() token.Pos {
+	if e.X != nil {
+		return e.X.Pos()
+	}
+	return e.Lbrack
+}
+func (e *IndexListExpr) End() token.Pos {
+	return token.Pos{Offset: e.Rbrack.Offset + 1, Line: e.Rbrack.Line, Col: e.Rbrack.Col + 1}
+}
+func (*IndexListExpr) exprNode() {}
+
 // SliceExpr is a slice expression x[Low:High:Max].
 type SliceExpr struct {
 	X      Expr      // expression

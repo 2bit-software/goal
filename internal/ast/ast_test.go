@@ -410,3 +410,21 @@ func contains(list []Node, target Node) bool {
 	}
 	return false
 }
+
+// TestWalkIndexListExpr asserts Walk descends into IndexListExpr's X and each of
+// its Indices exactly once — the multi-element type-argument carrier added for
+// the parse-100%-of-corpus gate (e.g. Result[int, error]).
+func TestWalkIndexListExpr(t *testing.T) {
+	x := &Ident{Name: "Result"}
+	a := &Ident{Name: "int"}
+	b := &Ident{Name: "error"}
+	idx := &IndexListExpr{X: x, Indices: []Expr{a, b}}
+
+	c := &collector{visits: make(map[Node]int)}
+	Walk(c, idx)
+	for _, n := range []Node{idx, x, a, b} {
+		if got := c.visits[n]; got != 1 {
+			t.Errorf("Walk visited %T %d times, want 1", n, got)
+		}
+	}
+}

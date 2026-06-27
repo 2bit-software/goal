@@ -31,6 +31,21 @@
   (collectDoc) to attach as ast.FuncDecl.Doc. Any new parser loop that scans
   tokens must skip a stray DOC_COMMENT (parseBlock already does) — they otherwise
   only appear at top level before a declaration.
+- parser.parseIndexSuffix is the SINGLE index entry point for BOTH type position
+  (typeNameFrom) and expression position (parsePostfix); it parses a comma list →
+  ast.IndexExpr (1 elt) or ast.IndexListExpr (>1). parseOperand also accepts
+  type-literal starts (LBRACK/MAP/STRUCT) so parseExpr can parse type args like
+  []byte and so `[]byte(p)` conversions / `map[K]V{}` composites parse; compositeOK
+  must list every type form (ArrayType/MapType/StructType/IndexListExpr) that may
+  precede a `{`. Enum payload-field colon is OPTIONAL (`name Type` or `name: Type`).
+- ast.MatchArm.Body is a generic ast.Node: parseMatchArm dispatches `{`→block,
+  statement-keyword→parseStmt (e.g. `=> return true`), else→parseExpr (value-pos
+  arm `=> 1`). Don't force arm bodies to Expr.
+- corpus may import internal/parser (nothing in corpus's deps — pipeline/check/
+  project — imports parser), so the parse gate lives in package corpus
+  (parse_runner.go: Parser/ParserFunc/RunParse + CaseInputs; TestParseGate). The
+  corpus runner pattern is uniform: define an interface + Func adapter, drive the
+  whole manifest, t.Fatalf on zero cases.
 
 ## [2026-06-27T01:56:33Z] - US-001
 - Implemented internal/corpus: a runner-independent Case model and JSON manifest
@@ -855,4 +870,50 @@
     (content-driven on `>>>`), consistent with the corpus anti-hardcoding rule.
   - US-024 (parse 100% of corpus) is next: with US-023 done the full goal grammar
     parses; US-024 gates every manifest .goal input parsing with zero errors.
+---
+
+## [2026-06-27T05:36:00Z] - US-024
+- GATE: the AST front-end parser now parses 100% of the corpus — all 104 unique
+  .goal inputs across the 107 manifest cases parse with zero errors. Added the
+  whole-corpus parse gate and closed the four grammar gaps a recon pass exposed
+  (34 inputs failed before the fixes).
+- Grammar gaps closed:
+  1. Multi-element type-argument / index lists (Result[int, error],
+     Result[[]byte, error]): new ast.IndexListExpr (parallel to go/ast); a single
+     index still yields ast.IndexExpr. parseIndexSuffix now parses a comma list and
+     serves BOTH type position (typeNameFrom) and expression position
+     (parsePostfix), so both gained lists at once.
+  2. Type-literal operands in expression position ([]byte(p) conversions,
+     map[string]string{} / []T{} composite literals): parseOperand accepts
+     LBRACK/MAP/STRUCT starts (parseType), and compositeOK additionally admits
+     ArrayType/MapType/StructType/IndexListExpr so a trailing `{` is a composite
+     body and a trailing `(` is a conversion call.
+  3. Optional-colon enum payload fields: parsePayloadField consumes `:` only when
+     present, so `Active { since int }` and `Active { since: Time }` both parse.
+  4. Brace-less statement match-arm bodies (Option.Some(u) => return true):
+     parseMatchArm dispatches `{`→parseBlock, statement-keyword→parseStmt, else→
+     parseExpr (value-position arm). MatchArm.Body stays a generic ast.Node.
+- Files changed:
+  - internal/ast/ast.go (IndexListExpr node), internal/ast/walk.go (Walk case),
+    internal/ast/ast_test.go (TestWalkIndexListExpr)
+  - internal/parser/parser.go (parseIndexSuffix list, parseOperand type starts,
+    compositeOK), internal/parser/goal_decl.go (optional-colon payload),
+    internal/parser/goal_match.go (statement arm body + startsArmStmt)
+  - internal/parser/parser_test.go (TestParseTypeArgList, TestParseTypeLiteralOperand,
+    TestParseOptionalColonPayloadField), internal/parser/goal_match_test.go
+    (TestParseMatchStatementArmBody)
+  - internal/corpus/parse_runner.go (Parser/ParserFunc/RunParse + CaseInputs),
+    internal/corpus/parse_runner_test.go (TestParseGate over the whole manifest)
+  - prd.json (US-024 passes:true), progress.txt
+  - history/20260627-feature-us-024-gate-parse-100pct-corpus/ (initiative)
+- Learnings for future iterations:
+  - The recon idiom for a parse gate: read corpus/manifest.json, enumerate unique
+    inputs (file Input + each Package.Files), parse each, capture FIRST error per
+    file; `sed`/uniq the error signatures to bucket gaps. 30/34 failures here were
+    one signature (`expected ], found ,` = multi-arg type lists).
+  - US-025 (AST snapshot tests) builds directly on this complete parser; the new
+    IndexListExpr and statement-arm Body need snapshot coverage there.
+  - Later lowering stories (US-033 enums, US-034/036 Result/Option/match) consume
+    IndexListExpr type args and MatchArm.Body statements; the node shapes are now
+    stable.
 ---

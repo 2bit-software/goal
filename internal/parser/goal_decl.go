@@ -63,10 +63,14 @@ func (p *parser) parseVariant() *ast.Variant {
 	return v
 }
 
-// parsePayloadField parses one `name: Type` field inside a variant payload.
+// parsePayloadField parses one field inside a variant payload. The colon is
+// optional, so both the goal `name: Type` form and the Go-style `name Type` form
+// parse.
 func (p *parser) parsePayloadField() *ast.PayloadField {
 	f := &ast.PayloadField{Name: p.ident()}
-	p.expect(token.COLON)
+	if p.at(token.COLON) {
+		p.advance()
+	}
 	f.Type = p.parseType()
 	return f
 }

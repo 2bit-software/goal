@@ -42,17 +42,37 @@ func (p *parser) parseMatchExpr() *ast.MatchExpr {
 }
 
 // parseMatchArm parses one `Pattern => Body` arm. The body is a block when it
-// opens with `{`, otherwise an expression (value-position arm).
+// opens with `{`; a statement when it begins with a statement keyword
+// (`=> return true`, `=> for { … }`, etc.); otherwise an expression
+// (value-position arm such as `=> 1`). MatchArm.Body is a generic ast.Node, so
+// all three forms fit.
 func (p *parser) parseMatchArm() *ast.MatchArm {
 	arm := &ast.MatchArm{Pattern: p.parsePattern()}
 	arrow := p.expect(token.FAT_ARROW)
 	arm.Arrow = arrow.Pos
-	if p.at(token.LBRACE) {
+	switch {
+	case p.at(token.LBRACE):
 		arm.Body = p.parseBlock()
-	} else {
+	case startsArmStmt(p.kind()):
+		arm.Body = p.parseStmt()
+	default:
 		arm.Body = p.parseExpr()
 	}
 	return arm
+}
+
+// startsArmStmt reports whether k begins a non-expression statement that may be a
+// brace-less match-arm body (e.g. `=> return x`). Expression-valued tokens —
+// including `match` (a value-position match arm) — are excluded so they parse as
+// expression arm bodies via parseExpr.
+func startsArmStmt(k token.Kind) bool {
+	switch k {
+	case token.RETURN, token.IF, token.FOR, token.SWITCH, token.DEFER, token.GO,
+		token.BREAK, token.CONTINUE, token.GOTO, token.FALLTHROUGH,
+		token.CONST, token.VAR, token.TYPE, token.ASSERT:
+		return true
+	}
+	return false
 }
 
 // parsePattern parses a match-arm pattern: the catch-all `_` rest pattern or a

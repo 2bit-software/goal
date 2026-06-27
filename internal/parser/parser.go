@@ -998,6 +998,13 @@ func (p *parser) parseOperand() ast.Expr {
 		p.exprLev = prev
 		rp := p.expect(token.RPAREN)
 		return &ast.ParenExpr{Lparen: t.Pos, X: inner, Rparen: rp.Pos}
+	case token.LBRACK, token.MAP, token.STRUCT:
+		// A type literal in operand position: an array/slice, map, or struct type
+		// used as a conversion target (`[]byte(p)`) or as the type of a composite
+		// literal (`map[string]string{}`, `[]T{...}`). parsePostfix then takes a
+		// trailing `(` as the conversion call and a trailing `{` as the composite
+		// body (compositeOK admits these type forms).
+		return p.parseType()
 	default:
 		p.errorf(t.Pos, "expected expression, found %s", describe(t))
 		p.advance()
@@ -1037,7 +1044,8 @@ func (p *parser) parsePostfix(x ast.Expr) ast.Expr {
 // literal body.
 func compositeOK(x ast.Expr) bool {
 	switch x.(type) {
-	case *ast.Ident, *ast.SelectorExpr, *ast.IndexExpr:
+	case *ast.Ident, *ast.SelectorExpr, *ast.IndexExpr, *ast.IndexListExpr,
+		*ast.ArrayType, *ast.MapType, *ast.StructType:
 		return true
 	}
 	return false
@@ -1073,15 +1081,31 @@ func (p *parser) parseCallSuffix(fun ast.Expr) ast.Expr {
 	return &ast.CallExpr{Fun: fun, Lparen: lp.Pos, Args: args, Rparen: rp.Pos}
 }
 
-// parseIndexSuffix parses a single index applied to x.
+// parseIndexSuffix parses an index applied to x. A single index yields an
+// *ast.IndexExpr; a comma-separated list (a multi-element generic type-argument
+// list such as Result[int, error]) yields an *ast.IndexListExpr. This single
+// entry point serves both type position (typeNameFrom) and expression position
+// (parsePostfix), so both gain multi-element lists at once. Elements parse via
+// parseExpr, which — because parseOperand accepts type-literal starts — also
+// covers type arguments like []byte.
 func (p *parser) parseIndexSuffix(x ast.Expr) ast.Expr {
 	lb := p.expect(token.LBRACK)
 	prev := p.exprLev
 	p.exprLev++
-	idx := p.parseExpr()
+	indices := []ast.Expr{p.parseExpr()}
+	for p.at(token.COMMA) {
+		p.advance()
+		if p.at(token.RBRACK) { // tolerate a trailing comma
+			break
+		}
+		indices = append(indices, p.parseExpr())
+	}
 	p.exprLev = prev
 	rb := p.expect(token.RBRACK)
-	return &ast.IndexExpr{X: x, Lbrack: lb.Pos, Index: idx, Rbrack: rb.Pos}
+	if len(indices) == 1 {
+		return &ast.IndexExpr{X: x, Lbrack: lb.Pos, Index: indices[0], Rbrack: rb.Pos}
+	}
+	return &ast.IndexListExpr{X: x, Lbrack: lb.Pos, Indices: indices, Rbrack: rb.Pos}
 }
 
 // parseCompositeLit parses a composite-literal body { ... } for the given (or

@@ -293,8 +293,8 @@
         "The test fails loudly listing any input that does not parse"
       ],
       "priority": 24,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Parser now parses 100% of the corpus (104 unique .goal inputs across 107 manifest cases). Closed 4 grammar gaps: multi-element type-arg/index lists (new ast.IndexListExpr; single index keeps IndexExpr); type-literal operands in expression position ([]byte(p) conversions, map[K]V{}/[]T{} composites) via parseOperand+compositeOK; optional-colon enum payload fields (Active { since int }); brace-less statement match-arm bodies (=> return true) via parseMatchArm dispatching parseStmt on statement keywords. Gate test: corpus.TestParseGate enumerates every unique input and lists any that fail."
     },
     {
       "id": "US-025",

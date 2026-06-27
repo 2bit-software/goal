@@ -187,3 +187,22 @@ func TestParseMatchRestPattern(t *testing.T) {
 		t.Fatalf("arm 0 variant: want Active, got %s", got)
 	}
 }
+
+// TestParseMatchStatementArmBody pins that a brace-less statement match-arm body
+// (`Option.Some(u) => return true`) parses: the arm body is the parsed
+// statement, not an expression. This is the grammar gap the parse-100%-of-corpus
+// gate exposed in features/04-option/examples/option_exists.goal.
+func TestParseMatchStatementArmBody(t *testing.T) {
+	src := readExample(t, "features/04-option/examples/option_exists.goal")
+	f, err := ParseFile(src)
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	m := firstMatchExpr(t, f)
+	if len(m.Arms) != 2 {
+		t.Fatalf("arms: want 2, got %d", len(m.Arms))
+	}
+	if _, ok := m.Arms[0].Body.(*ast.ReturnStmt); !ok {
+		t.Fatalf("arm 0 body: want *ast.ReturnStmt, got %T", m.Arms[0].Body)
+	}
+}

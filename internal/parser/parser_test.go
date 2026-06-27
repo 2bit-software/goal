@@ -610,3 +610,79 @@ func opOf(e ast.Expr) string {
 	}
 	return "?"
 }
+
+// TestParseTypeArgList pins the multi-element generic type-argument list grammar
+// added for the parse-100%-of-corpus gate: a result type Result[int, error]
+// parses with zero errors into an IndexListExpr with two indices, and a nested
+// slice type argument Result[[]byte, error] also parses.
+func TestParseTypeArgList(t *testing.T) {
+	t.Run("two type args", func(t *testing.T) {
+		file, err := ParseFile("package p\nfunc f() Result[int, error] { return nil }")
+		if err != nil {
+			t.Fatalf("ParseFile returned error: %v", err)
+		}
+		res := file.Decls[0].(*ast.FuncDecl).Type.Results.List[0].Type
+		il, ok := res.(*ast.IndexListExpr)
+		if !ok {
+			t.Fatalf("result type is %T, want *ast.IndexListExpr", res)
+		}
+		if len(il.Indices) != 2 {
+			t.Fatalf("IndexListExpr has %d indices, want 2", len(il.Indices))
+		}
+	})
+
+	t.Run("slice type arg", func(t *testing.T) {
+		if _, err := ParseFile("package p\nfunc f() Result[[]byte, error] { return nil }"); err != nil {
+			t.Fatalf("ParseFile returned error: %v", err)
+		}
+	})
+}
+
+// TestParseTypeLiteralOperand pins the type-literal-in-operand grammar: a slice
+// conversion []byte(p) parses as a call over an ArrayType, and a map composite
+// literal map[string]string{} parses with zero errors.
+func TestParseTypeLiteralOperand(t *testing.T) {
+	t.Run("slice conversion", func(t *testing.T) {
+		x := parseExprInBody(t, "[]byte(p)")
+		call, ok := x.(*ast.CallExpr)
+		if !ok {
+			t.Fatalf("got %T, want *ast.CallExpr", x)
+		}
+		if _, ok := call.Fun.(*ast.ArrayType); !ok {
+			t.Fatalf("call target is %T, want *ast.ArrayType", call.Fun)
+		}
+	})
+
+	t.Run("map composite literal", func(t *testing.T) {
+		x := parseExprInBody(t, "map[string]string{}")
+		cl, ok := x.(*ast.CompositeLit)
+		if !ok {
+			t.Fatalf("got %T, want *ast.CompositeLit", x)
+		}
+		if _, ok := cl.Type.(*ast.MapType); !ok {
+			t.Fatalf("composite type is %T, want *ast.MapType", cl.Type)
+		}
+	})
+}
+
+// TestParseOptionalColonPayloadField pins that an enum variant payload field
+// parses both with a colon (`name: Type`) and without (`name Type`).
+func TestParseOptionalColonPayloadField(t *testing.T) {
+	for _, src := range []string{
+		"package p\nenum E { Active { since int } }",
+		"package p\nenum E { Active { since: int } }",
+	} {
+		file, err := ParseFile(src)
+		if err != nil {
+			t.Fatalf("ParseFile(%q) returned error: %v", src, err)
+		}
+		enum := file.Decls[0].(*ast.EnumDecl)
+		field := enum.Variants[0].Payload[0]
+		if field.Name.Name != "since" {
+			t.Errorf("payload field name = %q, want since", field.Name.Name)
+		}
+		if id, ok := field.Type.(*ast.Ident); !ok || id.Name != "int" {
+			t.Errorf("payload field type = %T %v, want *ast.Ident int", field.Type, field.Type)
+		}
+	}
+}
