@@ -354,6 +354,60 @@
   edits don't shift later offsets. Still single-document (locals/params/qualified
   imports/cross-file out of scope, consistent with US-048/049).
 
+## [2026-06-28T02:30:00Z] - US-015
+- Added RESULT as a tagged union to the goscript interpreter: `Result.Ok(x)` and
+  `Result.Err(e)` now construct universal Variant values (TypeID "Result", Tag
+  "Ok"/"Err"), uniformly for open-E (`Result[T, error]`) and closed-E
+  (`Result[T, Enum]`) — NO (T,error) optimization — and `match` dispatches+binds
+  over them. Reuses the US-012 VariantVal ctor and the US-013/014 selectMatchArm
+  tag dispatch; the only new match concern was payload BINDING.
+- internal/interp/value.go: added const resultTypeID/resultOkTag/resultErrTag/
+  resultOkField("value")/resultErrField("error") + `payloadValue(*Variant)
+  (Value,bool)` — returns the single payload of a one-field sum-payload variant
+  (so a data-less variant like Option.None reports no payload).
+- internal/interp/eval.go: evalCallMulti intercepts a SelectorExpr-call whose X is
+  Ident "Result" (not shadowed) BEFORE the host/method paths -> evalResultCtor.
+  `Result.Ok(x)` -> VariantVal("Result","Ok",{value:x}); `Result.Err(e)` ->
+  VariantVal("Result","Err",{error:e}); each requires exactly 1 arg; an unknown
+  Result ctor or wrong arity is a LOCATED (call.Pos()) descriptive refusal.
+- internal/interp/interp.go: armScopeFor (the ONE bind seam shared by statement-
+  and value-position match) now UNWRAPS for a Result subject — when
+  subj.Variant.TypeID == resultTypeID it binds payloadValue(...) (the inner
+  value/error), matching surface semantics (`Result.Ok(cfg) => cfg.Raw`,
+  `Result.Err(e) => ...e`). A named-field ENUM variant still binds the WHOLE
+  variant (`Event.Login(l) => l.user`), distinguished by TypeID.
+- internal/interp/result_test.go (new): TestResultOkConstruction/
+  TestResultErrConstruction (tag+payload over the 03-result open-E shape),
+  TestResultMatchOpenE (Ok->cfg.Raw, Err->fmt.Sprintf("%v",e)=="empty input"),
+  TestResultMatchClosedE (06-error-e shape `Result[Config,ParseError]`; Err arm
+  binds the enum, consumed by a NESTED match), TestResultErrCarriesEnumValueClosedE
+  (Err payload IS ParseError.Empty), TestResultUnknownCtorIsRefused/
+  TestResultCtorArityIsRefused. stdlib testing, no testify.
+- prd.json (US-015 passes:true), progress.txt
+- history/20260627-feature-us-015-eval-result-as-tagged-union/ (initiative)
+- Learnings for future iterations:
+  - Result/Option binding is UNWRAPPED (the single anonymous payload); enum
+    binding is the WHOLE variant (named fields read as `binding.field`). The
+    distinction lives in armScopeFor, keyed on Variant.TypeID. US-016 (Option) is
+    nearly free: construct Option.Some(x)->Variant("Option","Some",{value:x}) and
+    Option.None->Variant("Option","None",nil), then EXTEND the armScopeFor unwrap
+    guard to also fire for TypeID "Option" (payloadValue already returns ok=false
+    for None's zero fields, so a None arm binds nothing — correct). Add "Option"
+    to the construction interception the same way as "Result".
+  - `Result.Ok(x)`/`Result.Err(e)` are bare POSITIONAL calls -> *ast.CallExpr with
+    a *ast.SelectorExpr Fun (NOT *ast.VariantLit, which needs labeled args).
+    Intercept in evalCallMulti by receiver name, guarded by "not shadowed".
+  - Match dispatch needed ZERO changes — selectMatchArm keys on subj.Variant.Tag,
+    so Ok/Err arms dispatch over a Result subject for free (statement AND value
+    position). Keep match tag-keyed, not type-specific.
+  - The open-E Err payload is the host error struct (errVal: StructVal("error",
+    {message}), from US-011) — render it via fmt.Sprintf("%v",e) (goArg bridges it
+    to a real Go error). The closed-E Err payload is the enum Variant. Same Result
+    encoding; only the carried payload differs.
+  - interp deps stay clean for the US-022 gate (go list -deps ./internal/interp:
+    no go/types, internal/backend, internal/typecheck).
+---
+
 ## [2026-06-28T01:50:00Z] - US-014
 - Added VALUE-POSITION match to the goscript interpreter: a `match` used as an
   expression — `return match`, `x := match`, `var x = match` — now yields the

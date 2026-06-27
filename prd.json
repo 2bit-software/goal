@@ -185,7 +185,7 @@
         "A unit test over 03-result and 06-error-e shapes constructs Ok and Err and asserts match arms bind the payload and error correctly"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

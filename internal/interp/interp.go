@@ -519,14 +519,23 @@ func unreachableMatch(subj Value) error {
 }
 
 // armScopeFor opens a fresh child scope for a match arm and binds the arm's
-// payload binding (when its VariantPattern names one) to the whole variant value
-// — so payload fields read through it as `binding.field` (evalSelector reads
-// variant fields). A rest arm (vp == nil) binds nothing. Shared by statement- and
-// value-position match.
+// payload binding (when its VariantPattern names one). For a named-field enum
+// variant the binding is the WHOLE variant value — so payload fields read through
+// it as `binding.field` (evalSelector reads variant fields). For a Result (and,
+// later, Option) variant the payload is a single anonymous value, so the binding
+// is the UNWRAPPED payload — an `Ok(v)` arm binds the success value and an
+// `Err(e)` arm binds the error directly, matching the surface semantics. A rest
+// arm (vp == nil) binds nothing. Shared by statement- and value-position match.
 func armScopeFor(vp *ast.VariantPattern, subj Value, scope *Env) *Env {
 	armScope := scope.NewChild()
 	if vp != nil && vp.Binding != nil {
-		armScope.Define(vp.Binding.Name, subj)
+		bound := subj
+		if subj.Kind == KindVariant && subj.Variant != nil && subj.Variant.TypeID == resultTypeID {
+			if pv, ok := payloadValue(subj.Variant); ok {
+				bound = pv
+			}
+		}
+		armScope.Define(vp.Binding.Name, bound)
 	}
 	return armScope
 }

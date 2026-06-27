@@ -172,6 +172,35 @@ func FuncDeclVal(decl *ast.FuncDecl, env *Env) Value {
 	return Value{Kind: KindFunc, Func: &FuncValue{Name: name, Decl: decl, Env: env}}
 }
 
+// Canonical type identity and payload field names for the Result tagged union.
+// Result is encoded as the universal Variant uniformly for both open-E
+// (E == error) and closed-E (E is an enum) — there is no (T, error) optimization
+// at runtime (REWRITE-ARCHITECTURE.md §4). Each Result carries exactly one
+// payload: Ok the success value, Err the error value.
+const (
+	resultTypeID   = "Result" // Variant.TypeID for a Result value
+	resultOkTag    = "Ok"     // Variant.Tag for Result.Ok
+	resultErrTag   = "Err"    // Variant.Tag for Result.Err
+	resultOkField  = "value"  // payload field name of Result.Ok
+	resultErrField = "error"  // payload field name of Result.Err
+)
+
+// payloadValue returns the single payload value carried by a sum-payload variant
+// (Result.Ok/Err and, later, Option.Some). ok is false when the variant is nil or
+// carries other than exactly one field — so a data-less variant (e.g. Option.None)
+// reports no payload. It lets a match arm bind the UNWRAPPED payload of a
+// Result/Option, distinct from a named-field enum variant whose binding is the
+// whole variant.
+func payloadValue(v *Variant) (Value, bool) {
+	if v == nil || len(v.Fields) != 1 {
+		return Value{}, false
+	}
+	for _, fv := range v.Fields {
+		return fv, true
+	}
+	return Value{}, false
+}
+
 // VariantVal constructs a tagged-union value. It is the single constructor for
 // enum, Result, and Option runtime values.
 func VariantVal(typeID, tag string, fields map[string]Value) Value {

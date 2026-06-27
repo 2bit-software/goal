@@ -292,6 +292,32 @@ func variantFields(enum *sema.Enum, tag string) []sema.Field {
 	return nil
 }
 
+// evalResultCtor evaluates a Result construction `Result.Ok(x)` / `Result.Err(e)`
+// into the universal tagged-union Value. Ok carries the success value, Err the
+// error value, each as a single payload field — the SAME encoding whether the
+// error type is `error` (open-E) or an enum (closed-E); the interpreter applies no
+// (T, error) optimization. An unknown Result constructor name or other than one
+// argument is a located, descriptive refusal rather than a silent value.
+func (ip *Interp) evalResultCtor(ctor string, call *ast.CallExpr, scope *Env) ([]Value, error) {
+	var tag, field string
+	switch ctor {
+	case resultOkTag:
+		tag, field = resultOkTag, resultOkField
+	case resultErrTag:
+		tag, field = resultErrTag, resultErrField
+	default:
+		return nil, fmt.Errorf("interp: %s: unknown Result constructor %s.%s (expected Ok or Err)", call.Pos(), resultTypeID, ctor)
+	}
+	if len(call.Args) != 1 {
+		return nil, fmt.Errorf("interp: %s: %s.%s expects 1 argument, got %d", call.Pos(), resultTypeID, ctor, len(call.Args))
+	}
+	v, err := ip.evalExpr(call.Args[0], scope)
+	if err != nil {
+		return nil, err
+	}
+	return []Value{VariantVal(resultTypeID, tag, map[string]Value{field: v})}, nil
+}
+
 // evalIndex evaluates an index expression x[i]. A slice is indexed by an integer
 // (bounds-checked); a map is indexed by a string key (an absent key reads the nil
 // value, the defined absent-read result). Indexing any other kind is a
@@ -368,6 +394,18 @@ func (ip *Interp) evalCallMulti(call *ast.CallExpr, scope *Env) ([]Value, error)
 	if id, ok := call.Fun.(*ast.Ident); ok && isBuiltin(id.Name) {
 		if _, err := scope.Lookup(id.Name); err != nil {
 			return ip.evalBuiltin(id.Name, call, scope)
+		}
+	}
+	// A Result construction (`Result.Ok(x)` / `Result.Err(e)`) is a selector call
+	// whose receiver is the built-in `Result` (not shadowed by a local binding).
+	// Bare positional args mean the parser produced an ordinary *ast.CallExpr, so
+	// intercept it here and build the universal tagged-union value — uniformly for
+	// open-E and closed-E, with no (T, error) optimization.
+	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+		if recv, ok := sel.X.(*ast.Ident); ok && recv.Name == resultTypeID {
+			if _, err := scope.Lookup(recv.Name); err != nil {
+				return ip.evalResultCtor(sel.Sel.Name, call, scope)
+			}
 		}
 	}
 	// A selector call whose receiver names an imported package — and is not
