@@ -43,7 +43,7 @@ type InitializeResult struct {
 
 // ServerCapabilities advertises what the server can do: full-document sync, an idiomatize
 // fix-all code action, document-symbol (outline) support, semantic tokens, go-to-definition,
-// and hover.
+// hover, find-references, and rename.
 type ServerCapabilities struct {
 	TextDocumentSync       int                    `json:"textDocumentSync"`
 	CodeActionProvider     *CodeActionOptions     `json:"codeActionProvider,omitempty"`
@@ -51,6 +51,8 @@ type ServerCapabilities struct {
 	SemanticTokensProvider *SemanticTokensOptions `json:"semanticTokensProvider,omitempty"`
 	DefinitionProvider     bool                   `json:"definitionProvider,omitempty"`
 	HoverProvider          bool                   `json:"hoverProvider,omitempty"`
+	ReferencesProvider     bool                   `json:"referencesProvider,omitempty"`
+	RenameProvider         bool                   `json:"renameProvider,omitempty"`
 }
 
 // SemanticTokensOptions advertises the server's semantic-tokens support: the legend that
@@ -147,6 +149,29 @@ type Location struct {
 type HoverParams struct {
 	TextDocument textDocumentIdentifier `json:"textDocument"`
 	Position     Position               `json:"position"`
+}
+
+// ReferenceParams is a textDocument/references request: the document, the 0-based cursor
+// position whose symbol's uses should be listed, and a context whose IncludeDeclaration flag
+// controls whether the declaration's own name is part of the result.
+type ReferenceParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+	Position     Position               `json:"position"`
+	Context      ReferenceContext       `json:"context"`
+}
+
+// ReferenceContext carries the find-references options; IncludeDeclaration asks the server to
+// include the symbol's declaration alongside its references.
+type ReferenceContext struct {
+	IncludeDeclaration bool `json:"includeDeclaration"`
+}
+
+// RenameParams is a textDocument/rename request: the document, the 0-based cursor position
+// whose symbol should be renamed, and the new name to apply at every occurrence.
+type RenameParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+	Position     Position               `json:"position"`
+	NewName      string                 `json:"newName"`
 }
 
 // Hover is the response to a hover request: the rendered description of the symbol under the

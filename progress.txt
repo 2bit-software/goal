@@ -322,6 +322,64 @@
   contract). GOTCHA: a word inside a /// doc line is NOT an indexable identifier,
   so a hover test that locates a function-name occurrence by substring must word
   the doc comment to avoid the symbol name.
+- LSP references + rename (US-050) INVERT the US-048 symbol graph: where
+  go-to-definition maps a reference -> its declaration Range, references/rename
+  map a symbol -> ALL its occurrences. internal/lsp/references.go reuses
+  definition.go's buildDeclIndex + offsetForPosition + rangeOf, then
+  collectOccurrences records EVERY occurrence of EVERY top-level symbol as
+  occurrence{start,end,key symKey,isDecl}: declaration names seeded first
+  (isDecl=true, like hover.go's span seeding) then references via occVisitor whose
+  structural keying is IDENTICAL to refVisitor — so reference coverage equals
+  go-to-definition coverage BY CONSTRUCTION (change one visitor, change both; they
+  are deliberately parallel, not shared). symKey{kind(func|type|variant),enum,name}
+  is the symbol identity; variants are keyed UNDER their enum (the enum field) so a
+  tag shared by two enums stays distinct and a variant query never leaks into the
+  enum type or a sibling variant. resolveOccurrences finds the occurrence covering
+  the cursor offset and returns all SAME-KEY occurrences. references() -> []Location
+  drops isDecl ones when !context.includeDeclaration; rename() validates the new
+  name via isIdent (letter/_ then letter/digit/_) and returns a *WorkspaceEdit with
+  one TextEdit per occurrence, version-pinned via s.buffer's version (as
+  codeaction.go does). Nil slice / nil *WorkspaceEdit marshal to JSON null
+  (best-effort contract). To assert a rename in a test WITHOUT a printer, apply the
+  TextEdits by byte offset RIGHT-TO-LEFT (sort spans by descending start) so earlier
+  edits don't shift later offsets. Still single-document (locals/params/qualified
+  imports/cross-file out of scope, consistent with US-048/049).
+
+## [2026-06-27T19:30:00Z] - US-050
+- Added textDocument/references and textDocument/rename to the goal LSP, both
+  resolved from the AST symbol graph by inverting the US-048 definition map. Find-
+  references lists every use of the function/type/variant under the cursor (the
+  declaration optionally included via context.includeDeclaration); rename returns a
+  single version-pinned WorkspaceEdit rewriting the declaration and every reference
+  together. Unknown URI / no symbol / unparseable source / an invalid new name all
+  yield a null result, never an error or panic.
+- Implementation: collectOccurrences seeds declaration-name occurrences then walks
+  references with occVisitor (structural keying mirroring definition.go's
+  refVisitor) into occurrence{start,end,key,isDecl}; resolveOccurrences returns all
+  occurrences sharing the key of the one under the cursor. symKey{kind,enum,name}
+  keeps func/type/variant (and same-named variants in different enums) distinct.
+  isIdent gates rename's new name.
+- Files changed:
+  - internal/lsp/references.go (new: references/rename handlers, symKey/occurrence,
+    resolveOccurrences, collectOccurrences, occVisitor, isIdent)
+  - internal/lsp/protocol.go (ReferenceParams/ReferenceContext/RenameParams;
+    ServerCapabilities.ReferencesProvider/RenameProvider)
+  - internal/lsp/server.go (advertise both providers; route references + rename)
+  - internal/lsp/references_test.go (new: ReferencesFunction/TypeName/EnumVariant,
+    IncludeDeclarationToggle, RenameProducesEditsAtEveryReference [AC],
+    RenameInvalidName, NoSymbolAndUnparseable, HandlersNullForUnknownURI,
+    AdvertisesReferencesAndRename)
+  - prd.json (US-050 passes:true), progress.txt
+  - history/20260627-feature-us-050-lsp-rename-find-references/ (initiative)
+- Learnings for future iterations:
+  - This completes the US-046..US-050 LSP editor arc. The reference/definition/hover
+    visitors are three parallel copies of the same structural keying; if a future
+    story adds a new referenceable construct, update all three (refVisitor,
+    hoverVisitor, occVisitor) together or they drift.
+  - Apply test-side TextEdits right-to-left (descending start offset) so earlier
+    edits don't invalidate later offsets — the standard way to verify a rename
+    WorkspaceEdit without an AST printer.
+---
 
 ## [2026-06-27T18:30:00Z] - US-049
 - Added textDocument/hover to the goal LSP, resolved from the AST symbol graph of
