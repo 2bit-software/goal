@@ -197,7 +197,7 @@
         "A test asserts a construction VariantLit and a destructuring VariantPattern are distinct node types and both walk correctly"
       ],
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "notes": "This is the structural fix for the Match-before-Enums ordering hack."
     },
     {

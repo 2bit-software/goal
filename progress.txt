@@ -516,3 +516,45 @@
   - The Walk-descent test pattern: collect(root) -> map[Node]int via the existing
     collector, then assert parent + each declared child == 1 visit. Reuse it.
 ---
+
+## [2026-06-27T04:05:00Z] - US-016
+- Added goal's expression/pattern surface to internal/ast (Phase 1.5 exprs): the
+  match/postfix-?/construction/spread nodes that make the three meanings of
+  Enum.Variant(x) distinct node types (the structural fix for the
+  Match-before-Enums ordering hack). New file internal/ast/goal_expr.go declares
+  MatchExpr/MatchArm, VariantPattern/RestPattern, UnwrapExpr,
+  VariantLit/LabeledArg, and SpreadElement.
+- Design: MatchExpr is an Expr (so value-position `var x = match ...`, refused by
+  the splice approach today, is representable); statement-position match is the
+  same node used where a statement is expected (no separate MatchStmt). MatchArm
+  is a support node (Node only, like Variant); its Body is a generic Node so an
+  expression body (value position) or a statement/block body both fit — walked
+  via Walk(v, n.Body) guarded by nil, NOT walkExpr (walkExpr takes Expr).
+  VariantLit (construct) and VariantPattern (destructure) are deliberately
+  separate types of the same surface syntax. RestPattern is its own node (not a
+  `_` Ident) so exhaustiveness can spot the wildcard arm.
+- Walk gained a "Goal expressions and patterns" case block; nodes carry token.Pos
+  with nil/zero-Pos guards mirroring goal_decl.go. TestWalkGoalExprChildren
+  (package ast, stdlib testing + fmt only) asserts Walk descends into each child
+  exactly once AND that fmt.Sprintf("%T") of the VariantLit != that of the
+  VariantPattern (== *ast.VariantLit / *ast.VariantPattern), satisfying AC 2.
+- Files changed:
+  - internal/ast/goal_expr.go (new: 8 nodes)
+  - internal/ast/walk.go (new case block)
+  - internal/ast/ast_test.go (+fmt import, TestWalkGoalExprChildren)
+  - history/20260627-feature-us-016-goal-expression-and-pattern-ast-nodes/ (initiative)
+- Commit: efa31ad
+- Learnings for future iterations:
+  - Adding goal nodes is a 3-file move: declare in a new goal_*.go file, add a
+    Walk case per node, add a Walk-descent test reusing collector/assertChildren
+    from TestWalkGoalDeclChildren. Keep ast literals KEYED (ast_test is the sole
+    constructor) so field additions stay safe.
+  - For a child typed as `Node` (not Expr/Stmt), Walk it with Walk(v, child)
+    guarded by `!= nil`; walkExpr/walkExprList only accept Expr. MatchArm.Body is
+    the one such field here.
+  - The "distinct node types" assertion idiom is dependency-free %T string
+    comparison — no reflect, no testify.
+  - US-017+ (parser) construct these nodes; US-033+/US-035/US-036 lower them
+    (enum match, ? gensym, value-position match). The node set is now complete
+    for the parser stories.
+---
