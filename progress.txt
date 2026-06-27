@@ -179,6 +179,60 @@
   needs fmt: file() injects `import "fmt"` ONCE right after the package clause when
   needsFmtImport(f) (Walk finds any AssertStmt with Msg!=nil) && !importsPkg(f,"fmt").
   Imports must precede other decls, so inject before the closed-E prelude / first decl.
+- `derive func` (feature 12, §12) lowers in internal/backend the same encoder-in-lower.go
+  + dispatch-in-emit.go way; `from func` is ALREADY a plain func (funcDecl's FuncFrom case,
+  US-037). funcDecl's d.Mod switch routes ast.FuncDerive -> deriveDecl, which OWNS the whole
+  declaration (a derive has no ordinary body to emit) and returns BEFORE the Result/Option
+  gensym-scope setup. deriveDecl reads the source name+type (first param) and the target
+  type+fallibility from deriveTarget(d.Type.Results) (one result => total; (T,error) => the
+  derive returns (T,error) and threads the error). A BODIED derive's overrides come from
+  deriveOverrides: walk Body->ReturnStmt->CompositeLit.Elts; a *ast.KeyValueExpr{Key:Ident}
+  is an override (value *ast.Ident "_" => SKIP, field left at its `var out` zero); the
+  `...derive(src)` *ast.SpreadElement is the implicit fill marker (ignored — the unoverridden
+  fields ARE the fill). genConversion emits `func name(src S) <ret> { var out T; <overrides>;
+  <resolved fields>; return out[, nil] }`. resolveField is mirrored VERBATIM from
+  internal/pass.resolveField but reads sema.Info.Structs (case-insensitive findSemaField) +
+  sema.Info.FromRegistry: identity (sf==tf) `out.F=src.F`; registry total `out.F=conv(src.F)`;
+  registry fallible `v,err:=conv(src.F); if err!=nil {return out,err}; out.F=v`; ptr/Option
+  `*A->*B` nil-guarded re-address; slice `[]A->[]B` make+indexed loop; array `[N]A->[N]B`
+  in-place; map `map[K]A->map[K]B`; nested in-file struct via deriveBody. An unsourced or
+  unconvertible field is a LOCATED e.fail, never a silent zero (the footgun §12 kills).
+  Override VALUES emit via e.exprText (AST expr, not string parse — FR-6). Temp names are
+  scope-aware gensyms (one shared `err` per fallible derive; `v`/`p`/`i`/`k`/`s` per site),
+  NOT `__goal_v0`. typeExprString (lower.go) renders a source/target type expr to the
+  sema-canonical key string (matching Structs/FromRegistry keys). The string-level splitters
+  (derefType/ptrInner/arrElem/mapKV/elemConv) port verbatim — they operate on already-resolved
+  sema type strings. NOTE the foreign-package derive fixture (US-009) still runs through the
+  SPLICE engine via corpus.RunPackage; this AST lowering covers only the file-mode features/12
+  cases.
+
+## [2026-06-27T10:30:00Z] - US-039
+- Lowered `derive func` (feature 12) on the AST backend: field-by-field struct conversion
+  using resolved sema facts (Structs + FromRegistry), not source string parsing. A `from func`
+  leaf already emits as a plain func (US-037); this adds the `derive func` expansion —
+  identity assignments, total + fallible registered leaf conversions (the fallible one makes
+  the whole derive `(T, error)` and threads the error with an early return), built-in slice/
+  array/map/pointer-Option container recursion, nested in-file struct recursion, and bodied
+  derives with verbatim `Field: expr` overrides, `Field: _` skips, and `...derive(src)` fill.
+- Files changed:
+  - internal/backend/lower.go (findSemaField, derefType, ptrInner, arrElem, mapKV, elemConv,
+    deriveTarget, typeExprString)
+  - internal/backend/emit.go (funcDecl FuncDerive dispatch; deriveOverride type; deriveDecl,
+    deriveOverrides, genConversion, resolveField, deriveBody)
+  - internal/backend/backend_test.go (deriveCases; TestASTEngineDeriveBehavioralTier over the
+    3 12-derive-convert cases; TestASTEngineDeriveEncoding pinning the shapes + `_`-skip)
+  - prd.json (US-039 passes:true), progress.txt
+  - history/20260627-feature-us-039-lower-emit-derive-from/ (initiative)
+- Learnings for future iterations:
+  - A `derive func` parses to *ast.FuncDecl{Mod:FuncDerive}: bodyless (Body==nil) for a total
+    or fully-registry-resolved conversion, or with a Body returning a CompositeLit for the
+    override/`_`/`...derive(src)` form. deriveDecl returns BEFORE funcDecl's Result/Option
+    gensym setup — a derive is not a Result/Option function and emits its own complete body.
+  - resolveField/genConversion port internal/pass/derive.go verbatim EXCEPT the fact source
+    (sema vs analyze.Tables) and the gensym (e.gensym vs `__goal_v%d`). Output is build+vet-
+    clean and matches the goldens modulo gensym names + dropped `//` comments (US-042).
+  - US-040 (doctests on the new backend) is next; US-042 regenerates exact goldens. The derive
+    foreign-package case stays on the splice engine via corpus.RunPackage (US-009).
 
 ## [2026-06-27T09:30:00Z] - US-038
 - Lowered `...defaults` (feature 08, §8.5) and `assert` (feature 10, §4.3/§8.6) on the

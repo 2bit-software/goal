@@ -473,8 +473,8 @@
         "The 12-derive-convert cases pass the behavioral tier through the new backend"
       ],
       "priority": 39,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "AST backend lowers `derive func` (feature 12, §12) field-by-field in internal/backend (emit.go dispatch + lower.go helpers; no separate lower pkg). funcDecl's d.Mod switch routes ast.FuncDerive -> deriveDecl (FuncFrom already strips to a plain func, US-037). deriveDecl reads source name+type (first param), target type+fallibility (deriveTarget over the result list: single result total, (T,error) fallible), and overrides from a bodied derive (deriveOverrides walks Body->ReturnStmt->CompositeLit: KeyValueExpr override, value Ident `_` => skip; the `...derive(src)` SpreadElement is the implicit fill). genConversion emits `func name(src S) <ret> { var out T; <overrides>; <fields>; return out[, nil] }`; resolveField mirrors internal/pass.resolveField over sema.Info.Structs/FromRegistry (identity src==tgt; registry total `out.F=conv(src.F)`; registry fallible `v,err:=conv(...); if err!=nil {return out,err}; out.F=v`; ptr/Option `*A->*B`; slice `[]A->[]B` make+indexed loop; array `[N]A->[N]B`; map; nested in-file struct recursion via deriveBody). Reads resolved fields/registry, NOT source text (FR-6); an unsourced/unconvertible field is a located e.fail, never a silent zero. Temp names are scope-aware gensyms (`v`/`v1`/`p`/`i`/`s`) not `__goal_v0` (US-035), and one shared error name per fallible derive. typeExprString renders source/target type exprs to sema-canonical keys. AC: TestASTEngineDeriveBehavioralTier runs all 3 12-derive-convert cases (slice/from_storage/to_storage) through backend.Transpile + corpus.RunCompile (build+vet); TestASTEngineDeriveEncoding pins the from-strip/identity/total-leaf/fallible/slice shapes + the `_`-skip absence. Output matches goldens modulo gensym names + dropped `//` comments (US-042). Foreign-package derive (US-009) stays on the splice engine via corpus.RunPackage — out of scope here."
     },
     {
       "id": "US-040",

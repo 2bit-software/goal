@@ -321,8 +321,14 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 		// compile-time only (its source->target registration lives in
 		// sema.FromRegistry), with no syntactic residue. Its body lowers through the
 		// ordinary emitter paths (e.g. a VariantLit construction).
+	case ast.FuncDerive:
+		// A `derive func` is expanded wholesale into a generated conversion
+		// function (§12); it has no ordinary body to emit, so deriveDecl owns the
+		// whole declaration and returns.
+		e.deriveDecl(d)
+		return
 	default:
-		e.fail("unsupported func modifier %v (goal derive is a later story)", d.Mod)
+		e.fail("unsupported func modifier %v", d.Mod)
 		return
 	}
 	// Enter the function's gensym scope: seed the collision set with the source's
@@ -957,6 +963,294 @@ func (e *emitter) defaultEntries(x *ast.CompositeLit) []string {
 		entries = append(entries, fmt.Sprintf("%s: %s", f.Name, zeroLit(f.Type, e.typeDecls, 0)))
 	}
 	return entries
+}
+
+// deriveOverride is one entry of a bodied derive func's returned composite
+// literal: a verbatim `Field: expr` override (Value), or a `Field: _` skip
+// (Skip), keyed by the target field Name.
+type deriveOverride struct {
+	Name  string
+	Skip  bool
+	Value ast.Expr
+}
+
+// deriveDecl lowers a goal `derive func name(src S) T` (§12) into a generated Go
+// conversion function: it declares `var out T`, assigns each target field from
+// its same-named source field via resolveField (identity, a registered leaf
+// conversion, or container recursion), and returns out. A bodied derive may
+// override fields verbatim, skip a field with `_`, and fill the rest with
+// `...derive(src)`. Reads the resolved struct fields and from-registry off
+// sema.Info, never the source text (FR-6). Mirrors internal/pass.Derive.
+func (e *emitter) deriveDecl(d *ast.FuncDecl) {
+	if d.Name == nil || d.Type == nil {
+		e.fail("derive func has no name or signature")
+		return
+	}
+	if d.Type.Params == nil || len(d.Type.Params.List) == 0 ||
+		len(d.Type.Params.List[0].Names) == 0 {
+		e.fail("derive %s: needs a single named source parameter", d.Name.Name)
+		return
+	}
+	srcName := d.Type.Params.List[0].Names[0].Name
+	srcType := typeExprString(d.Type.Params.List[0].Type)
+	tgtType, fallible, ok := deriveTarget(d.Type.Results)
+	if !ok {
+		e.fail("derive %s: cannot determine target type from result list", d.Name.Name)
+		return
+	}
+	overrides := e.deriveOverrides(d.Body)
+	e.genConversion(d.Name.Name, srcName, srcType, tgtType, fallible, overrides)
+}
+
+// deriveOverrides reads the `Field: expr` / `Field: _` entries from a bodied
+// derive func's returned composite literal (ignoring the `...derive(src)` fill
+// marker, which is implicit). A bodyless derive has no overrides.
+func (e *emitter) deriveOverrides(body *ast.BlockStmt) []deriveOverride {
+	if body == nil {
+		return nil
+	}
+	for _, s := range body.List {
+		ret, ok := s.(*ast.ReturnStmt)
+		if !ok || len(ret.Results) != 1 {
+			continue
+		}
+		cl, ok := ret.Results[0].(*ast.CompositeLit)
+		if !ok {
+			continue
+		}
+		var out []deriveOverride
+		for _, el := range cl.Elts {
+			kv, ok := el.(*ast.KeyValueExpr)
+			if !ok {
+				continue // the `...derive(src)` SpreadElement is the implicit fill
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			if id, ok := kv.Value.(*ast.Ident); ok && id.Name == "_" {
+				out = append(out, deriveOverride{Name: key.Name, Skip: true})
+				continue
+			}
+			out = append(out, deriveOverride{Name: key.Name, Value: kv.Value})
+		}
+		return out
+	}
+	return nil
+}
+
+// genConversion emits the generated Go conversion function for a derive. It
+// writes the signature, declares `var out T`, emits the explicit overrides first
+// (skipping `_`), then resolves every unoverridden target field from its
+// same-named source field, and returns out (`, nil` when fallible). A pointer
+// source is nil-guarded (a nil source yields the zero target). An unresolvable
+// field is a located error, never a silent zero. Mirrors
+// internal/pass.genConversion over sema facts.
+func (e *emitter) genConversion(name, srcName, srcType, tgtType string, fallible bool, overrides []deriveOverride) {
+	tgtVal := derefType(tgtType)
+	tgtFields, ok := structFieldsOf(e.info, tgtVal)
+	if !ok {
+		e.fail("derive %s: unknown target struct %q (no `type %s struct{…}` in this file)", name, tgtType, tgtVal)
+		return
+	}
+	srcFields, _ := structFieldsOf(e.info, derefType(srcType))
+
+	overridden := map[string]bool{}
+	for _, o := range overrides {
+		overridden[strings.ToLower(o.Name)] = true
+	}
+
+	retVar := "out"
+	if strings.HasPrefix(strings.TrimSpace(tgtType), "*") {
+		retVar = "&out" // pointer target: built as a value, returned by address
+	}
+	returnStmt := "return " + retVar
+	if fallible {
+		returnStmt = "return " + retVar + ", nil"
+	}
+
+	// Signature.
+	e.p("func " + name + "(" + srcName + " " + srcType + ") ")
+	if fallible {
+		e.p("(" + tgtType + ", error)")
+	} else {
+		e.p(tgtType)
+	}
+	e.p(" {\n")
+	e.p("var out " + tgtVal + "\n")
+
+	// A pointer source may be nil; a nil source yields the zero target rather than
+	// panicking on field access.
+	if strings.HasPrefix(strings.TrimSpace(srcType), "*") {
+		e.p("if " + srcName + " == nil {\n" + returnStmt + "\n}\n")
+	}
+
+	// One error name for the whole (fallible) function; reused via `:=` per field
+	// (each field introduces a fresh value temp on the LHS, so the redeclaration is
+	// legal). Scope-aware so it never collides with a source identifier.
+	errName := ""
+	if fallible {
+		errName = e.gensym("err")
+	}
+
+	// Explicit overrides first; `_` leaves the field at its zero.
+	for _, o := range overrides {
+		if o.Skip {
+			continue
+		}
+		e.p("out." + o.Name + " = " + e.exprText(o.Value) + "\n")
+	}
+
+	// `...derive(src)`: remaining target fields, resolved through the registry.
+	for _, f := range tgtFields {
+		if overridden[strings.ToLower(f.Name)] {
+			continue
+		}
+		sf, found := findSemaField(srcFields, f.Name)
+		if !found {
+			e.fail("derive %s: target field %q of %s is not sourced from %s (add an explicit `%s: …` or a `from func`)", name, f.Name, tgtType, srcType, f.Name)
+			return
+		}
+		stmts, err := e.resolveField("out."+f.Name, srcName+"."+sf.Name, sf.Type, f.Type, fallible, errName)
+		if err != nil {
+			e.fail("derive %s, field %q: %v", name, f.Name, err)
+			return
+		}
+		for _, s := range stmts {
+			e.p(s + "\n")
+		}
+	}
+
+	e.p(returnStmt + "\n}")
+}
+
+// resolveField returns the Go statements assigning a converted source field to a
+// target field, choosing the strategy by (source type -> target type): identity,
+// a registered leaf conversion (total or fallible), pointer/Option recursion,
+// slice/array/map container recursion, or nested in-package struct recursion. An
+// unresolvable pair is an error (no field is silently zeroed). Mirrors
+// internal/pass.resolveField over sema facts; temporaries are scope-aware
+// gensyms (errName is the function's shared error name for the fallible path).
+func (e *emitter) resolveField(dst, srcExpr, sf, tf string, fallibleOK bool, errName string) ([]string, error) {
+	reg := e.info.FromRegistry
+	sf, tf = strings.TrimSpace(sf), strings.TrimSpace(tf)
+	if sf == tf {
+		return []string{fmt.Sprintf("%s = %s", dst, srcExpr)}, nil
+	}
+	if entry, ok := reg[[2]string{sf, tf}]; ok {
+		if !entry.Fallible {
+			return []string{fmt.Sprintf("%s = %s(%s)", dst, entry.Name, srcExpr)}, nil
+		}
+		if !fallibleOK {
+			return nil, fmt.Errorf("conversion %s->%s is fallible; declare the derive func returning (T, error)", sf, tf)
+		}
+		v := e.gensym("v")
+		return []string{
+			fmt.Sprintf("%s, %s := %s(%s)", v, errName, entry.Name, srcExpr),
+			fmt.Sprintf("if %s != nil {\nreturn out, %s\n}", errName, errName),
+			fmt.Sprintf("%s = %s", dst, v),
+		}, nil
+	}
+	// Pointer / Option recursion: *A -> *B (and Option[A] -> Option[B]) when A -> B
+	// resolves total. A nil source stays the nil target; a non-nil one is converted
+	// and re-addressed.
+	if si, ok := ptrInner(sf); ok {
+		ti, ok := ptrInner(tf)
+		if !ok {
+			return nil, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+		}
+		elem, err := elemConv(si, ti, reg)
+		if err != nil {
+			return nil, err
+		}
+		v := e.gensym("p")
+		return []string{
+			fmt.Sprintf("if %s != nil {\n%s := %s\n%s = &%s\n}", srcExpr, v, elem("*"+srcExpr), dst, v),
+		}, nil
+	}
+	// Built-in slice recursion: []A -> []B when A -> B resolves total.
+	if strings.HasPrefix(sf, "[]") && strings.HasPrefix(tf, "[]") {
+		elem, err := elemConv(sf[2:], tf[2:], reg)
+		if err != nil {
+			return nil, err
+		}
+		i := e.gensym("i")
+		return []string{
+			fmt.Sprintf("%s = make(%s, len(%s))", dst, tf, srcExpr),
+			fmt.Sprintf("for %s := range %s {\n%s = %s\n}", i, srcExpr, dst+"["+i+"]", elem(srcExpr+"["+i+"]")),
+		}, nil
+	}
+	// Fixed-array recursion: [N]A -> [N]B (same length) when A -> B resolves total.
+	if sn, se, ok := arrElem(sf); ok {
+		tn, te, ok := arrElem(tf)
+		if !ok || sn != tn {
+			return nil, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+		}
+		elem, err := elemConv(se, te, reg)
+		if err != nil {
+			return nil, err
+		}
+		i := e.gensym("i")
+		return []string{
+			fmt.Sprintf("for %s := range %s {\n%s = %s\n}", i, srcExpr, dst+"["+i+"]", elem(srcExpr+"["+i+"]")),
+		}, nil
+	}
+	// Map recursion: map[K]A -> map[K]B (same key type) when A -> B resolves total.
+	if sk, sv, ok := mapKV(sf); ok {
+		tk, tv, ok := mapKV(tf)
+		if !ok || sk != tk {
+			return nil, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+		}
+		elem, err := elemConv(sv, tv, reg)
+		if err != nil {
+			return nil, err
+		}
+		k, v := e.gensym("k"), e.gensym("v")
+		return []string{
+			fmt.Sprintf("%s = make(%s, len(%s))", dst, tf, srcExpr),
+			fmt.Sprintf("for %s, %s := range %s {\n%s[%s] = %s\n}", k, v, srcExpr, dst, k, elem(v)),
+		}, nil
+	}
+	// Nested in-package struct recursion: A -> B when both are structs in this file.
+	// Build the target in a temp field-by-field, then assign it.
+	if _, srcStruct := structFieldsOf(e.info, sf); srcStruct {
+		if _, tgtStruct := structFieldsOf(e.info, tf); tgtStruct {
+			v := e.gensym("s")
+			stmts := []string{fmt.Sprintf("var %s %s", v, tf)}
+			body, err := e.deriveBody(v, srcExpr, sf, tf, fallibleOK, errName)
+			if err != nil {
+				return nil, err
+			}
+			stmts = append(stmts, body...)
+			return append(stmts, fmt.Sprintf("%s = %s", dst, v)), nil
+		}
+	}
+	return nil, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+}
+
+// deriveBody emits the field-by-field assignments converting srcType to tgtType
+// into the already-declared dstVar — the recursion core for a nested struct
+// field. Every target field must be sourced (same name) and resolvable, or the
+// conversion is refused. Mirrors internal/pass.deriveBody over sema facts.
+func (e *emitter) deriveBody(dstVar, srcExpr, srcType, tgtType string, fallible bool, errName string) ([]string, error) {
+	tgtFields, ok := structFieldsOf(e.info, tgtType)
+	if !ok {
+		return nil, fmt.Errorf("unknown target struct %q", tgtType)
+	}
+	srcFields, _ := structFieldsOf(e.info, srcType)
+	var stmts []string
+	for _, f := range tgtFields {
+		sf, found := findSemaField(srcFields, f.Name)
+		if !found {
+			return nil, fmt.Errorf("nested field %q of %s is not sourced from %s", f.Name, tgtType, srcType)
+		}
+		s, err := e.resolveField(dstVar+"."+f.Name, srcExpr+"."+sf.Name, sf.Type, f.Type, fallible, errName)
+		if err != nil {
+			return nil, fmt.Errorf("nested field %q: %w", f.Name, err)
+		}
+		stmts = append(stmts, s...)
+	}
+	return stmts, nil
 }
 
 // indexExpr emits a single-index expression, lowering an `Option[T]` type to its

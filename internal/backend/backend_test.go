@@ -669,6 +669,98 @@ func TestASTEngineDefaultsUnsafeZeroRejected(t *testing.T) {
 	}
 }
 
+// deriveCases lists the 12-derive-convert transpile cases the US-039 lowering
+// must carry through the new backend: a bodyless total derive with slice
+// container recursion (slice), a bodyless fallible derive that threads a leaf
+// error (from_storage), and a bodied derive with a verbatim override, a `_` skip,
+// and `...derive(src)` registry fill (to_storage).
+var deriveCases = []string{
+	"features/12-derive-convert/examples/slice.goal",
+	"features/12-derive-convert/examples/from_storage.goal",
+	"features/12-derive-convert/examples/to_storage.goal",
+}
+
+// TestASTEngineDeriveBehavioralTier is US-039 AC: every 12-derive-convert case
+// passes the behavioral tier (temp-module go build + go vet) through the new AST
+// backend, proving the `derive func` field-by-field expansion (identity, total
+// and fallible leaf conversions, slice recursion, overrides, `_` skip, and
+// `...derive(src)` fill) and the `from func` strip produce build+vet-clean Go.
+func TestASTEngineDeriveBehavioralTier(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns the go toolchain; skipped under -short")
+	}
+	if len(deriveCases) == 0 {
+		t.Fatal("no derive cases to run")
+	}
+	for _, input := range deriveCases {
+		t.Run(input, func(t *testing.T) {
+			c := corpus.Case{
+				ID:    input,
+				Kind:  corpus.KindTranspile,
+				Mode:  corpus.ModeFile,
+				Input: input,
+			}
+			if err := corpus.RunCompile(repoRoot, c, corpus.TranspilerFunc(backend.Transpile)); err != nil {
+				t.Fatalf("behavioral tier failed: %v", err)
+			}
+		})
+	}
+}
+
+// TestASTEngineDeriveEncoding pins the US-039 lowering shapes (FR-1..FR-5): a
+// `from func` emits as a plain func (the `from` modifier is stripped), an
+// identical-typed field is a direct assignment, a registered total leaf becomes a
+// call, a fallible leaf threads the error with an early return, slice recursion
+// builds a fresh slice with an indexed loop, and a `_` skip leaves its field
+// unassigned (at the `var out` zero).
+func TestASTEngineDeriveEncoding(t *testing.T) {
+	cases := []struct {
+		file   string
+		wants  []string
+		absent []string
+	}{
+		{file: "../../features/12-derive-convert/examples/slice.goal", wants: []string{
+			"func uuidToString(u UUID) string",             // from-strip (FR-1)
+			"out.Name = g.Name",                            // identity (FR-2)
+			"out.Members = make([]string, len(g.Members))", // slice recursion (FR-4)
+			"out.Members[i] = uuidToString(g.Members[i])",
+		}},
+		{file: "../../features/12-derive-convert/examples/from_storage.goal", wants: []string{
+			"func fromStorage(s StoredEvent) (EventExecution, error)", // fallible sig (FR-3)
+			"parseUUID(s.ID)",
+			"return out, err", // early-return threading
+			"out.Railroad = s.Railroad",
+		}},
+		{file: "../../features/12-derive-convert/examples/to_storage.goal",
+			wants: []string{
+				"out.ExternalID = e.ID.String()", // verbatim override (FR-5)
+				"out.ID = uuidToString(e.ID)",    // ...derive fill via leaf
+				"out.TraceID = ptrToNull(e.TraceID)",
+			},
+			absent: []string{
+				"out.Audit", // `_` skip leaves the field at its zero (FR-5)
+			}},
+	}
+	for _, c := range cases {
+		t.Run(c.file, func(t *testing.T) {
+			out, err := backend.Transpile(mustRead(t, c.file))
+			if err != nil {
+				t.Fatalf("Transpile: %v", err)
+			}
+			for _, want := range c.wants {
+				if !strings.Contains(out.Go, want) {
+					t.Errorf("missing %q in:\n%s", want, out.Go)
+				}
+			}
+			for _, no := range c.absent {
+				if strings.Contains(out.Go, no) {
+					t.Errorf("unexpected %q in:\n%s", no, out.Go)
+				}
+			}
+		})
+	}
+}
+
 func mustRead(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)

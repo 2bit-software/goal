@@ -389,6 +389,170 @@ func structFieldsOf(info *sema.Info, name string) ([]sema.Field, bool) {
 	return fs, ok
 }
 
+// --- derive (feature 12) conversion helpers -------------------------------
+//
+// These mirror the string-level type splitters and the field/registry lookups
+// of internal/pass/derive.go, but operate over the resolved type strings that
+// sema produces (sema.Field.Type, sema.ConvEntry) rather than a token scan. They
+// are pure (no emitter state), so the derive lowering in emit.go composes them
+// with the scope-aware gensym and the AST override values.
+
+// findSemaField returns the source field whose name matches name
+// (case-insensitively), so a target field is sourced from its same-named source
+// field. Mirrors internal/pass.findField.
+func findSemaField(fields []sema.Field, name string) (sema.Field, bool) {
+	for _, f := range fields {
+		if strings.EqualFold(f.Name, name) {
+			return f, true
+		}
+	}
+	return sema.Field{}, false
+}
+
+// derefType strips a single leading pointer star from a type expression, so a
+// pointer struct type is looked up by its struct name. Mirrors
+// internal/pass.derefType.
+func derefType(s string) string {
+	s = strings.TrimSpace(s)
+	if rest, ok := strings.CutPrefix(s, "*"); ok {
+		return strings.TrimSpace(rest)
+	}
+	return s
+}
+
+// ptrInner returns the pointee type of a pointer-strategy field — a `*A`, or the
+// `Option[A]` that lowers to it — and whether s is one. Mirrors
+// internal/pass.ptrInner.
+func ptrInner(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "*") {
+		return strings.TrimSpace(s[1:]), true
+	}
+	if strings.HasPrefix(s, "Option[") && strings.HasSuffix(s, "]") {
+		return strings.TrimSpace(s[len("Option[") : len(s)-1]), true
+	}
+	return "", false
+}
+
+// arrElem splits a fixed-size array type `[N]E` into its length text and element
+// type, rejecting slices (`[]E`). Mirrors internal/pass.arrElem.
+func arrElem(s string) (n, elem string, ok bool) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "[") || strings.HasPrefix(s, "[]") {
+		return "", "", false
+	}
+	close := strings.IndexByte(s, ']')
+	if close < 0 {
+		return "", "", false
+	}
+	n = strings.TrimSpace(s[1:close])
+	if n == "" {
+		return "", "", false
+	}
+	return n, strings.TrimSpace(s[close+1:]), true
+}
+
+// mapKV splits a `map[K]V` type into key and value, honoring bracket nesting in
+// the key. Mirrors internal/pass.mapKV.
+func mapKV(s string) (k, v string, ok bool) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "map[") {
+		return "", "", false
+	}
+	depth := 0
+	for i := len("map[") - 1; i < len(s); i++ {
+		switch s[i] {
+		case '[':
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				return strings.TrimSpace(s[len("map["):i]), strings.TrimSpace(s[i+1:]), true
+			}
+		}
+	}
+	return "", "", false
+}
+
+// elemConv returns a renderer for the conversion of a single element from type a
+// to type b (total conversions only). Mirrors internal/pass.elemConv but reads
+// the sema from-registry.
+func elemConv(a, b string, reg map[[2]string]sema.ConvEntry) (func(string) string, error) {
+	a, b = strings.TrimSpace(a), strings.TrimSpace(b)
+	if a == b {
+		return func(x string) string { return x }, nil
+	}
+	if e, ok := reg[[2]string{a, b}]; ok && !e.Fallible {
+		return func(x string) string { return e.Name + "(" + x + ")" }, nil
+	}
+	return nil, fmt.Errorf("no total element conversion %s -> %s for container recursion", a, b)
+}
+
+// deriveTarget splits a derive func's result list into its target type and
+// fallibility: a single result `T` is total; a `(T, error)` result is fallible.
+// Mirrors internal/pass.splitReturn but reads the AST result list directly.
+func deriveTarget(fl *ast.FieldList) (tgt string, fallible bool, ok bool) {
+	if fl == nil || len(fl.List) == 0 {
+		return "", false, false
+	}
+	// The result list is either one field (`T`) or two (`T`, `error`); each field
+	// may carry names (rare for a derive), so the target is the first field's type.
+	tgt = typeExprString(fl.List[0].Type)
+	if tgt == "" {
+		return "", false, false
+	}
+	// Fallible when there is more than one result value (the trailing error).
+	count := 0
+	for _, f := range fl.List {
+		if n := len(f.Names); n > 0 {
+			count += n
+		} else {
+			count++
+		}
+	}
+	return tgt, count > 1, true
+}
+
+// typeExprString renders a type expression to a sema-compatible canonical string
+// (matching the keys in sema.Info.Structs / FromRegistry). It covers the type
+// forms a derive source/target may take (named, pointer, slice/array, map,
+// generic instantiation, selector).
+func typeExprString(x ast.Expr) string {
+	switch x := x.(type) {
+	case nil:
+		return ""
+	case *ast.Ident:
+		return x.Name
+	case *ast.StarExpr:
+		return "*" + typeExprString(x.X)
+	case *ast.SelectorExpr:
+		base := typeExprString(x.X)
+		if base == "" || x.Sel == nil {
+			return ""
+		}
+		return base + "." + x.Sel.Name
+	case *ast.ArrayType:
+		if x.Len != nil {
+			return "[" + typeExprString(x.Len) + "]" + typeExprString(x.Elt)
+		}
+		return "[]" + typeExprString(x.Elt)
+	case *ast.MapType:
+		return "map[" + typeExprString(x.Key) + "]" + typeExprString(x.Value)
+	case *ast.IndexExpr:
+		return typeExprString(x.X) + "[" + typeExprString(x.Index) + "]"
+	case *ast.IndexListExpr:
+		parts := make([]string, 0, len(x.Indices))
+		for _, idx := range x.Indices {
+			parts = append(parts, typeExprString(idx))
+		}
+		return typeExprString(x.X) + "[" + strings.Join(parts, ", ") + "]"
+	case *ast.BasicLit:
+		return x.Value
+	default:
+		return ""
+	}
+}
+
 // pointerReceiverSet returns the set of type names that have at least one
 // pointer-receiver method (`func (x *T) ...`). The §8.5 implements assertion must
 // address such a type as `(*T)(nil)` rather than `T{}`, since the value type does
