@@ -33,6 +33,14 @@
       "normalize": "gofmt"
     },
     {
+      "id": "features-02-match-examples-shape_value",
+      "kind": "transpile",
+      "input": "features/02-match/examples/shape_value.goal",
+      "expected": "features/02-match/examples/shape_value.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
       "id": "features-02-match-examples-status_match",
       "kind": "transpile",
       "input": "features/02-match/examples/status_match.goal",
@@ -313,16 +321,16 @@
       "normalize": "gofmt"
     },
     {
-      "id": "features-11-doctests-examples-multi",
-      "kind": "transpile",
+      "id": "features-11-doctests-examples-multi-doctest",
+      "kind": "doctest",
       "input": "features/11-doctests/examples/multi.goal",
       "expected": "features/11-doctests/examples/multi.go.expected",
       "mode": "file",
       "normalize": "gofmt"
     },
     {
-      "id": "features-11-doctests-examples-multi-doctest",
-      "kind": "doctest",
+      "id": "features-11-doctests-examples-multi",
+      "kind": "transpile",
       "input": "features/11-doctests/examples/multi.goal",
       "expected": "features/11-doctests/examples/multi.go.expected",
       "mode": "file",

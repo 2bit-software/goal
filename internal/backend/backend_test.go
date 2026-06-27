@@ -409,6 +409,90 @@ func TestASTEngineQuestionEncoding(t *testing.T) {
 	}
 }
 
+// enumMatchCases lists the 02-match transpile cases plus the new
+// value-position-match case (shape_value) that the US-036 lowering must carry
+// through the new backend: an enum `match` as a statement, with a `_` rest arm,
+// in `return` position, and in `var name T = match` position.
+var enumMatchCases = []string{
+	"features/02-match/examples/status_match.goal",
+	"features/02-match/examples/status_rest.goal",
+	"features/02-match/examples/status_return.goal",
+	"features/02-match/examples/status_var.goal",
+	"features/02-match/examples/shape_value.goal",
+}
+
+// TestASTEngineEnumMatchBehavioralTier is US-036 AC2: every 02-match case plus the
+// new value-position-match case passes the behavioral tier (temp-module go build +
+// go vet) through the new AST backend, proving the §8.2 enum-match type-switch
+// lowering — statement and value position — produces build+vet-clean Go.
+func TestASTEngineEnumMatchBehavioralTier(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns the go toolchain; skipped under -short")
+	}
+	if len(enumMatchCases) == 0 {
+		t.Fatal("no enum-match cases to run")
+	}
+	for _, input := range enumMatchCases {
+		t.Run(input, func(t *testing.T) {
+			c := corpus.Case{
+				ID:    input,
+				Kind:  corpus.KindTranspile,
+				Mode:  corpus.ModeFile,
+				Input: input,
+			}
+			if err := corpus.RunCompile(repoRoot, c, corpus.TranspilerFunc(backend.Transpile)); err != nil {
+				t.Fatalf("behavioral tier failed: %v", err)
+			}
+		})
+	}
+}
+
+// TestASTEngineEnumMatchEncoding pins the §8.2 enum-match lowering shapes: a
+// type-switch with a `case <Enum>_<Variant>:` per variant, a guard variable that
+// exports a payload field access, a panicking default for an exhaustive match,
+// and the value-position wrappers (`return <body>` / `name = <body>`).
+func TestASTEngineEnumMatchEncoding(t *testing.T) {
+	cases := []struct {
+		file string
+		want []string
+	}{
+		{"../../features/02-match/examples/status_match.goal", []string{
+			"switch v := s.(type) {",
+			"case Status_Pending:",
+			"case Status_Active:",
+			"render(v.Since)",
+			`panic("unreachable: non-exhaustive Status (compiler invariant violated)")`,
+		}},
+		{"../../features/02-match/examples/status_rest.goal", []string{
+			"case Status_Active:",
+			"default:",
+			"showPlaceholder()",
+		}},
+		{"../../features/02-match/examples/status_return.goal", []string{
+			`return "pending"`,
+			"return v.Reason",
+		}},
+		{"../../features/02-match/examples/status_var.goal", []string{
+			"var d string",
+			`d = "pending"`,
+			"d = v.Reason",
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.file, func(t *testing.T) {
+			out, err := backend.Transpile(mustRead(t, c.file))
+			if err != nil {
+				t.Fatalf("Transpile: %v", err)
+			}
+			for _, want := range c.want {
+				if !strings.Contains(out.Go, want) {
+					t.Errorf("missing %q in:\n%s", want, out.Go)
+				}
+			}
+		})
+	}
+}
+
 func mustRead(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)

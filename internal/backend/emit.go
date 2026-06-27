@@ -38,6 +38,12 @@ type emitter struct {
 	// match arm body (e.g. an Ok binding `cfg` -> a gensym `v`). Empty outside a
 	// match arm; consulted by the Ident emission.
 	renames map[string]string
+	// armBinding / armFields scope an enum match arm's payload binding: armBinding
+	// is the source binding name (e.g. `a`) and armFields the variant's field-name
+	// set, so a field access on the binding (`a.since`) exports to the generated Go
+	// field (`<guard>.Since`). Both empty/nil outside an enum match arm.
+	armBinding string
+	armFields  map[string]bool
 	// fileIdents is the set of identifiers used anywhere in the file; it seeds each
 	// function's gensym collision set so a generated name never clashes with source.
 	fileIdents map[string]bool
@@ -476,6 +482,11 @@ func (e *emitter) stmt(s ast.Stmt) {
 	case *ast.SwitchStmt:
 		e.switchStmt(s)
 	case *ast.DeclStmt:
+		// `var name T = match …` over an enum lowers to a `var name T` declaration
+		// followed by a value-position type-switch whose arms assign `name = <body>`.
+		if e.tryVarMatch(s.Decl) {
+			return
+		}
 		e.decl(s.Decl)
 	case *ast.DeferStmt:
 		e.p("defer ")
@@ -705,6 +716,13 @@ func (e *emitter) selectorExpr(x *ast.SelectorExpr) {
 	e.expr(x.X)
 	e.p(".")
 	if x.Sel != nil {
+		// A field access on the current enum match arm's payload binding
+		// (`a.since`) addresses the generated, exported struct field
+		// (`<guard>.Since`); the binding ident itself is rewritten by renames.
+		if id, ok := x.X.(*ast.Ident); ok && id.Name == e.armBinding && e.armFields[x.Sel.Name] {
+			e.p(exported(x.Sel.Name))
+			return
+		}
 		e.p(x.Sel.Name)
 	}
 }
@@ -761,6 +779,12 @@ func (e *emitter) indexExpr(x *ast.IndexExpr) {
 // enclosing function (§8.3/§8.4) to the native (T, error) pair / pointer form.
 func (e *emitter) returnStmt(s *ast.ReturnStmt) {
 	if len(s.Results) == 1 {
+		// `return match …` over an enum lowers to a value-position type-switch
+		// whose arms each `return <body>`.
+		if m, ok := s.Results[0].(*ast.MatchExpr); ok && enumOf(e.info, matchQualifier(m)) != nil {
+			e.enumMatch(m, posReturn, "")
+			return
+		}
 		switch e.fnKind {
 		case roResultOpen:
 			if e.emitResultReturn(s.Results[0]) {
@@ -777,6 +801,31 @@ func (e *emitter) returnStmt(s *ast.ReturnStmt) {
 		e.p(" ")
 		e.exprList(s.Results)
 	}
+}
+
+// tryVarMatch lowers a `var name T = match …` declaration over an enum: it emits
+// the `var name T` declaration and then the value-position type-switch, returning
+// true when it handled the decl. It only claims a single-name, single-value,
+// explicitly-typed var whose value is an enum match; any other decl is left for
+// the ordinary decl emitter.
+func (e *emitter) tryVarMatch(d ast.Decl) bool {
+	gd, ok := d.(*ast.GenDecl)
+	if !ok || gd.Tok.String() != "var" || len(gd.Specs) != 1 {
+		return false
+	}
+	vs, ok := gd.Specs[0].(*ast.ValueSpec)
+	if !ok || len(vs.Names) != 1 || vs.Type == nil || len(vs.Values) != 1 {
+		return false
+	}
+	m, ok := vs.Values[0].(*ast.MatchExpr)
+	if !ok || enumOf(e.info, matchQualifier(m)) == nil {
+		return false
+	}
+	e.p("var " + vs.Names[0].Name + " ")
+	e.expr(vs.Type)
+	e.p("\n")
+	e.enumMatch(m, posVar, vs.Names[0].Name)
+	return true
 }
 
 // emitResultReturn lowers `return Result.Ok(X)` -> `return X, nil` and
@@ -928,7 +977,122 @@ func (e *emitter) matchStmt(m *ast.MatchExpr) {
 	case "Option":
 		e.optionMatch(m)
 	default:
-		e.fail("unsupported statement-position match on %q (only Result/Option match is lowered; enum/value-position match is a later story)", q)
+		if enumOf(e.info, q) != nil {
+			e.enumMatch(m, posStmt, "")
+			return
+		}
+		e.fail("unsupported statement-position match on %q (only Result/Option and enum match are lowered)", q)
+	}
+}
+
+// matchPos is where a value-bearing match sits: a statement, in return position,
+// or the initializer of an explicitly-typed `var`. It selects how each lowered
+// arm body is wrapped (see armWrap).
+type matchPos int
+
+const (
+	posStmt   matchPos = iota // statement: arm body emitted as-is
+	posReturn                 // `return match …`: each arm becomes `return <body>`
+	posVar                    // `var name T = match …`: each arm becomes `name = <body>`
+)
+
+// enumMatch lowers a `match` over an enum to a Go type-switch on the scrutinee's
+// dynamic type, over the §8.1 sum encoding (spec §8.2). It mirrors
+// internal/pass.lowerMatch but reads the parsed arms and the variant field sets
+// off the AST / sema.Info instead of scanning tokens. A proven-exhaustive match
+// (no `_` arm) lowers to a panicking default; an explicit `_` rest arm becomes a
+// real default. The guard variable is introduced only when some arm references
+// its payload binding.
+func (e *emitter) enumMatch(m *ast.MatchExpr, pos matchPos, name string) {
+	enumName := matchQualifier(m)
+	en := enumOf(e.info, enumName)
+
+	usesBinding := false
+	for _, arm := range m.Arms {
+		if vp, ok := arm.Pattern.(*ast.VariantPattern); ok && vp.Binding != nil && usesIdent(arm.Body, vp.Binding.Name) {
+			usesBinding = true
+			break
+		}
+	}
+
+	guard := ""
+	e.p("switch ")
+	if usesBinding {
+		guard = e.gensym("v")
+		e.p(guard + " := ")
+	}
+	e.expr(m.Subject)
+	e.p(".(type) {\n")
+
+	var restArm *ast.MatchArm
+	for _, arm := range m.Arms {
+		vp, ok := arm.Pattern.(*ast.VariantPattern)
+		if !ok {
+			if _, isRest := arm.Pattern.(*ast.RestPattern); isRest {
+				restArm = arm
+			}
+			continue
+		}
+		if vp.Variant == nil {
+			e.fail("enum match arm has no variant tag")
+			return
+		}
+		e.p("case " + enumName + "_" + vp.Variant.Name + ":\n")
+		e.emitEnumArm(arm, vp, en, guard, pos, name)
+		e.p("\n")
+	}
+
+	e.p("default:\n")
+	if restArm != nil {
+		e.emitEnumArm(restArm, nil, en, guard, pos, name)
+	} else {
+		e.p(fmt.Sprintf("panic(%q)", fmt.Sprintf("unreachable: non-exhaustive %s (compiler invariant violated)", enumName)))
+	}
+	e.p("\n}")
+}
+
+// emitEnumArm emits one type-switch clause body: it renames the arm's payload
+// binding to the guard variable and exposes the variant field set (so field
+// accesses export), then emits the arm body wrapped for the match position.
+func (e *emitter) emitEnumArm(arm *ast.MatchArm, vp *ast.VariantPattern, en *sema.Enum, guard string, pos matchPos, name string) {
+	binding := ""
+	if vp != nil && vp.Binding != nil {
+		binding = vp.Binding.Name
+	}
+	if binding != "" {
+		if e.renames == nil {
+			e.renames = map[string]string{}
+		}
+		e.renames[binding] = guard
+		prevBinding, prevFields := e.armBinding, e.armFields
+		e.armBinding = binding
+		if en != nil && vp.Variant != nil {
+			e.armFields = en.FieldSet[vp.Variant.Name]
+		} else {
+			e.armFields = nil
+		}
+		defer func() {
+			delete(e.renames, binding)
+			e.armBinding, e.armFields = prevBinding, prevFields
+		}()
+	}
+	e.armWrap(arm.Body, pos, name)
+}
+
+// armWrap emits a match arm body wrapped for its position: a bare body in
+// statement position, `return <body>` in return position, and `name = <body>` in
+// var position. Return/var positions require an expression body (a value-position
+// match's arms are always expressions).
+func (e *emitter) armWrap(body ast.Node, pos matchPos, name string) {
+	switch pos {
+	case posReturn:
+		e.p("return ")
+		e.armBody(body)
+	case posVar:
+		e.p(name + " = ")
+		e.armBody(body)
+	default:
+		e.armBody(body)
 	}
 }
 

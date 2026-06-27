@@ -33,8 +33,8 @@ func TestGenerateCounts(t *testing.T) {
 		}
 	}
 
-	if transpile != 51 {
-		t.Errorf("file-mode transpile pairs = %d, want 51", transpile)
+	if transpile != 52 {
+		t.Errorf("file-mode transpile pairs = %d, want 52", transpile)
 	}
 	// Package-mode cases reify the formerly-inline cross-file and foreign-derive
 	// package tests as on-disk fixtures.

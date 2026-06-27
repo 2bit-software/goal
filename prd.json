@@ -437,8 +437,8 @@
         "The 02-match cases plus a new value-position-match corpus case pass the behavioral tier through the new backend"
       ],
       "priority": 36,
-      "passes": false,
-      "notes": "Add the new value-position-match example to the corpus as part of this story."
+      "passes": true,
+      "notes": "AST backend lowers enum `match` to a Go type-switch over the §8.1 encoding in statement AND value position (internal/backend/emit.go enumMatch + matchPos posStmt/posReturn/posVar). Dispatch: matchStmt default branch (statement), returnStmt (`return match`), new tryVarMatch off the DeclStmt case (`var name T = match` -> emit `var name T` then the switch). usesBinding mints a scope-aware guard gensym `v` only when some arm references its payload binding; emitEnumArm renames the binding to the guard (existing renames map) and sets armBinding/armFields so a field access on the binding exports (`a.since`->`v.Since`) via a new selectorExpr branch. `_` rest arm -> real `default:`; else panicking default with the §8.2 non-exhaustive message. Mirrors internal/pass/match.go but reads parsed arms + sema.Enum.FieldSet (no token scan). New corpus case features/02-match/examples/shape_value.goal (+.go.expected, golden from the canonical splice engine; manifest regenerated 107->108; generate_test 51->52). AC tests: TestASTEngineEnumMatchBehavioralTier (build+vet over the 4 02-match + shape_value) and TestASTEngineEnumMatchEncoding. Output matches goldens modulo gensym name (`v` vs `__goal_v`, US-035) and the pre-existing `type Time int64` vs `= int64` alias gap (US-042); both build+vet clean."
     },
     {
       "id": "US-037",
