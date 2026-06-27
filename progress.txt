@@ -1193,3 +1193,47 @@
     further qualified) + Variant.Name; exprName renders the dotted path. A bare/unreadable
     qualifier yields "" and the arm is ignored, exactly like the legacy armPattern.
 ---
+
+## [2026-06-27T06:46:00Z] - US-030
+- Reimplemented feature-08 (no-zero-value, spec §8) field-completeness checking
+  over the AST in internal/sema, the structural replacement for the lexical
+  internal/check/fields.go. CheckFields walks the parse tree and flags struct
+  literals / enum-variant constructions that omit a declared field without a
+  completing spread, deferring on unresolved types — wired into sema.Check so the
+  existing corpus.SemaCheck adapter forwards it unchanged.
+- Files changed:
+  - internal/sema/fields.go (new: CheckFields + helpers identName/litKeys/
+    litHasSpread/labeledArgNames/variantFields/missingFieldNames/quoteJoin)
+  - internal/sema/check.go (Check appends CheckFields; doc refresh)
+  - internal/corpus/sema_fields_test.go (new: TestSemaFieldsRunner over the 9
+    testdata/check/08-no-zero-value cases)
+  - history/20260627-feature-us-030-field-completeness-check-on-ast/ (initiative)
+- Commit: 7431503
+- Learnings for future iterations:
+  - The three meanings of `Enum.Variant(x)` are now SEPARATE node types, so the
+    08 check is correct by construction where the lexical check needs heuristics:
+    a struct literal is *ast.CompositeLit (Type an *ast.Ident), a construction is
+    *ast.VariantLit (the parser builds it ONLY when a call carries >=1 labeled
+    arg — a data-less `Enum.Dot` stays a *ast.SelectorExpr, trivially complete),
+    and a match-arm binding is *ast.VariantPattern. Walking VariantLit alone never
+    sees a pattern, so the legacy match_binding_arm false positive is impossible —
+    no span/skip-list machinery needed (cf. internal/check/fields.go
+    matchPatternSpans, which exists solely to dodge that).
+  - Present keys come off *ast.KeyValueExpr.Key (an *ast.Ident) for structs and
+    *ast.LabeledArg.Label for variants; a `...defaults`/`...derive(s)` is an
+    *ast.SpreadElement element => complete-by-construction (skip). Non-Ident
+    composite types (slice/map/array, generic, pkg-qualified) are skipped, so
+    struct tags (on the AST field) and element-type literals never false-positive.
+  - Diagnostic MESSAGES + severities mirror internal/check/fields.go verbatim so
+    the inline // want markers pass through corpus.RunCheck unchanged; codes are
+    `missing-field` (Error) and `unresolved-literal-type` (Warning), Feature
+    `08-no-zero-value`. Reused exprName/plural/pronoun from sema/check.go; added
+    quoteJoin (backtick names, no enum prefix — distinct from check.go's
+    quoteVariants which prefixes the enum).
+  - The corpus check-runner pattern is now uniform across sema stories: a per-
+    feature test (TestSemaExhaustiveRunner / TestSemaFieldsRunner) filters
+    manifest KindCheck cases by Input prefix, drives each through
+    CheckerFunc(SemaCheck) + RunCheck, t.Fatalf on zero. US-031 (must-use/
+    implements/question) adds its check to sema.Check and a sibling runner test
+    the same way.
+---

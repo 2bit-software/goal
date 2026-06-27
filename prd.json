@@ -365,8 +365,8 @@
         "Every field-completeness case in testdata/check passes through the sema checker via the corpus runner"
       ],
       "priority": 30,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "internal/sema/fields.go adds CheckFields (struct-literal + variant-construction §8 completeness) wired into sema.Check. Correct by construction on the AST: a struct literal is *ast.CompositeLit (Ident type), a construction is *ast.VariantLit (parser builds it only for labeled-arg calls), and a match-arm binding is *ast.VariantPattern — so walking VariantLit alone cannot mis-read a binding as a construction (the legacy match_binding false positive is impossible). Struct tags ride on the AST field; non-Ident composite types (slice/map) are skipped. ...defaults/...derive SpreadElement => complete-by-construction; unknown keyed literal type => Warning deferral; omission => Error. Messages mirror internal/check/fields.go verbatim for // want parity. corpus.TestSemaFieldsRunner drives all 9 testdata/check/08-no-zero-value cases through SemaCheck via RunCheck; all pass."
     },
     {
       "id": "US-031",
