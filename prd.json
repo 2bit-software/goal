@@ -149,7 +149,7 @@
         "A test tokenizes a multi-line sample and asserts the kind and position of each token"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

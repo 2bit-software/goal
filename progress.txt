@@ -374,3 +374,38 @@
   - The package is intentionally import-free (local itoa) so it sits at the very
     bottom of the dependency graph; do not add imports lightly.
 ---
+
+## [2026-06-27T03:26:00Z] - US-012
+- Added internal/lexer (Phase 1.2), the second stone of the AST front-end: a
+  hand-written scanner that turns goal source into []token.Token for the core Go
+  subset — identifiers, reserved keywords, int/float/imag/char/string literals,
+  the full operator+delimiter set, and // and /* */ comments — each carrying an
+  accurate token.Pos{Offset, Line, Col}. Modeled on go/scanner but smaller and
+  emitting our token.Token directly.
+- API: New(src)*Lexer + (*Lexer).Next() token.Token (incremental, for the future
+  parser) and Tokens(src)[]token.Token (whole-slice, for tests). Cursor tracks
+  offset/rdOffset/ch plus line + lineStart; Col = offset-lineStart+1, Line bumps
+  after each '\n'. Multi-char operators are longest-matched via nested switches;
+  unrecognized bytes become ILLEGAL tokens (carrying the byte + Pos) without
+  panicking and still advance, guaranteeing progress; the stream ends in EOF.
+- SCOPE: goal-specific lexemes are deliberately deferred to US-013 — '?' lexes as
+  ILLEGAL, '=>' as ASSIGN then GTR, '.' always as PERIOD (no ELLIPSIS), and '///'
+  scans as an ordinary '//' line COMMENT. Do NOT emit QUESTION/FAT_ARROW/ELLIPSIS/
+  DOC_COMMENT or attach trivia here; that is US-013's job.
+- Files changed:
+  - internal/lexer/lexer.go (Lexer + New/Next/Tokens + scan methods)
+  - internal/lexer/lexer_test.go (multi-line position test = the AC; plus
+    keyword/ident, literals, longest-match operators, ILLEGAL, comments)
+  - history/20260627-feature-us-012-lex-core-go-tokens-with-positions/ (initiative)
+- Commit: 799f761
+- Learnings for future iterations:
+  - The multi-line acceptance test pins exact Offset/Line/Col per token by hand;
+    when editing the sample, recompute byte offsets carefully (blank lines and
+    leading tabs each advance offset by 1; tab is one byte column).
+  - next() applies the pending newline's line/col bump at the START of the call
+    (when the just-consumed ch was '\n'), so a token's Pos is captured before any
+    newline is crossed — keep that ordering if you touch the cursor.
+  - US-013 extends THIS lexer: fold '=>'→FAT_ARROW and '...'→ELLIPSIS into
+    scanOperator, emit '?'→QUESTION (currently ILLEGAL), and special-case '///'
+    in the comment path to DOC_COMMENT, retaining comment text as trivia.
+---
