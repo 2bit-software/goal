@@ -1,5 +1,51 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T07:30:00Z] - US-023
+- Proved US-023 "Route runtime IO through cap": the goscript interpreter's host
+  effects now flow through a cap.CapabilitySet instead of touching the OS
+  directly. The default Run path runs with FULL authority (cap.GrantAll), and
+  the standard-output effect targets a CONFIGURABLE sink (defaulting to
+  os.Stdout) so a host — or a test — can capture what a program prints. The one
+  existing effect site (fmt.Println) is routed through the new gate; the future
+  time/env reads reuse the same seam. Denial-to-error is the NEXT story (US-024):
+  here the not-granted branch performs no write and returns nil.
+- internal/interp/interp.go: Interp gained `caps cap.CapabilitySet` + `stdout
+  io.Writer`. New is now `New(file, info, opts ...Option)` — it defaults
+  caps=cap.GrantAll() and stdout=os.Stdout, then applies options (existing 2-arg
+  call sites are unaffected by the variadic). Added `type Option func(*Interp)`
+  with `WithCapabilities` / `WithStdout`, and the capability gate
+  `emitStdout(write func(io.Writer) error) error` — writes through ip.stdout only
+  when caps.Has(cap.Stdout) (nil-sink falls back to os.Stdout). Imports gained
+  io, os, goal/internal/cap.
+- internal/interp/host.go: removed the effectful "fmt.Println" entry from the
+  pure package-level hostFuncs registry (a pure func can't reach the interpreter
+  sink/caps) and intercepted it in evalHostCall, routing it through
+  ip.emitStdout(func(w io.Writer){ fmt.Fprintln(w, goArgs(args)...) }). Swapped
+  the os import for io. The pure shims (Sprintf/Sprint/Errorf/errors.New) stay in
+  the registry; the unresolved-symbol refusal path is unchanged.
+- internal/interp/cap_io_test.go (new): TestPrintlnUnderGrantAllWritesToSink
+  (fmt.Println("hello", 42) under GrantAll captured to a bytes.Buffer ==
+  "hello 42\n"), TestNewDefaultsGrantAllCapabilities (default Interp grants all 8
+  capabilities), TestEmitStdoutRoutesThroughConfiguredSink (gate writes a
+  sentinel to the configured sink, independent of the shim). stdlib testing, no
+  testify.
+- prd.json (US-023 passes:true), progress.txt
+- history/20260627-feature-us-023-route-runtime-io-through-cap/ (initiative)
+- Learnings for future iterations:
+  - The capability seam for ALL interpreter host effects is Interp.emitStdout
+    (and its future siblings emitTime/emitEnv): consult ip.caps.Has(cap.X) and,
+    when granted, perform the effect through the interpreter-held sink. US-024
+    (deny -> located, named error) only needs to turn the not-granted branch
+    into a refusal; the routing already exists. US-026 (CLI) injects authority /
+    sink via the New(...) Option list (WithCapabilities/WithStdout).
+  - An EFFECTFUL host shim cannot live in the pure package-level hostFuncs map
+    (it can't see the interpreter's sink/caps) — intercept it by key in
+    evalHostCall and route through the gate. Pure value-producing shims stay in
+    the registry. Add new effectful stdlib symbols the same way.
+  - cap.GrantAll/Has/Capability is dependency-free, so importing internal/cap
+    does NOT breach the US-022 no-go/types/no-typecheck dependency gate
+    (TestInterpHasNoGoTypesOrTypecheckDep stays green).
+
 ## [2026-06-28T06:45:00Z] - US-022
 - Proved US-022 "Gate interp on native sema only": the goscript interpreter's
   Run() now validates the program through the NATIVE sema checks BEFORE any
@@ -315,6 +361,17 @@
   implements/question/closed/assert/convert) — any pre-run static guard reuses
   it. internal/interp must NEVER depend on go/types or internal/typecheck
   (TestInterpHasNoGoTypesOrTypecheckDep pins this via `go list -deps`).
+- The goscript interpreter's host effects are CAPABILITY-MEDIATED (US-023):
+  Interp carries `caps cap.CapabilitySet` + a configurable `stdout io.Writer`,
+  constructed via `New(file, info, opts ...Option)` (defaults cap.GrantAll() +
+  os.Stdout; WithCapabilities/WithStdout override). Every stdout effect flows
+  through `emitStdout(write func(io.Writer) error)` — it writes through ip.stdout
+  only when caps.Has(cap.Stdout). An EFFECTFUL stdlib shim (fmt.Println) cannot
+  live in the pure package-level hostFuncs map — it is intercepted by key in
+  evalHostCall and routed through the gate; pure value shims stay in the registry.
+  Future effects (time/env) reuse the same emit-gate pattern; US-024 turns the
+  not-granted branch into a located, named refusal. cap is dependency-free, so it
+  does not breach the US-022 dependency gate.
 - PARSER: no semicolon is inserted after a BARE `return` before a newline, so a
   `=> return` match arm followed by another arm swallows the next arm's pattern
   ("expected IDENT, found =>"). In a multi-arm fixture use a block-body arm

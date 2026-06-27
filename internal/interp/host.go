@@ -8,13 +8,16 @@ package interp
 // explicit, LOCATED, NAMED refusal rather than a silent nil — an unshimmed
 // stdlib symbol must fail loudly and by name.
 //
-// Host effects are not yet capability-mediated: fmt.Println writes os.Stdout
-// directly. US-023 routes these effects through a cap.CapabilitySet.
+// Host effects are capability-mediated (US-023): the effectful fmt.Println is
+// NOT a pure registry shim — it needs the interpreter's configurable sink and
+// capability set — so evalHostCall routes it through ip.emitStdout (gated by
+// cap.Stdout). The pure value-producing shims (Sprintf/Sprint/Errorf/errors.New)
+// stay in the package-level registry below.
 
 import (
 	"errors"
 	"fmt"
-	"os"
+	"io"
 
 	"goal/internal/ast"
 )
@@ -40,11 +43,9 @@ var hostFuncs = map[string]hostFunc{
 	"fmt.Sprint": func(args []Value) ([]Value, error) {
 		return []Value{StrVal(fmt.Sprint(goArgs(args)...))}, nil
 	},
-	"fmt.Println": func(args []Value) ([]Value, error) {
-		// US-023 will route this through cap; for now write straight to stdout.
-		fmt.Fprintln(os.Stdout, goArgs(args)...)
-		return nil, nil
-	},
+	// fmt.Println is an EFFECT, not a pure shim: it is intercepted in
+	// evalHostCall and routed through ip.emitStdout (cap.Stdout-gated), so it is
+	// deliberately absent from this pure registry.
 	"fmt.Errorf": func(args []Value) ([]Value, error) {
 		if len(args) < 1 {
 			return nil, fmt.Errorf("interp: fmt.Errorf expects at least 1 argument, got %d", len(args))
@@ -132,6 +133,16 @@ func (ip *Interp) evalHostCall(sel *ast.SelectorExpr, call *ast.CallExpr, scope 
 			return nil, err
 		}
 		args[i] = v
+	}
+
+	// Effectful host calls are mediated by the capability model rather than the
+	// pure registry: fmt.Println is a stdout EFFECT routed through emitStdout
+	// (gated by cap.Stdout) so it reaches the interpreter's configurable sink.
+	if key == "fmt.Println" {
+		return nil, ip.emitStdout(func(w io.Writer) error {
+			_, err := fmt.Fprintln(w, goArgs(args)...)
+			return err
+		})
 	}
 
 	fn, ok := hostFuncs[key]

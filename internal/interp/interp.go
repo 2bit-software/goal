@@ -15,11 +15,14 @@ package interp
 import (
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 
 	"goal/internal/ast"
+	"goal/internal/cap"
 	"goal/internal/sema"
 	"goal/internal/token"
 )
@@ -106,6 +109,37 @@ type Interp struct {
 	// the `from` conversion), or `Option.None`. A `?` with no propagating
 	// enclosing function is a loud refusal, never a silent value.
 	fnStack []sema.FuncSig
+
+	// caps is the capability/authority set that mediates every host effect the
+	// interpreter performs (REWRITE-ARCHITECTURE.md §4: goscript restricts power
+	// by what the host grants, not by a different grammar). The default run path
+	// grants everything (cap.GrantAll); a host opts into denial. Effect sites
+	// (emitStdout, and the future time/env reads) consult this set rather than
+	// touching the OS directly.
+	caps cap.CapabilitySet
+
+	// stdout is the configurable sink for the standard-output effect, defaulting
+	// to os.Stdout. Routing the effect through this writer (instead of an
+	// unconditional os.Stdout) lets a host — or a test — capture what a program
+	// prints. The write is still gated by cap.Stdout (emitStdout).
+	stdout io.Writer
+}
+
+// Option configures an interpreter at construction. Options are applied after
+// the defaults (full authority + os.Stdout), so an explicit WithStdout /
+// WithCapabilities overrides the default.
+type Option func(*Interp)
+
+// WithCapabilities sets the capability set that mediates the interpreter's host
+// effects. Without it the interpreter runs with full authority (cap.GrantAll).
+func WithCapabilities(s cap.CapabilitySet) Option {
+	return func(ip *Interp) { ip.caps = s }
+}
+
+// WithStdout sets the sink the standard-output effect writes to. Without it the
+// interpreter writes to os.Stdout.
+func WithStdout(w io.Writer) Option {
+	return func(ip *Interp) { ip.stdout = w }
 }
 
 // New constructs an interpreter over the shared AST + sema front-end. file is the
@@ -116,12 +150,40 @@ type Interp struct {
 // the root scope as a callable function value BEFORE evaluation begins, so a
 // function is visible to its own body (recursion), to forward references, and to
 // unit tests that evaluate a call against the root scope.
-func New(file *ast.File, info *sema.Info) *Interp {
+func New(file *ast.File, info *sema.Info, opts ...Option) *Interp {
 	ip := &Interp{file: file, info: info, root: NewEnv(), methods: map[string]map[string]*ast.FuncDecl{}, imports: map[string]string{}, derives: map[string]*ast.FuncDecl{}}
+	// Defaults: full authority, writing to the process stdout. A host narrows
+	// authority or redirects the sink via options (applied after the defaults).
+	ip.caps = cap.GrantAll()
+	ip.stdout = os.Stdout
+	for _, opt := range opts {
+		if opt != nil {
+			opt(ip)
+		}
+	}
 	ip.registerImports()
 	ip.registerFuncs()
 	ip.registerMethods()
 	return ip
+}
+
+// emitStdout routes a standard-output write through the cap.Stdout authority:
+// when the interpreter's capability set grants Stdout it performs
+// write(ip.stdout) (the configurable sink), returning write's error; when
+// Stdout is NOT granted it performs no write and returns nil. Turning the
+// not-granted branch into a located, named capability-denied refusal is the
+// next story (US-024); here the routing seam exists and the default GrantAll
+// authority performs the effect. It is the single seam every stdout effect
+// (today the fmt-family writes) flows through.
+func (ip *Interp) emitStdout(write func(io.Writer) error) error {
+	if !ip.caps.Has(cap.Stdout) {
+		return nil
+	}
+	w := ip.stdout
+	if w == nil {
+		w = os.Stdout
+	}
+	return write(w)
 }
 
 // registerImports records every import's local name -> import path, so a

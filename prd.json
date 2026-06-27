@@ -281,7 +281,7 @@
         "A unit test runs a program that prints under GrantAll and captures the expected stdout through the capability sink"
       ],
       "priority": 23,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
