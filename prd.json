@@ -281,8 +281,8 @@
         "A test parses the 10-assert, 11-doctests, and 12-derive-convert example inputs and asserts their nodes"
       ],
       "priority": 23,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Parser now parses from/derive func modifiers (reusing FuncDecl.Mod/ModPos + optional body), assert (bare + printf-message, top-level-comma split), and /// doctests as structured nodes (DocComment/Doctest attached to FuncDecl.Doc). New ast.AssertStmt. DOC_COMMENT tokens are retained in the stream (not stripped) and collected before each decl."
     },
     {
       "id": "US-024",

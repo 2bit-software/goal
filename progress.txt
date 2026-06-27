@@ -26,6 +26,11 @@
   (one that reads Case.Input as a single file) MUST also guard
   `c.Mode == ModeFile`, or it will misread a package fixture's directory Input.
   Package cases run through corpus.RunPackage (Mode=package) only.
+- internal/parser's newParser strips ONLY token.COMMENT; token.DOC_COMMENT (`///`)
+  is RETAINED in the token stream and collected before each top-level decl
+  (collectDoc) to attach as ast.FuncDecl.Doc. Any new parser loop that scans
+  tokens must skip a stray DOC_COMMENT (parseBlock already does) — they otherwise
+  only appear at top level before a declaration.
 
 ## [2026-06-27T01:56:33Z] - US-001
 - Implemented internal/corpus: a runner-independent Case model and JSON manifest
@@ -804,4 +809,50 @@
   - US-023 (from/derive func decls, assert, doctests) is the next unpassed story;
     to_storage.goal's `...derive(e)` already parses, but its `from func`/`derive
     func` declarations are US-023's grammar.
+---
+
+## [2026-06-27T05:19:00Z] - US-023
+- Completed the parser grammar (Phase 1.4): from/derive func modifiers, assert
+  statements (bare + printf-message), and /// doctest comments as structured AST
+  nodes. The 10-assert, 11-doctests, and 12-derive-convert example inputs now
+  parse with zero errors and their nodes are asserted.
+- AST: new internal/ast/goal_stmt.go declares AssertStmt (a Stmt:
+  Assert/Cond/Comma/Msg/Args), DocComment (a support Node: Slash/Lines/Doctests),
+  and Doctest (plain data: Input/Expected). FuncDecl gained a Doc *DocComment
+  field (added as the FIRST field; all ast literals are keyed so this is safe).
+  walk.go got an AssertStmt case (Cond/Msg/Args), a DocComment case (no children),
+  and FuncDecl now descends into Doc.
+- Parser: newParser now strips ONLY token.COMMENT and KEEPS token.DOC_COMMENT in
+  the stream. parseFile collects a leading DOC_COMMENT run via collectDoc() before
+  each decl and attaches it to the following FuncDecl. parseBlock defensively
+  skips a stray DOC_COMMENT inside a body. parseStmt got a token.ASSERT case;
+  parseDecl's default arm dispatches `from func`/`derive func` (contextual IDENT +
+  peek FUNC) to parseModFuncDecl, which reuses parseFuncDecl (bodyless falls out
+  because parseFuncDecl only sets Body when a `{` follows). goal_stmt.go holds
+  parseAssertStmt, parseModFuncDecl, collectDoc, stripDocPrefix, extractDoctests.
+- Files changed:
+  - internal/ast/goal_stmt.go (new), internal/ast/ast.go (FuncDecl.Doc),
+    internal/ast/walk.go (AssertStmt/DocComment cases + FuncDecl.Doc descent)
+  - internal/parser/goal_stmt.go (new), internal/parser/parser.go (newParser
+    filter, parseFile doc attach, parseBlock skip, parseStmt ASSERT, parseDecl
+    from/derive dispatch)
+  - internal/parser/goal_stmt_test.go (new: assert/from-derive/doctest/Walk tests)
+  - prd.json (US-023 passes:true)
+  - history/20260627-feature-us-023-parse-from-derive-assert-doctests/ (initiative)
+- Commit: c7a4edf
+- Learnings for future iterations:
+  - assert's message split is FREE: parseExpr halts at a top-level comma (comma is
+    not a binary op), so call-internal commas (clamp(lo,hi,n)) stay in Cond and
+    only the first top-level comma starts the printf message. No manual
+    comma-balancing needed.
+  - from/derive needed NO new func-decl parsing: the modifier is a contextual
+    IDENT consumed before parseFuncDecl, and bodyless derive funcs work because
+    parseFuncDecl only attaches a Body when `{` follows the signature.
+  - DOC_COMMENT is now RETAINED in the parser token stream (newParser strips only
+    COMMENT). Any new parser loop that didn't expect doc-comment tokens must skip
+    them (parseBlock already does); they otherwise appear only at top level before
+    a decl, where collectDoc consumes them. extractDoctests is path/number-free
+    (content-driven on `>>>`), consistent with the corpus anti-hardcoding rule.
+  - US-024 (parse 100% of corpus) is next: with US-023 done the full goal grammar
+    parses; US-024 gates every manifest .goal input parsing with zero errors.
 ---
