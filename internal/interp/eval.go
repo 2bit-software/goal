@@ -14,6 +14,7 @@ package interp
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"goal/internal/ast"
 	"goal/internal/sema"
@@ -269,7 +270,19 @@ func (ip *Interp) evalCompositeLit(c *ast.CompositeLit, scope *Env) (Value, erro
 		return MapVal(entries), nil
 	case *ast.Ident:
 		fields := make(map[string]Value, len(c.Elts))
+		wantDefaults := false
 		for _, elt := range c.Elts {
+			// `...defaults` (feature 08, no-zero-value): a spread element that
+			// fills the struct's OMITTED fields with their safe zero values. A
+			// non-defaults spread (`...derive`) is a separate story — refuse it
+			// loudly rather than ignore it.
+			if sp, ok := elt.(*ast.SpreadElement); ok {
+				if id, ok := sp.X.(*ast.Ident); ok && id.Name == "defaults" {
+					wantDefaults = true
+					continue
+				}
+				return Value{}, fmt.Errorf("interp: %s: unsupported spread element in %s literal (only ...defaults is supported)", sp.Pos(), t.Name)
+			}
 			kv, ok := elt.(*ast.KeyValueExpr)
 			if !ok {
 				return Value{}, fmt.Errorf("interp: struct literal %s requires keyed field: value elements", t.Name)
@@ -284,10 +297,106 @@ func (ip *Interp) evalCompositeLit(c *ast.CompositeLit, scope *Env) (Value, erro
 			}
 			fields[name.Name] = val
 		}
+		if wantDefaults {
+			if err := ip.fillDefaults(t.Name, fields, c.Pos()); err != nil {
+				return Value{}, err
+			}
+		}
 		return StructVal(t.Name, fields), nil
 	default:
 		return Value{}, fmt.Errorf("interp: unsupported composite literal type %T", c.Type)
 	}
+}
+
+// fillDefaults expands a `...defaults` spread: every declared field of struct
+// typeName that the literal did not set explicitly (absent from fields) is
+// filled with its safe runtime zero value (FR-1/FR-2/FR-3). The declared fields
+// come from the resolved front-end (sema.Info.Structs); an unknown struct type
+// is a located refusal rather than a silent empty fill (in a valid program the
+// front-end has already resolved the type). The static guarantee that unsafe-
+// zero fields are set explicitly is enforced by internal/sema, not here — so
+// every field this fills has a safe zero by construction.
+func (ip *Interp) fillDefaults(typeName string, fields map[string]Value, pos token.Pos) error {
+	decl, ok := ip.structFields(typeName)
+	if !ok {
+		return fmt.Errorf("interp: %s: cannot expand ...defaults: unknown struct type %s", pos, typeName)
+	}
+	for _, f := range decl {
+		if _, set := fields[f.Name]; set {
+			continue
+		}
+		fields[f.Name] = ip.zeroValue(f.Type, 0)
+	}
+	return nil
+}
+
+// structFields returns the declared fields of the named (star/qualifier-stripped)
+// struct type from the resolved sema info, nil-safe.
+func (ip *Interp) structFields(typeName string) ([]sema.Field, bool) {
+	if ip.info == nil || ip.info.Structs == nil {
+		return nil, false
+	}
+	f, ok := ip.info.Structs[baseTypeName(typeName)]
+	return f, ok
+}
+
+// zeroValue returns the runtime zero Value for a declared sema type string,
+// mirroring the Go backend's zeroLit (internal/backend/lower.go): the empty
+// string for string, false for bool, 0 for integer/float numeric kinds, the nil
+// value for reference types (pointer, map, channel, function, method-bearing
+// interface, any, error), an empty slice for a slice type, and a recursively
+// zero-filled struct for a named in-file struct. depth guards struct/alias
+// nesting. The interpreter erases static types, so the zero is derived from the
+// sema type string rather than a Go type — and this reads only sema facts, never
+// internal/backend, keeping the US-022 dependency envelope clean.
+func (ip *Interp) zeroValue(typ string, depth int) Value {
+	typ = strings.TrimSpace(typ)
+	switch {
+	case strings.HasPrefix(typ, "[]"):
+		// A slice's zero is an (empty) slice so range/len/append stay valid.
+		return SliceVal()
+	case strings.HasPrefix(typ, "*"), strings.HasPrefix(typ, "map["),
+		strings.HasPrefix(typ, "chan"), strings.HasPrefix(typ, "func"),
+		strings.HasPrefix(typ, "interface"), typ == "any", typ == "error":
+		return NilVal()
+	}
+	switch typ {
+	case "string":
+		return StrVal("")
+	case "bool":
+		return BoolVal(false)
+	case "int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+		"byte", "rune":
+		return IntVal(0)
+	case "float32", "float64", "complex64", "complex128":
+		return FloatVal(0)
+	}
+	// A named type: a recursively zero-filled struct when it resolves to one of
+	// the program's struct types; otherwise a nil value (an external/alias name
+	// with no resolvable struct form).
+	if depth < 8 {
+		if decl, ok := ip.structFields(typ); ok {
+			inner := make(map[string]Value, len(decl))
+			for _, f := range decl {
+				inner[f.Name] = ip.zeroValue(f.Type, depth+1)
+			}
+			return StructVal(baseTypeName(typ), inner)
+		}
+	}
+	return NilVal()
+}
+
+// baseTypeName strips a leading "*" and any "pkg." qualifier from a sema type
+// string, yielding the bare type name used to key sema.Info.Structs. It mirrors
+// scan.BaseType so internal/interp need not import internal/scan or
+// internal/backend.
+func baseTypeName(t string) string {
+	t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
+	if i := strings.LastIndexByte(t, '.'); i >= 0 {
+		t = t[i+1:]
+	}
+	return t
 }
 
 // evalSelector evaluates a field selector x.field. A data-less enum variant
