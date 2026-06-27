@@ -7,6 +7,7 @@ import (
 
 	"goal/internal/ast"
 	"goal/internal/sema"
+	"goal/internal/token"
 )
 
 // emitter renders the plain-Go subset of the goal AST to Go source text. It is
@@ -64,13 +65,25 @@ type emitter struct {
 	// zero recovery can resolve a field type through alias chains. Built once per
 	// file by buildTypeDecls; the AST-native replacement for analyze's TypeDecls.
 	typeDecls map[string]string
+	// suppressPrelude tells file() not to emit the closed-E Result prelude inline.
+	// The package driver sets it so the shared prelude is emitted once for the whole
+	// package (in goal_prelude.go) rather than once per file. False for single-file.
+	suppressPrelude bool
 }
 
 // emitFile renders a whole *ast.File to Go source text, lowering goal-specific
 // constructs through info, or returns the first unsupported-node error
 // encountered.
 func emitFile(f *ast.File, info *sema.Info) (string, error) {
-	e := emitter{info: info, pointerRecv: pointerReceiverSet(f), fileIdents: fileIdentSet(f)}
+	return emitFileWith(f, info, false)
+}
+
+// emitFileWith is emitFile with the prelude-suppression knob the package driver
+// uses: when suppressPrelude is true, the closed-E Result prelude is NOT emitted
+// inline (the package emits one shared prelude instead). Single-file emit passes
+// false.
+func emitFileWith(f *ast.File, info *sema.Info, suppressPrelude bool) (string, error) {
+	e := emitter{info: info, pointerRecv: pointerReceiverSet(f), fileIdents: fileIdentSet(f), suppressPrelude: suppressPrelude}
 	e.typeDecls = e.buildTypeDecls(f)
 	e.file(f)
 	if e.err != nil {
@@ -138,7 +151,7 @@ func (e *emitter) file(f *ast.File) {
 	// (resultPrelude, §8.1) must be in scope. It is emitted once, after the import
 	// declarations (imports must precede other decls) and before the first non-import
 	// declaration that may use it.
-	preludeDone := !needsResultPrelude(e.info)
+	preludeDone := e.suppressPrelude || !needsResultPrelude(e.info)
 	for _, d := range f.Decls {
 		if !preludeDone && !isImportDecl(d) {
 			e.p(resultPrelude)
@@ -511,6 +524,13 @@ func (e *emitter) stmt(s ast.Stmt) {
 			e.expr(s.X)
 		}
 	case *ast.AssignStmt:
+		// `name := match …` over an enum lowers to a `var name T` declaration (T
+		// inferred from the arm bodies) followed by a value-position type-switch whose
+		// arms assign `name = <body>`. Mirrors the explicitly-typed `var name T = match`
+		// form (tryVarMatch); the only difference is the result type is inferred.
+		if e.tryAssignMatch(s) {
+			return
+		}
 		// `name := expr?` / `_ := expr?` lowers the `?` propagation (§3.7, §8.3): the
 		// unwrapped value binds to name (or is discarded), the failure early-returns.
 		if len(s.Rhs) == 1 {
@@ -1324,6 +1344,91 @@ func (e *emitter) tryVarMatch(d ast.Decl) bool {
 	e.p("\n")
 	e.enumMatch(m, posVar, vs.Names[0].Name)
 	return true
+}
+
+// tryAssignMatch lowers a short-var/assignment `name := match …` (or `name =
+// match …`) over an enum: it infers the result type from the arm bodies, emits a
+// `var name T` declaration, then the value-position type-switch whose arms assign
+// `name = <body>`. It only claims a single-name, single-value assignment whose
+// value is an enum match with an inferable result type; any other assignment is
+// left for the ordinary `?`/assignment emitter. The inference mirrors
+// internal/pass.inferMatchType: the arms must all be one string literal, one bool
+// literal, or constructions of one and the same enum — a wrong guess would
+// silently miscompile, so anything else keeps the explicit deferral.
+func (e *emitter) tryAssignMatch(s *ast.AssignStmt) bool {
+	if len(s.Lhs) != 1 || len(s.Rhs) != 1 {
+		return false
+	}
+	id, ok := s.Lhs[0].(*ast.Ident)
+	if !ok {
+		return false
+	}
+	m, ok := s.Rhs[0].(*ast.MatchExpr)
+	if !ok || enumOf(e.info, matchQualifier(m)) == nil {
+		return false
+	}
+	typ, ok := e.inferMatchType(m)
+	if !ok {
+		e.fail("value-position `%s := match` needs an inferable result type (arms are not all one enum, string, or bool); annotate it as `var %s T = match ...` or use `return match ...`", id.Name, id.Name)
+		return true
+	}
+	e.p("var " + id.Name + " " + typ + "\n")
+	e.enumMatch(m, posVar, id.Name)
+	return true
+}
+
+// inferMatchType infers the result type of a value-position `name := match` from
+// its arm bodies, for the bounded set of shapes whose type is recoverable
+// structurally: every arm (rest included) must be a string literal, a bool
+// literal, or a construction of one and the same enum, and all arms must agree.
+// It returns ("", false) for anything else so the caller keeps the located
+// deferral rather than guess. Mirrors internal/pass.inferMatchType over the AST.
+func (e *emitter) inferMatchType(m *ast.MatchExpr) (string, bool) {
+	inferred := ""
+	for _, arm := range m.Arms {
+		kind, ok := e.armBodyType(arm.Body)
+		if !ok {
+			return "", false
+		}
+		switch {
+		case inferred == "":
+			inferred = kind
+		case inferred != kind:
+			return "", false
+		}
+	}
+	return inferred, inferred != ""
+}
+
+// armBodyType classifies one match arm body into a result type, for the inferable
+// shapes only: a lone string literal -> "string", a lone true/false -> "bool", and
+// a whole-body enum construction (`Enum.Variant` SelectorExpr or `Enum.Variant(…)`
+// VariantLit of a resolved enum) -> the enum's name. Any other body (numeric,
+// identifier, call, compound expression) is not inferable.
+func (e *emitter) armBodyType(body ast.Node) (string, bool) {
+	switch b := body.(type) {
+	case *ast.BasicLit:
+		if b.Kind == token.STRING {
+			return "string", true
+		}
+	case *ast.Ident:
+		if b.Name == "true" || b.Name == "false" {
+			return "bool", true
+		}
+	case *ast.SelectorExpr:
+		// A data-less variant reference `Enum.Variant`.
+		if base, ok := b.X.(*ast.Ident); ok && b.Sel != nil {
+			if en := enumOf(e.info, base.Name); en != nil && en.VSet[b.Sel.Name] {
+				return base.Name, true
+			}
+		}
+	case *ast.VariantLit:
+		// A payload variant construction `Enum.Variant(field: v)`.
+		if enum, ok := b.Enum.(*ast.Ident); ok && enumOf(e.info, enum.Name) != nil {
+			return enum.Name, true
+		}
+	}
+	return "", false
 }
 
 // emitResultReturn lowers `return Result.Ok(X)` -> `return X, nil` and

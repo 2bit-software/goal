@@ -63,6 +63,8 @@ func Check(file *ast.File, info *Info) []Diagnostic {
 	diags = append(diags, CheckImplements(file, info)...)
 	diags = append(diags, CheckQuestion(file, info)...)
 	diags = append(diags, CheckClosed(file, info)...)
+	diags = append(diags, CheckAssert(file, info)...)
+	diags = append(diags, CheckConvert(file, info)...)
 	return diags
 }
 

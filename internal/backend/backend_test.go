@@ -861,3 +861,98 @@ func readFixture(t *testing.T) string {
 	}
 	return string(b)
 }
+
+// TestASTEngineAssignMatchBehavioralTier is the US-041 gap-1 witness: a
+// value-position `name := match …` (a short-var assignment, not the explicitly
+// typed `var x T = match` US-036 already lowered) transpiles through the AST engine
+// and the generated Go builds + vets cleanly. The result type is inferred from the
+// arm bodies (here an enum and a string).
+func TestASTEngineAssignMatchBehavioralTier(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns the go toolchain; skipped under -short")
+	}
+	c := corpus.Case{
+		ID:    "match_infer_value",
+		Kind:  corpus.KindTranspile,
+		Mode:  corpus.ModeFile,
+		Input: "testdata/match_infer_value.goal",
+	}
+	if err := corpus.RunCompile(repoRoot, c, corpus.TranspilerFunc(backend.Transpile)); err != nil {
+		t.Fatalf("behavioral tier failed for value-position `:=` match: %v", err)
+	}
+}
+
+// TestASTEngineAssignMatchEncoding pins the gap-1 lowering: `name := match` over an
+// enum emits a `var name T` declaration (T inferred from the arms) followed by the
+// value-position type-switch whose arms assign `name = <body>`.
+func TestASTEngineAssignMatchEncoding(t *testing.T) {
+	src := mustRead(t, "../../testdata/match_infer_value.goal")
+	out, err := backend.Transpile(src)
+	if err != nil {
+		t.Fatalf("Transpile: %v", err)
+	}
+	for _, want := range []string{
+		"var label Label",
+		"label = Label(Label_Hot{})",
+		"var s string",
+		"s = \"red\"",
+		"switch c.(type)",
+	} {
+		if !strings.Contains(out.Go, want) {
+			t.Errorf("assign-match encoding missing %q in:\n%s", want, out.Go)
+		}
+	}
+}
+
+// astPackageCases are the Mode=package fixtures the US-041 gap-3 AST package driver
+// must carry: a cross-file demo (an enum and a closed-E Result split across two
+// files, needing the merged sema and one shared prelude) and a foreign-derive (a
+// `derive func` over an imported Go struct, needing foreign-import resolution).
+var astPackageCases = []struct {
+	id      string
+	dir     string
+	name    string
+	files   []string
+	imports map[string]string
+}{
+	{
+		id:    "cross-file-demo",
+		dir:   "testdata/package/cross-file-demo",
+		name:  "demo",
+		files: []string{"testdata/package/cross-file-demo/math.goal", "testdata/package/cross-file-demo/types.goal"},
+	},
+	{
+		id:      "foreign-derive",
+		dir:     "testdata/package/foreign-derive",
+		name:    "conv",
+		files:   []string{"testdata/package/foreign-derive/conv.goal"},
+		imports: map[string]string{"goal/internal/pipeline/testdata/extpkg": "internal/pipeline/testdata/extpkg"},
+	},
+}
+
+// TestASTEnginePackageBehavioralTier is the US-041 gap-3 witness: each package
+// fixture is lowered cross-file through the AST package driver (one merged sema, a
+// single shared prelude, foreign imports wired in) and the resulting package builds.
+func TestASTEnginePackageBehavioralTier(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns the go toolchain; skipped under -short")
+	}
+	for _, pc := range astPackageCases {
+		t.Run(pc.id, func(t *testing.T) {
+			c := corpus.Case{
+				ID:    pc.id,
+				Kind:  corpus.KindTranspile,
+				Mode:  corpus.ModePackage,
+				Input: pc.dir,
+				Package: &corpus.PackageSpec{
+					Name:    pc.name,
+					Files:   pc.files,
+					Imports: pc.imports,
+				},
+			}
+			if err := corpus.RunPackage(repoRoot, c, corpus.PackageTranspilerFunc(backend.TranspilePackage)); err != nil {
+				t.Fatalf("package behavioral tier failed: %v", err)
+			}
+		})
+	}
+}

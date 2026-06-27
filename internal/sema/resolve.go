@@ -10,11 +10,41 @@ package sema
 // so the comma never confuses the resolver.
 
 import (
+	"maps"
 	"strings"
 
 	"goal/internal/ast"
 	"goal/internal/token"
 )
+
+// ResolvePackage walks every file of a goal package and returns one merged Info,
+// so a file resolves enums/structs/from-funcs/signatures/methods declared in a
+// sibling. It is the AST analogue of analyze.BuildPackage: the package driver
+// threads the merged facts through every file's emit, so a cross-file reference
+// (e.g. a `match` over an enum declared in another file) lowers correctly. Files
+// are merged in the given order; on a duplicate key the last file wins (a genuine
+// redeclaration is a Go error the toolchain reports), mirroring analyze.Merge.
+func ResolvePackage(files []*ast.File) *Info {
+	merged := Resolve(nil) // an empty, fully-initialized Info
+	for _, f := range files {
+		merged.Merge(Resolve(f))
+	}
+	return merged
+}
+
+// Merge unions o's name-keyed facts into info (last-merged-wins on a shared key),
+// mirroring analyze.Tables.Merge so the AST package driver coheres a package the
+// same way the splice driver does.
+func (info *Info) Merge(o *Info) {
+	maps.Copy(info.FuncSignatures, o.FuncSignatures)
+	maps.Copy(info.Enums, o.Enums)
+	maps.Copy(info.Sealed, o.Sealed)
+	maps.Copy(info.Structs, o.Structs)
+	maps.Copy(info.FromRegistry, o.FromRegistry)
+	maps.Copy(info.Methods, o.Methods)
+	maps.Copy(info.Interfaces, o.Interfaces)
+	maps.Copy(info.EmbeddedIfaces, o.EmbeddedIfaces)
+}
 
 // Resolve walks a parsed file and returns its name-keyed semantic facts. The
 // returned Info has every map initialized (safe to read even when empty). An

@@ -1792,3 +1792,61 @@
     consumer (US-045 goal fmt, LSP) should read ast.FuncDecl.Doc.Doctests rather
     than re-scanning `///` lines.
 ---
+
+## [2026-06-27T18:00:00Z] - US-041
+- Closed the 3 prior under-scoped gaps on the AST path, then made the
+  whole-corpus behavioral parity gate pass legitimately (108/108, all tiers).
+- Gap 1 — value-position `:=` match: internal/backend/emit.go AssignStmt case now
+  calls tryAssignMatch, which infers the result type from the arm bodies
+  (inferMatchType/armBodyType, mirroring internal/pass.inferMatchType: arms must
+  all be one string literal, one bool literal, or constructions of one and the
+  same enum) and emits `var name T` + the existing posVar value-position
+  type-switch. `x := match` finally lowers (testdata/match_infer_value).
+- Gap 2 — assert-static + derive diagnostics ported onto the AST in internal/sema:
+  - internal/sema/assert.go CheckAssert: constant-folds a bare bool literal or an
+    int-literal comparison; always-false -> Error, always-true -> Warning.
+  - internal/sema/convert.go CheckConvert: derive-convert totality over the
+    AST (file.Decls FuncDerive) + Info.Structs/FromRegistry; unsourced/unbridged/
+    fallible-in-total Errors, deferral Warnings.
+  - Both wired into sema.Check; messages mirror internal/check/{assert,convert}.go
+    verbatim so the testdata/check/10-assert + 12-derive-convert // want markers
+    pass through the sema/AST checker (corpus SemaCheck).
+- Gap 3 — AST package-mode transpiler:
+  - internal/sema.ResolvePackage + (*Info).Merge: resolve each file and union the
+    name-keyed facts (the analyze.BuildPackage/Merge analogue) so a file lowers a
+    match/derive/`?` over an enum/struct/signature declared in a sibling.
+  - internal/backend/package.go TranspilePackage (satisfies
+    corpus.PackageTranspiler): emits each file with the inline closed-E Result
+    prelude suppressed (new emitter.suppressPrelude + emitFileWith) and appends one
+    shared goal_prelude.go for the package; enrichForeign reuses
+    analyze.EnrichForeign (the one IO seam) to fold imported Go struct fields into
+    the merged sema.Info, so a foreign `derive func` (testdata/package/
+    foreign-derive, `*ext.Outer`) resolves its fields by name. cross-file-demo +
+    foreign-derive now build through the AST engine.
+- US-041 gate: internal/corpus/ast_gate_test.go
+  TestASTEngineWholeCorpusBehavioralGate runs EVERY one of the 108 manifest cases
+  through the AST engine at its behavioral tier (transpile->RunCompile,
+  package->RunPackage via backend.TranspilePackage, check->RunCheck via SemaCheck,
+  doctest->RunDoctestExec) with zero failures, and guards its own scope (must
+  cover every tier — a dropped tier fails the gate, so it can't be narrowed to
+  dodge). Plus TestSemaAssertRunner/TestSemaConvertRunner (corpus runner tests),
+  sema/{assert,convert}_test.go unit tests, and backend
+  TestASTEngineAssignMatch*/TestASTEnginePackageBehavioralTier.
+- Files changed: internal/backend/{emit.go,package.go,backend_test.go},
+  internal/sema/{assert.go,convert.go,check.go,resolve.go,assert_test.go,
+  convert_test.go}, internal/corpus/ast_gate_test.go, prd.json, progress.txt.
+- Learnings for future iterations:
+  - The corpus runner seams already exist for every tier; the AST engine just
+    needs functions of the right signature (Transpiler / PackageTranspiler /
+    Checker), so a whole-corpus AST gate is "route each case by kind/mode to its
+    runner with the AST adapter". No new runner machinery was needed.
+  - sema.Info now has Merge + ResolvePackage; any future cross-file AST consumer
+    (LSP workspace, package check) should merge per-file Info rather than
+    re-resolving a concatenation.
+  - Foreign-type loading stays in internal/analyze (EnrichForeign) — the explicit
+    IO seam. The AST package driver reuses it and converts analyze.Field ->
+    sema.Field, rather than re-implementing go/parser struct reading.
+  - Adding a sema check is: new file CheckX(file,info) returning []Diagnostic with
+    messages verbatim from internal/check for // want parity, then one line in
+    sema.Check. Same pattern as US-029/030/031.
+---
