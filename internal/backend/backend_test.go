@@ -493,6 +493,85 @@ func TestASTEngineEnumMatchEncoding(t *testing.T) {
 	}
 }
 
+// errorEClosedCases lists the 06-error-e transpile cases the US-037 lowering must
+// carry through the new backend: a closed-E `match`, a closed-E `?` with a matching
+// error type, and a closed-E `?` across error types via a `from func` conversion.
+var errorEClosedCases = []string{
+	"features/06-error-e/examples/qclosed_match.goal",
+	"features/06-error-e/examples/qclosed_prop_same.goal",
+	"features/06-error-e/examples/qclosed_prop_from.goal",
+}
+
+// TestASTEngineClosedResultBehavioralTier is US-037 AC2: every 06-error-e case
+// passes the behavioral tier (temp-module go build + go vet) through the new AST
+// backend, proving the closed-E Result lowering — the §8.1 Ok/Err sum prelude and
+// constructors, the closed match type-switch, and the closed `?` with From
+// conversion — produces build + vet-clean Go.
+func TestASTEngineClosedResultBehavioralTier(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns the go toolchain; skipped under -short")
+	}
+	if len(errorEClosedCases) == 0 {
+		t.Fatal("no error-E closed cases to run")
+	}
+	for _, input := range errorEClosedCases {
+		t.Run(input, func(t *testing.T) {
+			c := corpus.Case{
+				ID:    input,
+				Kind:  corpus.KindTranspile,
+				Mode:  corpus.ModeFile,
+				Input: input,
+			}
+			if err := corpus.RunCompile(repoRoot, c, corpus.TranspilerFunc(backend.Transpile)); err != nil {
+				t.Fatalf("behavioral tier failed: %v", err)
+			}
+		})
+	}
+}
+
+// TestASTEngineClosedResultEncoding pins the closed-E lowering shapes (US-037 AC1):
+// the generic Ok/Err sum prelude emitted once, the sum constructors carrying the
+// argument, the closed match type-switch over Ok[T,E]/Err[T,E], the closed `?`
+// type-switch, and the From-conversion invoked in the Err arm across error types.
+func TestASTEngineClosedResultEncoding(t *testing.T) {
+	cases := []struct {
+		file  string
+		wants []string
+	}{
+		{"../../features/06-error-e/examples/qclosed_match.goal", []string{
+			"type Result[T, E any] interface{ isResult() }",
+			"type Ok[T, E any] struct{ Value T }",
+			"return Err[Config, ParseError]{Value: ParseError(ParseError_Empty{})}",
+			"return Ok[Config, ParseError]{Value: Config{Raw: s}}",
+			"case Ok[Config, ParseError]:",
+			"case Err[Config, ParseError]:",
+			`panic("unreachable: non-exhaustive Result[Config, ParseError] (compiler invariant violated)")`,
+		}},
+		{"../../features/06-error-e/examples/qclosed_prop_same.goal", []string{
+			"var cfg Config",
+			"case Ok[Config, ParseError]:",
+			"return Err[Config, ParseError]{Value:",
+		}},
+		{"../../features/06-error-e/examples/qclosed_prop_from.goal", []string{
+			"func toApp(e ParseError) AppError {",
+			"return Err[Config, AppError]{Value: toApp(",
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.file, func(t *testing.T) {
+			out, err := backend.Transpile(mustRead(t, c.file))
+			if err != nil {
+				t.Fatalf("Transpile: %v", err)
+			}
+			for _, want := range c.wants {
+				if !strings.Contains(out.Go, want) {
+					t.Errorf("missing %q in:\n%s", want, out.Go)
+				}
+			}
+		})
+	}
+}
+
 func mustRead(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)

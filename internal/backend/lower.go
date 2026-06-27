@@ -44,10 +44,38 @@ func fileIdentSet(f *ast.File) map[string]bool {
 type roKind int
 
 const (
-	roNone       roKind = iota // not a Result/Option result
-	roResultOpen               // open-E Result[T, error] -> native (T, error)
-	roOption                   // Option[T] -> *T
+	roNone         roKind = iota // not a Result/Option result
+	roResultOpen                 // open-E Result[T, error] -> native (T, error)
+	roOption                     // Option[T] -> *T
+	roResultClosed               // closed-E Result[T, E] (E != error) -> Ok[T,E]/Err[T,E] sum
 )
+
+// resultPrelude is the generic sum encoding (spec §8.1) a closed-E Result program
+// needs in scope: the marker interface plus the Ok/Err carriers and their marker
+// methods. The emitter injects it once per file (see needsResultPrelude). It
+// mirrors internal/pass.ResultPreamble verbatim (a known-good, build+vet-clean
+// encoding); the format-once Formatter normalizes its layout.
+const resultPrelude = `type Result[T, E any] interface{ isResult() }
+type Ok[T, E any] struct{ Value T }
+type Err[T, E any] struct{ Value E }
+
+func (Ok[T, E]) isResult()  {}
+func (Err[T, E]) isResult() {}`
+
+// needsResultPrelude reports whether any function in info returns a closed-E
+// Result, i.e. whether the file needs resultPrelude in scope. Nil-safe. Mirrors
+// internal/pass.NeedsResultPrelude but reads the sema signatures.
+func needsResultPrelude(info *sema.Info) bool {
+	if info == nil {
+		return false
+	}
+	for _, sig := range info.FuncSignatures {
+		if sig.Mode == sema.ModeResultClosed {
+			return true
+		}
+	}
+	return false
+}
 
 // resultOptionKind classifies a function's single unnamed result type as open-E
 // Result, Option, or neither, and returns the success type expression (the T in

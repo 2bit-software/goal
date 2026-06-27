@@ -54,6 +54,11 @@ type emitter struct {
 	// and error return names (scope-aware, no `__goal_` prefix). A Result `?` and a
 	// `return Result.Ok/Err` propagate through them; empty outside such a function.
 	okName, errName string
+	// closedT / closedE are the current closed-E Result function's success and error
+	// type names (the T and E in Result[T, E], E != error). The closed-E sum
+	// constructors and `?` propagation render `Ok[closedT, closedE]{…}` /
+	// `Err[closedT, closedE]{…}` from them; empty outside a closed-E function.
+	closedT, closedE string
 }
 
 // emitFile renders a whole *ast.File to Go source text, lowering goal-specific
@@ -117,10 +122,32 @@ func (e *emitter) file(f *ast.File) {
 	e.p("package ")
 	e.p(f.Name.Name)
 	e.p("\n\n")
+	// When any function returns a closed-E Result, the generic sum encoding
+	// (resultPrelude, §8.1) must be in scope. It is emitted once, after the import
+	// declarations (imports must precede other decls) and before the first non-import
+	// declaration that may use it.
+	preludeDone := !needsResultPrelude(e.info)
 	for _, d := range f.Decls {
+		if !preludeDone && !isImportDecl(d) {
+			e.p(resultPrelude)
+			e.p("\n\n")
+			preludeDone = true
+		}
 		e.decl(d)
 		e.p("\n\n")
 	}
+	if !preludeDone {
+		// The file is all imports (or empty); emit the prelude after them.
+		e.p(resultPrelude)
+		e.p("\n\n")
+	}
+}
+
+// isImportDecl reports whether d is an `import` declaration (so the closed-E
+// prelude can be placed after imports but before other declarations).
+func isImportDecl(d ast.Decl) bool {
+	gd, ok := d.(*ast.GenDecl)
+	return ok && gd.Tok.String() == "import"
 }
 
 func (e *emitter) decl(d ast.Decl) {
@@ -276,24 +303,41 @@ func (e *emitter) spec(s ast.Spec) {
 }
 
 func (e *emitter) funcDecl(d *ast.FuncDecl) {
-	if d.Mod != ast.FuncPlain {
-		e.fail("unsupported func modifier %v (goal from/derive is a later story)", d.Mod)
+	switch d.Mod {
+	case ast.FuncPlain, ast.FuncFrom:
+		// A `from func` emits as an ordinary Go function: the `from` marker is
+		// compile-time only (its source->target registration lives in
+		// sema.FromRegistry), with no syntactic residue. Its body lowers through the
+		// ordinary emitter paths (e.g. a VariantLit construction).
+	default:
+		e.fail("unsupported func modifier %v (goal derive is a later story)", d.Mod)
 		return
 	}
 	// Enter the function's gensym scope: seed the collision set with the source's
 	// identifiers and, for an open-E Result function, mint the success/error return
 	// names up front so the signature and the body's `?`/match lowering reference
-	// them identically. All saved/restored so a sibling function starts clean (and
-	// a nested func literal cannot leak its kind or names outward).
+	// them identically. A closed-E Result function records its T/E so the sum
+	// constructors and `?` propagation render the Ok/Err carriers. All saved/restored
+	// so a sibling function starts clean (and a nested func literal cannot leak its
+	// kind or names outward).
 	kind, _ := resultOptionKind(d.Type)
+	var closedT, closedE string
+	if d.Name != nil && e.info != nil && e.info.FuncSignatures != nil {
+		if sig, ok := e.info.FuncSignatures[d.Name.Name]; ok && sig.Mode == sema.ModeResultClosed {
+			kind, closedT, closedE = roResultClosed, sig.T, sig.E
+		}
+	}
 	prevKind, prevOk, prevErr, prevTaken := e.fnKind, e.okName, e.errName, e.taken
+	prevClosedT, prevClosedE := e.closedT, e.closedE
 	e.fnKind, e.taken, e.okName, e.errName = kind, e.newScope(), "", ""
+	e.closedT, e.closedE = closedT, closedE
 	if kind == roResultOpen {
 		e.okName = e.gensym("ok")
 		e.errName = e.gensym("err")
 	}
 	defer func() {
 		e.fnKind, e.okName, e.errName, e.taken = prevKind, prevOk, prevErr, prevTaken
+		e.closedT, e.closedE = prevClosedT, prevClosedE
 	}()
 
 	e.p("func ")
@@ -794,6 +838,10 @@ func (e *emitter) returnStmt(s *ast.ReturnStmt) {
 			if e.emitOptionReturn(s.Results[0]) {
 				return
 			}
+		case roResultClosed:
+			if e.emitClosedResultReturn(s.Results[0]) {
+				return
+			}
 		}
 	}
 	e.p("return")
@@ -893,6 +941,37 @@ func (e *emitter) emitOptionReturn(x ast.Expr) bool {
 	return false
 }
 
+// emitClosedResultReturn lowers `return Result.Ok(X)` / `return Result.Err(X)` in
+// a closed-E Result function to the §8.1 sum constructor
+// `return Ok[T, E]{Value: X}` / `return Err[T, E]{Value: X}` (T/E are the enclosing
+// function's closedT/closedE). The argument X is emitted recursively, so a nested
+// construction (e.g. `ParseError.Empty`) lowers for free. It reports whether it
+// handled the expression.
+func (e *emitter) emitClosedResultReturn(x ast.Expr) bool {
+	call, ok := x.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel == nil {
+		return false
+	}
+	if base, ok := sel.X.(*ast.Ident); !ok || base.Name != "Result" {
+		return false
+	}
+	switch sel.Sel.Name {
+	case "Ok":
+		e.p(fmt.Sprintf("return Ok[%s, %s]{Value: ", e.closedT, e.closedE))
+	case "Err":
+		e.p(fmt.Sprintf("return Err[%s, %s]{Value: ", e.closedT, e.closedE))
+	default:
+		return false
+	}
+	e.exprList(call.Args)
+	e.p("}")
+	return true
+}
+
 // unwrap lowers a postfix `?` (ast.UnwrapExpr) at statement position: `name :=
 // expr?` binds the unwrapped value, a bare `expr?` or `_ := expr?` discards it,
 // and either way the enclosing function's failure (the Err / None) is
@@ -904,9 +983,45 @@ func (e *emitter) unwrap(name string, u *ast.UnwrapExpr, discard bool) {
 		e.unwrapResult(name, u, discard)
 	case roOption:
 		e.unwrapOption(name, u, discard)
+	case roResultClosed:
+		e.unwrapClosed(name, u, discard)
 	default:
-		e.fail("`?` outside a Result- or Option-returning function (open-E only; closed-E `?` is a later story)")
+		e.fail("`?` outside a Result- or Option-returning function")
 	}
+}
+
+// unwrapClosed lowers `?` in a closed-E Result function (§8.3 fork): it type-
+// switches the callee's Ok/Err sum, binds the unwrapped value into name on Ok, and
+// on Err returns the enclosing function's own closed-E Err carrying the failure.
+// When the callee's error type differs from the enclosing function's, the declared
+// `from func` conversion (sema.FromRegistry) is applied to the propagated value.
+func (e *emitter) unwrapClosed(name string, u *ast.UnwrapExpr, discard bool) {
+	sig, ok := e.calleeSig(u.X)
+	if !ok || sig.Mode != sema.ModeResultClosed {
+		e.fail("closed-E `?` needs a closed-E Result-returning callee")
+		return
+	}
+	guard := e.gensym("r")
+	errValue := guard + ".Value"
+	if sig.E != e.closedE {
+		conv, found := e.info.FromRegistry[[2]string{sig.E, e.closedE}]
+		if !found {
+			e.fail("no `from func` conversion declared for %s -> %s (required to `?` across closed error types)", sig.E, e.closedE)
+			return
+		}
+		errValue = conv.Name + "(" + guard + ".Value)"
+	}
+	lhs := name
+	if discard {
+		lhs = "_"
+	}
+	e.p("var " + lhs + " " + sig.T + "\n")
+	e.p("switch " + guard + " := ")
+	e.expr(u.X)
+	e.p(".(type) {\n")
+	e.p(fmt.Sprintf("case Ok[%s, %s]:\n%s = %s.Value\n", sig.T, sig.E, lhs, guard))
+	e.p(fmt.Sprintf("case Err[%s, %s]:\nreturn Err[%s, %s]{Value: %s}\n", sig.T, sig.E, e.closedT, e.closedE, errValue))
+	e.p(fmt.Sprintf("default:\npanic(%q)\n}", fmt.Sprintf("unreachable: non-exhaustive Result[%s, %s] (compiler invariant violated)", sig.T, sig.E)))
 }
 
 // unwrapResult lowers `?` in an open-E Result function: it destructures the
@@ -1106,7 +1221,7 @@ func (e *emitter) armWrap(body ast.Node, pos matchPos, name string) {
 // rename in emitResultReturn.
 func (e *emitter) resultMatch(m *ast.MatchExpr) {
 	if e.calleeMode(m.Subject) == sema.ModeResultClosed {
-		e.fail("closed-E Result match is a later story (US-037)")
+		e.closedResultMatch(m)
 		return
 	}
 	okArm, errArm := armByVariant(m, "Ok"), armByVariant(m, "Err")
@@ -1127,6 +1242,45 @@ func (e *emitter) resultMatch(m *ast.MatchExpr) {
 	e.p("\n} else {\n")
 	e.armBodyRenamed(okArm.Body, okBinding, val)
 	e.p("\n}")
+}
+
+// closedResultMatch lowers `match scrut { Result.Ok(b) => …; Result.Err(b) => … }`
+// where scrut is a closed-E Result call (§8.3 fork) to a type switch over the
+// Ok[T,E]/Err[T,E] sum. The carried value is aliased `binding := guard.Value` in
+// each arm that uses it; a guard variable is introduced only when some arm uses
+// its binding (an unused guard would not compile). T/E come from the scrutinee
+// callee's signature, and the impossible third case panics (§8.2 wording).
+func (e *emitter) closedResultMatch(m *ast.MatchExpr) {
+	sig, _ := e.calleeSig(m.Subject)
+	okArm, errArm := armByVariant(m, "Ok"), armByVariant(m, "Err")
+	if okArm == nil || errArm == nil {
+		e.fail("Result match must have both Result.Ok and Result.Err arms")
+		return
+	}
+	okBinding, errBinding := bindingName(okArm.Pattern), bindingName(errArm.Pattern)
+	okUse := okBinding != "" && usesIdent(okArm.Body, okBinding)
+	errUse := errBinding != "" && usesIdent(errArm.Body, errBinding)
+
+	guard := ""
+	e.p("switch ")
+	if okUse || errUse {
+		guard = e.gensym("r")
+		e.p(guard + " := ")
+	}
+	e.expr(m.Subject)
+	e.p(".(type) {\n")
+
+	e.p(fmt.Sprintf("case Ok[%s, %s]:\n", sig.T, sig.E))
+	if okUse {
+		e.p(okBinding + " := " + guard + ".Value\n")
+	}
+	e.armBody(okArm.Body)
+	e.p(fmt.Sprintf("\ncase Err[%s, %s]:\n", sig.T, sig.E))
+	if errUse {
+		e.p(errBinding + " := " + guard + ".Value\n")
+	}
+	e.armBody(errArm.Body)
+	e.p(fmt.Sprintf("\ndefault:\npanic(%q)\n}", fmt.Sprintf("unreachable: non-exhaustive Result[%s, %s] (compiler invariant violated)", sig.T, sig.E)))
 }
 
 // optionMatch lowers `match opt { Option.Some(b) => …; Option.None => … }` to
