@@ -460,15 +460,10 @@ func briefDepthErr(err error) string {
 // It returns an error only when the package fails to transpile or parse (a goal-compiler
 // problem); user type errors are tolerated inside Load.
 func runDepthChecks(pkg *project.Package) ([]typecheck.Diagnostic, error) {
-	p, err := typecheck.Load(pkg)
-	if err != nil {
-		return nil, err
-	}
-	var diags []typecheck.Diagnostic
-	diags = append(diags, typecheck.CheckImplements(p)...)
-	diags = append(diags, typecheck.CheckMustUse(p)...)
-	diags = append(diags, typecheck.CheckNoZeroValue(p)...)
-	return diags, nil
+	// Resolve depth diagnostics through the TypeChecker seam so the go/types crutch can be
+	// swapped for a native goal checker later without changing this caller (US-028).
+	var tc typecheck.TypeChecker = typecheck.GoTypesChecker{}
+	return tc.Check(pkg)
 }
 
 // checkDiag is a stage-agnostic rendered finding, so the two stages' diagnostics order
