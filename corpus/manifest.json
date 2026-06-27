@@ -1,0 +1,812 @@
+{
+  "cases": [
+    {
+      "id": "features-01-enums-examples-nested",
+      "kind": "transpile",
+      "input": "features/01-enums/examples/nested.goal",
+      "expected": "features/01-enums/examples/nested.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-01-enums-examples-shape",
+      "kind": "transpile",
+      "input": "features/01-enums/examples/shape.goal",
+      "expected": "features/01-enums/examples/shape.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-01-enums-examples-status",
+      "kind": "transpile",
+      "input": "features/01-enums/examples/status.goal",
+      "expected": "features/01-enums/examples/status.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-01-enums-examples-traffic",
+      "kind": "transpile",
+      "input": "features/01-enums/examples/traffic.goal",
+      "expected": "features/01-enums/examples/traffic.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-02-match-examples-status_match",
+      "kind": "transpile",
+      "input": "features/02-match/examples/status_match.goal",
+      "expected": "features/02-match/examples/status_match.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-02-match-examples-status_rest",
+      "kind": "transpile",
+      "input": "features/02-match/examples/status_rest.goal",
+      "expected": "features/02-match/examples/status_rest.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-02-match-examples-status_return",
+      "kind": "transpile",
+      "input": "features/02-match/examples/status_return.goal",
+      "expected": "features/02-match/examples/status_return.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-02-match-examples-status_var",
+      "kind": "transpile",
+      "input": "features/02-match/examples/status_var.goal",
+      "expected": "features/02-match/examples/status_var.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-03-result-examples-result_int",
+      "kind": "transpile",
+      "input": "features/03-result/examples/result_int.goal",
+      "expected": "features/03-result/examples/result_int.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-03-result-examples-result_match",
+      "kind": "transpile",
+      "input": "features/03-result/examples/result_match.goal",
+      "expected": "features/03-result/examples/result_match.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-03-result-examples-result_parse",
+      "kind": "transpile",
+      "input": "features/03-result/examples/result_parse.goal",
+      "expected": "features/03-result/examples/result_parse.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-03-result-examples-result_passthrough",
+      "kind": "transpile",
+      "input": "features/03-result/examples/result_passthrough.goal",
+      "expected": "features/03-result/examples/result_passthrough.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-04-option-examples-option_exists",
+      "kind": "transpile",
+      "input": "features/04-option/examples/option_exists.goal",
+      "expected": "features/04-option/examples/option_exists.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-04-option-examples-option_find",
+      "kind": "transpile",
+      "input": "features/04-option/examples/option_find.goal",
+      "expected": "features/04-option/examples/option_find.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-04-option-examples-option_int",
+      "kind": "transpile",
+      "input": "features/04-option/examples/option_int.goal",
+      "expected": "features/04-option/examples/option_int.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-04-option-examples-option_passthrough",
+      "kind": "transpile",
+      "input": "features/04-option/examples/option_passthrough.goal",
+      "expected": "features/04-option/examples/option_passthrough.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-05-question-prop-examples-qprop_bare",
+      "kind": "transpile",
+      "input": "features/05-question-prop/examples/qprop_bare.goal",
+      "expected": "features/05-question-prop/examples/qprop_bare.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-05-question-prop-examples-qprop_discard",
+      "kind": "transpile",
+      "input": "features/05-question-prop/examples/qprop_discard.goal",
+      "expected": "features/05-question-prop/examples/qprop_discard.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-05-question-prop-examples-qprop_erronly",
+      "kind": "transpile",
+      "input": "features/05-question-prop/examples/qprop_erronly.goal",
+      "expected": "features/05-question-prop/examples/qprop_erronly.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-05-question-prop-examples-qprop_option",
+      "kind": "transpile",
+      "input": "features/05-question-prop/examples/qprop_option.goal",
+      "expected": "features/05-question-prop/examples/qprop_option.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-05-question-prop-examples-qprop_result",
+      "kind": "transpile",
+      "input": "features/05-question-prop/examples/qprop_result.goal",
+      "expected": "features/05-question-prop/examples/qprop_result.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-06-error-e-examples-qclosed_match",
+      "kind": "transpile",
+      "input": "features/06-error-e/examples/qclosed_match.goal",
+      "expected": "features/06-error-e/examples/qclosed_match.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-06-error-e-examples-qclosed_prop_from",
+      "kind": "transpile",
+      "input": "features/06-error-e/examples/qclosed_prop_from.goal",
+      "expected": "features/06-error-e/examples/qclosed_prop_from.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-06-error-e-examples-qclosed_prop_same",
+      "kind": "transpile",
+      "input": "features/06-error-e/examples/qclosed_prop_same.goal",
+      "expected": "features/06-error-e/examples/qclosed_prop_same.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-07-implements-examples-pointer_recv",
+      "kind": "transpile",
+      "input": "features/07-implements/examples/pointer_recv.goal",
+      "expected": "features/07-implements/examples/pointer_recv.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-07-implements-examples-qualified_iface",
+      "kind": "transpile",
+      "input": "features/07-implements/examples/qualified_iface.goal",
+      "expected": "features/07-implements/examples/qualified_iface.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-07-implements-examples-value_recv",
+      "kind": "transpile",
+      "input": "features/07-implements/examples/value_recv.goal",
+      "expected": "features/07-implements/examples/value_recv.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-08-no-zero-value-examples-complete",
+      "kind": "transpile",
+      "input": "features/08-no-zero-value/examples/complete.goal",
+      "expected": "features/08-no-zero-value/examples/complete.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-08-no-zero-value-examples-defaults_primitives",
+      "kind": "transpile",
+      "input": "features/08-no-zero-value/examples/defaults_primitives.goal",
+      "expected": "features/08-no-zero-value/examples/defaults_primitives.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-08-no-zero-value-examples-defaults_refs",
+      "kind": "transpile",
+      "input": "features/08-no-zero-value/examples/defaults_refs.goal",
+      "expected": "features/08-no-zero-value/examples/defaults_refs.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-10-assert-examples-bank",
+      "kind": "transpile",
+      "input": "features/10-assert/examples/bank.goal",
+      "expected": "features/10-assert/examples/bank.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-10-assert-examples-message",
+      "kind": "transpile",
+      "input": "features/10-assert/examples/message.goal",
+      "expected": "features/10-assert/examples/message.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-10-assert-examples-multiple",
+      "kind": "transpile",
+      "input": "features/10-assert/examples/multiple.goal",
+      "expected": "features/10-assert/examples/multiple.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-11-doctests-examples-add",
+      "kind": "transpile",
+      "input": "features/11-doctests/examples/add.goal",
+      "expected": "features/11-doctests/examples/add.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-11-doctests-examples-enum",
+      "kind": "transpile",
+      "input": "features/11-doctests/examples/enum.goal",
+      "expected": "features/11-doctests/examples/enum.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-11-doctests-examples-mixed",
+      "kind": "transpile",
+      "input": "features/11-doctests/examples/mixed.goal",
+      "expected": "features/11-doctests/examples/mixed.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-11-doctests-examples-multi",
+      "kind": "transpile",
+      "input": "features/11-doctests/examples/multi.goal",
+      "expected": "features/11-doctests/examples/multi.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-12-derive-convert-examples-from_storage",
+      "kind": "transpile",
+      "input": "features/12-derive-convert/examples/from_storage.goal",
+      "expected": "features/12-derive-convert/examples/from_storage.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-12-derive-convert-examples-slice",
+      "kind": "transpile",
+      "input": "features/12-derive-convert/examples/slice.goal",
+      "expected": "features/12-derive-convert/examples/slice.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-12-derive-convert-examples-to_storage",
+      "kind": "transpile",
+      "input": "features/12-derive-convert/examples/to_storage.goal",
+      "expected": "features/12-derive-convert/examples/to_storage.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-check-02-match-deferred_unknown_enum",
+      "kind": "check",
+      "input": "testdata/check/02-match/deferred_unknown_enum.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-02-match-exhaustive_clean",
+      "kind": "check",
+      "input": "testdata/check/02-match/exhaustive_clean.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-02-match-non_exhaustive_inferred",
+      "kind": "check",
+      "input": "testdata/check/02-match/non_exhaustive_inferred.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-02-match-non_exhaustive_return",
+      "kind": "check",
+      "input": "testdata/check/02-match/non_exhaustive_return.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-02-match-non_exhaustive_stmt",
+      "kind": "check",
+      "input": "testdata/check/02-match/non_exhaustive_stmt.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-02-match-rest_arm_optout",
+      "kind": "check",
+      "input": "testdata/check/02-match/rest_arm_optout.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-02-match-result_match_ignored",
+      "kind": "check",
+      "input": "testdata/check/02-match/result_match_ignored.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-03-result-consumed_clean",
+      "kind": "check",
+      "input": "testdata/check/03-result/consumed_clean.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-03-result-defer_underscore_discard",
+      "kind": "check",
+      "input": "testdata/check/03-result/defer_underscore_discard.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-03-result-dropped_closed_result",
+      "kind": "check",
+      "input": "testdata/check/03-result/dropped_closed_result.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-03-result-dropped_result",
+      "kind": "check",
+      "input": "testdata/check/03-result/dropped_result.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-03-result-plain_call_ok",
+      "kind": "check",
+      "input": "testdata/check/03-result/plain_call_ok.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-06-error-e-defer_err_value",
+      "kind": "check",
+      "input": "testdata/check/06-error-e/defer_err_value.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-06-error-e-defer_unknown_callee",
+      "kind": "check",
+      "input": "testdata/check/06-error-e/defer_unknown_callee.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-06-error-e-err_outside_enum",
+      "kind": "check",
+      "input": "testdata/check/06-error-e/err_outside_enum.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-06-error-e-missing_from",
+      "kind": "check",
+      "input": "testdata/check/06-error-e/missing_from.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-06-error-e-ok_from_present",
+      "kind": "check",
+      "input": "testdata/check/06-error-e/ok_from_present.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-06-error-e-ok_same_e",
+      "kind": "check",
+      "input": "testdata/check/06-error-e/ok_same_e.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-06-error-e-unknown_variant",
+      "kind": "check",
+      "input": "testdata/check/06-error-e/unknown_variant.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-07-implements-deferred_external_iface",
+      "kind": "check",
+      "input": "testdata/check/07-implements/deferred_external_iface.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-07-implements-deferred_qualified",
+      "kind": "check",
+      "input": "testdata/check/07-implements/deferred_qualified.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-07-implements-embedded_missing",
+      "kind": "check",
+      "input": "testdata/check/07-implements/embedded_missing.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-07-implements-embedded_satisfied",
+      "kind": "check",
+      "input": "testdata/check/07-implements/embedded_satisfied.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-07-implements-missing_method",
+      "kind": "check",
+      "input": "testdata/check/07-implements/missing_method.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-07-implements-satisfied_pointer",
+      "kind": "check",
+      "input": "testdata/check/07-implements/satisfied_pointer.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-07-implements-satisfied_value",
+      "kind": "check",
+      "input": "testdata/check/07-implements/satisfied_value.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-07-implements-sealed_trivial",
+      "kind": "check",
+      "input": "testdata/check/07-implements/sealed_trivial.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-07-implements-wrong_signature",
+      "kind": "check",
+      "input": "testdata/check/07-implements/wrong_signature.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-08-no-zero-value-complete",
+      "kind": "check",
+      "input": "testdata/check/08-no-zero-value/complete.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-08-no-zero-value-defaults_optout",
+      "kind": "check",
+      "input": "testdata/check/08-no-zero-value/defaults_optout.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-08-no-zero-value-deferred_unknown_type",
+      "kind": "check",
+      "input": "testdata/check/08-no-zero-value/deferred_unknown_type.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-08-no-zero-value-derive_spread_optout",
+      "kind": "check",
+      "input": "testdata/check/08-no-zero-value/derive_spread_optout.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-08-no-zero-value-incomplete_single",
+      "kind": "check",
+      "input": "testdata/check/08-no-zero-value/incomplete_single.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-08-no-zero-value-incomplete_struct",
+      "kind": "check",
+      "input": "testdata/check/08-no-zero-value/incomplete_struct.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-08-no-zero-value-match_binding_arm",
+      "kind": "check",
+      "input": "testdata/check/08-no-zero-value/match_binding_arm.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-08-no-zero-value-tagged_struct",
+      "kind": "check",
+      "input": "testdata/check/08-no-zero-value/tagged_struct.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-08-no-zero-value-variant_incomplete",
+      "kind": "check",
+      "input": "testdata/check/08-no-zero-value/variant_incomplete.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-10-assert-always_false",
+      "kind": "check",
+      "input": "testdata/check/10-assert/always_false.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-10-assert-always_true",
+      "kind": "check",
+      "input": "testdata/check/10-assert/always_true.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-10-assert-runtime_ok",
+      "kind": "check",
+      "input": "testdata/check/10-assert/runtime_ok.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-12-derive-convert-defer_nested_struct",
+      "kind": "check",
+      "input": "testdata/check/12-derive-convert/defer_nested_struct.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-12-derive-convert-defer_recursion",
+      "kind": "check",
+      "input": "testdata/check/12-derive-convert/defer_recursion.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-12-derive-convert-defer_unknown_type",
+      "kind": "check",
+      "input": "testdata/check/12-derive-convert/defer_unknown_type.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-12-derive-convert-fallible_in_total",
+      "kind": "check",
+      "input": "testdata/check/12-derive-convert/fallible_in_total.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-12-derive-convert-ok_fallible",
+      "kind": "check",
+      "input": "testdata/check/12-derive-convert/ok_fallible.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-12-derive-convert-ok_registry_spread",
+      "kind": "check",
+      "input": "testdata/check/12-derive-convert/ok_registry_spread.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-12-derive-convert-ok_slice_recursion",
+      "kind": "check",
+      "input": "testdata/check/12-derive-convert/ok_slice_recursion.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-12-derive-convert-ok_with_exceptions",
+      "kind": "check",
+      "input": "testdata/check/12-derive-convert/ok_with_exceptions.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-12-derive-convert-unbridged_field",
+      "kind": "check",
+      "input": "testdata/check/12-derive-convert/unbridged_field.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-12-derive-convert-unsourced_field",
+      "kind": "check",
+      "input": "testdata/check/12-derive-convert/unsourced_field.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-derive_closed_share",
+      "kind": "transpile",
+      "input": "testdata/derive_closed_share.goal",
+      "expected": "testdata/derive_closed_share.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-derive_container_recursion",
+      "kind": "transpile",
+      "input": "testdata/derive_container_recursion.goal",
+      "expected": "testdata/derive_container_recursion.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-derive_nested_struct",
+      "kind": "transpile",
+      "input": "testdata/derive_nested_struct.goal",
+      "expected": "testdata/derive_nested_struct.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-doctest_funcs",
+      "kind": "transpile",
+      "input": "testdata/doctest_funcs.goal",
+      "expected": "testdata/doctest_funcs.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-enum_match_result",
+      "kind": "transpile",
+      "input": "testdata/enum_match_result.goal",
+      "expected": "testdata/enum_match_result.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-kitchen_sink",
+      "kind": "transpile",
+      "input": "testdata/kitchen_sink.goal",
+      "expected": "testdata/kitchen_sink.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-match_infer_value",
+      "kind": "transpile",
+      "input": "testdata/match_infer_value.goal",
+      "expected": "testdata/match_infer_value.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-mixed_result_option",
+      "kind": "transpile",
+      "input": "testdata/mixed_result_option.goal",
+      "expected": "testdata/mixed_result_option.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-open_closed_mix",
+      "kind": "transpile",
+      "input": "testdata/open_closed_mix.goal",
+      "expected": "testdata/open_closed_mix.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-result_qprop",
+      "kind": "transpile",
+      "input": "testdata/result_qprop.goal",
+      "expected": "testdata/result_qprop.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-result_qprop_arity",
+      "kind": "transpile",
+      "input": "testdata/result_qprop_arity.goal",
+      "expected": "testdata/result_qprop_arity.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    }
+  ]
+}

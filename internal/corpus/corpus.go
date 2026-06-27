@@ -12,6 +12,8 @@
 // building the runners that consume it are later stories.
 package corpus
 
+//go:generate go run ../../cmd/corpus-gen
+
 import (
 	"encoding/json"
 	"fmt"

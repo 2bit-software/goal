@@ -12,6 +12,9 @@
 - Each story runs through the morse-code `feature` workflow in --automode on the
   current branch (no new branch); human-review gates are passed via
   `morse-code workflow resume`.
+- The golden corpus is indexed by `corpus/manifest.json` (repo root). Regenerate
+  after adding/removing golden files: `go generate ./internal/corpus` (or
+  `go run ./cmd/corpus-gen -root .`). Paths are repo-root-relative, slash-form.
 
 ## [2026-06-27T01:56:33Z] - US-001
 - Implemented internal/corpus: a runner-independent Case model and JSON manifest
@@ -35,4 +38,30 @@
   - US-002 (generate manifest over existing corpus) and US-003+ (runners) build
     directly on these types; expected counts per prd notes: 51 transpile pairs,
     50 check cases.
+---
+
+## [2026-06-27T03:20:00Z] - US-002
+- Implemented corpus manifest generation over the existing golden files
+  (Phase 0.2). Added corpus.Generate(root) which walks features/*/examples/*.goal
+  + testdata/*.goal (each paired with a sibling .go.expected) as transpile cases,
+  and testdata/check/**/*.goal recursively as check cases. Non-destructive: no
+  source file is moved or modified. Paths are repo-root-relative, slash-separated;
+  cases sorted by Input for deterministic, diffable output.
+- Added cmd/corpus-gen (with a //go:generate directive in corpus.go) that writes
+  corpus/manifest.json. Generated the committed manifest: 101 cases total
+  (51 transpile + 50 check).
+- Files changed:
+  - internal/corpus/generate.go (Generate + helpers)
+  - internal/corpus/generate_test.go (count assertion 51/50, determinism, shape)
+  - internal/corpus/corpus.go (go:generate directive only)
+  - cmd/corpus-gen/main.go (generator command)
+  - corpus/manifest.json (generated, committed)
+- Learnings for future iterations:
+  - Feature 11-doctests example pairs count as transpile pairs (they have
+    .go.expected), not separate doctest cases — matches the prd 40+11=51 audit.
+  - Check cases carry empty Expected + Normalize=none; inline // want markers are
+    parsed by the US-004 check runner, not at generation time.
+  - corpus/manifest.json is committed (not gitignored) so US-003+ runners load it
+    directly; regenerate via `go generate ./internal/corpus` or
+    `go run ./cmd/corpus-gen -root .`.
 ---

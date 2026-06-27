@@ -29,7 +29,7 @@
         "A test asserts the generated manifest contains 51 transpile pairs and 50 check cases (the current corpus counts)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Counts from audit: 40 feature examples + 11 testdata = 51 transpile pairs; 50 check cases."
     },
     {
