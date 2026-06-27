@@ -101,7 +101,7 @@
         "A unit test runs programs exercising each control-flow form (e.g. a summation loop and a switch dispatch) and asserts the observable results"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

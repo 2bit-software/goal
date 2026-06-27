@@ -354,6 +354,57 @@
   edits don't shift later offsets. Still single-document (locals/params/qualified
   imports/cross-file out of scope, consistent with US-048/049).
 
+## [2026-06-27T17:10:00Z] - US-008
+- Added control-flow evaluation to the goscript interpreter: three-clause and
+  condition-only (and infinite) for loops, expression switch (tagged + tagless,
+  with default), bare nested block scoping, and break/continue. if/else already
+  existed (US-004/US-006). execStmt (interp.go) now dispatches *ast.ForStmt,
+  *ast.SwitchStmt, *ast.BranchStmt, *ast.IncDecStmt, and *ast.BlockStmt (the
+  last runs its List in scope.NewChild() so inner decls don't leak).
+- break/continue use the ESTABLISHED error-sentinel control pattern (like
+  returnSignal): breakSignal{} and continueSignal{} are error types raised by
+  execBranch and recovered via errors.As. execFor recovers BOTH (continue ->
+  run Post + next iteration; break -> stop); execSwitch recovers ONLY break, so
+  a continue inside a switch propagates to the enclosing loop. returnSignal and
+  real errors always propagate past loop/switch to the call boundary.
+- execFor opens loopScope := scope.NewChild() (Init binds there, persists across
+  iterations); each body iteration runs in loopScope.NewChild(). Post runs after
+  every iteration including a continue. nil Cond == always true; non-bool Cond is
+  a located refusal. execSwitch: Init+Tag in swScope; a List==nil CaseClause is
+  the default (run only if nothing matched); tagged match = any case expr
+  .Equal(tag); tagless match = any case expr is bool true; selected body runs in
+  swScope.NewChild() with NO fallthrough. A switch clause body is a flat
+  []ast.Stmt (NOT a *ast.BlockStmt) so it runs via execClauseBody, not execBlock.
+  execIncDec reads an *ast.Ident binding, applies applyBinary(ADD/SUB, cur, one)
+  with one = IntVal(1)/FloatVal(1) by kind, Assigns back.
+- Files changed:
+  - internal/interp/interp.go (breakSignal/continueSignal; execStmt cases;
+    execFor, execSwitch, caseMatches, execClauseBody, execBranch, execIncDec)
+  - internal/interp/control_test.go (new: ForThreeClauseSummation,
+    ForConditionOnly, ForInfiniteWithBreak, ContinueSkipsRemainder,
+    TaggedSwitchDispatch, TaglessSwitchFirstTrue, BreakInSwitchExitsOnlySwitch,
+    NestedBlockScoping, IfElseChain, NonBoolForConditionErrors,
+    BreakOutsideLoopErrors — stdlib testing, no testify)
+  - prd.json (US-008 passes:true), progress.txt
+  - history/20260627-feature-us-008-eval-control-flow/ (initiative)
+- Learnings for future iterations:
+  - The control-signal seam is now complete: returnSignal (call boundary),
+    breakSignal + continueSignal (loop/switch boundary), all error sentinels
+    recovered via errors.As. US-013 (statement-position match) panics
+    'unreachable' on a proven-exhaustive default — model it the same loud way.
+  - A switch CaseClause.Body is a flat []ast.Stmt, not a BlockStmt — don't reach
+    for execBlock there (execClauseBody loops execStmt instead). RangeStmt
+    (for-range) is deliberately NOT handled here; it lands in US-009 (composite
+    types) since it needs slice/map iteration.
+  - Tests drive real parsed programs (newInterp from call_test.go) through
+    evalExpr(call("fn"), ip.root); a control-flow function that returns a value
+    is the cleanest observable. For statement-only forms (bare block scoping,
+    error refusals) build the AST node directly and call ip.execStmt against a
+    child scope.
+  - interp deps stay clean for the US-022 gate: no new imports beyond the
+    already-present ast/token; no go/types, backend, or typecheck.
+---
+
 ## [2026-06-27T16:20:00Z] - US-007
 - Added function declarations as values + calls + recursion to the goscript
   interpreter. New now registers every top-level plain func (Recv==nil, named,

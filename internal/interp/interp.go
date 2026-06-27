@@ -36,6 +36,24 @@ type returnSignal struct {
 // Error implements error so returnSignal can ride the (… error) return channel.
 func (returnSignal) Error() string { return "interp: return outside function" }
 
+// breakSignal is the non-local control signal raised by a `break` statement. It
+// rides the (… error) return channel exactly like returnSignal and is recovered
+// at the nearest enclosing loop or switch boundary (execFor / execSwitch), which
+// stops iterating. It is control flow, not a real error.
+type breakSignal struct{}
+
+// Error implements error so breakSignal can ride the (… error) return channel.
+func (breakSignal) Error() string { return "interp: break outside loop or switch" }
+
+// continueSignal is the non-local control signal raised by a `continue`
+// statement. It is recovered at the nearest enclosing loop boundary (execFor),
+// which advances to the post clause and the next iteration. A switch does NOT
+// recover it — a continue inside a switch propagates to the enclosing loop.
+type continueSignal struct{}
+
+// Error implements error so continueSignal can ride the (… error) return channel.
+func (continueSignal) Error() string { return "interp: continue outside loop" }
+
 // Interp runs a parsed, sema-resolved goal program under interpretation. It
 // holds the shared front-end artifacts (the AST + native semantic facts) and the
 // root lexical scope.
@@ -199,6 +217,18 @@ func (ip *Interp) execStmt(stmt ast.Stmt, scope *Env) error {
 		return ip.execReturn(s, scope)
 	case *ast.IfStmt:
 		return ip.execIf(s, scope)
+	case *ast.ForStmt:
+		return ip.execFor(s, scope)
+	case *ast.SwitchStmt:
+		return ip.execSwitch(s, scope)
+	case *ast.BranchStmt:
+		return ip.execBranch(s, scope)
+	case *ast.IncDecStmt:
+		return ip.execIncDec(s, scope)
+	case *ast.BlockStmt:
+		// A bare nested block runs its statements in its own child scope, so a
+		// variable declared inside it does not leak to the enclosing scope.
+		return ip.execBlock(s, scope.NewChild())
 	case *ast.EmptyStmt:
 		return nil
 	default:
@@ -376,4 +406,197 @@ func (ip *Interp) bindTargets(s *ast.AssignStmt, vals []Value, scope *Env) error
 		}
 	}
 	return nil
+}
+
+// execFor evaluates a for statement: a three-clause loop (`for init; cond; post`),
+// a condition-only loop (`for cond`), or an infinite loop (`for {}`). The optional
+// init binds in the loop's own scope (so it persists across iterations); each
+// iteration's body runs in a fresh child of that scope; the optional post runs
+// after every iteration. A nil condition is always true; a non-bool condition is
+// a descriptive refusal. A `break` ends the loop, a `continue` skips to the post
+// clause, and a returnSignal (or a real error) propagates to the caller.
+func (ip *Interp) execFor(s *ast.ForStmt, scope *Env) error {
+	loopScope := scope.NewChild()
+	if s.Init != nil {
+		if err := ip.execStmt(s.Init, loopScope); err != nil {
+			return err
+		}
+	}
+	for {
+		if s.Cond != nil {
+			cond, err := ip.evalExpr(s.Cond, loopScope)
+			if err != nil {
+				return err
+			}
+			if cond.Kind != KindBool {
+				return fmt.Errorf("interp: for condition must be bool, got %s", cond.Kind)
+			}
+			if !cond.Bool {
+				return nil
+			}
+		}
+		if err := ip.execBlock(s.Body, loopScope.NewChild()); err != nil {
+			var brk breakSignal
+			if errors.As(err, &brk) {
+				return nil
+			}
+			var cont continueSignal
+			if !errors.As(err, &cont) {
+				// returnSignal or a genuine error: unwind out of the loop.
+				return err
+			}
+			// continue: fall through to the post clause and next iteration.
+		}
+		if s.Post != nil {
+			if err := ip.execStmt(s.Post, loopScope); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// execSwitch evaluates an expression switch. The optional init and the optional
+// tag are evaluated in the switch's own scope. A tagged switch selects the first
+// case clause with a list expression equal to the tag; a tagless switch selects
+// the first case clause with a true (bool) list expression. A default clause runs
+// when no case matches. The selected clause's body runs in a further child scope
+// and does NOT fall through. A `break` ends the switch; a `continue` or
+// returnSignal propagates to the enclosing loop / caller.
+func (ip *Interp) execSwitch(s *ast.SwitchStmt, scope *Env) error {
+	swScope := scope.NewChild()
+	if s.Init != nil {
+		if err := ip.execStmt(s.Init, swScope); err != nil {
+			return err
+		}
+	}
+	var tag Value
+	hasTag := s.Tag != nil
+	if hasTag {
+		v, err := ip.evalExpr(s.Tag, swScope)
+		if err != nil {
+			return err
+		}
+		tag = v
+	}
+
+	var def *ast.CaseClause
+	var selected *ast.CaseClause
+	if s.Body != nil {
+		for _, stmt := range s.Body.List {
+			cc, ok := stmt.(*ast.CaseClause)
+			if !ok {
+				return fmt.Errorf("interp: unsupported switch clause %T", stmt)
+			}
+			if cc.List == nil {
+				def = cc
+				continue
+			}
+			matched, err := ip.caseMatches(cc, hasTag, tag, swScope)
+			if err != nil {
+				return err
+			}
+			if matched {
+				selected = cc
+				break
+			}
+		}
+	}
+	if selected == nil {
+		selected = def
+	}
+	if selected == nil {
+		return nil
+	}
+	if err := ip.execClauseBody(selected.Body, swScope.NewChild()); err != nil {
+		var brk breakSignal
+		if errors.As(err, &brk) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// caseMatches reports whether a case clause is selected: for a tagged switch, any
+// list expression equals the tag; for a tagless switch, any list expression
+// evaluates to bool true (a non-bool tagless case is a descriptive refusal).
+func (ip *Interp) caseMatches(cc *ast.CaseClause, hasTag bool, tag Value, scope *Env) (bool, error) {
+	for _, expr := range cc.List {
+		v, err := ip.evalExpr(expr, scope)
+		if err != nil {
+			return false, err
+		}
+		if hasTag {
+			if v.Equal(tag) {
+				return true, nil
+			}
+			continue
+		}
+		if v.Kind != KindBool {
+			return false, fmt.Errorf("interp: tagless switch case must be bool, got %s", v.Kind)
+		}
+		if v.Bool {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// execClauseBody runs a switch clause's statement list in the given scope. A
+// clause body is a flat statement slice (not a *ast.BlockStmt), so it cannot use
+// execBlock directly.
+func (ip *Interp) execClauseBody(body []ast.Stmt, scope *Env) error {
+	for _, stmt := range body {
+		if err := ip.execStmt(stmt, scope); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// execBranch evaluates a break or continue statement, raising the corresponding
+// control signal. goto, fallthrough, and labelled branches are descriptive
+// refusals (out of scope for this story).
+func (ip *Interp) execBranch(s *ast.BranchStmt, scope *Env) error {
+	switch s.Tok {
+	case token.BREAK:
+		return breakSignal{}
+	case token.CONTINUE:
+		return continueSignal{}
+	default:
+		return fmt.Errorf("interp: unsupported branch statement %s", s.Tok)
+	}
+}
+
+// execIncDec evaluates an `x++` / `x--` statement by reading the current binding,
+// adding or subtracting one (numeric only), and writing it back through the scope
+// chain. A non-identifier target or a non-numeric operand is a descriptive
+// refusal.
+func (ip *Interp) execIncDec(s *ast.IncDecStmt, scope *Env) error {
+	ident, ok := s.X.(*ast.Ident)
+	if !ok {
+		return fmt.Errorf("interp: unsupported %s target %T", s.Tok, s.X)
+	}
+	cur, err := scope.Lookup(ident.Name)
+	if err != nil {
+		return err
+	}
+	var one Value
+	switch cur.Kind {
+	case KindInt:
+		one = IntVal(1)
+	case KindFloat:
+		one = FloatVal(1)
+	default:
+		return fmt.Errorf("interp: %s requires numeric operand, got %s", s.Tok, cur.Kind)
+	}
+	op := token.ADD
+	if s.Tok == token.DEC {
+		op = token.SUB
+	}
+	res, err := applyBinary(op, cur, one)
+	if err != nil {
+		return err
+	}
+	return scope.Assign(ident.Name, res)
 }
