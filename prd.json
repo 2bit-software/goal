@@ -341,7 +341,7 @@
         "A test asserts the interpreter run and the transpiled-then-built binary of the same source produce the same output (the upgrade is a no-op)"
       ],
       "priority": 28,
-      "passes": false,
+      "passes": true,
       "notes": "Gate corresponding to REWRITE-ARCHITECTURE.md §7 Phase 5: 'a sample script graduates to a Go+ module as ~no-op'."
     }
   ]

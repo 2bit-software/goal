@@ -1,5 +1,41 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T11:00:00Z] - US-028
+- Proved US-028 "Gate: script-to-module no-op" — the FINAL story of the
+  goscript-runtime PRD. The headline promise (a goscript program "graduates"
+  into a compiled Go+ module UNCHANGED) is now gated: one sample source is run
+  under the tree-walking interpreter AND transpiled via the AST backend +
+  built+run as a Go module, and the two observable outputs must be byte-equal.
+  The sample exercises a GENUINE goal construct (enum + value-position match —
+  one of the two non-Go runtime mechanics), so the no-op upgrade is meaningful,
+  not a pure-Go round trip. Both paths emit "green".
+- NO production code changed — the gate composes existing seams, exactly like
+  US-027: interp.New(file, info, interp.WithStdout(&buf)) + ip.Run() (the US-026
+  interp run path, capturing stdout through the capability sink), and
+  backend.Transpile(src).Go written into an os.MkdirTemp module (go.mod +
+  case.go) and run via `go run .` (the temp-module + toolchain pattern lifted
+  from corpus.RunDoctestExec).
+- internal/corpus/script_module_gate_test.go (new): TestScriptToModuleNoOp plus
+  helpers runUnderInterp / runAsGoModule and the scriptModuleSample const.
+  External `package corpus_test` so it can import internal/{interp,backend}
+  alongside corpus (neither imports corpus -> no cycle). stdlib testing, no
+  testify.
+- prd.json (US-028 passes:true — all 28 stories now pass), progress.txt
+- history/20260627-feature-us-028-gate-script-to-module-no-op/ (initiative)
+- Learnings for future iterations:
+  - The interpreter run path (US-026) and the AST transpile path (backend.Transpile)
+    are now provably output-equivalent for a real goal construct. A single-file
+    `func main` program is the unit both paths consume: interp runs it in-process
+    (no toolchain), the backend emits standalone Go (single-file Output.Go, no
+    doctest sidecar needed for a main program) that `go run .` builds. This is the
+    template for any future cross-engine parity assertion.
+  - Comparing observable stdout (trimmed) is the implementation-independent
+    oracle shared by both engines — same yardstick as the corpus behavioral tier,
+    just for a whole `func main` program rather than per-`>>>` doctest examples.
+  - US-028 is the LAST story; the goscript-runtime PRD (US-001..US-028) is
+    complete.
+---
+
 ## [2026-06-28T10:20:00Z] - US-027
 - Proved US-027 "Gate: behavioral parity under interp": added the whole-corpus
   interpreter behavioral parity GATE — the goscript interpreter is now held to the
