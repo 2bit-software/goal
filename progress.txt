@@ -233,3 +233,31 @@
     diagnostics. US-008 (run doctests) extends this with `go test` on doctest
     sidecars.
 ---
+
+## [2026-06-27T02:50:17Z] - US-008
+- Added the behavioral doctest tier (Phase 0.8): RunDoctestExec(root, Case,
+  Transpiler) transpiles a KindDoctest case and writes BOTH the generated
+  package (Output.Go) and the generated _test.go sidecar (Output.Test) into one
+  isolated temp module (minimal go.mod + case.go + case_test.go), then runs
+  `go test ./...`. This EXECUTES the doctest, proving behavior — stricter than
+  US-005 (text-match sidecar vs golden) and US-007 (build+vet main output only).
+  Source tree is never touched.
+- TestDoctestExecRunner drives all 4 feature-11 doctest cases through
+  pipeline.Transpile; all pass. Loud zero-case guard (t.Fatalf); -short-skipped
+  since it spawns the go toolchain per case (~1.5s).
+- Files changed:
+  - internal/corpus/doctest_behavior_runner.go (RunDoctestExec)
+  - internal/corpus/doctest_behavior_runner_test.go (whole-corpus doctest-exec test)
+  - history/20260627-feature-us-008-behavioral-tier-run-doctests/ (initiative)
+- Commit: 64faed0
+- Learnings for future iterations:
+  - The sidecar shares the package clause of the main output (e.g. both
+    `package mathx`), so writing them as case.go + case_test.go in one module
+    lets the test reach the package's unexported identifiers — exactly how the
+    emitted doctests reference unexported funcs like `add`.
+  - Mirror RunCompile's minimal `module goalcorpus` / `go 1.26` go.mod; the
+    generated Go is stdlib-only so `go test` resolves offline. Only difference
+    from the compile tier is the verb (`go test ./...`) and the extra _test.go.
+  - US-009 (package-mode fixtures) and the later AST-backend stories reuse this
+    same temp-module + Transpiler-seam pattern for behavioral conformance.
+---

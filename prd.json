@@ -101,7 +101,7 @@
         "A test asserts every doctest-bearing case passes go test in its temp module"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
