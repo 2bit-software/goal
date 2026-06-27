@@ -329,7 +329,7 @@
         "A test asserts sema resolves the same symbols as analyze.Build for a set of representative inputs, including a struct field whose type contains an embedded comma (the analyze comma-split bug)"
       ],
       "priority": 27,
-      "passes": false,
+      "passes": true,
       "notes": "Fixes the known analyze.parseStructBody comma-split bug structurally."
     },
     {

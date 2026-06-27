@@ -1042,3 +1042,59 @@
   - parseFlags now returns 5 values (added engine); any new caller must thread it.
     engine constants live in main.go (engineSplice/engineAST).
 ---
+
+## [2026-06-27T06:30:00Z] - US-027
+- Phase 2 symbol resolution: internal/sema now derives the name-keyed semantic
+  facts (enums, structs, function signatures, the from-registry, methods) by
+  WALKING the parsed goal AST instead of re-scanning a flat token stream like
+  internal/analyze. Because the facts come off the parse tree they are correct by
+  construction where analyze is not — most visibly a struct field whose type
+  carries a top-level comma (analyze.parseStructBody whitespace-splits and mangles
+  it; the AST walk renders the field type from its type node, so the comma never
+  confuses resolution).
+- sema.go: Info grew from a placeholder into the fact tables (FuncSignatures,
+  Enums, Sealed, Structs, FromRegistry, Methods) plus the supporting types
+  (Mode/FuncSig/Field/Variant/Enum/ConvEntry/Method). Mode uses the SAME iota
+  order as analyze.Mode so the two resolvers' modes compare equal as ints. New()
+  still returns an EMPTY (nil-map) *Info for the plain-Go back-end seam.
+- resolve.go: Resolve(*ast.File) *Info walks File.Decls — EnumDecl -> Enums (+
+  VSet/FieldSet); GenDecl(TYPE)+StructType -> Structs; SealedInterfaceDecl ->
+  Sealed; FuncDecl routed by Mod/Recv (from|derive -> FromRegistry keyed by
+  (firstParamType, resultTarget); receiver -> Methods star-stripped; else ->
+  FuncSignatures). Result/Option mode is detected off the single unnamed result's
+  IndexExpr/IndexListExpr head Ident, then the lowered arity/ends-in-error is
+  applied exactly like analyze.analyzeSig (Result -> 2/true, Option & closed-E ->
+  1/false). typeString is a small position-free AST type printer (Ident/Selector/
+  Star/Paren/Array/Map/Index(+List)/Ellipsis/Chan/Func/Interface/Struct) that is
+  comma-safe by construction.
+- resolve_test.go (package sema, stdlib testing): TestResolveMatchesAnalyze diffs
+  sema vs analyze.Build over a representative source (enum w/ payload + data-less
+  variant, struct, plain func, open-E Result/Option/closed-E Result funcs, from
+  func, derive func, value+pointer methods, sealed interface) — type strings
+  compared modulo whitespace. TestResolveStructCommaFieldType resolves a
+  generic-typed field Result[int, error] to one correct field AND asserts
+  analyze.Build mishandles the same comma-bearing type (the documented bug).
+- Files changed:
+  - internal/sema/sema.go (placeholder Info -> populated fact tables + types)
+  - internal/sema/resolve.go (new: Resolve + walk + typeString)
+  - internal/sema/resolve_test.go (new: parity + comma-bug tests)
+  - prd.json (US-027 passes:true), progress.txt
+  - history/20260627-feature-us-027-resolve-symbols-by-ast-walk/ (initiative)
+- Learnings for future iterations:
+  - sema does NOT import analyze (it is the replacement); the parity test lives in
+    package sema and imports parser+analyze (neither imports sema, so no cycle).
+  - The comma-bug exemplar must be a BRACKET-delimited comma type (a generic
+    instance like Result[int, error]), NOT a func-typed struct field: with no
+    semicolon insertion the lexer makes `cb func(int, string)\n name string` parse
+    as ONE field whose result type is `name` — a parser ambiguity, not a sema bug.
+    Bracket-delimited generic args parse unambiguously while still defeating
+    analyze's whitespace split.
+  - sema.New() stays the empty seam; backend.Transpile still calls it. Wiring
+    Resolve into the emit path is US-032+. Adding Resolve here is inert to the
+    back-end (Emit does not read Info yet), so blast radius is internal/sema only.
+  - Method Arity/EndsInError use RAW result counts (no Result/Option override),
+    matching analyze.methodFrom; plain FuncSignatures DO apply the override.
+  - typeString renders types modulo whitespace; any future exact-spelling consumer
+    (e.g. a comparison against verbatim source) must normalize whitespace or use a
+    position-carrying printer instead.
+---
