@@ -149,7 +149,7 @@
         "A unit test over a 01-enums-shaped program constructs each variant kind and asserts the tag and field values"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

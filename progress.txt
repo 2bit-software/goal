@@ -354,6 +354,57 @@
   edits don't shift later offsets. Still single-document (locals/params/qualified
   imports/cross-file out of scope, consistent with US-048/049).
 
+## [2026-06-28T00:20:00Z] - US-012
+- Added enum CONSTRUCTION to the goscript interpreter: data-less
+  (`Status.Pending`) and payload-carrying (`Status.Active(since: now())`)
+  variants now evaluate into the universal tagged-union Value, and their
+  payload fields read back by name. No value-model change — value.go already
+  carried Variant{TypeID,Tag,Fields} + VariantVal + Value.Field.
+- internal/interp/eval.go:
+  - evalExpr gained `case *ast.VariantLit` -> evalVariantLit (the PAYLOAD form;
+    the parser builds a VariantLit only when the arg list has >=1 LABELED arg).
+    evalVariantLit resolves the enum ref (*ast.Ident only — a qualified enum is
+    a deferred refusal), validates the tag against enum.VSet, fills the Fields
+    map from each *ast.LabeledArg (label->eval(value)) and binds a positional
+    arg by declared field order (variantFields), then returns
+    VariantVal(enumName, tag, fields). Unknown enum / unknown variant / too many
+    positional args are LOCATED, descriptive refusals, never a silent value.
+  - evalSelector now intercepts the DATA-LESS form at the TOP, BEFORE evaluating
+    the receiver: `Enum.Variant` (no parens) parses to *ast.SelectorExpr, so when
+    s.X is an *ast.Ident naming an enum in info.Enums, that name is NOT shadowed
+    by a value binding (scope.Lookup fails), and s.Sel.Name is in enum.VSet, it
+    returns VariantVal(enum.Name, tag, nil). Otherwise it falls through to the
+    existing struct-field read — so io.Writer / receiver / struct-field selectors
+    are untouched (mirrors the backend's SelectorExpr-lowering guard).
+  - new enumByName(name) nil-safe lookup of ip.info.Enums (the single gate every
+    enum-construction path consults) + variantFields(enum,tag) helper.
+- internal/interp/enum_test.go (new): TestConstructDataLessVariant,
+  TestConstructPayloadVariantSingleField, TestConstructPayloadVariantMultiField,
+  TestConstructUnknownVariantIsRefused, TestConstructUnknownEnumIsRefused — drive
+  a 01-enums-shaped program (Status{Pending, Active{since}, Cancelled{reason,at}})
+  through newInterp+evalFn (call_test.go/composite_test.go helpers); error cases
+  build the VariantLit AST by hand. stdlib testing, no testify.
+- prd.json (US-012 passes:true), progress.txt
+- history/20260627-feature-us-012-eval-enum-construction/ (initiative)
+- Learnings for future iterations:
+  - The three meanings of `Enum.Variant(x)` are DISTINCT AST nodes (per ast/
+    goal_expr.go), so no pass-ordering hack is needed at eval time: a PAYLOAD
+    construction (labeled args) is *ast.VariantLit, a DATA-LESS construction is
+    *ast.SelectorExpr (guard it in evalSelector by info.Enums+VSet+not-shadowed),
+    and a destructuring is *ast.VariantPattern (US-013, never a value). A bare
+    POSITIONAL `Enum.Variant(x)` (no label) parses to an ordinary *ast.CallExpr,
+    NOT a VariantLit — Result.Ok(x)/Option.Some(x) land that way and are
+    US-015/US-016, so they are out of scope here.
+  - US-013 (statement-position match) consumes these variants by tag: dispatch on
+    v.Variant.Tag and bind v.Variant.Fields. The tagged-union the construction
+    produces is the exact shape match reads — keep VariantVal as the one ctor.
+  - reading a variant payload field is via the Value.Field(name) API (already in
+    value.go); direct `a.since` selector access is NOT goal syntax (payload is
+    read through match binding), so evalSelector still only reads STRUCT fields.
+  - interp deps stay clean for the US-022 gate (go list -deps ./internal/interp:
+    no go/types, internal/backend, internal/typecheck — reading sema.Info is fine).
+---
+
 ## [2026-06-27T23:45:00Z] - US-011
 - Added the host-function bridge: internal/interp now resolves a curated set of
   imported stdlib calls to native Go, and an unresolved imported call is a

@@ -16,6 +16,7 @@ import (
 	"strconv"
 
 	"goal/internal/ast"
+	"goal/internal/sema"
 	"goal/internal/token"
 )
 
@@ -50,6 +51,8 @@ func (ip *Interp) evalExpr(expr ast.Expr, scope *Env) (Value, error) {
 		return ip.evalCompositeLit(e, scope)
 	case *ast.SelectorExpr:
 		return ip.evalSelector(e, scope)
+	case *ast.VariantLit:
+		return ip.evalVariantLit(e, scope)
 	case *ast.IndexExpr:
 		return ip.evalIndex(e, scope)
 	default:
@@ -124,11 +127,24 @@ func (ip *Interp) evalCompositeLit(c *ast.CompositeLit, scope *Env) (Value, erro
 	}
 }
 
-// evalSelector evaluates a field selector x.field. The receiver must evaluate to
-// a struct value; the named field is read from it. A non-struct receiver or an
-// absent field is a descriptive refusal. Package-qualified and variant selectors
-// are handled by later evaluation stories.
+// evalSelector evaluates a field selector x.field. A data-less enum variant
+// construction (`Status.Pending`) is intercepted first: the receiver names an
+// enum type (not shadowed by a value binding) and the selected name is one of
+// its variants, so it constructs a tagged-union Value. Otherwise the receiver
+// must evaluate to a struct value and the named field is read from it. A
+// non-struct receiver or an absent field is a descriptive refusal.
 func (ip *Interp) evalSelector(s *ast.SelectorExpr, scope *Env) (Value, error) {
+	// Data-less enum construction: `Enum.Variant` with no parens parses to a
+	// selector. It is enum construction only when the receiver is an enum type
+	// name not shadowed by a value binding and the selected name is a declared
+	// variant; otherwise it is an ordinary field read.
+	if id, ok := s.X.(*ast.Ident); ok {
+		if enum, ok := ip.enumByName(id.Name); ok && enum.VSet[s.Sel.Name] {
+			if _, err := scope.Lookup(id.Name); err != nil {
+				return VariantVal(enum.Name, s.Sel.Name, nil), nil
+			}
+		}
+	}
 	recv, err := ip.evalExpr(s.X, scope)
 	if err != nil {
 		return Value{}, err
@@ -141,6 +157,85 @@ func (ip *Interp) evalSelector(s *ast.SelectorExpr, scope *Env) (Value, error) {
 		return Value{}, fmt.Errorf("interp: %s has no field %s", recv.Struct.TypeID, s.Sel.Name)
 	}
 	return v, nil
+}
+
+// evalVariantLit evaluates a payload-carrying enum construction
+// (`Status.Active(since: now())`) into a tagged-union Value. The enum reference
+// must name a known enum and the variant must be one of its declared variants;
+// each labeled argument fills the named payload field, and a positional argument
+// fills the declared field at its index (matching the variant's declared field
+// order). An unknown enum, unknown variant, unknown field, or out-of-range
+// positional argument is a descriptive refusal rather than a silent value.
+func (ip *Interp) evalVariantLit(vl *ast.VariantLit, scope *Env) (Value, error) {
+	id, ok := vl.Enum.(*ast.Ident)
+	if !ok {
+		if vl.Enum == nil {
+			return Value{}, fmt.Errorf("interp: variant construction requires an enum reference")
+		}
+		return Value{}, fmt.Errorf("interp: unsupported enum reference %T in variant construction", vl.Enum)
+	}
+	enum, ok := ip.enumByName(id.Name)
+	if !ok {
+		return Value{}, fmt.Errorf("interp: unknown enum %s in variant construction", id.Name)
+	}
+	if vl.Variant == nil {
+		return Value{}, fmt.Errorf("interp: variant construction on enum %s is missing a variant tag", enum.Name)
+	}
+	tag := vl.Variant.Name
+	if !enum.VSet[tag] {
+		return Value{}, fmt.Errorf("interp: enum %s has no variant %s", enum.Name, tag)
+	}
+	declared := variantFields(enum, tag)
+	fields := make(map[string]Value, len(vl.Args))
+	for i, arg := range vl.Args {
+		switch a := arg.(type) {
+		case *ast.LabeledArg:
+			if a.Label == nil {
+				return Value{}, fmt.Errorf("interp: %s.%s has an unlabeled argument", enum.Name, tag)
+			}
+			v, err := ip.evalExpr(a.Value, scope)
+			if err != nil {
+				return Value{}, err
+			}
+			fields[a.Label.Name] = v
+		default:
+			// A positional argument binds to the declared field at this index.
+			if i >= len(declared) {
+				return Value{}, fmt.Errorf("interp: %s.%s has too many arguments (declares %d field(s))", enum.Name, tag, len(declared))
+			}
+			v, err := ip.evalExpr(arg, scope)
+			if err != nil {
+				return Value{}, err
+			}
+			fields[declared[i].Name] = v
+		}
+	}
+	return VariantVal(enum.Name, tag, fields), nil
+}
+
+// enumByName returns the resolved enum with the given name, or ok=false when the
+// interpreter has no sema info or the name is not an enum. It is the nil-safe
+// gate every enum-construction path consults.
+func (ip *Interp) enumByName(name string) (*sema.Enum, bool) {
+	if ip.info == nil || ip.info.Enums == nil {
+		return nil, false
+	}
+	enum, ok := ip.info.Enums[name]
+	if !ok || enum == nil {
+		return nil, false
+	}
+	return enum, true
+}
+
+// variantFields returns the declared fields of the named variant of enum, in
+// source order, used to resolve positional construction arguments.
+func variantFields(enum *sema.Enum, tag string) []sema.Field {
+	for _, v := range enum.Variants {
+		if v.Name == tag {
+			return v.Fields
+		}
+	}
+	return nil
 }
 
 // evalIndex evaluates an index expression x[i]. A slice is indexed by an integer
