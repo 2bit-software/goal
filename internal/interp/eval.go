@@ -182,6 +182,15 @@ func (ip *Interp) evalSelector(s *ast.SelectorExpr, scope *Env) (Value, error) {
 				return VariantVal(enum.Name, s.Sel.Name, nil), nil
 			}
 		}
+		// Data-less Option construction: `Option.None` with no parens parses to a
+		// selector. Option is a built-in (not in info.Enums), so it needs its own
+		// guard — the receiver is `Option`, not shadowed by a value binding, and
+		// the selected name is the None variant.
+		if id.Name == optionTypeID && s.Sel.Name == optionNoneTag {
+			if _, err := scope.Lookup(id.Name); err != nil {
+				return VariantVal(optionTypeID, optionNoneTag, nil), nil
+			}
+		}
 	}
 	recv, err := ip.evalExpr(s.X, scope)
 	if err != nil {
@@ -318,6 +327,26 @@ func (ip *Interp) evalResultCtor(ctor string, call *ast.CallExpr, scope *Env) ([
 	return []Value{VariantVal(resultTypeID, tag, map[string]Value{field: v})}, nil
 }
 
+// evalOptionCtor evaluates an Option construction `Option.Some(x)` into the
+// universal tagged-union Value, carrying the present value as its single payload
+// — the interpreter applies no *T optimization. `Option.None` is the data-less
+// form (no parens) and is handled in evalSelector, so only the Some constructor
+// reaches here; any other constructor name or other than one argument is a
+// located, descriptive refusal rather than a silent value.
+func (ip *Interp) evalOptionCtor(ctor string, call *ast.CallExpr, scope *Env) ([]Value, error) {
+	if ctor != optionSomeTag {
+		return nil, fmt.Errorf("interp: %s: unknown Option constructor %s.%s (expected Some or None)", call.Pos(), optionTypeID, ctor)
+	}
+	if len(call.Args) != 1 {
+		return nil, fmt.Errorf("interp: %s: %s.%s expects 1 argument, got %d", call.Pos(), optionTypeID, ctor, len(call.Args))
+	}
+	v, err := ip.evalExpr(call.Args[0], scope)
+	if err != nil {
+		return nil, err
+	}
+	return []Value{VariantVal(optionTypeID, optionSomeTag, map[string]Value{optionSomeField: v})}, nil
+}
+
 // evalIndex evaluates an index expression x[i]. A slice is indexed by an integer
 // (bounds-checked); a map is indexed by a string key (an absent key reads the nil
 // value, the defined absent-read result). Indexing any other kind is a
@@ -405,6 +434,17 @@ func (ip *Interp) evalCallMulti(call *ast.CallExpr, scope *Env) ([]Value, error)
 		if recv, ok := sel.X.(*ast.Ident); ok && recv.Name == resultTypeID {
 			if _, err := scope.Lookup(recv.Name); err != nil {
 				return ip.evalResultCtor(sel.Sel.Name, call, scope)
+			}
+		}
+	}
+	// An Option construction (`Option.Some(x)`) is a selector call whose receiver
+	// is the built-in `Option` (not shadowed by a local binding), the same node
+	// shape as a Result construction. `Option.None` has no parens and is handled
+	// in evalSelector instead.
+	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+		if recv, ok := sel.X.(*ast.Ident); ok && recv.Name == optionTypeID {
+			if _, err := scope.Lookup(recv.Name); err != nil {
+				return ip.evalOptionCtor(sel.Sel.Name, call, scope)
 			}
 		}
 	}

@@ -185,6 +185,17 @@ const (
 	resultErrField = "error"  // payload field name of Result.Err
 )
 
+// Canonical type identity and payload field name for the Option tagged union.
+// Option is encoded as the universal Variant — there is no *T optimization at
+// runtime (REWRITE-ARCHITECTURE.md §4). Some carries exactly one payload (the
+// present value); None carries no fields.
+const (
+	optionTypeID    = "Option" // Variant.TypeID for an Option value
+	optionSomeTag   = "Some"   // Variant.Tag for Option.Some
+	optionNoneTag   = "None"   // Variant.Tag for Option.None
+	optionSomeField = "value"  // payload field name of Option.Some
+)
+
 // payloadValue returns the single payload value carried by a sum-payload variant
 // (Result.Ok/Err and, later, Option.Some). ok is false when the variant is nil or
 // carries other than exactly one field — so a data-less variant (e.g. Option.None)

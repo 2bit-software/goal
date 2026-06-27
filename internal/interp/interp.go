@@ -530,7 +530,8 @@ func armScopeFor(vp *ast.VariantPattern, subj Value, scope *Env) *Env {
 	armScope := scope.NewChild()
 	if vp != nil && vp.Binding != nil {
 		bound := subj
-		if subj.Kind == KindVariant && subj.Variant != nil && subj.Variant.TypeID == resultTypeID {
+		if subj.Kind == KindVariant && subj.Variant != nil &&
+			(subj.Variant.TypeID == resultTypeID || subj.Variant.TypeID == optionTypeID) {
 			if pv, ok := payloadValue(subj.Variant); ok {
 				bound = pv
 			}

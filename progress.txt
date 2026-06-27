@@ -354,6 +354,44 @@
   edits don't shift later offsets. Still single-document (locals/params/qualified
   imports/cross-file out of scope, consistent with US-048/049).
 
+## [2026-06-28T03:10:00Z] - US-016
+- Added OPTION as a tagged union to the goscript interpreter: `Option.Some(x)` and
+  `Option.None` now construct universal Variant values (TypeID "Option", Tag
+  "Some"/"None") with NO *T optimization, and `match` dispatches+binds over them.
+  A mechanical mirror of US-015 (Result); match dispatch needed ZERO changes.
+- internal/interp/value.go: added const optionTypeID/optionSomeTag/optionNoneTag/
+  optionSomeField("value") next to the Result constants. `payloadValue` already
+  returns ok=false for None's zero fields (a None arm binds nothing) — no change.
+- internal/interp/eval.go: added `evalOptionCtor` (mirrors evalResultCtor but only
+  the `Some` ctor + default refusal, since None is data-less). evalCallMulti
+  intercepts a SelectorExpr-call whose X is Ident "Option" (not shadowed) ->
+  evalOptionCtor, right after the Result interception. evalSelector intercepts the
+  DATA-LESS `Option.None` (X Ident "Option", Sel "None", not shadowed) ->
+  VariantVal("Option","None",nil); Option is NOT in info.Enums so it needs its own
+  guard distinct from the enum data-less path.
+- internal/interp/interp.go: armScopeFor's payload-unwrap guard now fires for
+  TypeID == optionTypeID too (was resultTypeID only) — so a `Some(v)` arm binds the
+  UNWRAPPED inner value, a `None` arm binds nothing.
+- internal/interp/option_test.go (new): TestOptionSomeConstruction/
+  TestOptionNoneConstruction (tag+payload over a 04-option shape),
+  TestOptionMatchArms (Some/None arm dispatch), TestOptionSomeArmBindsUnwrappedValue
+  (binds the raw int, plus the None arm's 0), TestOptionUnknownCtorIsRefused/
+  TestOptionSomeArityIsRefused. stdlib testing, no testify.
+- prd.json (US-016 passes:true), progress.txt
+- history/20260627-feature-us-016-eval-option-tagged-union/ (initiative)
+- Learnings for future iterations:
+  - Result and Option are now BOTH unwrapped-on-bind in armScopeFor (keyed on
+    Variant.TypeID); enum binding stays the WHOLE variant. The match seam is fully
+    tag-keyed, so US-017 (`?` unwinding) only needs to ADD the non-local early-return
+    over Ok/Err and Some/None — construction + match are done.
+  - `Option.Some(x)` is a bare POSITIONAL call (*ast.CallExpr with *ast.SelectorExpr
+    Fun), intercepted by receiver name like Result. `Option.None` is data-less
+    (*ast.SelectorExpr, no parens) and must be intercepted in evalSelector — Option
+    is a BUILT-IN, not an info.Enums entry, so it can't ride the enum guard.
+  - interp deps stay clean for the US-022 gate (go list -deps ./internal/interp:
+    no go/types, internal/backend, internal/typecheck).
+---
+
 ## [2026-06-28T02:30:00Z] - US-015
 - Added RESULT as a tagged union to the goscript interpreter: `Result.Ok(x)` and
   `Result.Err(e)` now construct universal Variant values (TypeID "Result", Tag

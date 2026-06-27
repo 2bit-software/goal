@@ -197,7 +197,7 @@
         "A unit test over a 04-option shape constructs Some and None and asserts the match arms behave correctly"
       ],
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
