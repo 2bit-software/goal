@@ -128,6 +128,7 @@ func (s *Server) handle(m *rpcMessage) (stop bool) {
 				DocumentSymbolProvider: true,
 				SemanticTokensProvider: &SemanticTokensOptions{Legend: defaultSemanticLegend(), Full: true},
 				DefinitionProvider:     true,
+				HoverProvider:          true,
 			},
 			ServerInfo: ServerInfo{Name: "goal-lsp", Version: serverVersion},
 		})
@@ -149,6 +150,8 @@ func (s *Server) handle(m *rpcMessage) (stop bool) {
 		s.reply(m.ID, s.semanticTokens(m.Params))
 	case "textDocument/definition":
 		s.reply(m.ID, s.definition(m.Params))
+	case "textDocument/hover":
+		s.reply(m.ID, s.hover(m.Params))
 	case "initialized", "$/setTrace", "textDocument/didSave":
 		// no-op notifications
 	default:

@@ -306,6 +306,57 @@
   encoder, so wire indices can't drift. GOTCHA: a `?` inside a string ("?") lexes as
   STRING, not QUESTION — a test locating the postfix `?` by substring must avoid a
   stray `?` string in its sample.
+- LSP hover (US-049) reuses the US-048 symbol graph: parse the open buffer, build
+  a name-keyed index over file.Decls, walk references keyed by structural parent
+  (hoverVisitor mirrors definition.go's refVisitor), and map the cursor to a byte
+  offset with offsetForPosition. The ONE difference from go-to-definition: the
+  index value is a rendered hoverInfo{signature,doc} instead of a declaration
+  Range, and declaration-name idents are seeded as spans too (so hovering the
+  declaration itself resolves, not just references). A func/method signature is
+  the RAW SOURCE slice src[FuncDecl.Pos().Offset:FuncDecl.Type.End().Offset]
+  whitespace-collapsed — Pos() already starts at the from/derive modifier or the
+  func keyword, and Type.End() stops before the body, so the result type
+  (Result[...]/Option[...]) shows verbatim without rendering the AST. Only
+  FuncDecl carries Doc in the AST, so doc text is function-only; enum/type/variant
+  hovers render a header string. Nil *Hover marshals to JSON null (best-effort
+  contract). GOTCHA: a word inside a /// doc line is NOT an indexable identifier,
+  so a hover test that locates a function-name occurrence by substring must word
+  the doc comment to avoid the symbol name.
+
+## [2026-06-27T18:30:00Z] - US-049
+- Added textDocument/hover to the goal LSP, resolved from the AST symbol graph of
+  the open document. Hovering over a function/method (call or declaration), an
+  enum/sealed/type name, or an enum variant returns a markdown tooltip with the
+  symbol's signature/header and any attached /// doc comment. A Result-returning
+  function reports its full signature including the Result result type. Unknown
+  URI / no symbol / unparseable source yield a null hover (best-effort, like
+  definition/semanticTokens/documentSymbol).
+- Implementation: buildHoverIndex maps each top-level name to hoverInfo{signature,
+  doc} (variants keyed under their enum); collectHoverSpans seeds declaration-name
+  spans then walks references (hoverVisitor) recording each ident's byte span ->
+  hoverInfo. resolveHover returns the hoverInfo whose [start,end) covers the
+  cursor offset. funcSignature slices the raw source signature (mod/func .. result
+  end), whitespace-collapsed; docText joins FuncDecl.Doc.Lines.
+- Files changed:
+  - internal/lsp/hover.go (new: hover handler, resolveHover, hoverInfo/render,
+    hoverIndex, buildHoverIndex, collectHoverSpans/hoverVisitor, funcSignature,
+    typeSpecHeader, docText, named/name helpers)
+  - internal/lsp/protocol.go (HoverParams, Hover, MarkupContent,
+    ServerCapabilities.HoverProvider)
+  - internal/lsp/server.go (advertise hoverProvider; route textDocument/hover)
+  - internal/lsp/hover_test.go (new: ResultFunctionSignature, ReportsDocComment,
+    EnumVariant, NoSymbol, Unparseable, Handler, AdvertisesHover)
+  - prd.json (US-049 passes:true), progress.txt
+  - history/20260627-feature-us-049-lsp-hover-with-types/ (initiative)
+- Learnings for future iterations:
+  - US-050 (references/rename) inverts this same symbol graph: where hover maps a
+    ref -> its declaration's description, find-references maps a declaration ->
+    all ref spans. The hoverVisitor/refVisitor structural-parent keying is the
+    shared seed; reuse it rather than re-walking.
+  - Rendering a signature by SLICING raw source (not printing the AST) keeps it
+    faithful and comment-free without a printer — the same discipline goalfmt/fix
+    use. Pos()/End() offsets bound it exactly (Type.End() excludes the body).
+---
 
 ## [2026-06-27T17:30:00Z] - US-048
 - Added textDocument/definition to the goal LSP, resolved from the AST symbol

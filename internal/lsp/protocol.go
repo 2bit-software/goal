@@ -42,14 +42,15 @@ type InitializeResult struct {
 }
 
 // ServerCapabilities advertises what the server can do: full-document sync, an idiomatize
-// fix-all code action, document-symbol (outline) support, semantic tokens, and
-// go-to-definition.
+// fix-all code action, document-symbol (outline) support, semantic tokens, go-to-definition,
+// and hover.
 type ServerCapabilities struct {
 	TextDocumentSync       int                    `json:"textDocumentSync"`
 	CodeActionProvider     *CodeActionOptions     `json:"codeActionProvider,omitempty"`
 	DocumentSymbolProvider bool                   `json:"documentSymbolProvider,omitempty"`
 	SemanticTokensProvider *SemanticTokensOptions `json:"semanticTokensProvider,omitempty"`
 	DefinitionProvider     bool                   `json:"definitionProvider,omitempty"`
+	HoverProvider          bool                   `json:"hoverProvider,omitempty"`
 }
 
 // SemanticTokensOptions advertises the server's semantic-tokens support: the legend that
@@ -139,6 +140,27 @@ type DefinitionParams struct {
 type Location struct {
 	URI   string `json:"uri"`
 	Range Range  `json:"range"`
+}
+
+// HoverParams is a textDocument/hover request: the document and the 0-based cursor position
+// whose symbol should be described.
+type HoverParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+	Position     Position               `json:"position"`
+}
+
+// Hover is the response to a hover request: the rendered description of the symbol under the
+// cursor. A nil *Hover marshals to JSON null, the best-effort contract shared with definition
+// and semantic tokens.
+type Hover struct {
+	Contents MarkupContent `json:"contents"`
+}
+
+// MarkupContent is formatted hover text. Kind is "markdown" (the widely-supported form); Value
+// is the rendered body.
+type MarkupContent struct {
+	Kind  string `json:"kind"`
+	Value string `json:"value"`
 }
 
 // DocumentSymbol is one outline entry: Range covers the whole declaration, SelectionRange the
