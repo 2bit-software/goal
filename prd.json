@@ -221,7 +221,7 @@
         "A unit test over a 07-implements shape calls an interface method on differently-typed values and asserts each concrete implementation runs"
       ],
       "priority": 18,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

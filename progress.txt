@@ -1,5 +1,49 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T04:00:00Z] - US-018
+- Proved US-018 "Eval implements dispatch": the goscript interpreter honors
+  `implements` — a struct satisfying a sealed/ordinary interface is dispatched
+  through the interface, calling the correct concrete method at runtime. NO
+  production change was needed: interface method dispatch already rides entirely
+  on the US-010 method registry (registerMethods -> ip.methods, tryMethodCall,
+  callMethod). Because the interpreter ERASES static types at runtime
+  (REWRITE-ARCHITECTURE §3.2), an interface-typed binding simply HOLDS the
+  concrete struct value, and tryMethodCall dispatches structurally on
+  recv.Struct.TypeID — so differently-typed values, value receivers, pointer
+  receivers, and values read out of a heterogeneous interface-element slice all
+  dispatch to the right concrete method with no interface-boxing wrapper.
+- internal/interp/implements_test.go (new): TestImplementsValueReceiverDifferentTypes
+  (Stringer{Describe() string} over Point/Label through a `render(s Stringer)`
+  param), TestImplementsPointerReceiverThroughInterface (Resetter{Reset()} with a
+  pointer-receiver Counter.Reset called through a `use(r Resetter)` param — the
+  mutation is observed back through the caller's value, NO `&` needed),
+  TestImplementsHeterogeneousSliceDispatch ([]Shape{Square,Rect} ranged+summed =
+  17), TestImplementsMissingMethodIsLoud (a Plain with no Describe -> a loud
+  error, not a silent zero). stdlib testing, no testify.
+- prd.json (US-018 passes:true), progress.txt
+- history/20260627-feature-us-018-eval-implements-dispatch/ (initiative)
+- Learnings for future iterations:
+  - Interface dispatch is FREE on top of US-010: there is no interface value at
+    runtime, only the concrete struct, so calling `iface.M()` is just
+    tryMethodCall on the concrete TypeID. US-018 added ONLY a conformance test —
+    confirming the US-010 prediction ("an interface value dispatched to a
+    concrete method reuses callMethod").
+  - Pointer-receiver dispatch through an interface works WITHOUT `&`: the
+    interpreter has NO address-of operator (evalUnary refuses `&` with
+    "unsupported unary operator &"), but a goal value shares its underlying
+    *StructValue, so a pointer-receiver method (recvIsPointer -> callMethod skips
+    the copyStructValue) mutates the caller's value. General first-class pointers
+    / `&` remain unimplemented and out of scope for the current stories.
+  - PARSER LIMITATION (pre-existing, not US-018's concern): a VOID interface
+    method followed by another method fails to parse (`type R interface { A();
+    B() int }` -> "expected IDENT, found ("). A single void method (`Reset()`)
+    or all-returning methods parse fine. Any interp test that needs a multi-
+    method interface must give every method a return type, or use single-method
+    interfaces — which is what implements_test.go does.
+  - interp deps stay clean for the US-022 gate (go list -deps ./internal/interp:
+    no go/types, internal/backend, internal/typecheck).
+---
+
 ## [2026-06-27T00:00:00Z] - US-017
 - Added postfix `?` (ast.UnwrapExpr) to the goscript interpreter as NON-LOCAL
   early return — the second of the two genuinely non-Go runtime mechanics. On
