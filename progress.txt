@@ -202,3 +202,34 @@
     same manifest+runner pattern; future check harness rewires should follow the
     external-package delegation used here.
 ---
+
+## [2026-06-27T07:50:00Z] - US-007
+- Added the behavioral conformance tier (Phase 0.7): RunCompile(root, Case,
+  Transpiler) transpiles a KindTranspile case, writes Output.Go into an isolated
+  temp module (minimal go.mod + one .go file via os.MkdirTemp), and runs
+  `go build ./...` then `go vet ./...` against it. Judges output by behavior (it
+  compiles) rather than by exact Go spelling, so it is front-end independent. The
+  source tree is never touched.
+- TestCompileRunner drives every transpile case (51) in corpus/manifest.json
+  through pipeline.Transpile and asserts each builds + vets cleanly; loud
+  zero-case guard (t.Fatalf); skipped under -short since it spawns the go
+  toolchain per case (~6s).
+- Files changed:
+  - internal/corpus/behavior_runner.go (RunCompile)
+  - internal/corpus/behavior_runner_test.go (whole-corpus behavioral test)
+  - history/20260627-feature-us-007-behavioral-tier-compile-output/ (initiative)
+- Learnings for future iterations:
+  - The corpus package's OWN tests are package corpus (INTERNAL) and may import
+    pipeline directly (pipeline does not import corpus). Only tests living in
+    internal/pipeline and internal/check must be external _test packages to
+    delegate to corpus. RunCompile reuses the existing Transpiler/TranspilerFunc
+    seam — no new interface.
+  - Generated Go is zero-dependency (stdlib only), so a minimal go.mod
+    (module goalcorpus + go 1.26) builds/vets offline; the package clause comes
+    from the generated source, and a non-main package compiles fine in isolation.
+  - A standalone temp module per case is simpler than `go build -overlay` (used
+    by cmd/goal) and judges each case in isolation; reuse os.MkdirTemp +
+    exec.Command("go", verb, "./...") with cmd.Dir set and CombinedOutput for
+    diagnostics. US-008 (run doctests) extends this with `go test` on doctest
+    sidecars.
+---
