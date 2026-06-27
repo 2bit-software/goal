@@ -1,0 +1,38 @@
+# Progress Log — goal AST front-end rewrite
+
+## Codebase Patterns
+- Zero-dependency: stdlib only. Tests use stdlib `testing` (NO testify), even
+  though the injected go.md rule mentions testify — the project constraint wins.
+- New packages live under `internal/`; fixtures go in a sibling `testdata/` dir
+  (see internal/{analyze,check,pipeline,corpus}/testdata).
+- Verify gates (prd.json verifyCommands): `go build ./...`, `go vet ./...`,
+  `go test ./... -count=1`. All must be green before committing.
+- Follow REWRITE-ARCHITECTURE.md phasing; §10 details Phases 0–2 (the approved
+  scope). Phase 0 = corpus hardening (US-001..US-010).
+- Each story runs through the morse-code `feature` workflow in --automode on the
+  current branch (no new branch); human-review gates are passed via
+  `morse-code workflow resume`.
+
+## [2026-06-27T01:56:33Z] - US-001
+- Implemented internal/corpus: a runner-independent Case model and JSON manifest
+  loader (Phase 0.1). Defines Kind(transpile|check|doctest), Mode(file|package),
+  Normalize(none|gofmt) named types + constants, the Case struct, a Manifest
+  struct wrapping []Case, and Load(path)(Manifest,error) using stdlib
+  encoding/json with wrapped errors (no panics).
+- Files changed:
+  - internal/corpus/corpus.go (model + loader)
+  - internal/corpus/corpus_test.go (TestLoadFixture asserts every field of one
+    case of each Kind; TestLoadMissingFile and TestLoadMalformed cover error
+    paths)
+  - internal/corpus/testdata/manifest.json (fixture: 1 transpile, 1 check,
+    1 doctest case)
+  - history/20260627-feature-us-001-corpus-case-model-and-loader/ (initiative)
+- Commit: 027836c
+- Learnings for future iterations:
+  - Manifest is a struct (not a bare []Case) deliberately, so corpus-level
+    metadata can be added later without breaking US-002+ runner callers.
+  - String-typed enums keep the JSON manifest human-readable and round-trippable.
+  - US-002 (generate manifest over existing corpus) and US-003+ (runners) build
+    directly on these types; expected counts per prd notes: 51 transpile pairs,
+    50 check cases.
+---

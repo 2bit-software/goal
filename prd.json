@@ -1,0 +1,612 @@
+{
+  "project": "goal",
+  "branchName": "ralph/ast-frontend-rewrite",
+  "description": "Replace the token-splice transpiler with a real lexer/parser/AST front-end, retire the splice passes behind a new Go backend, and move every tool (check, fix, fmt, LSP) onto the shared AST.",
+  "verifyCommands": [
+    "go build ./...",
+    "go vet ./...",
+    "go test ./... -count=1"
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add corpus Case model and loader",
+      "description": "As a compiler engineer, I need a runner-independent model of golden cases so the suite is decoupled from package layout.",
+      "acceptanceCriteria": [
+        "internal/corpus defines Case{ID, Kind(transpile|check|doctest), Input, Expected, Mode(file|package), Normalize} and Load(path)(Manifest,error)",
+        "A unit test loads a small fixture manifest from internal/corpus/testdata and asserts every field of one case of each Kind"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Generate manifest over existing corpus",
+      "description": "As a maintainer, I need the existing golden files indexed into one manifest so any runner can consume them.",
+      "acceptanceCriteria": [
+        "A generator walks features/NN/examples, testdata, and testdata/check and writes corpus/manifest.json without moving any source file",
+        "A test asserts the generated manifest contains 51 transpile pairs and 50 check cases (the current corpus counts)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Counts from audit: 40 feature examples + 11 testdata = 51 transpile pairs; 50 check cases."
+    },
+    {
+      "id": "US-003",
+      "title": "Build interface-based transpile runner",
+      "description": "As a compiler engineer, I need a transpile runner behind an interface so multiple front-ends can be judged identically.",
+      "acceptanceCriteria": [
+        "internal/corpus defines Transpiler interface{ Transpile(src string)(pipeline.Output,error) } and a runner that gofmt-normalizes both got and want before comparing",
+        "A test runs every transpile case in the manifest against pipeline.Transpile and all pass"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Build interface-based check runner",
+      "description": "As a compiler engineer, I need a check runner that honors inline // want markers so checker cases are runner-independent.",
+      "acceptanceCriteria": [
+        "Runner defines Checker interface and matches each // want \"substr\" marker against a diagnostic on the same line, failing on any unclaimed Error-severity diagnostic",
+        "A test runs every check case in the manifest against check.Analyze and all pass"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Build doctest sidecar runner",
+      "description": "As a compiler engineer, I need doctest cases compared via the manifest so the doctest output is part of the same suite.",
+      "acceptanceCriteria": [
+        "Runner compares Output.Test to the .go.expected sidecar (gofmt-normalized) for every doctest case in the manifest",
+        "A test runs all doctest cases against pipeline.Transpile and all pass"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Rewire existing harnesses to runner",
+      "description": "As a maintainer, I need the old test harnesses to delegate to the corpus runner so hardcoded paths disappear.",
+      "acceptanceCriteria": [
+        "pipeline_test.go and check_test.go contain no hardcoded feature-dir lists or filepath.Join(\"..\",\"..\",\"features\",...) paths (grep returns nothing)",
+        "The full suite remains green after the rewrite"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Add behavioral tier: compile output",
+      "description": "As a compiler engineer, I need generated Go compiled per case so conformance is judged by behavior, not Go spelling.",
+      "acceptanceCriteria": [
+        "For every transpile case the runner writes Output.Go to a temp module and runs go build + go vet on it",
+        "A test asserts every transpile case's generated Go builds and vets cleanly"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Reuse the temp-dir machinery from goal build. This tier is implementation-independent and gates all later phases."
+    },
+    {
+      "id": "US-008",
+      "title": "Add behavioral tier: run doctests",
+      "description": "As a compiler engineer, I need doctest sidecars executed so behavior is proven, not just compiled.",
+      "acceptanceCriteria": [
+        "For each case that has a doctest sidecar, the runner writes both files to a temp module and runs go test on it",
+        "A test asserts every doctest-bearing case passes go test in its temp module"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Reify package-mode tests as fixtures",
+      "description": "As a maintainer, I need the inline package-mode tests as on-disk fixtures so they live in the manifest.",
+      "acceptanceCriteria": [
+        "foreign_test.go and pipeline_package_test.go inline sources become on-disk multi-file fixtures with a declared import map, indexed as Mode=package cases",
+        "The runner executes the package-mode cases and they pass"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Archive legacy per-feature transpilers",
+      "description": "As a maintainer, I need the superseded standalone transpilers archived so they stop implying they are live.",
+      "acceptanceCriteria": [
+        "features/NN/transpiler directories are moved under attic/ and no features/*/transpiler path remains",
+        "go build ./... and go test ./... remain green (these were separate modules excluded from the root module)"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Add token package with positions",
+      "description": "As a compiler engineer, I need a token type with line/col positions so the AST can carry real source positions.",
+      "acceptanceCriteria": [
+        "internal/token defines Kind constants for every goal lexeme and Pos{Offset,Line,Col}",
+        "A unit test asserts Kind/String round-trips and Pos ordering"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Lex core Go tokens with positions",
+      "description": "As a compiler engineer, I need a lexer for the Go subset so ordinary source tokenizes with correct positions.",
+      "acceptanceCriteria": [
+        "internal/lexer tokenizes identifiers, literals, operators, and delimiters with accurate Offset/Line/Col",
+        "A test tokenizes a multi-line sample and asserts the kind and position of each token"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Lex goal-specific lexemes and trivia",
+      "description": "As a compiler engineer, I need the lexer to emit goal lexemes so the parser need not fake them.",
+      "acceptanceCriteria": [
+        "Lexer emits single tokens for ? , => , and ... ; retains /// doc-comment content as trivia; and lexes implements/sealed/from/derive as identifiers",
+        "A test asserts each of these lexemes produces exactly one token of the expected kind and that comments attach as trivia"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "=> must be one token, not '=' then '>' as the splice passes treat it."
+    },
+    {
+      "id": "US-014",
+      "title": "Define core AST nodes and Walk",
+      "description": "As a compiler engineer, I need AST node types for the Go subset plus a visitor so tools can traverse one tree.",
+      "acceptanceCriteria": [
+        "internal/ast defines File, the Go decl/stmt/expr/type nodes goal uses, and Walk(Visitor,Node)",
+        "A test builds a tree by hand and asserts Walk visits every node exactly once"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "Add goal declaration AST nodes",
+      "description": "As a compiler engineer, I need AST nodes for goal declarations so enums and friends are first-class.",
+      "acceptanceCriteria": [
+        "ast defines EnumDecl/Variant/PayloadField, SealedInterfaceDecl, ImplementsClause, and from/derive FuncDecl modifiers",
+        "A test asserts Walk descends into each new node's children"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "Add goal expression and pattern nodes",
+      "description": "As a compiler engineer, I need AST nodes for match, ? and construction so the three meanings of Enum.Variant(x) are distinct node types.",
+      "acceptanceCriteria": [
+        "ast defines MatchExpr/MatchArm, VariantPattern/RestPattern, UnwrapExpr, VariantLit/LabeledArg, and SpreadElement",
+        "A test asserts a construction VariantLit and a destructuring VariantPattern are distinct node types and both walk correctly"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "This is the structural fix for the Match-before-Enums ordering hack."
+    },
+    {
+      "id": "US-017",
+      "title": "Parse package, imports, declarations",
+      "description": "As a compiler engineer, I need top-level declaration parsing so a file's structure becomes an AST.",
+      "acceptanceCriteria": [
+        "internal/parser parses package clause, imports, and func/type/var/const declarations of the Go subset into ast.File",
+        "A test parses a sample file and asserts the declaration list shape"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "Parse statements",
+      "description": "As a compiler engineer, I need statement parsing so function bodies become AST.",
+      "acceptanceCriteria": [
+        "Parser handles assignment, short-var, if/for/switch/return/defer/go and block statements",
+        "A test parses a function body with each statement form and asserts the statement list"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "Parse expressions with Pratt and postfix ?",
+      "description": "As a compiler engineer, I need precedence-correct expression parsing so postfix ? falls out of the grammar.",
+      "acceptanceCriteria": [
+        "Parser parses binary/unary/selector/call/index expressions with correct precedence and postfix ? as UnwrapExpr",
+        "A test asserts f(x)? , a.b? , and a mixed-precedence binary expression parse to the expected tree shape"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "Parse enum, sealed, implements",
+      "description": "As a compiler engineer, I need enum-family parsing so closed types become AST.",
+      "acceptanceCriteria": [
+        "Parser parses enum declarations (data-less and payload variants), sealed interface, and struct implements clauses",
+        "A test parses the 01-enums and 07-implements example inputs and asserts variant/field/implements structure"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "Parse match and patterns",
+      "description": "As a compiler engineer, I need match parsing in both positions so value-position match is representable.",
+      "acceptanceCriteria": [
+        "Parser parses match as both a statement and an expression (var x = match ...), including binding and rest patterns",
+        "A test asserts a statement-position and a value-position match both parse with the expected arms"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": "Value-position match is refused by the current splice approach; it must parse here."
+    },
+    {
+      "id": "US-022",
+      "title": "Parse construction, labeled args, spread",
+      "description": "As a compiler engineer, I need construction parsing so Enum.Variant(field: v) and ...defaults become AST.",
+      "acceptanceCriteria": [
+        "Parser parses VariantLit with LabeledArg arguments and SpreadElement (...defaults, ...derive(s)) inside composite literals",
+        "A test parses Status.Active(since: now()) and a literal containing ...defaults and asserts the nodes"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-023",
+      "title": "Parse from/derive, assert, doctests",
+      "description": "As a compiler engineer, I need the remaining goal constructs parsed so the grammar is complete.",
+      "acceptanceCriteria": [
+        "Parser parses from func and derive func (bodyless and bodied), assert statements, and /// doctest comments as structured nodes",
+        "A test parses the 10-assert, 11-doctests, and 12-derive-convert example inputs and asserts their nodes"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-024",
+      "title": "Gate: parse 100% of corpus",
+      "description": "As a compiler engineer, I need every corpus input to parse so the parser is proven complete against the spec.",
+      "acceptanceCriteria": [
+        "A test iterates every .goal input in the corpus manifest and parses it with zero errors",
+        "The test fails loudly listing any input that does not parse"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-025",
+      "title": "Add AST snapshot tests",
+      "description": "As a compiler engineer, I need stable AST snapshots so parser structure is pinned per construct.",
+      "acceptanceCriteria": [
+        "Parser can render an AST to a deterministic textual form (e.g. s-expression) and snapshot goldens exist for one input per goal construct",
+        "A test compares the rendered AST of each representative input to its checked-in snapshot"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": "Replaces the tree-sitter differential as the loop-ready gate; grammar.js remains a manual cross-check reference."
+    },
+    {
+      "id": "US-026",
+      "title": "Add Backend and Formatter interfaces",
+      "description": "As a compiler engineer, I need pluggable backend/formatter seams so the new engine can run behind a flag.",
+      "acceptanceCriteria": [
+        "Backend interface{ Emit(*ast.File,*sema.Info)(Output,error) } and Formatter interface exist; the driver selects engine via a flag (e.g. --engine=ast)",
+        "A test transpiles a goal file that uses no goal-specific constructs through the new engine and the output compiles via the behavioral tier"
+      ],
+      "priority": 26,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-027",
+      "title": "Resolve symbols by AST walk",
+      "description": "As a compiler engineer, I need name-keyed facts derived from the AST so analyze's token scanning is retired.",
+      "acceptanceCriteria": [
+        "internal/sema builds enums/structs/signatures/from-registry/methods by walking the AST",
+        "A test asserts sema resolves the same symbols as analyze.Build for a set of representative inputs, including a struct field whose type contains an embedded comma (the analyze comma-split bug)"
+      ],
+      "priority": 27,
+      "passes": false,
+      "notes": "Fixes the known analyze.parseStructBody comma-split bug structurally."
+    },
+    {
+      "id": "US-028",
+      "title": "Wrap go/types depth checks behind interface",
+      "description": "As a compiler engineer, I need the go/types crutch behind a TypeChecker interface so it can be swapped later without caller changes.",
+      "acceptanceCriteria": [
+        "TypeChecker interface is defined and the existing typecheck (transpile then go/types) implements it",
+        "A test exercises the depth checks through the interface and the existing typecheck cases still pass"
+      ],
+      "priority": 28,
+      "passes": false,
+      "notes": "Decision 4: no native goal type checker until the runtime forces it."
+    },
+    {
+      "id": "US-029",
+      "title": "Reimplement exhaustiveness check on AST",
+      "description": "As a goal developer, I need exhaustiveness checking over the AST so match diagnostics survive the front-end change.",
+      "acceptanceCriteria": [
+        "sema implements the match exhaustiveness check over the AST",
+        "Every exhaustiveness-related case in testdata/check passes through the sema checker via the corpus runner"
+      ],
+      "priority": 29,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-030",
+      "title": "Reimplement field-completeness check on AST",
+      "description": "As a goal developer, I need no-zero-value (section 8) checking over the AST so field diagnostics survive.",
+      "acceptanceCriteria": [
+        "sema implements the field-completeness check over the AST (deferrals as Warnings, violations as Errors)",
+        "Every field-completeness case in testdata/check passes through the sema checker via the corpus runner"
+      ],
+      "priority": 30,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-031",
+      "title": "Reimplement mustuse/implements/question checks",
+      "description": "As a goal developer, I need the remaining lexical checks over the AST so all diagnostics survive.",
+      "acceptanceCriteria": [
+        "sema implements must-use, implements, and ?-arity/refusal checks over the AST",
+        "Every must-use, implements, and question case in testdata/check passes through the sema checker via the corpus runner"
+      ],
+      "priority": 31,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-032",
+      "title": "Emit the Go subset from AST",
+      "description": "As a compiler engineer, I need a code emitter for ordinary Go so the backend can print non-goal code.",
+      "acceptanceCriteria": [
+        "backend/go walks the AST and emits Go source text for the Go subset, formatted once via Formatter",
+        "A goal file using only plain-Go constructs transpiles through the new backend and passes the behavioral tier"
+      ],
+      "priority": 32,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-033",
+      "title": "Lower and emit enums and implements",
+      "description": "As a goal developer, I need enum/sealed/implements lowering on the new backend so closed types work.",
+      "acceptanceCriteria": [
+        "lower+backend produce the sum encoding for enums and the assertion/marker for implements",
+        "The 01-enums and 07-implements transpile cases pass the behavioral tier through the new backend"
+      ],
+      "priority": 33,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-034",
+      "title": "Lower and emit Result and Option",
+      "description": "As a goal developer, I need open-E Result and Option lowering on the new backend so the core types work.",
+      "acceptanceCriteria": [
+        "lower+backend produce (T,error) for open-E Result and *T for Option, including statement-position match over them",
+        "The 03-result and 04-option transpile cases pass the behavioral tier through the new backend"
+      ],
+      "priority": 34,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-035",
+      "title": "Lower and emit ? with real gensym",
+      "description": "As a compiler engineer, I need ? propagation lowered with proper gensym so the magic __goal_ prefix is retired.",
+      "acceptanceCriteria": [
+        "? propagation is lowered using scope-aware generated identifiers, not the literal __goal_ prefix",
+        "The 05-question-prop cases pass the behavioral tier and a test asserts the generated Go contains no __goal_ substring"
+      ],
+      "priority": 35,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-036",
+      "title": "Lower and emit match including value position",
+      "description": "As a goal developer, I need full match lowering so value-position match finally works.",
+      "acceptanceCriteria": [
+        "lower+backend emit a type-switch for enum match in both statement and value position",
+        "The 02-match cases plus a new value-position-match corpus case pass the behavioral tier through the new backend"
+      ],
+      "priority": 36,
+      "passes": false,
+      "notes": "Add the new value-position-match example to the corpus as part of this story."
+    },
+    {
+      "id": "US-037",
+      "title": "Lower and emit closed-E Result",
+      "description": "As a goal developer, I need closed-E Result lowering so sum-encoded errors work on the new backend.",
+      "acceptanceCriteria": [
+        "lower+backend emit the Ok/Err sum constructors, closed match, closed ?, and the From-conversion, with the prelude emitted once",
+        "The 06-error-e cases pass the behavioral tier through the new backend"
+      ],
+      "priority": 37,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-038",
+      "title": "Lower and emit defaults and assert",
+      "description": "As a goal developer, I need ...defaults and assert lowering so those constructs work on the new backend.",
+      "acceptanceCriteria": [
+        "lower+backend expand ...defaults to explicit zero values and assert to an if-panic guard",
+        "The 08-no-zero-value and 10-assert cases pass the behavioral tier through the new backend"
+      ],
+      "priority": 38,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-039",
+      "title": "Lower and emit derive/from",
+      "description": "As a goal developer, I need derive/from lowering so type-directed conversion works on the new backend.",
+      "acceptanceCriteria": [
+        "lower+backend expand derive func field-by-field using resolved types (not string parsing) and strip the from modifier",
+        "The 12-derive-convert cases pass the behavioral tier through the new backend"
+      ],
+      "priority": 39,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-040",
+      "title": "Emit doctest sidecars on new path",
+      "description": "As a goal developer, I need doctests extracted and emitted by the new backend so executable docs survive.",
+      "acceptanceCriteria": [
+        "The new backend extracts /// doctests and emits the _test.go sidecar lowered through the same path",
+        "The 11-doctests cases pass the doctest tier through the new backend"
+      ],
+      "priority": 40,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-041",
+      "title": "Gate: full behavioral parity",
+      "description": "As a maintainer, I need the entire corpus green through the new backend so the flip is safe.",
+      "acceptanceCriteria": [
+        "Every transpile, check, and doctest case passes the behavioral conformance tier through the new (AST) engine",
+        "A single test runs the whole manifest under the new engine and reports zero failures"
+      ],
+      "priority": 41,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-042",
+      "title": "Regenerate goldens and make AST default",
+      "description": "As a maintainer, I need exact goldens regenerated and the new engine defaulted so the new path is canonical.",
+      "acceptanceCriteria": [
+        "The .go.expected goldens are regenerated from the new backend and the manifest exact tier is green against the new default engine",
+        "The old splice engine remains available behind a flag for one release"
+      ],
+      "priority": 42,
+      "passes": false,
+      "notes": "New gensym names and equivalent encodings mean exact goldens necessarily change here."
+    },
+    {
+      "id": "US-043",
+      "title": "Delete splice passes and dead scanning",
+      "description": "As a maintainer, I need the obsolete splice machinery removed so there is one front-end.",
+      "acceptanceCriteria": [
+        "internal/pass, scan's Splice machinery, and the analyze token-scan tables subsumed by sema are deleted; grep finds no references to them",
+        "Build, vet, and the full suite are green after removal"
+      ],
+      "priority": 43,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-044",
+      "title": "Move goal fix onto the AST",
+      "description": "As a goal developer, I need fix to operate on the AST so it shares one model with the compiler.",
+      "acceptanceCriteria": [
+        "internal/fix consumes the AST instead of re-lexing, and emits the same rewrites",
+        "The existing fix test suite passes unchanged in observable behavior"
+      ],
+      "priority": 44,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-045",
+      "title": "Add goal fmt source printer",
+      "description": "As a goal developer, I need goal fmt so goal source has a canonical, comment-preserving format.",
+      "acceptanceCriteria": [
+        "goal fmt prints goal source from the AST preserving comments, and is idempotent",
+        "A test asserts fmt(fmt(src)) == fmt(src) for every corpus .goal input and that comments are retained on a sample"
+      ],
+      "priority": 45,
+      "passes": false,
+      "notes": "This is the one place comment/whitespace fidelity matters; use position-carrying nodes + comment attachment."
+    },
+    {
+      "id": "US-046",
+      "title": "Switch LSP document model to AST",
+      "description": "As an editor user, I need the LSP backed by the AST so richer features become possible.",
+      "acceptanceCriteria": [
+        "internal/lsp diagnostics and document symbols are derived from the AST (lsp/symbols.go scanDecls token walk removed)",
+        "The existing LSP test suite passes"
+      ],
+      "priority": 46,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-047",
+      "title": "Add LSP semantic tokens",
+      "description": "As an editor user, I need semantic tokens so goal constructs are highlighted by role.",
+      "acceptanceCriteria": [
+        "The server advertises and serves textDocument/semanticTokens classified from the AST",
+        "A test asserts the token classification of a sample containing an enum, a match, and a ? expression"
+      ],
+      "priority": 47,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-048",
+      "title": "Add LSP go-to-definition",
+      "description": "As an editor user, I need go-to-definition so I can navigate goal symbols.",
+      "acceptanceCriteria": [
+        "textDocument/definition resolves a referenced symbol to its declaration position via the AST symbol graph",
+        "A test asserts definition of a function call and an enum variant resolve to the expected positions"
+      ],
+      "priority": 48,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-049",
+      "title": "Add LSP hover with types",
+      "description": "As an editor user, I need hover so I can see a symbol's type and doc.",
+      "acceptanceCriteria": [
+        "textDocument/hover returns the type and any doc comment for a symbol under the cursor",
+        "A test asserts hover over a Result-returning function reports its signature"
+      ],
+      "priority": 49,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-050",
+      "title": "Add LSP rename and find references",
+      "description": "As an editor user, I need rename and find-references so I can refactor goal safely.",
+      "acceptanceCriteria": [
+        "textDocument/references and textDocument/rename return all reference sites / workspace edits via the AST symbol graph",
+        "A test asserts renaming a symbol produces edits at every reference in a sample"
+      ],
+      "priority": 50,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
