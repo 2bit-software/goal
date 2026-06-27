@@ -353,8 +353,8 @@
         "Every exhaustiveness-related case in testdata/check passes through the sema checker via the corpus runner"
       ],
       "priority": 29,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "internal/sema/check.go adds the AST exhaustiveness check (CheckExhaustive + the Check aggregator US-030/031 extend) plus sema's own Diagnostic/Severity spine, keeping sema independent of analyze/check. Enum resolved from the first variant-qualified arm (position-independent); Result/Option skipped; unknown enum -> Warning deferral; missing variants w/o `_` -> Error, message wording matched to the legacy check so the inline // want markers pass. corpus/sema_checker.go (SemaCheck) parses->Resolve->sema.Check->converts to check.Diagnostic via Pos.Offset, satisfying corpus.Checker; corpus.TestSemaExhaustiveRunner drives the 7 testdata/check/02-match cases through RunCheck and all pass."
     },
     {
       "id": "US-030",

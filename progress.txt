@@ -1143,3 +1143,53 @@
     TypeChecker seam is where a future sema-backed checker plugs in without
     touching cmd/goal.
 ---
+
+## [2026-06-27T07:10:00Z] - US-029
+- Phase 2 check reimplementation: internal/sema now enforces feature-02 match
+  exhaustiveness over the AST, the first of the sema checks replacing the
+  token-scanning internal/check guarantees. internal/sema/check.go adds CheckExhaustive
+  (and a Check aggregator US-030/031 extend) plus sema's OWN Diagnostic/Severity spine
+  so sema stays independent of analyze AND check. It walks the file for MatchExpr nodes
+  (ast.Walk via a visitorFunc adapter), resolves the enum from the FIRST
+  variant-qualified arm (position-independent — fires on statement / return / var /
+  untyped `:=` match alike, never reading the scrutinee), skips Result/Option, defers
+  on an enum not in info.Enums with a located Warning, and reports an Error (missing
+  variants in declaration order) when a known-enum match omits a variant and has no `_`.
+- The diagnostic wording is matched VERBATIM to internal/check/exhaustive.go so the
+  existing inline // want markers continue to match: "… exhaustiveness deferred" and
+  "non-exhaustive `match` on enum `X`: missing variant(s) `X.V`[, `X.W`] — handle
+  it/them, or add a `_` rest-arm to dismiss the rest". Diagnostic.Pos is the match
+  keyword's token.Pos so the diagnostic lands on the match line.
+- internal/corpus/sema_checker.go adds SemaCheck(src) ([]check.Diagnostic, error) — the
+  AST-checker seam: parser.ParseFile -> sema.Resolve -> sema.Check, then converts each
+  sema.Diagnostic to check.Diagnostic (Pos = token.Pos.Offset, severity mapped
+  explicitly). It satisfies corpus.Checker via CheckerFunc, so the corpus check runner
+  judges the AST checker against the same // want markers as check.Analyze.
+- Files changed:
+  - internal/sema/check.go (new: Severity/Diagnostic/Check/CheckExhaustive + helpers)
+  - internal/sema/check_test.go (new: clean / single-missing / decl-order / rest-arm /
+    unknown-enum-deferred / Result-skip unit cases)
+  - internal/corpus/sema_checker.go (new: SemaCheck adapter)
+  - internal/corpus/sema_checker_test.go (new: TestSemaExhaustiveRunner over the 7
+    testdata/check/02-match cases via RunCheck)
+  - prd.json (US-029 passes:true), progress.txt
+  - history/20260627-feature-us-029-exhaustiveness-check-on-ast/ (initiative)
+- Learnings for future iterations:
+  - sema MUST stay independent of internal/analyze AND internal/check (check
+    transitively imports analyze). So sema defines its OWN Diagnostic/Severity; the
+    sema->check.Diagnostic conversion lives in the CONSUMER, internal/corpus
+    (sema_checker.go), which already imports check and now also imports sema — no cycle
+    (nothing sema/parser/check imports imports corpus). US-030/031 extend sema.Check and
+    the same SemaCheck adapter carries their diagnostics automatically.
+  - "exhaustiveness-related cases" = the testdata/check/02-match subtree. The US-029
+    sema checker runs ONLY exhaustiveness, so it is scoped to those cases — running it
+    over other feature dirs would surface unclaimed non-exhaustiveness diagnostics on
+    enum matches whose // want markers target a different feature. The corpus test
+    filters check cases by `strings.HasPrefix(c.Input, "testdata/check/02-match/")`.
+  - ast has no Inspect helper; use ast.Walk with a `visitorFunc(func(ast.Node) bool)`
+    adapter (Visit returns the visitor to descend, nil to stop). Reusable for any future
+    AST node-collection pass.
+  - The enum qualifier comes off VariantPattern.Enum (an *Ident, or *SelectorExpr when
+    further qualified) + Variant.Name; exprName renders the dotted path. A bare/unreadable
+    qualifier yields "" and the arm is ignored, exactly like the legacy armPattern.
+---
