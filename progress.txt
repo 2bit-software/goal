@@ -728,3 +728,41 @@
     parseOperand/parsePostfix and parseDecl; US-024 is the parse-100%-of-corpus
     gate where whole-file clean parsing (incl. labeled args) is finally required.
 ---
+
+## [2026-06-27T04:58:42Z] - US-021
+- Taught internal/parser to parse `match` in BOTH statement and value position
+  (Phase 1.4). A single parseMatchExpr returns *ast.MatchExpr (an Expr), reached
+  from two dispatch sites: parseStmt wraps it in ast.ExprStmt for statement
+  position (no separate MatchStmt — matches the AST design from US-016), and
+  parseOperand returns it directly so `var x = match s {…}` and
+  `return match s {…}` finally parse (value-position match is refused by the
+  legacy splice approach). startsExpr gained token.MATCH so `return match …`
+  parses its result list.
+- Arm patterns: `_` → *ast.RestPattern (distinct node, for exhaustiveness later);
+  `Enum.Variant(binding)` → *ast.VariantPattern where the LAST dotted segment is
+  the variant tag and the prefix is the Enum reference (*Ident, or *SelectorExpr
+  when further qualified), with an optional parenthesized payload binding.
+- Files changed:
+  - internal/parser/goal_match.go (new: parseMatchExpr/parseMatchArm/parsePattern/
+    parseVariantPattern)
+  - internal/parser/parser.go (3 hooks: parseStmt MATCH case, parseOperand MATCH
+    case, startsExpr += MATCH)
+  - internal/parser/goal_match_test.go (new: statement-position, value-position
+    var + return, and rest-pattern parse tests over features/02-match/examples)
+  - prd.json (US-021 passes:true)
+  - history/20260627-feature-us-021-parse-match-and-patterns/ (initiative)
+- Commit: c4b5d06
+- Learnings for future iterations:
+  - The match SUBJECT must be parsed with exprLev = -1 (composite-literal braces
+    suppressed), exactly like if/for/switch headers, so the `{` after the subject
+    opens the arms block instead of reading as a composite literal. Restore
+    exprLev before the LBRACE so arm bodies parse normally.
+  - Statement vs value position is unified by one parseMatchExpr: wrap in ExprStmt
+    where a statement is expected; return the Expr where an expression is. No
+    MatchStmt node exists — do not add one.
+  - `_` lexes as IDENT with Lit "_"; parsePattern checks that before falling
+    through to a variant pattern.
+  - US-022 (construction Enum.Variant(field: v) + ...spread) hooks the same
+    parser via parsePostfix/parseOperand; the VariantLit/LabeledArg/SpreadElement
+    nodes from US-016 are still unused until then.
+---

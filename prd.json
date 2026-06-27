@@ -257,7 +257,7 @@
         "A test asserts a statement-position and a value-position match both parse with the expected arms"
       ],
       "priority": 21,
-      "passes": false,
+      "passes": true,
       "notes": "Value-position match is refused by the current splice approach; it must parse here."
     },
     {
