@@ -181,7 +181,14 @@ func (p *parser) parseDecl() ast.Decl {
 		return p.parseGenDecl(p.kind())
 	case token.FUNC:
 		return p.parseFuncDecl()
+	case token.ENUM:
+		return p.parseEnumDecl()
 	default:
+		// `sealed` is a contextual keyword (lexed as IDENT) introducing a sealed
+		// interface declaration.
+		if p.isContextual("sealed") {
+			return p.parseSealedInterfaceDecl()
+		}
 		return nil
 	}
 }
@@ -422,11 +429,13 @@ func (p *parser) parseChanType() ast.Expr {
 	return c
 }
 
-// parseStructType parses struct{ ... } with its field list. (The goal
-// `struct implements I` clause is a later story.)
+// parseStructType parses struct{ ... } with its field list, including the goal
+// `struct implements I { ... }` clause (consumed before the field-list brace;
+// absent for an ordinary inline struct type).
 func (p *parser) parseStructType() ast.Expr {
 	kw := p.expect(token.STRUCT)
 	st := &ast.StructType{Struct: kw.Pos}
+	st.Implements = p.parseImplementsClause()
 	fl := &ast.FieldList{}
 	lb := p.expect(token.LBRACE)
 	fl.Opening = lb.Pos
@@ -472,7 +481,13 @@ func (p *parser) parseField() *ast.Field {
 // parseInterfaceType parses interface{ ... } with its method/embedding list.
 func (p *parser) parseInterfaceType() ast.Expr {
 	kw := p.expect(token.INTERFACE)
-	it := &ast.InterfaceType{Interface: kw.Pos}
+	return &ast.InterfaceType{Interface: kw.Pos, Methods: p.parseInterfaceBody()}
+}
+
+// parseInterfaceBody parses a braced interface method/embedding list { ... }
+// into a FieldList. It is shared by an ordinary interface type and a sealed
+// interface declaration.
+func (p *parser) parseInterfaceBody() *ast.FieldList {
 	ml := &ast.FieldList{}
 	lb := p.expect(token.LBRACE)
 	ml.Opening = lb.Pos
@@ -481,8 +496,7 @@ func (p *parser) parseInterfaceType() ast.Expr {
 	}
 	rb := p.expect(token.RBRACE)
 	ml.Closing = rb.Pos
-	it.Methods = ml
-	return it
+	return ml
 }
 
 // parseMethodSpec parses one interface element: a method (name + signature) or an
