@@ -354,6 +354,61 @@
   edits don't shift later offsets. Still single-document (locals/params/qualified
   imports/cross-file out of scope, consistent with US-048/049).
 
+## [2026-06-27T22:10:00Z] - US-009
+- Added composite-type evaluation to the goscript interpreter: struct composite
+  literals + field access, slice literals + indexing, map literals + indexing +
+  key assignment, and range-for over slices and maps. No value-model change was
+  needed — value.go already carried StructValue (pointer, Fields map), []Value
+  slices, and MapValue (pointer, string-keyed Entries) with constructors.
+- eval.go: evalExpr gained *ast.CompositeLit / *ast.SelectorExpr / *ast.IndexExpr
+  cases. evalCompositeLit dispatches on c.Type: *ast.ArrayType -> SliceVal
+  (positional elements; arrays fold into slices for v1), *ast.MapType -> MapVal
+  (KeyValueExpr elements, string keys via mapKeyString), *ast.Ident -> StructVal
+  (KEYED field: value elements only — positional struct literals are a
+  descriptive refusal). evalSelector reads a struct field (non-struct/absent ->
+  error; package/variant selectors stay later stories). evalIndex bounds-checks
+  slice int indices and reads map string keys (absent key -> NilVal, the defined
+  absent-read). mapKeyString enforces the string-keyed v1 model.
+- interp.go: execStmt gained *ast.RangeStmt -> execRange (slice: ascending
+  IntVal index + element; map: SORTED string keys for determinism; honors :=/=
+  and the blank identifier via rangeBind; recovers break/continue exactly like
+  execFor). bindTargets was refactored to delegate per-target to a new
+  assignTarget, which now handles *ast.IndexExpr (slice element / map entry
+  write) and *ast.SelectorExpr (struct field write) in ADDITION to the existing
+  *ast.Ident :=/=/compound behavior. compoundApply factors the compound-operator
+  read-modify-write so index/field targets support += etc. too.
+- Files changed:
+  - internal/interp/eval.go (CompositeLit/Selector/Index cases + helpers +
+    mapKeyString)
+  - internal/interp/interp.go (RangeStmt case; execRange, rangeBind; bindTargets
+    -> assignTarget/assignIndex/assignField/compoundApply; sort import)
+  - internal/interp/composite_test.go (new: TestCompositeProgram [9 int cases +
+    sorted map-key string], TestAcceptanceCombined [AC: structs+slices+maps +
+    range], TestCompositeErrors — stdlib testing, no testify)
+  - prd.json (US-009 passes:true), progress.txt
+  - history/20260627-feature-us-009-eval-composite-types/ (initiative)
+- Learnings for future iterations:
+  - Reference semantics come FREE from the value model: StructValue/MapValue are
+    pointers and a []Value shares its backing array, so an index/field/entry
+    write through a looked-up binding is visible everywhere it's shared — no
+    addressable-lvalue machinery needed. assignTarget evaluates the target's X
+    to get that shared identity, then mutates in place.
+  - assignTarget is now the SINGLE assignment-target seam (Ident/Index/Selector);
+    later stories extend it rather than touching bindTargets. compoundApply is
+    the shared compound-operator helper.
+  - Maps stay STRING-KEYED (v1 value model): a map literal/index/assign with a
+    non-string key is a located refusal (mapKeyString). Non-string keys are still
+    deferred. Map-range visits keys in SORTED order so any string/golden
+    assertion over a map range is deterministic.
+  - Struct literals are KEYED only (field: value) — the goal idiom; positional
+    struct literals are a descriptive refusal. evalSelector handles only struct
+    field reads; a SelectorExpr whose X is a package name (fmt.Println) or an
+    enum (Status.Pending) still routes elsewhere (US-011/US-012).
+  - RangeStmt was deliberately deferred from US-008 to here; execRange mirrors
+    execFor's break/continue recovery (errors.As over breakSignal/continueSignal,
+    returnSignal/real errors propagate). interp deps stay clean for US-022.
+---
+
 ## [2026-06-27T17:10:00Z] - US-008
 - Added control-flow evaluation to the goscript interpreter: three-clause and
   condition-only (and infinite) for loops, expression switch (tagged + tagless,

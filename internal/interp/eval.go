@@ -46,9 +46,150 @@ func (ip *Interp) evalExpr(expr ast.Expr, scope *Env) (Value, error) {
 		return ip.evalUnary(e, scope)
 	case *ast.CallExpr:
 		return ip.evalCall(e, scope)
+	case *ast.CompositeLit:
+		return ip.evalCompositeLit(e, scope)
+	case *ast.SelectorExpr:
+		return ip.evalSelector(e, scope)
+	case *ast.IndexExpr:
+		return ip.evalIndex(e, scope)
 	default:
 		return Value{}, fmt.Errorf("interp: unsupported expression %T", expr)
 	}
+}
+
+// evalCompositeLit evaluates a composite literal into a struct, slice, or map
+// value, selecting on the literal's declared type. A slice/array type yields a
+// slice value (positional elements), a map type yields a map value (key: value
+// elements), and a named (Ident) type yields a struct value (keyed
+// field: value elements). v1 maps are string-keyed; positional struct literals
+// and an elided/unsupported type are descriptive refusals.
+func (ip *Interp) evalCompositeLit(c *ast.CompositeLit, scope *Env) (Value, error) {
+	switch t := c.Type.(type) {
+	case *ast.ArrayType:
+		// Slices and arrays both evaluate to an ordered slice value in v1.
+		elems := make([]Value, 0, len(c.Elts))
+		for _, elt := range c.Elts {
+			if _, ok := elt.(*ast.KeyValueExpr); ok {
+				return Value{}, fmt.Errorf("interp: indexed slice element not supported")
+			}
+			v, err := ip.evalExpr(elt, scope)
+			if err != nil {
+				return Value{}, err
+			}
+			elems = append(elems, v)
+		}
+		return SliceVal(elems...), nil
+	case *ast.MapType:
+		entries := make(map[string]Value, len(c.Elts))
+		for _, elt := range c.Elts {
+			kv, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				return Value{}, fmt.Errorf("interp: map literal element must be key: value, got %T", elt)
+			}
+			keyVal, err := ip.evalExpr(kv.Key, scope)
+			if err != nil {
+				return Value{}, err
+			}
+			key, err := mapKeyString(keyVal)
+			if err != nil {
+				return Value{}, err
+			}
+			val, err := ip.evalExpr(kv.Value, scope)
+			if err != nil {
+				return Value{}, err
+			}
+			entries[key] = val
+		}
+		return MapVal(entries), nil
+	case *ast.Ident:
+		fields := make(map[string]Value, len(c.Elts))
+		for _, elt := range c.Elts {
+			kv, ok := elt.(*ast.KeyValueExpr)
+			if !ok {
+				return Value{}, fmt.Errorf("interp: struct literal %s requires keyed field: value elements", t.Name)
+			}
+			name, ok := kv.Key.(*ast.Ident)
+			if !ok {
+				return Value{}, fmt.Errorf("interp: struct literal field name must be an identifier, got %T", kv.Key)
+			}
+			val, err := ip.evalExpr(kv.Value, scope)
+			if err != nil {
+				return Value{}, err
+			}
+			fields[name.Name] = val
+		}
+		return StructVal(t.Name, fields), nil
+	default:
+		return Value{}, fmt.Errorf("interp: unsupported composite literal type %T", c.Type)
+	}
+}
+
+// evalSelector evaluates a field selector x.field. The receiver must evaluate to
+// a struct value; the named field is read from it. A non-struct receiver or an
+// absent field is a descriptive refusal. Package-qualified and variant selectors
+// are handled by later evaluation stories.
+func (ip *Interp) evalSelector(s *ast.SelectorExpr, scope *Env) (Value, error) {
+	recv, err := ip.evalExpr(s.X, scope)
+	if err != nil {
+		return Value{}, err
+	}
+	if recv.Kind != KindStruct || recv.Struct == nil {
+		return Value{}, fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
+	}
+	v, ok := recv.Struct.Fields[s.Sel.Name]
+	if !ok {
+		return Value{}, fmt.Errorf("interp: %s has no field %s", recv.Struct.TypeID, s.Sel.Name)
+	}
+	return v, nil
+}
+
+// evalIndex evaluates an index expression x[i]. A slice is indexed by an integer
+// (bounds-checked); a map is indexed by a string key (an absent key reads the nil
+// value, the defined absent-read result). Indexing any other kind is a
+// descriptive refusal.
+func (ip *Interp) evalIndex(e *ast.IndexExpr, scope *Env) (Value, error) {
+	recv, err := ip.evalExpr(e.X, scope)
+	if err != nil {
+		return Value{}, err
+	}
+	idx, err := ip.evalExpr(e.Index, scope)
+	if err != nil {
+		return Value{}, err
+	}
+	switch recv.Kind {
+	case KindSlice:
+		if idx.Kind != KindInt {
+			return Value{}, fmt.Errorf("interp: slice index must be int, got %s", idx.Kind)
+		}
+		if idx.Int < 0 || idx.Int >= int64(len(recv.Slice)) {
+			return Value{}, fmt.Errorf("interp: slice index %d out of range (len %d)", idx.Int, len(recv.Slice))
+		}
+		return recv.Slice[idx.Int], nil
+	case KindMap:
+		key, err := mapKeyString(idx)
+		if err != nil {
+			return Value{}, err
+		}
+		if recv.Map == nil {
+			return NilVal(), nil
+		}
+		if v, ok := recv.Map.Entries[key]; ok {
+			return v, nil
+		}
+		return NilVal(), nil
+	default:
+		return Value{}, fmt.Errorf("interp: cannot index %s", recv.Kind)
+	}
+}
+
+// mapKeyString returns the string key for a v1 (string-keyed) map. A non-string
+// key is a descriptive refusal; non-string map keys are deferred to a later
+// evaluation story.
+func mapKeyString(v Value) (string, error) {
+	if v.Kind != KindString {
+		return "", fmt.Errorf("interp: map key must be string, got %s", v.Kind)
+	}
+	return v.Str, nil
 }
 
 // evalCall evaluates a call in single-value position: it requires the callee to

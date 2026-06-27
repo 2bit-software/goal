@@ -113,7 +113,7 @@
         "A unit test builds and reads structs, slices, and maps, ranges over a slice and a map, and asserts the collected results"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

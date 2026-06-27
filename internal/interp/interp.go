@@ -15,6 +15,7 @@ package interp
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	"goal/internal/ast"
 	"goal/internal/sema"
@@ -219,6 +220,8 @@ func (ip *Interp) execStmt(stmt ast.Stmt, scope *Env) error {
 		return ip.execIf(s, scope)
 	case *ast.ForStmt:
 		return ip.execFor(s, scope)
+	case *ast.RangeStmt:
+		return ip.execRange(s, scope)
 	case *ast.SwitchStmt:
 		return ip.execSwitch(s, scope)
 	case *ast.BranchStmt:
@@ -376,35 +379,148 @@ func (ip *Interp) execAssign(s *ast.AssignStmt, scope *Env) error {
 // call paths of execAssign. A non-identifier target is a descriptive refusal.
 func (ip *Interp) bindTargets(s *ast.AssignStmt, vals []Value, scope *Env) error {
 	for i, lhs := range s.Lhs {
-		ident, ok := lhs.(*ast.Ident)
-		if !ok {
-			return fmt.Errorf("interp: unsupported assignment target %T", lhs)
-		}
-		switch {
-		case s.Tok == token.DEFINE:
-			scope.Define(ident.Name, vals[i])
-		case s.Tok == token.ASSIGN:
-			if err := scope.Assign(ident.Name, vals[i]); err != nil {
-				return err
-			}
-		default:
-			op, ok := compoundBinOp(s.Tok)
-			if !ok {
-				return fmt.Errorf("interp: unsupported assignment operator %s", s.Tok)
-			}
-			cur, err := scope.Lookup(ident.Name)
-			if err != nil {
-				return err
-			}
-			res, err := applyBinary(op, cur, vals[i])
-			if err != nil {
-				return err
-			}
-			if err := scope.Assign(ident.Name, res); err != nil {
-				return err
-			}
+		if err := ip.assignTarget(lhs, vals[i], s.Tok, scope); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+// assignTarget binds a single already-evaluated value to one assignment target
+// using the statement operator. An identifier target uses the lexical scope
+// (`:=` defines, `=` assigns through the chain, a compound operator
+// read-modify-writes the binding). An index target writes a slice element or a
+// map entry, and a selector target writes a struct field — each through the
+// collection's shared/pointer-backed identity, with a compound operator applied
+// to the current element/field/entry. A non-identifier compound on a missing map
+// key, or any other target form, is a descriptive refusal.
+func (ip *Interp) assignTarget(lhs ast.Expr, v Value, tok token.Kind, scope *Env) error {
+	switch t := lhs.(type) {
+	case *ast.Ident:
+		switch {
+		case tok == token.DEFINE:
+			scope.Define(t.Name, v)
+			return nil
+		case tok == token.ASSIGN:
+			return scope.Assign(t.Name, v)
+		default:
+			cur, err := scope.Lookup(t.Name)
+			if err != nil {
+				return err
+			}
+			res, err := ip.compoundApply(tok, cur, v)
+			if err != nil {
+				return err
+			}
+			return scope.Assign(t.Name, res)
+		}
+	case *ast.IndexExpr:
+		return ip.assignIndex(t, v, tok, scope)
+	case *ast.SelectorExpr:
+		return ip.assignField(t, v, tok, scope)
+	default:
+		return fmt.Errorf("interp: unsupported assignment target %T", lhs)
+	}
+}
+
+// compoundApply applies a compound-assignment operator (`+=`, ...) to the current
+// value and the right-hand value, reusing the binary-operator evaluator. An
+// unsupported operator is a descriptive refusal.
+func (ip *Interp) compoundApply(tok token.Kind, cur, rhs Value) (Value, error) {
+	op, ok := compoundBinOp(tok)
+	if !ok {
+		return Value{}, fmt.Errorf("interp: unsupported assignment operator %s", tok)
+	}
+	return applyBinary(op, cur, rhs)
+}
+
+// assignIndex writes an indexed assignment target: a slice element (bounds-
+// checked) or a map entry (insert or update). A compound operator reads the
+// current element/entry first; a compound on an absent map key is a descriptive
+// refusal. A `:=` index target is rejected (you cannot declare an index target).
+func (ip *Interp) assignIndex(t *ast.IndexExpr, v Value, tok token.Kind, scope *Env) error {
+	if tok == token.DEFINE {
+		return fmt.Errorf("interp: cannot use := with an index target")
+	}
+	recv, err := ip.evalExpr(t.X, scope)
+	if err != nil {
+		return err
+	}
+	idx, err := ip.evalExpr(t.Index, scope)
+	if err != nil {
+		return err
+	}
+	switch recv.Kind {
+	case KindSlice:
+		if idx.Kind != KindInt {
+			return fmt.Errorf("interp: slice index must be int, got %s", idx.Kind)
+		}
+		if idx.Int < 0 || idx.Int >= int64(len(recv.Slice)) {
+			return fmt.Errorf("interp: slice index %d out of range (len %d)", idx.Int, len(recv.Slice))
+		}
+		if tok != token.ASSIGN {
+			res, err := ip.compoundApply(tok, recv.Slice[idx.Int], v)
+			if err != nil {
+				return err
+			}
+			v = res
+		}
+		recv.Slice[idx.Int] = v
+		return nil
+	case KindMap:
+		if recv.Map == nil {
+			return fmt.Errorf("interp: assignment to entry in nil map")
+		}
+		key, err := mapKeyString(idx)
+		if err != nil {
+			return err
+		}
+		if tok != token.ASSIGN {
+			cur, ok := recv.Map.Entries[key]
+			if !ok {
+				return fmt.Errorf("interp: compound assignment to absent map key %q", key)
+			}
+			res, err := ip.compoundApply(tok, cur, v)
+			if err != nil {
+				return err
+			}
+			v = res
+		}
+		recv.Map.Entries[key] = v
+		return nil
+	default:
+		return fmt.Errorf("interp: cannot index-assign %s", recv.Kind)
+	}
+}
+
+// assignField writes a struct field assignment target (`x.field = v`). The
+// receiver must evaluate to a struct value (which is pointer-backed, so the write
+// is visible through every binding that shares it). A compound operator reads the
+// current field first. A non-struct receiver or a `:=` field target is a
+// descriptive refusal.
+func (ip *Interp) assignField(t *ast.SelectorExpr, v Value, tok token.Kind, scope *Env) error {
+	if tok == token.DEFINE {
+		return fmt.Errorf("interp: cannot use := with a field target")
+	}
+	recv, err := ip.evalExpr(t.X, scope)
+	if err != nil {
+		return err
+	}
+	if recv.Kind != KindStruct || recv.Struct == nil {
+		return fmt.Errorf("interp: cannot assign field %s on %s", t.Sel.Name, recv.Kind)
+	}
+	if tok != token.ASSIGN {
+		cur, ok := recv.Struct.Fields[t.Sel.Name]
+		if !ok {
+			return fmt.Errorf("interp: %s has no field %s", recv.Struct.TypeID, t.Sel.Name)
+		}
+		res, err := ip.compoundApply(tok, cur, v)
+		if err != nil {
+			return err
+		}
+		v = res
+	}
+	recv.Struct.Fields[t.Sel.Name] = v
 	return nil
 }
 
@@ -453,6 +569,101 @@ func (ip *Interp) execFor(s *ast.ForStmt, scope *Env) error {
 			}
 		}
 	}
+}
+
+// execRange evaluates a for-range statement over a slice or a map. A slice
+// iterates in ascending index order (key = index, value = element); a map
+// iterates its entries with keys sorted for deterministic ordering (key = the
+// string key, value = the entry). The key/value targets are bound each iteration
+// in a fresh child scope — `:=` defines fresh loop variables and `=` assigns
+// existing ones; a `_` or omitted target is skipped. A `break` ends the loop, a
+// `continue` advances to the next entry, and a returnSignal (or a real error)
+// propagates to the caller. Ranging any other kind is a descriptive refusal.
+func (ip *Interp) execRange(s *ast.RangeStmt, scope *Env) error {
+	subject, err := ip.evalExpr(s.X, scope)
+	if err != nil {
+		return err
+	}
+	rangeScope := scope.NewChild()
+
+	iterate := func(key, val Value) (stop bool, err error) {
+		iterScope := rangeScope.NewChild()
+		if err := ip.rangeBind(s.Key, key, s.Tok, iterScope); err != nil {
+			return true, err
+		}
+		if err := ip.rangeBind(s.Value, val, s.Tok, iterScope); err != nil {
+			return true, err
+		}
+		if err := ip.execBlock(s.Body, iterScope); err != nil {
+			var brk breakSignal
+			if errors.As(err, &brk) {
+				return true, nil
+			}
+			var cont continueSignal
+			if errors.As(err, &cont) {
+				return false, nil
+			}
+			return true, err
+		}
+		return false, nil
+	}
+
+	switch subject.Kind {
+	case KindSlice:
+		for i, elem := range subject.Slice {
+			stop, err := iterate(IntVal(int64(i)), elem)
+			if err != nil {
+				return err
+			}
+			if stop {
+				return nil
+			}
+		}
+		return nil
+	case KindMap:
+		if subject.Map == nil {
+			return nil
+		}
+		keys := make([]string, 0, len(subject.Map.Entries))
+		for k := range subject.Map.Entries {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			stop, err := iterate(StrVal(k), subject.Map.Entries[k])
+			if err != nil {
+				return err
+			}
+			if stop {
+				return nil
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("interp: cannot range over %s", subject.Kind)
+	}
+}
+
+// rangeBind binds one range loop variable (the key or the value). A nil target
+// or the blank identifier `_` is skipped; `:=` defines in the iteration scope and
+// `=` assigns through the scope chain. A non-identifier target is a descriptive
+// refusal.
+func (ip *Interp) rangeBind(target ast.Expr, v Value, tok token.Kind, scope *Env) error {
+	if target == nil {
+		return nil
+	}
+	ident, ok := target.(*ast.Ident)
+	if !ok {
+		return fmt.Errorf("interp: unsupported range target %T", target)
+	}
+	if ident.Name == "_" {
+		return nil
+	}
+	if tok == token.ASSIGN {
+		return scope.Assign(ident.Name, v)
+	}
+	scope.Define(ident.Name, v)
+	return nil
 }
 
 // execSwitch evaluates an expression switch. The optional init and the optional
