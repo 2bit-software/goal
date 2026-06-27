@@ -65,3 +65,34 @@
     directly; regenerate via `go generate ./internal/corpus` or
     `go run ./cmd/corpus-gen -root .`.
 ---
+
+## [2026-06-27T02:13:00Z] - US-003
+- Implemented the interface-based transpile runner (Phase 0.3). Added a
+  Transpiler interface{ Transpile(src string)(pipeline.Output,error) } plus a
+  TranspilerFunc adapter so the free pipeline.Transpile satisfies it without
+  changing pipeline. RunTranspile(root, Case, Transpiler) reads each manifest
+  case's input + golden, transpiles through the interface, and compares after
+  gofmt-normalizing BOTH sides (go/format.Source).
+- A case passes when the normalized golden equals Output.Go OR (when non-empty)
+  Output.Test. The sidecar fallback is required because the manifest classifies
+  the feature-11 doctest examples as transpile cases whose golden is the emitted
+  _test.go, while testdata/doctest_funcs (also has /// doctests) goldens the main
+  Go output. Presence of doctests in the source does NOT decide which output the
+  golden represents — only content does — so the runner accepts either.
+- TestTranspileRunner drives all 51 transpile cases through pipeline.Transpile;
+  all pass. It fails loudly (t.Fatalf) if the manifest yields zero cases.
+- Files changed:
+  - internal/corpus/runner.go (Transpiler + TranspilerFunc + RunTranspile)
+  - internal/corpus/runner_test.go (whole-corpus transpile test)
+- Commit: 041152b
+- Learnings for future iterations:
+  - corpus tests run with cwd = internal/corpus; reuse the existing repoRoot
+    const "../.." (declared in generate_test.go, same package) — do not redeclare
+    it. Manifest path is "../../corpus/manifest.json".
+  - No import cycle: internal/pipeline does not import internal/corpus, so corpus
+    may import pipeline. Future check/doctest runners (US-004/005) follow the same
+    interface-adapter pattern (define an interface, supply the free func via a
+    FuncAdapter).
+  - US-005 (doctest sidecar runner) overlaps the feature-11 cases this runner
+    already covers via the sidecar fallback; it will add the dedicated tier.
+---

@@ -41,7 +41,7 @@
         "A test runs every transpile case in the manifest against pipeline.Transpile and all pass"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
