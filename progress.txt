@@ -1098,3 +1098,48 @@
     (e.g. a comparison against verbatim source) must normalize whitespace or use a
     position-carrying printer instead.
 ---
+
+## [2026-06-27T06:25:15Z] - US-028
+- Phase 2 type-checking seam (Decision 4 / REWRITE-ARCHITECTURE §3.2): wrapped the
+  go/types-over-lowered-Go depth checks behind a TypeChecker interface so the
+  crutch can later be swapped for a native goal checker WITHOUT caller changes.
+  The goscript interpreter has no Go toolchain at runtime, so implements/must-use/
+  no-zero-value must eventually come from a native checker; this story is purely
+  the seam, no native checker (per the US-028 note).
+- New internal/typecheck/checker.go:
+  - TypeChecker interface { Check(pkg *project.Package) ([]Diagnostic, error) }.
+    Keyed on the DIAGNOSTICS, not on Load's *types.Package: a native checker would
+    not produce a go/types view, so the stable contract is the findings, not the
+    typed internals. Returns an error only for a transpile/parse failure (a
+    goal-compiler bug), exactly like Load.
+  - GoTypesChecker struct{} — the existing crutch — implements Check by calling
+    Load then CheckImplements + CheckMustUse + CheckNoZeroValue in that order.
+- cmd/goal/main.go runDepthChecks now resolves diagnostics through a
+  `var tc typecheck.TypeChecker = typecheck.GoTypesChecker{}` value instead of
+  calling Load/Check* directly, so flipping the implementation needs no call-site
+  change. Load and the three Check* functions stay exported and behavior-identical
+  (their own tests still drive them directly).
+- Files changed:
+  - internal/typecheck/checker.go (new: TypeChecker + GoTypesChecker)
+  - internal/typecheck/checker_test.go (new: TestTypeCheckerInterfaceParity drives
+    clean + diagnostic-producing packages through the interface value and asserts
+    diagnostic parity with the concrete Load+Check* path; compile-time
+    `var _ TypeChecker = GoTypesChecker{}`; TestTypeCheckerErrorsOnBadTranspile)
+  - cmd/goal/main.go (runDepthChecks routes through the interface)
+  - prd.json (US-028 passes:true), progress.txt
+  - history/20260627-feature-us-028-wrap-go-types-depth-checks-behind-typechecker-interfa/ (initiative)
+- Commit: 6d750fd
+- Learnings for future iterations:
+  - The interface-seam pattern in this repo is uniform: define the interface +
+    a concrete impl in the same package, route the single caller through an
+    interface-typed value, add a parity test. Backend/Formatter/Transpiler/Checker
+    all follow it; TypeChecker matches.
+  - A package whose goal source OMITS the package clause (e.g. `func f() {}`) makes
+    typecheck.Load return an error (the lowered Go fails to parse) — a stable,
+    panic-free trigger for the Check error path. go/types errors in valid-package
+    user code are TOLERATED (folded into diagnostics), not returned as errors.
+  - US-029/030/031 reimplement these same checks (exhaustiveness, field-
+    completeness, must-use/implements/question) over the AST in internal/sema; the
+    TypeChecker seam is where a future sema-backed checker plugs in without
+    touching cmd/goal.
+---

@@ -341,8 +341,8 @@
         "A test exercises the depth checks through the interface and the existing typecheck cases still pass"
       ],
       "priority": 28,
-      "passes": false,
-      "notes": "Decision 4: no native goal type checker until the runtime forces it."
+      "passes": true,
+      "notes": "Decision 4: no native goal type checker until the runtime forces it. internal/typecheck now defines TypeChecker{Check(pkg *project.Package)([]Diagnostic,error)} keyed on diagnostics (NOT Load's *types.Package, so a native checker with no go/types view can satisfy it); GoTypesChecker is the transpile-then-go/types crutch (Load + CheckImplements/CheckMustUse/CheckNoZeroValue). cmd/goal runDepthChecks routes through the interface value, so the implementation can flip with no caller change. Load + Check* stay exported and unchanged."
     },
     {
       "id": "US-029",
