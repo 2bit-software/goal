@@ -77,7 +77,7 @@
         "A unit test asserts a program that declares, reassigns, and compound-assigns variables yields the expected final values"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

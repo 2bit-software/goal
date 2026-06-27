@@ -354,6 +354,45 @@
   edits don't shift later offsets. Still single-document (locals/params/qualified
   imports/cross-file out of scope, consistent with US-048/049).
 
+## [2026-06-27T15:54:00Z] - US-006
+- Added variable declaration + assignment to the goscript interpreter. execStmt
+  (interp.go) now dispatches *ast.DeclStmt (var/const) via execDecl and
+  *ast.AssignStmt (:=, =, += -= *= /= %=) via execAssign, reading/writing the
+  lexical Env. evalExpr's *ast.Ident case now resolves any non-true/false name
+  through scope.Lookup (an undefined read surfaces the located *NotFoundError,
+  never a silent zero). Compound assigns reuse applyBinary via a token->op map;
+  a `var x T` with no initializer binds zeroValue(type).
+- Files changed:
+  - internal/interp/env.go (new Assign: chain-walking write that mutates the
+    binding in its OWNING scope vs Define which always binds in this scope;
+    *NotFoundError when undeclared — resolves the US-003-deferred question)
+  - internal/interp/eval.go (Ident -> scope.Lookup; new zeroValue, compoundBinOp)
+  - internal/interp/interp.go (execStmt adds DeclStmt/AssignStmt; new execDecl,
+    execAssign; token import)
+  - internal/interp/assign_test.go (new: TestDeclareReassignCompound [AC],
+    TestVarWithoutInitializerZeroes, TestShortVarAndReadInExpression,
+    TestAssignUpdatesExistingBindingNotShadow, TestAssignUndeclaredErrors,
+    TestReadUndefinedErrors — stdlib testing, no testify)
+  - prd.json (US-006 passes:true), progress.txt
+  - history/20260627-feature-us-006-eval-variables-and-assignment/ (initiative)
+- Learnings for future iterations:
+  - Env now has the full triad: Define (bind here), Lookup (read up the chain),
+    Assign (write to the owning scope up the chain). Plain/compound `=` use
+    Assign; `:=`/var/const use Define. US-008 (control flow) needs per-block
+    child scopes so shadowing/restore works — Run already opens a child per
+    main; a block/for/if body should open its own NewChild.
+  - execAssign evaluates ALL RHS before binding any LHS, so parallel assignment
+    (`a, b = b, a`) is correct by construction; keep that ordering for US-007's
+    multi-value call RHS.
+  - A var/const inside a function body parses to *ast.DeclStmt{Decl:*ast.GenDecl}
+    (not a top-level decl); ValueSpec.Values is empty for `var x T` (-> zero) and
+    len==len(Names) otherwise. Non-ident assignment targets (s[i], p.f) are a
+    descriptive error, deferred to US-009/US-010.
+  - zeroValue only zeroes primitive type idents (int*/uint*/float*/string/bool);
+    composite/unknown types -> NilVal until US-009/US-010 refine struct/slice/map
+    zero values.
+---
+
 ## [2026-06-27T15:47:00Z] - US-005
 - Added internal/interp/eval.go, expression evaluation for the goscript
   interpreter: evalExpr(expr, scope)(Value,error) walks the SHARED AST directly

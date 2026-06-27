@@ -35,7 +35,10 @@ func (ip *Interp) evalExpr(expr ast.Expr, scope *Env) (Value, error) {
 		case "false":
 			return BoolVal(false), nil
 		default:
-			return Value{}, fmt.Errorf("interp: identifier %q not supported yet (US-006/US-007)", e.Name)
+			// Any other identifier resolves to its current binding in the
+			// lexical scope chain; an undefined name surfaces the located
+			// *NotFoundError rather than a silent zero Value.
+			return scope.Lookup(e.Name)
 		}
 	case *ast.BinaryExpr:
 		return ip.evalBinary(e, scope)
@@ -253,5 +256,51 @@ func (ip *Interp) evalUnary(u *ast.UnaryExpr, scope *Env) (Value, error) {
 		return BoolVal(!x.Bool), nil
 	default:
 		return Value{}, fmt.Errorf("interp: unsupported unary operator %s", u.Op)
+	}
+}
+
+// zeroValue returns the safe runtime zero for a declared type expression, used
+// to initialize a `var x T` with no explicit initializer. Numeric types zero to
+// 0, string to "", and bool to false; any other (including composite or unknown)
+// type zeroes to nil. Composite zero values are refined by later eval stories
+// (US-009/US-010).
+func zeroValue(typeExpr ast.Expr) Value {
+	id, ok := typeExpr.(*ast.Ident)
+	if !ok {
+		return NilVal()
+	}
+	switch id.Name {
+	case "int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr", "byte", "rune":
+		return IntVal(0)
+	case "float32", "float64":
+		return FloatVal(0)
+	case "string":
+		return StrVal("")
+	case "bool":
+		return BoolVal(false)
+	default:
+		return NilVal()
+	}
+}
+
+// compoundBinOp maps a compound-assignment token to the binary operator it
+// applies (so `x += y` reuses the `+` evaluator). ok is false for any token
+// that is not a supported arithmetic compound assignment; the caller turns that
+// into a descriptive error rather than guessing.
+func compoundBinOp(tok token.Kind) (token.Kind, bool) {
+	switch tok {
+	case token.ADD_ASSIGN:
+		return token.ADD, true
+	case token.SUB_ASSIGN:
+		return token.SUB, true
+	case token.MUL_ASSIGN:
+		return token.MUL, true
+	case token.QUO_ASSIGN:
+		return token.QUO, true
+	case token.REM_ASSIGN:
+		return token.REM, true
+	default:
+		return token.ILLEGAL, false
 	}
 }

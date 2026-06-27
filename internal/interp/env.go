@@ -56,3 +56,20 @@ func (e *Env) Lookup(name string) (Value, error) {
 	}
 	return Value{}, &NotFoundError{Name: name}
 }
+
+// Assign updates an EXISTING binding: it walks the scope chain from this scope
+// toward the root and overwrites name in the first scope that already binds it,
+// so a plain assignment mutates the variable where it was declared rather than
+// shadowing it in the current scope. If the name is bound in no scope along the
+// chain it returns a *NotFoundError — assigning to an undeclared name is a loud,
+// named refusal, never a silent define. Compare with Define, which always binds
+// in this scope.
+func (e *Env) Assign(name string, v Value) error {
+	for s := e; s != nil; s = s.parent {
+		if _, ok := s.vars[name]; ok {
+			s.vars[name] = v
+			return nil
+		}
+	}
+	return &NotFoundError{Name: name}
+}

@@ -18,6 +18,7 @@ import (
 
 	"goal/internal/ast"
 	"goal/internal/sema"
+	"goal/internal/token"
 )
 
 // ErrNoMain reports that the program declares no top-level `func main`. It is a
@@ -98,9 +99,104 @@ func (ip *Interp) execStmt(stmt ast.Stmt, scope *Env) error {
 	case *ast.ExprStmt:
 		_, err := ip.evalExpr(s.X, scope)
 		return err
+	case *ast.DeclStmt:
+		return ip.execDecl(s, scope)
+	case *ast.AssignStmt:
+		return ip.execAssign(s, scope)
 	case *ast.EmptyStmt:
 		return nil
 	default:
 		return fmt.Errorf("interp: unsupported statement %T", stmt)
 	}
+}
+
+// execDecl evaluates a const/var declaration statement, binding each declared
+// name in the current scope. A var spec with no initializer binds the safe zero
+// value for its declared type. A non-value declaration (import/type) in a
+// statement position is a descriptive refusal.
+func (ip *Interp) execDecl(s *ast.DeclStmt, scope *Env) error {
+	gen, ok := s.Decl.(*ast.GenDecl)
+	if !ok {
+		return fmt.Errorf("interp: unsupported declaration %T", s.Decl)
+	}
+	if gen.Tok != token.VAR && gen.Tok != token.CONST {
+		return fmt.Errorf("interp: unsupported %s declaration in statement position", gen.Tok)
+	}
+	for _, spec := range gen.Specs {
+		vs, ok := spec.(*ast.ValueSpec)
+		if !ok {
+			return fmt.Errorf("interp: unsupported spec %T in %s declaration", spec, gen.Tok)
+		}
+		switch {
+		case len(vs.Values) == 0:
+			// `var a, b int` — bind each name to its declared zero value.
+			zero := zeroValue(vs.Type)
+			for _, name := range vs.Names {
+				scope.Define(name.Name, zero)
+			}
+		case len(vs.Values) == len(vs.Names):
+			for i, name := range vs.Names {
+				v, err := ip.evalExpr(vs.Values[i], scope)
+				if err != nil {
+					return err
+				}
+				scope.Define(name.Name, v)
+			}
+		default:
+			return fmt.Errorf("interp: %s spec has %d names but %d values", gen.Tok, len(vs.Names), len(vs.Values))
+		}
+	}
+	return nil
+}
+
+// execAssign evaluates an assignment statement: a short variable declaration
+// (`:=`), a plain assignment (`=`), or a compound assignment (`+=`, `-=`, ...).
+// All right-hand sides are evaluated BEFORE any binding so a parallel assignment
+// like `a, b = b, a` swaps correctly. Short-var binds in the current scope; a
+// plain or compound assignment updates the existing binding through the scope
+// chain (and errors if the target is undeclared).
+func (ip *Interp) execAssign(s *ast.AssignStmt, scope *Env) error {
+	if len(s.Lhs) != len(s.Rhs) {
+		return fmt.Errorf("interp: assignment has %d targets but %d values", len(s.Lhs), len(s.Rhs))
+	}
+	// Evaluate every RHS first (parallel-assignment order).
+	vals := make([]Value, len(s.Rhs))
+	for i, rhs := range s.Rhs {
+		v, err := ip.evalExpr(rhs, scope)
+		if err != nil {
+			return err
+		}
+		vals[i] = v
+	}
+	for i, lhs := range s.Lhs {
+		ident, ok := lhs.(*ast.Ident)
+		if !ok {
+			return fmt.Errorf("interp: unsupported assignment target %T", lhs)
+		}
+		switch {
+		case s.Tok == token.DEFINE:
+			scope.Define(ident.Name, vals[i])
+		case s.Tok == token.ASSIGN:
+			if err := scope.Assign(ident.Name, vals[i]); err != nil {
+				return err
+			}
+		default:
+			op, ok := compoundBinOp(s.Tok)
+			if !ok {
+				return fmt.Errorf("interp: unsupported assignment operator %s", s.Tok)
+			}
+			cur, err := scope.Lookup(ident.Name)
+			if err != nil {
+				return err
+			}
+			res, err := applyBinary(op, cur, vals[i])
+			if err != nil {
+				return err
+			}
+			if err := scope.Assign(ident.Name, res); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
