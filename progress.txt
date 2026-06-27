@@ -46,6 +46,15 @@
   (parse_runner.go: Parser/ParserFunc/RunParse + CaseInputs; TestParseGate). The
   corpus runner pattern is uniform: define an interface + Func adapter, drive the
   whole manifest, t.Fatalf on zero cases.
+- ast.Sexpr (internal/ast/dump.go) renders any AST node to a deterministic,
+  POSITION-FREE s-expression via reflection over exported fields (skips
+  token.Pos, names token.Kind/FuncMod/ChanDir, elides zero/empty fields). It
+  auto-covers new node types — adding an ast node needs NO dumper change. Keep
+  node fields EXPORTED or they vanish from the dump. Parser structure is pinned
+  by internal/parser TestASTSnapshots against testdata/snapshots/*.sexpr; after
+  an INTENTIONAL grammar/AST change regenerate with
+  `go test ./internal/parser -run TestASTSnapshots -update-snapshots` and review
+  the diff before committing.
 
 ## [2026-06-27T01:56:33Z] - US-001
 - Implemented internal/corpus: a runner-independent Case model and JSON manifest
@@ -916,4 +925,51 @@
   - Later lowering stories (US-033 enums, US-034/036 Result/Option/match) consume
     IndexListExpr type args and MatchArm.Body statements; the node shapes are now
     stable.
+---
+
+## [2026-06-27T05:55:00Z] - US-025
+- Added deterministic AST snapshot tests (Phase 1, parser structural gate;
+  replaces the tree-sitter differential). New internal/ast/dump.go exports
+  ast.Sexpr(Node) string: a reflection-driven, position-free s-expression
+  renderer. It walks each node's EXPORTED struct fields, SKIPS token.Pos fields
+  (so a snapshot pins structure, not byte offsets that shift with whitespace),
+  renders token.Kind via String() and names FuncMod/ChanDir, elides zero/empty
+  fields, and recurses pointers/interfaces/slices. Output is deterministic
+  (fixed struct field order, no map iteration) and stdlib-only
+  (reflect/strings/fmt) so the zero-dependency rule holds.
+- New internal/parser/snapshot_test.go: TestASTSnapshots parses one
+  representative .goal per goal construct, renders via ast.Sexpr, and diffs
+  against a committed golden under internal/parser/testdata/snapshots/<name>.sexpr.
+  A `-update-snapshots` flag regenerates the goldens; a plain `go test ./...`
+  (no flag) compares. The test also asserts ast.Sexpr is deterministic (two
+  renders equal) and t.Fatal's if no cases are declared.
+- 9 representative inputs / goldens cover every goal-specific node:
+  enum (EnumDecl/Variant/PayloadField, VariantLit/LabeledArg, data-less
+  SelectorExpr), match (MatchExpr/MatchArm/VariantPattern/RestPattern), question
+  -prop (UnwrapExpr + IndexListExpr Result[int,error]), error-e (closed Result
+  match + IndexListExpr), implements (StructType.Implements/ImplementsClause +
+  method Recv), defaults (SpreadElement ...defaults), assert (AssertStmt printf
+  form), doctests (DocComment/Doctest), derive-convert (FuncFrom/FuncDerive
+  bodyless modifiers).
+- Files changed:
+  - internal/ast/dump.go (new: Sexpr + reflection dumper)
+  - internal/parser/snapshot_test.go (new: TestASTSnapshots + -update-snapshots)
+  - internal/parser/testdata/snapshots/*.sexpr (9 new goldens)
+  - prd.json (US-025 passes:true), progress.txt
+  - history/20260627-feature-us-025-ast-snapshot-tests/ (initiative)
+- Learnings for future iterations:
+  - ast.Sexpr is the reusable structural-rendering seam: US-045 (goal fmt) and
+    any future AST-shape assertion can reuse it (it is position-free, so it is
+    NOT a substitute for a position-carrying source printer — fmt still needs its
+    own). When a parser/AST change is INTENTIONAL, regenerate goldens with
+    `go test ./internal/parser -run TestASTSnapshots -update-snapshots` and
+    eyeball the diff before committing.
+  - The dumper auto-covers new node types (reflection over exported fields), so
+    adding an ast node needs NO dumper change — only a new golden if you add a
+    representative input. It skips token.Pos by reflect.Type and names the small
+    int enums (token.Kind/FuncMod/ChanDir) for readability; keep ast node fields
+    EXPORTED or they vanish from snapshots.
+  - Snapshot inputs are read from ../../features/NN/examples (cwd =
+    internal/parser); all parse with zero errors since US-024 gated 100% corpus
+    parsing.
 ---

@@ -1,0 +1,114 @@
+(File
+  .Name (Ident
+    .Name "status")
+  .Decls [
+    (GenDecl
+      .Tok type
+      .Specs [
+        (TypeSpec
+          .Name (Ident
+            .Name "Time")
+          .Type (Ident
+            .Name "int64"))
+      ])
+    (FuncDecl
+      .Name (Ident
+        .Name "render")
+      .Type (FuncType
+        .Params (FieldList
+          .List [
+            (Field
+              .Names [
+                (Ident
+                  .Name "t")
+              ]
+              .Type (Ident
+                .Name "Time"))
+          ]))
+      .Body (BlockStmt))
+    (FuncDecl
+      .Name (Ident
+        .Name "showPlaceholder")
+      .Type (FuncType
+        .Params (FieldList))
+      .Body (BlockStmt))
+    (EnumDecl
+      .Name (Ident
+        .Name "Status")
+      .Variants [
+        (Variant
+          .Name (Ident
+            .Name "Pending"))
+        (Variant
+          .Name (Ident
+            .Name "Active")
+          .Payload [
+            (PayloadField
+              .Name (Ident
+                .Name "since")
+              .Type (Ident
+                .Name "Time"))
+          ])
+        (Variant
+          .Name (Ident
+            .Name "Cancelled")
+          .Payload [
+            (PayloadField
+              .Name (Ident
+                .Name "reason")
+              .Type (Ident
+                .Name "string"))
+            (PayloadField
+              .Name (Ident
+                .Name "at")
+              .Type (Ident
+                .Name "Time"))
+          ])
+      ])
+    (FuncDecl
+      .Name (Ident
+        .Name "handle2")
+      .Type (FuncType
+        .Params (FieldList
+          .List [
+            (Field
+              .Names [
+                (Ident
+                  .Name "s")
+              ]
+              .Type (Ident
+                .Name "Status"))
+          ]))
+      .Body (BlockStmt
+        .List [
+          (ExprStmt
+            .X (MatchExpr
+              .Subject (Ident
+                .Name "s")
+              .Arms [
+                (MatchArm
+                  .Pattern (VariantPattern
+                    .Enum (Ident
+                      .Name "Status")
+                    .Variant (Ident
+                      .Name "Active")
+                    .Binding (Ident
+                      .Name "a"))
+                  .Body (CallExpr
+                    .Fun (Ident
+                      .Name "render")
+                    .Args [
+                      (SelectorExpr
+                        .X (Ident
+                          .Name "a")
+                        .Sel (Ident
+                          .Name "since"))
+                    ]))
+                (MatchArm
+                  .Pattern (RestPattern)
+                  .Body (CallExpr
+                    .Fun (Ident
+                      .Name "showPlaceholder")))
+              ]))
+        ]))
+  ])

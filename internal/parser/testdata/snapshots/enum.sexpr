@@ -1,0 +1,154 @@
+(File
+  .Name (Ident
+    .Name "status")
+  .Decls [
+    (GenDecl
+      .Tok type
+      .Specs [
+        (TypeSpec
+          .Name (Ident
+            .Name "Time")
+          .Type (Ident
+            .Name "int64"))
+      ])
+    (FuncDecl
+      .Name (Ident
+        .Name "now")
+      .Type (FuncType
+        .Params (FieldList)
+        .Results (FieldList
+          .List [
+            (Field
+              .Type (Ident
+                .Name "Time"))
+          ]))
+      .Body (BlockStmt
+        .List [
+          (ReturnStmt
+            .Results [
+              (BasicLit
+                .Kind INT
+                .Value "0")
+            ])
+        ]))
+    (EnumDecl
+      .Name (Ident
+        .Name "Status")
+      .Variants [
+        (Variant
+          .Name (Ident
+            .Name "Pending"))
+        (Variant
+          .Name (Ident
+            .Name "Active")
+          .Payload [
+            (PayloadField
+              .Name (Ident
+                .Name "since")
+              .Type (Ident
+                .Name "Time"))
+          ])
+        (Variant
+          .Name (Ident
+            .Name "Cancelled")
+          .Payload [
+            (PayloadField
+              .Name (Ident
+                .Name "reason")
+              .Type (Ident
+                .Name "string"))
+            (PayloadField
+              .Name (Ident
+                .Name "at")
+              .Type (Ident
+                .Name "Time"))
+          ])
+      ])
+    (FuncDecl
+      .Name (Ident
+        .Name "examples")
+      .Type (FuncType
+        .Params (FieldList))
+      .Body (BlockStmt
+        .List [
+          (AssignStmt
+            .Lhs [
+              (Ident
+                .Name "p")
+            ]
+            .Tok :=
+            .Rhs [
+              (SelectorExpr
+                .X (Ident
+                  .Name "Status")
+                .Sel (Ident
+                  .Name "Pending"))
+            ])
+          (AssignStmt
+            .Lhs [
+              (Ident
+                .Name "a")
+            ]
+            .Tok :=
+            .Rhs [
+              (VariantLit
+                .Enum (Ident
+                  .Name "Status")
+                .Variant (Ident
+                  .Name "Active")
+                .Args [
+                  (LabeledArg
+                    .Label (Ident
+                      .Name "since")
+                    .Value (CallExpr
+                      .Fun (Ident
+                        .Name "now")))
+                ])
+            ])
+          (AssignStmt
+            .Lhs [
+              (Ident
+                .Name "c")
+            ]
+            .Tok :=
+            .Rhs [
+              (VariantLit
+                .Enum (Ident
+                  .Name "Status")
+                .Variant (Ident
+                  .Name "Cancelled")
+                .Args [
+                  (LabeledArg
+                    .Label (Ident
+                      .Name "reason")
+                    .Value (BasicLit
+                      .Kind STRING
+                      .Value "\"timeout\""))
+                  (LabeledArg
+                    .Label (Ident
+                      .Name "at")
+                    .Value (CallExpr
+                      .Fun (Ident
+                        .Name "now")))
+                ])
+            ])
+          (AssignStmt
+            .Lhs [
+              (Ident
+                .Name "_")
+              (Ident
+                .Name "_")
+              (Ident
+                .Name "_")
+            ]
+            .Tok =
+            .Rhs [
+              (Ident
+                .Name "p")
+              (Ident
+                .Name "a")
+              (Ident
+                .Name "c")
+            ])
+        ]))
+  ])

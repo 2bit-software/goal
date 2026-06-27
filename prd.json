@@ -305,8 +305,8 @@
         "A test compares the rendered AST of each representative input to its checked-in snapshot"
       ],
       "priority": 25,
-      "passes": false,
-      "notes": "Replaces the tree-sitter differential as the loop-ready gate; grammar.js remains a manual cross-check reference."
+      "passes": true,
+      "notes": "Replaces the tree-sitter differential as the loop-ready gate; grammar.js remains a manual cross-check reference. ast.Sexpr (internal/ast/dump.go) renders a position-free, deterministic s-expression via reflection (skips token.Pos, names token.Kind/FuncMod/ChanDir, elides zero fields); internal/parser TestASTSnapshots parses one representative input per goal construct and diffs against testdata/snapshots/*.sexpr (-update-snapshots regenerates)."
     },
     {
       "id": "US-026",
