@@ -113,6 +113,73 @@
   `var _ I = T{}` (or `(*T)(nil)` when T has any pointer-receiver method). A
   qualified iface (io.Writer) is never sealed (sealed are in-file) so it routes to
   the var-assertion branch; render the iface name via typeExprName (Ident/Selector).
+- The AST backend uses a SCOPE-AWARE gensym, not a magic `__goal_` prefix (US-035).
+  emitFile seeds emitter.fileIdents = fileIdentSet(f) (every identifier in the file,
+  lower.go). funcDecl opens a per-function scope: e.taken = e.newScope() (a fresh
+  COPY of fileIdents) and, for an open-E Result function, mints the named returns
+  `e.okName = e.gensym("ok")` / `e.errName = e.gensym("err")` BEFORE funcSig so the
+  signature and body reference identical names; all of fnKind/okName/errName/taken
+  are saved+restored (defer) so siblings start clean. e.gensym(want) returns want,
+  or want+N for the least N avoiding any in-scope name. CONSEQUENCE: a function whose
+  source already binds `err` (e.g. result_int's strconv.Atoi) gets a non-colliding
+  `err1` named return — the scope-aware win. Function-scoped names (Result returns)
+  live on the emitter; LOCAL temps (statement-position match `v`/`err`/`o`, Option
+  box `some`, Option `?` pointer `o`) are minted at point of use — a match may sit in
+  a NON-Result function (e.g. `handle`), so its destructure names must be locals, not
+  the enclosing function's returns. funcSig falls back to plain "ok"/"err" when
+  e.okName=="" (a bodyless Result-returning interface method / func-type expr).
+- Postfix `?` (ast.UnwrapExpr) is lowered at STATEMENT position only, intercepted in
+  stmt(): AssignStmt with a single UnwrapExpr RHS (`name := expr?` / `_ := expr?`) and
+  ExprStmt with an UnwrapExpr X (bare `expr?`). A Result `?` destructures the callee's
+  LOWERED arity (e.calleeSig reads sema.Info.FuncSignatures[name]: a plain
+  `func()error` callee -> 1 value -> `if err := f(); err != nil`, a Result callee ->
+  2 -> `if _, err := f(); err != nil`) and on failure returns the function's own
+  (okName, errName). An Option `?` mints a fresh pointer temp per site and returns
+  nil. A `?` in a roNone function (incl. a closed-E Result function, which is roNone
+  until US-037) hits the descriptive "`?` outside Result/Option" error.
+
+## [2026-06-27T08:05:00Z] - US-035
+- Lowered postfix `?` propagation on the AST backend with a real, scope-aware
+  gensym, retiring the magic `__goal_` prefix the US-034 seed lowering carried.
+  `?` (ast.UnwrapExpr) is now lowered at statement position: stmt()'s AssignStmt
+  case intercepts a single UnwrapExpr RHS (`name := expr?` / `_ := expr?`) and the
+  ExprStmt case a bare `expr?`, dispatching to unwrap/unwrapResult/unwrapOption. A
+  Result `?` destructures the callee's lowered arity (calleeSig off
+  sema.FuncSignatures: plain-error callee -> 1 value, Result callee -> 2) and on
+  failure returns the function's own (ok, err); an Option `?` mints a fresh pointer
+  temp per site and returns nil.
+- The whole __goal_ name family (ok/err/v/some/o) is gone. emitFile seeds
+  emitter.fileIdents via fileIdentSet(f); funcDecl opens a per-function scope
+  (newScope copy) and mints the open-E Result named returns up front (gensym
+  "ok"/"err") so the signature and body agree; match/Option-box/`?` temps are local
+  gensyms. gensym(want) appends the least integer suffix avoiding any in-scope name,
+  so result_int's source `err` forces the named error return to `err1` — the
+  scope-aware witness. Output is build+vet-clean (not byte-identical to the splice
+  goldens — US-042 regenerates those).
+- Files changed:
+  - internal/backend/emit.go (emitter.fileIdents/taken/okName/errName; gensym +
+    newScope; funcDecl scope setup; funcSig fallback names; stmt() `?` dispatch;
+    unwrap/unwrapResult/unwrapOption/calleeSig; resultMatch/optionMatch/
+    emitResultReturn/emitOptionReturn now use scoped names; doc refresh)
+  - internal/backend/lower.go (removed the __goal_ const block; added fileIdentSet)
+  - internal/backend/backend_test.go (US-035 tests: QuestionBehavioralTier,
+    QuestionNoMagicPrefix, QuestionScopeAware, QuestionEncoding; updated US-034's
+    ResultOptionEncoding pins to the new gensym names)
+  - prd.json (US-035 passes:true), progress.txt
+  - history/20260627-feature-us-035-lower-emit-question-real-gensym/ (initiative)
+- Learnings for future iterations:
+  - A statement-position match can sit in a NON-Result function (03-result
+    result_match's `handle` returns nothing), so its destructure value/error names
+    MUST be fresh local gensyms — NOT the enclosing function's named returns. Only
+    `?` propagation uses the function's okName/errName (it early-returns them).
+  - The named-return names must be minted in funcDecl BEFORE funcSig runs, because
+    funcSig emits them in the signature and the body references the same; keep them
+    on the emitter (okName/errName), save+restore around the function.
+  - `?` is lowered at statement position only; a nested `?` inside an expression
+    still has no expr() case (not in the corpus). US-037 (closed-E `?`) plugs into
+    the same unwrap dispatch — a closed-E Result function is roNone today, so its
+    `?` currently hits the descriptive refusal rather than being mis-lowered.
+---
 
 ## [2026-06-27T12:30:00Z] - US-034
 - The AST backend lowers a function's enclosing Result/Option mode via an

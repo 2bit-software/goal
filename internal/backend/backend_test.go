@@ -272,16 +272,126 @@ func TestASTEngineResultOptionEncoding(t *testing.T) {
 		wants []string
 	}{
 		{"../../features/03-result/examples/result_int.goal", []string{
-			"(__goal_ok int, __goal_err error)", "return n, nil", "return __goal_ok,",
+			// The user's own `err` (from strconv.Atoi) forces the named error return
+			// to a scope-aware `err1`, the witness that gensym avoids source collisions.
+			"(ok int, err1 error)", "return n, nil", "return ok,",
 		}},
 		{"../../features/03-result/examples/result_match.goal", []string{
-			"__goal_v, __goal_err := parse(input)", "if __goal_err != nil {",
+			"v, err := parse(input)", "if err != nil {",
 		}},
 		{"../../features/04-option/examples/option_int.goal", []string{
-			") *int {", "return nil", "return &__goal_some",
+			") *int {", "return nil", "return &some",
 		}},
 		{"../../features/04-option/examples/option_find.goal", []string{
-			"if __goal_o := find(id); __goal_o != nil {", "u := *__goal_o",
+			"if o := find(id); o != nil {", "u := *o",
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.file, func(t *testing.T) {
+			out, err := backend.Transpile(mustRead(t, c.file))
+			if err != nil {
+				t.Fatalf("Transpile: %v", err)
+			}
+			for _, want := range c.wants {
+				if !strings.Contains(out.Go, want) {
+					t.Errorf("missing %q in:\n%s", want, out.Go)
+				}
+			}
+		})
+	}
+}
+
+// questionPropCases lists the 05-question-prop transpile cases the US-035 lowering
+// must carry through the new backend: postfix `?` over open-E Result and Option, in
+// the binding (`name := expr?`), discard (`_ := expr?`), and bare (`expr?`) forms.
+var questionPropCases = []string{
+	"features/05-question-prop/examples/qprop_bare.goal",
+	"features/05-question-prop/examples/qprop_discard.goal",
+	"features/05-question-prop/examples/qprop_erronly.goal",
+	"features/05-question-prop/examples/qprop_result.goal",
+	"features/05-question-prop/examples/qprop_option.goal",
+}
+
+// TestASTEngineQuestionBehavioralTier is US-035 AC2 (behavioral half): every
+// 05-question-prop transpile case passes the behavioral tier (temp-module go build
+// + go vet) through the new AST backend, proving the `?` propagation lowering — for
+// Result and Option, in every binding form — produces build + vet-clean Go.
+func TestASTEngineQuestionBehavioralTier(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns the go toolchain; skipped under -short")
+	}
+	if len(questionPropCases) == 0 {
+		t.Fatal("no question-prop cases to run")
+	}
+	for _, input := range questionPropCases {
+		t.Run(input, func(t *testing.T) {
+			c := corpus.Case{
+				ID:    input,
+				Kind:  corpus.KindTranspile,
+				Mode:  corpus.ModeFile,
+				Input: input,
+			}
+			if err := corpus.RunCompile(repoRoot, c, corpus.TranspilerFunc(backend.Transpile)); err != nil {
+				t.Fatalf("behavioral tier failed: %v", err)
+			}
+		})
+	}
+}
+
+// TestASTEngineQuestionNoMagicPrefix is US-035 AC1/AC2 (gensym half): the generated
+// Go for every `?`-bearing case contains no literal `__goal_` substring — the magic
+// prefix is retired in favor of scope-aware generated identifiers.
+func TestASTEngineQuestionNoMagicPrefix(t *testing.T) {
+	for _, input := range questionPropCases {
+		t.Run(input, func(t *testing.T) {
+			out, err := backend.Transpile(mustRead(t, "../../"+input))
+			if err != nil {
+				t.Fatalf("Transpile: %v", err)
+			}
+			if strings.Contains(out.Go, "__goal_") {
+				t.Fatalf("generated Go still carries the magic `__goal_` prefix:\n%s", out.Go)
+			}
+		})
+	}
+}
+
+// TestASTEngineQuestionScopeAware proves the generated names are scope-aware, not a
+// fixed prefix: `parsePositive` already binds its own `err` (from strconv.Atoi), so
+// the lowering must mint a non-colliding error return (`err1`) rather than shadow
+// or reuse the source `err` — and never emit `__goal_`.
+func TestASTEngineQuestionScopeAware(t *testing.T) {
+	out, err := backend.Transpile(mustRead(t, "../../features/03-result/examples/result_int.goal"))
+	if err != nil {
+		t.Fatalf("Transpile: %v", err)
+	}
+	if strings.Contains(out.Go, "__goal_") {
+		t.Fatalf("generated Go still carries the magic `__goal_` prefix:\n%s", out.Go)
+	}
+	if !strings.Contains(out.Go, "(ok int, err1 error)") {
+		t.Fatalf("expected a scope-aware error return `err1` avoiding the source `err`, got:\n%s", out.Go)
+	}
+}
+
+// TestASTEngineQuestionEncoding pins the `?`-propagation shapes (AC1): a Result `?`
+// destructures the callee's trailing error and returns the function's (ok, err)
+// pair (one value for a plain-error callee, two for a Result callee); an Option `?`
+// stores the *T temp, returns nil when nil, and dereferences into the bound name.
+func TestASTEngineQuestionEncoding(t *testing.T) {
+	cases := []struct {
+		file  string
+		wants []string
+	}{
+		{"../../features/05-question-prop/examples/qprop_result.goal", []string{
+			"raw, err := readFile(p)", "if err != nil {", "return ok, err", "return cfg, nil",
+		}},
+		{"../../features/05-question-prop/examples/qprop_bare.goal", []string{
+			"if _, err := flush(); err != nil {", "return ok, err",
+		}},
+		{"../../features/05-question-prop/examples/qprop_erronly.goal", []string{
+			"if err := clean(); err != nil {", "return ok, err",
+		}},
+		{"../../features/05-question-prop/examples/qprop_option.goal", []string{
+			"o := find(name)", "if o == nil {", "return nil", "u := *o", "return &p",
 		}},
 	}
 	for _, c := range cases {

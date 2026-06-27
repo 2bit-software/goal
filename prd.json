@@ -425,8 +425,8 @@
         "The 05-question-prop cases pass the behavioral tier and a test asserts the generated Go contains no __goal_ substring"
       ],
       "priority": 35,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "AST backend now lowers postfix `?` (ast.UnwrapExpr) at statement position in internal/backend/emit.go (unwrap/unwrapResult/unwrapOption + calleeSig), wired into stmt()'s AssignStmt (name:=expr? / _:=expr?) and ExprStmt (bare expr?) cases. The whole __goal_ gensym family is retired in favor of a scope-aware allocator: emitFile seeds emitter.fileIdents via fileIdentSet(f) (lower.go); funcDecl opens a per-function scope (newScope copy) and mints the open-E Result success/error returns up front (e.gensym(\"ok\"/\"err\")) so the signature and body agree; match/Option-box temps are local gensyms (v/err/o/some) since a statement-position match may sit in a non-Result function (e.g. handle). gensym(want) appends the least integer suffix that avoids any in-scope name — so result_int's user `err` forces the named error return to `err1` (scope-aware witness). Result `?` destructures the callee's lowered arity via sema.FuncSig (plain-error callee -> 1 value, Result callee -> 2); Option `?` mints a fresh pointer temp per site (o, o1) and returns nil. Updated US-034's TestASTEngineResultOptionEncoding to the new names. AC tests: TestASTEngineQuestionBehavioralTier (build+vet over all 5 05-question-prop cases), TestASTEngineQuestionNoMagicPrefix (no __goal_), TestASTEngineQuestionScopeAware (err1 witness), TestASTEngineQuestionEncoding (shapes). Closed-E `?` still deferred to US-037 (closed-E Result functions are roNone, so a `?` there hits the descriptive `?` outside Result/Option error)."
     },
     {
       "id": "US-036",

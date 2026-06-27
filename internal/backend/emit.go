@@ -2,6 +2,7 @@ package backend
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"goal/internal/ast"
@@ -34,21 +35,59 @@ type emitter struct {
 	// (T, error) pair / pointer form. roNone outside a Result/Option function.
 	fnKind roKind
 	// renames maps an identifier to its replacement within the currently-emitting
-	// match arm body (e.g. an Ok binding `cfg` -> `__goal_v`). Empty outside a
+	// match arm body (e.g. an Ok binding `cfg` -> a gensym `v`). Empty outside a
 	// match arm; consulted by the Ident emission.
 	renames map[string]string
+	// fileIdents is the set of identifiers used anywhere in the file; it seeds each
+	// function's gensym collision set so a generated name never clashes with source.
+	fileIdents map[string]bool
+	// taken is the in-scope identifier set for the current function — fileIdents
+	// plus every name already minted by gensym in this function. Reset per funcDecl.
+	taken map[string]bool
+	// okName / errName are the current open-E Result function's generated success
+	// and error return names (scope-aware, no `__goal_` prefix). A Result `?` and a
+	// `return Result.Ok/Err` propagate through them; empty outside such a function.
+	okName, errName string
 }
 
 // emitFile renders a whole *ast.File to Go source text, lowering goal-specific
 // constructs through info, or returns the first unsupported-node error
 // encountered.
 func emitFile(f *ast.File, info *sema.Info) (string, error) {
-	e := emitter{info: info, pointerRecv: pointerReceiverSet(f)}
+	e := emitter{info: info, pointerRecv: pointerReceiverSet(f), fileIdents: fileIdentSet(f)}
 	e.file(f)
 	if e.err != nil {
 		return "", e.err
 	}
 	return e.b.String(), nil
+}
+
+// gensym returns a fresh identifier built from want that collides with no name in
+// scope for the current function, reserving it for the rest of the function. It is
+// the scope-aware replacement for the magic `__goal_` prefix (US-035): the `?`
+// propagation and match lowerings name their temporaries through it, so a
+// generated name can never shadow a source identifier (e.g. a user's own `err`).
+func (e *emitter) gensym(want string) string {
+	if e.taken == nil {
+		e.taken = map[string]bool{}
+	}
+	name := want
+	for i := 1; e.taken[name]; i++ {
+		name = want + strconv.Itoa(i)
+	}
+	e.taken[name] = true
+	return name
+}
+
+// newScope returns a fresh copy of the file's identifier set — the collision base
+// for one function's gensyms, so names minted in one function do not perturb the
+// next.
+func (e *emitter) newScope() map[string]bool {
+	s := make(map[string]bool, len(e.fileIdents))
+	for k := range e.fileIdents {
+		s[k] = true
+	}
+	return s
 }
 
 // fail records the first error; subsequent emit calls short-circuit on it.
@@ -235,6 +274,22 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 		e.fail("unsupported func modifier %v (goal from/derive is a later story)", d.Mod)
 		return
 	}
+	// Enter the function's gensym scope: seed the collision set with the source's
+	// identifiers and, for an open-E Result function, mint the success/error return
+	// names up front so the signature and the body's `?`/match lowering reference
+	// them identically. All saved/restored so a sibling function starts clean (and
+	// a nested func literal cannot leak its kind or names outward).
+	kind, _ := resultOptionKind(d.Type)
+	prevKind, prevOk, prevErr, prevTaken := e.fnKind, e.okName, e.errName, e.taken
+	e.fnKind, e.taken, e.okName, e.errName = kind, e.newScope(), "", ""
+	if kind == roResultOpen {
+		e.okName = e.gensym("ok")
+		e.errName = e.gensym("err")
+	}
+	defer func() {
+		e.fnKind, e.okName, e.errName, e.taken = prevKind, prevOk, prevErr, prevTaken
+	}()
+
 	e.p("func ")
 	if d.Recv != nil {
 		e.fieldList(d.Recv, "(", ")")
@@ -245,16 +300,8 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 	}
 	e.funcSig(d.Type)
 	if d.Body != nil {
-		// The body's Result/Option constructor returns lower against the enclosing
-		// function's kind; save/restore so a nested func literal cannot leak its
-		// kind outward (goal has no func-literal bodies today, but this keeps the
-		// invariant honest).
-		kind, _ := resultOptionKind(d.Type)
-		prev := e.fnKind
-		e.fnKind = kind
 		e.p(" ")
 		e.block(d.Body)
-		e.fnKind = prev
 	}
 }
 
@@ -268,14 +315,24 @@ func (e *emitter) funcSig(t *ast.FuncType) {
 	if t.Results != nil && len(t.Results.List) > 0 {
 		e.p(" ")
 		// An open-E Result[T, error] return lowers to native named Go returns
-		// (__goal_ok T, __goal_err error): the named success return makes the
+		// (ok T, err error, scope-aware gensyms): the named success return makes the
 		// Err-path zero value available without synthesizing a type-specific zero
 		// literal (§8.3). An Option[T] return needs no special case here — it falls
 		// through to the IndexExpr lowering, which renders *T.
 		if kind, success := resultOptionKind(t); kind == roResultOpen {
-			e.p("(" + okName + " ")
+			// In a function declaration these names are minted by funcDecl; in a
+			// bodyless context (an interface method, a func-type expression) there is
+			// no body to agree with, so fall back to plain unused named returns.
+			ok, errn := e.okName, e.errName
+			if ok == "" {
+				ok = "ok"
+			}
+			if errn == "" {
+				errn = "err"
+			}
+			e.p("(" + ok + " ")
 			e.expr(success)
-			e.p(", " + errName + " error)")
+			e.p(", " + errn + " error)")
 			return
 		}
 		// Multiple results, or a single named result, need parentheses; a single
@@ -375,13 +432,31 @@ func (e *emitter) stmt(s ast.Stmt) {
 		e.block(s)
 	case *ast.ExprStmt:
 		// A statement-position `match` over a Result/Option lowers to an if/else
-		// split (§8.3/§8.4); any other expression statement emits verbatim.
-		if m, ok := s.X.(*ast.MatchExpr); ok {
-			e.matchStmt(m)
-		} else {
+		// split (§8.3/§8.4); a bare `expr?` discards the unwrapped value and
+		// propagates only the failure; any other expression statement emits verbatim.
+		switch x := s.X.(type) {
+		case *ast.MatchExpr:
+			e.matchStmt(x)
+		case *ast.UnwrapExpr:
+			e.unwrap("_", x, true)
+		default:
 			e.expr(s.X)
 		}
 	case *ast.AssignStmt:
+		// `name := expr?` / `_ := expr?` lowers the `?` propagation (§3.7, §8.3): the
+		// unwrapped value binds to name (or is discarded), the failure early-returns.
+		if len(s.Rhs) == 1 {
+			if u, ok := s.Rhs[0].(*ast.UnwrapExpr); ok {
+				name := "_"
+				if len(s.Lhs) == 1 {
+					if id, ok := s.Lhs[0].(*ast.Ident); ok {
+						name = id.Name
+					}
+				}
+				e.unwrap(name, u, name == "_")
+				return
+			}
+		}
 		e.exprList(s.Lhs)
 		e.p(" ")
 		e.p(s.Tok.String())
@@ -524,7 +599,7 @@ func (e *emitter) rangeStmt(s *ast.RangeStmt) {
 func (e *emitter) expr(x ast.Expr) {
 	switch x := x.(type) {
 	case *ast.Ident:
-		// A match-arm binding rename (e.g. the Ok payload `cfg` -> `__goal_v`)
+		// A match-arm binding rename (e.g. the Ok payload `cfg` -> a gensym `v`)
 		// applies here; outside a renaming arm, renames is empty.
 		if r, ok := e.renames[x.Name]; ok {
 			e.p(r)
@@ -705,7 +780,7 @@ func (e *emitter) returnStmt(s *ast.ReturnStmt) {
 }
 
 // emitResultReturn lowers `return Result.Ok(X)` -> `return X, nil` and
-// `return Result.Err(X)` -> `return __goal_ok, X` (the named zero success
+// `return Result.Err(X)` -> `return ok, X` (the function's named zero success
 // return). It reports whether it handled the expression.
 func (e *emitter) emitResultReturn(x ast.Expr) bool {
 	call, ok := x.(*ast.CallExpr)
@@ -726,7 +801,7 @@ func (e *emitter) emitResultReturn(x ast.Expr) bool {
 		e.p(", nil")
 		return true
 	case "Err":
-		e.p("return " + okName + ", ")
+		e.p("return " + e.okName + ", ")
 		e.exprList(call.Args)
 		return true
 	}
@@ -735,7 +810,7 @@ func (e *emitter) emitResultReturn(x ast.Expr) bool {
 
 // emitOptionReturn lowers `return Option.None` -> `return nil` and
 // `return Option.Some(x)` -> `return &x` (addressable identifier) or a boxed
-// `__goal_some := x; return &__goal_some` (§8.4). It reports whether it handled
+// `some := x; return &some` (a gensym; §8.4). It reports whether it handled
 // the expression.
 func (e *emitter) emitOptionReturn(x ast.Expr) bool {
 	switch v := x.(type) {
@@ -760,12 +835,87 @@ func (e *emitter) emitOptionReturn(x ast.Expr) bool {
 			e.expr(v.Args[0])
 			return true
 		}
-		e.p(someName + " := ")
+		some := e.gensym("some")
+		e.p(some + " := ")
 		e.expr(v.Args[0])
-		e.p("\nreturn &" + someName)
+		e.p("\nreturn &" + some)
 		return true
 	}
 	return false
+}
+
+// unwrap lowers a postfix `?` (ast.UnwrapExpr) at statement position: `name :=
+// expr?` binds the unwrapped value, a bare `expr?` or `_ := expr?` discards it,
+// and either way the enclosing function's failure (the Err / None) is
+// early-returned (§3.7, §8.3). All temporaries are scope-aware gensyms — there is
+// no `__goal_` prefix (US-035).
+func (e *emitter) unwrap(name string, u *ast.UnwrapExpr, discard bool) {
+	switch e.fnKind {
+	case roResultOpen:
+		e.unwrapResult(name, u, discard)
+	case roOption:
+		e.unwrapOption(name, u, discard)
+	default:
+		e.fail("`?` outside a Result- or Option-returning function (open-E only; closed-E `?` is a later story)")
+	}
+}
+
+// unwrapResult lowers `?` in an open-E Result function: it destructures the
+// callee's trailing error and, on non-nil, returns the function's own generated
+// (ok, err) pair. The number of values destructured follows the callee's lowered
+// arity — a plain `error`-returning callee yields one value, a `Result` callee two
+// — so an error-only `?` does not over-destructure. An unresolved callee keeps the
+// two-value form.
+func (e *emitter) unwrapResult(name string, u *ast.UnwrapExpr, discard bool) {
+	n := 2
+	if sig, ok := e.calleeSig(u.X); ok && sig.EndsInError && sig.Arity >= 1 {
+		n = sig.Arity
+	}
+	if discard {
+		e.p("if " + strings.Repeat("_, ", n-1) + e.errName + " := ")
+		e.expr(u.X)
+		e.p("; " + e.errName + " != nil {\nreturn " + e.okName + ", " + e.errName + "\n}")
+		return
+	}
+	if sig, ok := e.calleeSig(u.X); ok && sig.Arity != 2 {
+		e.fail("`?` binds a value but the callee returns %d value(s); write a bare `…?` to propagate only the error", sig.Arity)
+		return
+	}
+	e.p(name + ", " + e.errName + " := ")
+	e.expr(u.X)
+	e.p("\nif " + e.errName + " != nil {\nreturn " + e.okName + ", " + e.errName + "\n}")
+}
+
+// unwrapOption lowers `?` in an Option function: it stores the *T result in a fresh
+// pointer temp and, when nil, returns nil; otherwise it dereferences into the
+// bound name. Each `?` site mints its own temp, so chained `?`s never collide.
+func (e *emitter) unwrapOption(name string, u *ast.UnwrapExpr, discard bool) {
+	o := e.gensym("o")
+	if discard {
+		e.p("if " + o + " := ")
+		e.expr(u.X)
+		e.p("; " + o + " == nil {\nreturn nil\n}")
+		return
+	}
+	e.p(o + " := ")
+	e.expr(u.X)
+	e.p("\nif " + o + " == nil {\nreturn nil\n}\n" + name + " := *" + o)
+}
+
+// calleeSig returns the resolved signature of the function a `?` scrutinee directly
+// calls (by name), so the destructure arity matches the callee's lowered shape. It
+// reports false for a non-call, a non-identifier callee, or an unresolved name.
+func (e *emitter) calleeSig(x ast.Expr) (sema.FuncSig, bool) {
+	call, ok := x.(*ast.CallExpr)
+	if !ok {
+		return sema.FuncSig{}, false
+	}
+	id, ok := call.Fun.(*ast.Ident)
+	if !ok || e.info == nil || e.info.FuncSignatures == nil {
+		return sema.FuncSig{}, false
+	}
+	sig, ok := e.info.FuncSignatures[id.Name]
+	return sig, ok
 }
 
 // matchStmt lowers a statement-position match over a Result or Option to an
@@ -783,10 +933,13 @@ func (e *emitter) matchStmt(m *ast.MatchExpr) {
 }
 
 // resultMatch lowers `match scrut { Result.Ok(v) => …; Result.Err(e) => … }` to
-// `lhs, __goal_err := scrut; if __goal_err != nil { errBody } else { okBody }`.
-// The Ok binding is renamed to __goal_v (discarded with `_` when unused) and the
-// Err binding to __goal_err, so an arm body that constructs another Result
-// composes with the rename through emitResultReturn.
+// `lhs, err := scrut; if err != nil { errBody } else { okBody }`. The destructure
+// value/error names are fresh local gensyms (a statement-position match may sit in
+// a function that is not itself Result-returning, e.g. a plain `handle`, so these
+// are NOT the enclosing function's returns). The Ok binding is renamed to the
+// value gensym (discarded with `_` when unused) and the Err binding to the error
+// gensym, so an arm body that constructs another Result composes through the
+// rename in emitResultReturn.
 func (e *emitter) resultMatch(m *ast.MatchExpr) {
 	if e.calleeMode(m.Subject) == sema.ModeResultClosed {
 		e.fail("closed-E Result match is a later story (US-037)")
@@ -797,34 +950,36 @@ func (e *emitter) resultMatch(m *ast.MatchExpr) {
 		e.fail("Result match must have both Result.Ok and Result.Err arms")
 		return
 	}
+	val, errVar := e.gensym("v"), e.gensym("err")
 	okBinding := bindingName(okArm.Pattern)
 	okLHS := "_"
 	if okBinding != "" && usesIdent(okArm.Body, okBinding) {
-		okLHS = valName
+		okLHS = val
 	}
-	e.p(okLHS + ", " + errName + " := ")
+	e.p(okLHS + ", " + errVar + " := ")
 	e.expr(m.Subject)
-	e.p("\nif " + errName + " != nil {\n")
-	e.armBodyRenamed(errArm.Body, bindingName(errArm.Pattern), errName)
+	e.p("\nif " + errVar + " != nil {\n")
+	e.armBodyRenamed(errArm.Body, bindingName(errArm.Pattern), errVar)
 	e.p("\n} else {\n")
-	e.armBodyRenamed(okArm.Body, okBinding, valName)
+	e.armBodyRenamed(okArm.Body, okBinding, val)
 	e.p("\n}")
 }
 
 // optionMatch lowers `match opt { Option.Some(b) => …; Option.None => … }` to
-// `if __goal_o := opt; __goal_o != nil { b := *__goal_o; someBody } else
-// { noneBody }`. The Some binding keeps its name (declared only when used).
+// `if o := opt; o != nil { b := *o; someBody } else { noneBody }`, where `o` is a
+// fresh local gensym. The Some binding keeps its name (declared only when used).
 func (e *emitter) optionMatch(m *ast.MatchExpr) {
 	someArm, noneArm := armByVariant(m, "Some"), armByVariant(m, "None")
 	if someArm == nil || noneArm == nil {
 		e.fail("Option match must have both Option.Some and Option.None arms")
 		return
 	}
-	e.p("if " + optBase + " := ")
+	o := e.gensym("o")
+	e.p("if " + o + " := ")
 	e.expr(m.Subject)
-	e.p("; " + optBase + " != nil {\n")
+	e.p("; " + o + " != nil {\n")
 	if b := bindingName(someArm.Pattern); b != "" && usesIdent(someArm.Body, b) {
-		e.p(b + " := *" + optBase + "\n")
+		e.p(b + " := *" + o + "\n")
 	}
 	e.armBody(someArm.Body)
 	e.p("\n} else {\n")

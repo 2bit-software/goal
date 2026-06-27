@@ -19,19 +19,26 @@ import (
 // The encoders emit syntactically valid, token-correct Go text (the emitter's
 // format-once discipline) — readability is the Formatter's job.
 
-// Gensym names for the open-E Result / Option lowering (§8.3, §8.4). They mirror
-// internal/pass/pass.go so the AST backend emits the same shapes the splice
-// engine does (US-035 retires the literal __goal_ prefix for `?` propagation;
-// US-042 regenerates the exact goldens). The behavioral tier judges by build +
-// vet, so the exact spelling is not load-bearing — only that the names a lowered
-// signature declares match the names its body references.
-const (
-	okName   = "__goal_ok"   // named success return / Ok arm-binding target
-	errName  = "__goal_err"  // named error return / Err arm-binding target
-	valName  = "__goal_v"    // Ok value captured at a statement-position match
-	someName = "__goal_some" // boxed Some value when the payload is not addressable
-	optBase  = "__goal_o"    // Option pointer temporary at a statement-position match
-)
+// fileIdentSet collects every identifier name that appears in f. It seeds the
+// emitter's scope-aware gensym (emit.go) so a generated name — the §8.3/§8.4
+// success/error returns, the `?`/match temporaries — never shadows or collides
+// with a name the source already uses. This is the structural replacement for the
+// fixed `__goal_` prefix the splice engine and the US-034 seed lowering used
+// (US-035): instead of a reserved magic prefix that merely *assumes* it never
+// clashes, names are minted against the actual identifiers in scope.
+func fileIdentSet(f *ast.File) map[string]bool {
+	set := map[string]bool{}
+	if f == nil {
+		return set
+	}
+	ast.Walk(identFinder(func(n ast.Node) bool {
+		if id, ok := n.(*ast.Ident); ok {
+			set[id.Name] = true
+		}
+		return true
+	}), f)
+	return set
+}
 
 // roKind classifies a function result type as one of goal's lowered core types.
 type roKind int
