@@ -1,5 +1,41 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T10:20:00Z] - US-027
+- Proved US-027 "Gate: behavioral parity under interp": added the whole-corpus
+  interpreter behavioral parity GATE — the goscript interpreter is now held to the
+  SAME implementation-independent yardstick as the Go back-end across the whole
+  applicable corpus. internal/corpus.TestInterpWholeCorpusBehavioralGate runs every
+  applicable case (the doctest-kind subset — the interpreter's behavioral tier,
+  what corpus.RunInterp consumes) through interpretation and asserts zero
+  behavioral failures (4 doctest cases green, 0 skipped). It is the interpreter
+  analogue of TestASTEngineWholeCorpusBehavioralGate (ast_gate_test.go).
+- Excluded cases must be enumerated in an EXPLICIT, justified skip list
+  (interpGateSkips: case ID -> reason), never silently dropped. The gate FAILS if
+  a case fails behaviorally, if any skip entry has a blank reason (blankSkipReasons),
+  if a skip names a non-doctest case (stale), or if the manifest is empty / yields
+  zero applicable cases (loud, not vacuous green). interpGateSkips ships EMPTY (all
+  doctest cases pass under interp); the blank-reason enforcement is proven
+  regardless by TestInterpGateSkipListRejectsBlankReason.
+- internal/corpus/interp_gate_test.go (new): interpGateSkips map,
+  TestInterpWholeCorpusBehavioralGate, blankSkipReasons helper,
+  TestInterpGateSkipListRejectsBlankReason. stdlib testing + reflect, no testify.
+  NO production code changed — composes existing seams (RunInterp, Load,
+  manifestPath, repoRoot, KindDoctest).
+- prd.json (US-027 passes:true), progress.txt
+- history/20260627-feature-us-027-gate-behavioral-parity-under-interp/ (initiative)
+- Learnings for future iterations:
+  - The interpreter's behavioral conformance UNIVERSE is the doctest subset
+    (RunInterp only handles KindDoctest). "Every applicable corpus case" in an
+    interpreter gate means every doctest case; non-doctest tiers (transpile/check/
+    package) are a different tier, not "skipped". US-028 (script-to-module no-op)
+    is the remaining gate and is the LAST unpassed story.
+  - The honest-skip pattern: an EXPLICIT map[caseID]reason validated for (a) no
+    blank reasons and (b) no stale entries (every key names a real case), plus a
+    loud ran==0 fatal. Factor the blank-reason check into a tiny helper so a focused
+    unit test exercises the "fail on unjustified skip" guarantee even when the live
+    skip list is empty — otherwise that guarantee is an untested no-op.
+---
+
 ## [2026-06-28T09:40:00Z] - US-026
 - Proved US-026 "Wire interpreter into the CLI": `goal run --engine=interp
   <file.goal>` now executes a single .goal program under the goscript tree-walking

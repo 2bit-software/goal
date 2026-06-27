@@ -329,7 +329,7 @@
         "The gate test fails if a case fails behaviorally or if the skip list is missing a recorded reason for any entry"
       ],
       "priority": 27,
-      "passes": false,
+      "passes": true,
       "notes": "Gate corresponding to REWRITE-ARCHITECTURE.md §7 Phase 5: 'behavioral tier green under interpretation'. Honest deferral over false completion: a justified, enumerated skip list is allowed; silent drops are not."
     },
     {
