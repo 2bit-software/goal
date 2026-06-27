@@ -1,6 +1,7 @@
 package ast
 
 import (
+	"fmt"
 	"testing"
 
 	"goal/internal/token"
@@ -280,6 +281,124 @@ func TestWalkGoalDeclChildren(t *testing.T) {
 	}
 	if plainFunc.Pos() != plainFunc.Type.Pos() {
 		t.Errorf("plain-func Pos() = %v, want Type.Pos() %v", plainFunc.Pos(), plainFunc.Type.Pos())
+	}
+}
+
+// TestWalkGoalExprChildren asserts Walk descends into the children of each goal
+// expression/pattern node added in US-016 (MatchExpr/MatchArm,
+// VariantPattern/RestPattern, UnwrapExpr, VariantLit/LabeledArg, SpreadElement)
+// and that a construction VariantLit and a destructuring VariantPattern of the
+// same surface shape are distinct node types — the structural fix for the
+// Match-before-Enums ordering hack.
+func TestWalkGoalExprChildren(t *testing.T) {
+	// collect walks root and returns how many times each non-nil node was visited.
+	collect := func(root Node) map[Node]int {
+		c := &collector{visits: make(map[Node]int)}
+		Walk(c, root)
+		return c.visits
+	}
+	// assertChildren asserts parent and each listed child were each visited once.
+	assertChildren := func(t *testing.T, visits map[Node]int, parent Node, children ...Node) {
+		t.Helper()
+		if got := visits[parent]; got != 1 {
+			t.Errorf("parent %T visited %d times, want 1", parent, got)
+		}
+		for _, ch := range children {
+			if got := visits[ch]; got != 1 {
+				t.Errorf("Walk did not descend from %T into child %T (visited %d times, want 1)", parent, ch, got)
+			}
+		}
+	}
+
+	// Construction: Status.Active(since: now())
+	litEnum := &Ident{Name: "Status"}
+	litVariant := &Ident{Name: "Active"}
+	nowCall := &CallExpr{Fun: &Ident{Name: "now"}}
+	sinceArg := &LabeledArg{Label: &Ident{Name: "since"}, Value: nowCall}
+	variantLit := &VariantLit{
+		Enum:    litEnum,
+		Variant: litVariant,
+		Lparen:  token.Pos{Offset: 13, Line: 1, Col: 14},
+		Args:    []Expr{sinceArg},
+		Rparen:  token.Pos{Offset: 25, Line: 1, Col: 26},
+	}
+	{
+		visits := collect(variantLit)
+		assertChildren(t, visits, variantLit, litEnum, litVariant, sinceArg)
+		assertChildren(t, visits, sinceArg, sinceArg.Label, nowCall)
+	}
+
+	// Destructuring pattern: Status.Active(a)
+	patEnum := &Ident{Name: "Status"}
+	patVariant := &Ident{Name: "Active"}
+	binding := &Ident{Name: "a"}
+	variantPattern := &VariantPattern{
+		Enum:    patEnum,
+		Variant: patVariant,
+		Lparen:  token.Pos{Offset: 13, Line: 1, Col: 14},
+		Binding: binding,
+		Rparen:  token.Pos{Offset: 15, Line: 1, Col: 16},
+	}
+	{
+		visits := collect(variantPattern)
+		assertChildren(t, visits, variantPattern, patEnum, patVariant, binding)
+	}
+
+	// A construction VariantLit and a destructuring VariantPattern of the same
+	// surface shape MUST be distinct node types.
+	litType := fmt.Sprintf("%T", variantLit)
+	patType := fmt.Sprintf("%T", variantPattern)
+	if litType == patType {
+		t.Fatalf("VariantLit and VariantPattern share a node type (%s); they must be distinct", litType)
+	}
+	if litType != "*ast.VariantLit" {
+		t.Errorf("construction node type = %s, want *ast.VariantLit", litType)
+	}
+	if patType != "*ast.VariantPattern" {
+		t.Errorf("destructuring node type = %s, want *ast.VariantPattern", patType)
+	}
+
+	// match s { Status.Active(a) => render(a); _ => fallback() }
+	renderCall := &CallExpr{Fun: &Ident{Name: "render"}, Args: []Expr{&Ident{Name: "a"}}}
+	arm1 := &MatchArm{Pattern: variantPattern, Arrow: token.Pos{Offset: 16, Line: 1, Col: 17}, Body: renderCall}
+	rest := &RestPattern{Underscore: token.Pos{Offset: 30, Line: 2, Col: 1}}
+	fallbackCall := &CallExpr{Fun: &Ident{Name: "fallback"}}
+	arm2 := &MatchArm{Pattern: rest, Arrow: token.Pos{Offset: 32, Line: 2, Col: 3}, Body: fallbackCall}
+	subject := &Ident{Name: "s"}
+	matchExpr := &MatchExpr{
+		Match:   token.Pos{Offset: 0, Line: 1, Col: 1},
+		Subject: subject,
+		Lbrace:  token.Pos{Offset: 8, Line: 1, Col: 9},
+		Arms:    []*MatchArm{arm1, arm2},
+		Rbrace:  token.Pos{Offset: 45, Line: 3, Col: 1},
+	}
+	{
+		visits := collect(matchExpr)
+		assertChildren(t, visits, matchExpr, subject, arm1, arm2)
+		assertChildren(t, visits, arm1, variantPattern, renderCall)
+		assertChildren(t, visits, arm2, rest, fallbackCall)
+		// The VariantPattern's own children still walk from inside the arm.
+		assertChildren(t, visits, variantPattern, patEnum, patVariant, binding)
+		// RestPattern is a leaf — visited, but has no children to descend into.
+		if got := visits[rest]; got != 1 {
+			t.Errorf("RestPattern visited %d times, want 1", got)
+		}
+	}
+
+	// Postfix unwrap: g()?
+	gCall := &CallExpr{Fun: &Ident{Name: "g"}}
+	unwrap := &UnwrapExpr{X: gCall, Question: token.Pos{Offset: 3, Line: 1, Col: 4}}
+	{
+		visits := collect(unwrap)
+		assertChildren(t, visits, unwrap, gCall)
+	}
+
+	// Spread element: ...defaults
+	defaultsIdent := &Ident{Name: "defaults"}
+	spread := &SpreadElement{Ellipsis: token.Pos{Offset: 0, Line: 1, Col: 1}, X: defaultsIdent}
+	{
+		visits := collect(spread)
+		assertChildren(t, visits, spread, defaultsIdent)
 	}
 }
 

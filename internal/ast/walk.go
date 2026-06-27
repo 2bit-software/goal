@@ -94,6 +94,43 @@ func Walk(v Visitor, node Node) {
 	case *ImplementsClause:
 		walkExpr(v, n.Type)
 
+	// Goal expressions and patterns.
+	case *MatchExpr:
+		walkExpr(v, n.Subject)
+		for _, arm := range n.Arms {
+			Walk(v, arm)
+		}
+	case *MatchArm:
+		walkExpr(v, n.Pattern)
+		if n.Body != nil {
+			Walk(v, n.Body)
+		}
+	case *VariantPattern:
+		walkExpr(v, n.Enum)
+		if n.Variant != nil {
+			Walk(v, n.Variant)
+		}
+		if n.Binding != nil {
+			Walk(v, n.Binding)
+		}
+	case *RestPattern:
+		// no children
+	case *UnwrapExpr:
+		walkExpr(v, n.X)
+	case *VariantLit:
+		walkExpr(v, n.Enum)
+		if n.Variant != nil {
+			Walk(v, n.Variant)
+		}
+		walkExprList(v, n.Args)
+	case *LabeledArg:
+		if n.Label != nil {
+			Walk(v, n.Label)
+		}
+		walkExpr(v, n.Value)
+	case *SpreadElement:
+		walkExpr(v, n.X)
+
 	// Specs.
 	case *ImportSpec:
 		if n.Name != nil {
