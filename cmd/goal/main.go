@@ -27,9 +27,12 @@ import (
 	"goal/internal/fix"
 	"goal/internal/goalfmt"
 	"goal/internal/guide"
+	"goal/internal/interp"
 	"goal/internal/lsp"
+	"goal/internal/parser"
 	"goal/internal/pipeline"
 	"goal/internal/project"
+	"goal/internal/sema"
 	"goal/internal/typecheck"
 )
 
@@ -48,8 +51,9 @@ var guideCommands = []guide.Command{
 	{
 		Name:    "run",
 		Summary: "transpile and `go run` the sole main package",
-		Usage:   "goal run [--emit[=dir]] [path]",
+		Usage:   "goal run [--engine=ast|interp] [--emit[=dir]] [path]",
 		Flags: []guide.Flag{
+			{Name: "--engine=ast|interp", Summary: "ast (default) transpiles and `go run`s; interp runs a single .goal file under the goscript tree-walking interpreter"},
 			{Name: "--emit[=dir]", Summary: "also write generated .go beside each .goal (or under dir)"},
 		},
 	},
@@ -123,19 +127,24 @@ func run(args []string, out, errOut io.Writer) error {
 			return err
 		}
 		return cmdFmt(path, write, out, errOut)
-	case "build", "run", "check":
+	case "run":
+		engine, emit, emitDir, root, err := parseRunFlags(rest)
+		if err != nil {
+			return err
+		}
+		if engine == engineInterp {
+			return cmdRunInterp(root, out, errOut)
+		}
+		return cmdRun(root, emit, emitDir, out, errOut)
+	case "build", "check":
 		emit, emitDir, root, err := parseFlags(rest)
 		if err != nil {
 			return err
 		}
-		switch cmd {
-		case "build":
+		if cmd == "build" {
 			return cmdBuild(root, emit, emitDir, out, errOut)
-		case "run":
-			return cmdRun(root, emit, emitDir, out, errOut)
-		default: // check
-			return cmdCheck(root, out, errOut)
 		}
+		return cmdCheck(root, out, errOut)
 	default:
 		return fmt.Errorf("unknown command %q (%s)", cmd, topUsage())
 	}
@@ -181,6 +190,90 @@ func parseFlags(args []string) (emit bool, emitDir, root string, err error) {
 		root = "."
 	}
 	return emit, emitDir, root, nil
+}
+
+// Engine names select which back-end `goal run` uses. ast (the default)
+// transpiles to Go and drives the Go toolchain; interp runs a single .goal file
+// directly under the goscript tree-walking interpreter (internal/interp).
+const (
+	engineAST    = "ast"
+	engineInterp = "interp"
+)
+
+// parseRunFlags parses the `run` subcommand's flags: --engine=ast|interp
+// (default ast), --emit[=dir], and a single optional path. It mirrors parseFlags
+// for emit/path handling and adds the engine selector; an unknown engine value
+// is a descriptive error so a typo never silently falls back to a different
+// back-end.
+func parseRunFlags(args []string) (engine string, emit bool, emitDir, root string, err error) {
+	engine, root = engineAST, "."
+	gotPath := false
+	for _, a := range args {
+		switch {
+		case a == "--engine" || a == "-engine":
+			return "", false, "", "", fmt.Errorf("flag %q requires a value (--engine=ast|interp)", a)
+		case strings.HasPrefix(a, "--engine="):
+			engine = strings.TrimPrefix(a, "--engine=")
+		case strings.HasPrefix(a, "-engine="):
+			engine = strings.TrimPrefix(a, "-engine=")
+		case a == "--emit":
+			emit = true
+		case strings.HasPrefix(a, "--emit="):
+			emit, emitDir = true, strings.TrimPrefix(a, "--emit=")
+		case strings.HasPrefix(a, "-"):
+			return "", false, "", "", fmt.Errorf("unknown flag %q", a)
+		default:
+			if gotPath {
+				return "", false, "", "", fmt.Errorf("expected a single path, got extra %q", a)
+			}
+			root, gotPath = a, true
+		}
+	}
+	if engine != engineAST && engine != engineInterp {
+		return "", false, "", "", fmt.Errorf("unknown engine %q (want ast or interp)", engine)
+	}
+	root = strings.TrimSuffix(strings.TrimSuffix(root, "..."), "/")
+	if root == "" {
+		root = "."
+	}
+	return engine, emit, emitDir, root, nil
+}
+
+// cmdRunInterp runs a single .goal file under the goscript tree-walking
+// interpreter: it parses the source through the shared front-end
+// (internal/parser + internal/sema) and executes func main via internal/interp,
+// with the program's standard-output effect routed to out and full host
+// authority (the interpreter's GrantAll default). The interpreter consumes the
+// shared AST + sema front-end directly — no Go transpilation, no Go toolchain —
+// so it runs in a host with no Go installed. A missing/non-.goal path, a parse
+// failure, a refused static guarantee (the native sema gate), a missing func
+// main, or a runtime failure is a located, descriptive error (the command exits
+// non-zero), never a silent success.
+func cmdRunInterp(path string, out, errOut io.Writer) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("--engine=interp runs a single .goal file, not a directory: %s", path)
+	}
+	if !strings.HasSuffix(path, project.Ext) {
+		return fmt.Errorf("not a .goal file: %s", path)
+	}
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	file, err := parser.ParseFile(string(src))
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	semaInfo := sema.Resolve(file)
+	ip := interp.New(file, semaInfo, interp.WithStdout(out))
+	if err := ip.Run(); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	return nil
 }
 
 // parseFixFlags pulls the -inplace flag and a single optional path (a .goal file or a

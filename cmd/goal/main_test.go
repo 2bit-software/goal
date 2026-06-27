@@ -199,3 +199,73 @@ func TestParseFlagsUnknownFlag(t *testing.T) {
 		t.Error("--engine should be rejected as an unknown flag")
 	}
 }
+
+// interpMainGoal is a self-contained single-file goal program (it calls a goal
+// function over a sum type and prints the result) used to exercise the
+// interpreter run path end to end.
+const interpMainGoal = `package main
+
+import "fmt"
+
+enum Color {
+    Red
+    Green
+}
+
+func name(c Color) string {
+    return match c {
+        Color.Red => "red"
+        Color.Green => "green"
+    }
+}
+
+func main() {
+    fmt.Println(name(Color.Green))
+}
+`
+
+// TestRunInterpEngineExecutesMain drives `goal run --engine=interp <file>` through
+// the real command path: the program is parsed, sema-resolved, and interpreted
+// in-process (no Go toolchain), func main runs, and its stdout reaches the
+// command's out writer (FR-1/FR-2/FR-3).
+func TestRunInterpEngineExecutesMain(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "main.goal")
+	if err := os.WriteFile(file, []byte(interpMainGoal), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"run", "--engine=interp", file}, &out, &errOut); err != nil {
+		t.Fatalf("interp run failed: %v\n%s", err, errOut.String())
+	}
+	if got := strings.TrimSpace(out.String()); got != "green" {
+		t.Errorf("program output = %q, want green\nstderr: %s", got, errOut.String())
+	}
+}
+
+// TestRunInterpUnknownEngineRejected asserts an unrecognized --engine value is a
+// descriptive error rather than a silent fallback to a different back-end.
+func TestRunInterpUnknownEngineRejected(t *testing.T) {
+	var out, errOut bytes.Buffer
+	if err := run([]string{"run", "--engine=bogus", "."}, &out, &errOut); err == nil {
+		t.Error("unknown --engine value should be rejected")
+	}
+}
+
+// TestRunInterpNoMain asserts a program with no func main run under the
+// interpreter exits non-zero with an error (FR-5: loud failure, never a silent
+// success).
+func TestRunInterpNoMain(t *testing.T) {
+	const noMain = "package main\n\nfunc helper() int {\n\treturn 1\n}\n"
+	dir := t.TempDir()
+	file := filepath.Join(dir, "main.goal")
+	if err := os.WriteFile(file, []byte(noMain), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"run", "--engine=interp", file}, &out, &errOut); err == nil {
+		t.Error("interp run of a program with no func main should fail")
+	}
+}

@@ -317,7 +317,7 @@
         "A cmd/goal test runs a sample .goal program through the interpreter path and asserts exit code 0 and the expected stdout"
       ],
       "priority": 26,
-      "passes": false,
+      "passes": true,
       "notes": "Mirror the existing `--engine=splice|ast` flag convention; interp becomes a third engine value."
     },
     {

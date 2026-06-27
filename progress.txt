@@ -1,5 +1,50 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T09:40:00Z] - US-026
+- Proved US-026 "Wire interpreter into the CLI": `goal run --engine=interp
+  <file.goal>` now executes a single .goal program under the goscript tree-walking
+  interpreter — parse (internal/parser) -> resolve (internal/sema) -> interp.New
+  + Run — running func main and exiting 0 on success, with NO Go transpilation and
+  NO Go toolchain. The program's stdout effect is routed to the command's out
+  writer (interp.WithStdout) under the interpreter's GrantAll default authority.
+  The interpreter is strictly OPT-IN: without --engine=interp (default
+  --engine=ast) `goal run` keeps its existing transpile-and-`go run` behavior.
+- cmd/goal/main.go: new `--engine` flag for the `run` subcommand only, parsed by
+  new `parseRunFlags` (mirrors parseFlags for --emit/path, adds engine=ast|interp,
+  default ast; an unknown engine value is a descriptive error, never a silent
+  fallback). run()'s dispatch split: `case "run"` parses run flags and routes
+  engine==interp to new `cmdRunInterp`, else the existing cmdRun; build/check keep
+  the old parseFlags path. cmdRunInterp(path,out,errOut): requires a single .goal
+  FILE (a directory or non-.goal path is a located refusal), reads it, ParseFile,
+  sema.Resolve, interp.New(file, info, interp.WithStdout(out)), ip.Run() — wrapping
+  any parse/gate/no-main/runtime error with the file path (the binary then exits 1).
+  Added engineAST/engineInterp consts + imports goal/internal/{interp,parser,sema}.
+  guideCommands' run entry documents `--engine=ast|interp`.
+- AI-KNOWLEDGE-BOOTSTRAP.md regenerated (`go run ./cmd/goal ai > ...`) so
+  TestBootstrapGoldenMatches stays green after the guideCommands edit.
+- cmd/goal/main_test.go: TestRunInterpEngineExecutesMain (a fmt.Println program
+  through `run([]string{"run","--engine=interp",file},...)` -> nil error, stdout
+  "green"), TestRunInterpUnknownEngineRejected (--engine=bogus -> error),
+  TestRunInterpNoMain (no func main -> error). stdlib testing, no testify.
+- prd.json (US-026 passes:true), progress.txt
+- history/20260627-feature-us-026-wire-interpreter-into-cli/ (initiative)
+- Learnings for future iterations:
+  - The CLI interp entry is FILE-mode (one *ast.File): cmdRunInterp reads ONE
+    .goal file, not a project.Discover package. interp.New operates on a single
+    parsed file, so a directory/package run stays on the transpile (ast) engine.
+    US-027 (whole-corpus interp gate) drives interp.RunDoctests via corpus.RunInterp,
+    NOT this CLI path; US-028 (script-to-module no-op) compares this CLI interp run
+    against the transpiled-then-built binary of the SAME source.
+  - The `--engine` flag (removed wholesale in US-043) is reintroduced ONLY on the
+    `run` subcommand via parseRunFlags; build/check still use parseFlags and still
+    reject `--engine` as unknown (TestParseFlagsUnknownFlag unchanged). Add a future
+    engine value (e.g. a self-hosted compiler) to parseRunFlags' validation + the
+    guideCommands run flag, and regenerate AI-KNOWLEDGE-BOOTSTRAP.md.
+  - interp.WithStdout(out) is how the CLI (and its test) captures program stdout
+    through the capability sink — the same seam US-023 built; the CLI run grants
+    full authority (interp.New's GrantAll default), so no cap flags are wired yet.
+---
+
 ## [2026-06-28T09:00:00Z] - US-025
 - Proved US-025 "Add corpus interpreter runner": the implementation-independent
   behavioral conformance tier now judges the goscript INTERPRETER on the same
