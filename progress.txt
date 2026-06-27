@@ -15,6 +15,12 @@
 - The golden corpus is indexed by `corpus/manifest.json` (repo root). Regenerate
   after adding/removing golden files: `go generate ./internal/corpus` (or
   `go run ./cmd/corpus-gen -root .`). Paths are repo-root-relative, slash-form.
+- `internal/corpus` imports `internal/pipeline` and `internal/check`. Any test
+  that delegates to a corpus runner must therefore live in an EXTERNAL `_test`
+  package (`package pipeline_test` / `check_test`) to avoid an import cycle; an
+  internal-package test importing corpus will not compile. Internal and external
+  test packages coexist fine in one directory. From `internal/<pkg>`, repo root is
+  `../..` and the manifest is `../../corpus/manifest.json` (same depth as corpus).
 
 ## [2026-06-27T01:56:33Z] - US-001
 - Implemented internal/corpus: a runner-independent Case model and JSON manifest
@@ -157,4 +163,42 @@
   - Regenerate the manifest after any generate.go change:
     `go run ./cmd/corpus-gen -root .` (or `go generate ./internal/corpus`).
   - US-008 (run doctests behaviorally) consumes these same KindDoctest cases.
+---
+
+## [2026-06-27T06:40:00Z] - US-006
+- Rewired the two legacy harnesses to delegate to the corpus runner, retiring all
+  hardcoded paths (Phase 0.6). internal/pipeline/pipeline_test.go and
+  internal/check/check_test.go now load corpus/manifest.json and drive every case
+  through the shared runners; no feature-dir list or filepath.Join("..","..",
+  "features",...) path remains in either file (grep returns nothing).
+- pipeline_test.go: now package pipeline_test (external) with TestCorpusTranspile
+  (every KindTranspile case via corpus.RunTranspile) and TestCorpusDoctest (every
+  KindDoctest case via corpus.RunDoctest), both through
+  corpus.TranspilerFunc(pipeline.Transpile). The old TestTestdata /
+  TestSingleFeatureRegression / TestDoctests and the local mustFormat helper were
+  removed — the manifest already indexes the same testdata + per-feature +
+  feature-11 cases the three tests walked.
+- check_test.go: now package check_test (external) with TestCorpusCheck (every
+  KindCheck case via corpus.RunCheck through corpus.CheckerFunc(check.Analyze)).
+  Dropped the testdata/check WalkDir and the local wantRe/parseWants/runCase
+  helpers (the runner owns the // want semantics). TestRegistryRuns (spine smoke
+  test) was preserved.
+- Both rewired tests keep the loud zero-case guard (t.Fatalf). 105 subtests run
+  (51 transpile + 4 doctest + 50 check), matching the manifest exactly.
+- Files changed:
+  - internal/pipeline/pipeline_test.go (rewritten, external package)
+  - internal/check/check_test.go (rewritten, external package)
+  - history/20260627-refactor-us-006-rewire-pipeline-and-check-tests-to-corpus-runner/ (initiative)
+- Learnings for future iterations:
+  - IMPORT CYCLE: internal/corpus imports internal/pipeline and internal/check, so
+    a harness that delegates to corpus MUST live in an EXTERNAL _test package
+    (package pipeline_test / check_test). An internal-package test importing corpus
+    would form a cycle. Go allows an internal (package X) and an external
+    (package X_test) test package to coexist in one directory — the other _test.go
+    files in those dirs stay internal-package, untouched.
+  - repoRoot "../.." and manifestPath "../../corpus/manifest.json" are the same
+    from internal/pipeline and internal/check as from internal/corpus (same depth).
+  - US-009 (reify package-mode tests) and US-007/008 (behavioral tiers) extend the
+    same manifest+runner pattern; future check harness rewires should follow the
+    external-package delegation used here.
 ---
