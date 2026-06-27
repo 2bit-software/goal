@@ -483,34 +483,57 @@ func (ip *Interp) execMatch(m *ast.MatchExpr, scope *Env) error {
 	if subj.Kind != KindVariant || subj.Variant == nil {
 		return fmt.Errorf("interp: match subject must be a variant, got %s", subj.Kind)
 	}
+	arm, vp := selectMatchArm(m, subj)
+	if arm == nil {
+		return unreachableMatch(subj)
+	}
+	return ip.execArm(arm, vp, subj, scope)
+}
+
+// selectMatchArm chooses the arm a variant subject dispatches to: the variant arm
+// whose pattern tag equals the subject's tag (returned with its VariantPattern),
+// else a `_` rest arm (returned with a nil VariantPattern), else (nil, nil) —
+// signalling no arm matched. It is shared by statement-position (execMatch) and
+// value-position (evalMatch) match so dispatch stays in lock-step.
+func selectMatchArm(m *ast.MatchExpr, subj Value) (*ast.MatchArm, *ast.VariantPattern) {
 	var restArm *ast.MatchArm
 	for _, arm := range m.Arms {
 		switch p := arm.Pattern.(type) {
 		case *ast.VariantPattern:
 			if p.Variant != nil && p.Variant.Name == subj.Variant.Tag {
-				return ip.execArm(arm, p, subj, scope)
+				return arm, p
 			}
 		case *ast.RestPattern:
 			restArm = arm
 		}
 	}
-	if restArm != nil {
-		return ip.execArm(restArm, nil, subj, scope)
-	}
+	return restArm, nil
+}
+
+// unreachableMatch is the loud, defensive default raised when a variant's tag
+// matches no arm — a state a sema-proven-exhaustive program cannot reach. It is a
+// panic, never a silent fall-through ("erase the guarantee, panic-not-silent").
+func unreachableMatch(subj Value) error {
 	return panicSignal{value: StrVal(fmt.Sprintf(
 		"unreachable: non-exhaustive match on %s (compiler invariant violated)", subj.Variant.TypeID))}
 }
 
-// execArm binds the arm's payload binding (when its VariantPattern names one)
-// into a fresh child scope — the binding is the whole variant value, so payload
-// fields read through it as `binding.field` (evalSelector reads variant fields)
-// — then runs the arm body. A rest arm (vp == nil) binds nothing.
-func (ip *Interp) execArm(arm *ast.MatchArm, vp *ast.VariantPattern, subj Value, scope *Env) error {
+// armScopeFor opens a fresh child scope for a match arm and binds the arm's
+// payload binding (when its VariantPattern names one) to the whole variant value
+// — so payload fields read through it as `binding.field` (evalSelector reads
+// variant fields). A rest arm (vp == nil) binds nothing. Shared by statement- and
+// value-position match.
+func armScopeFor(vp *ast.VariantPattern, subj Value, scope *Env) *Env {
 	armScope := scope.NewChild()
 	if vp != nil && vp.Binding != nil {
 		armScope.Define(vp.Binding.Name, subj)
 	}
-	return ip.execArmBody(arm.Body, armScope)
+	return armScope
+}
+
+// execArm binds the arm's payload (via armScopeFor) then runs the arm body.
+func (ip *Interp) execArm(arm *ast.MatchArm, vp *ast.VariantPattern, subj Value, scope *Env) error {
+	return ip.execArmBody(arm.Body, armScopeFor(vp, subj, scope))
 }
 
 // execArmBody runs a match arm body, which is a generic ast.Node: a statement

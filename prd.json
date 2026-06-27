@@ -173,7 +173,7 @@
         "A unit test asserts a function returning `match` and a variable bound to `match` produce the expected values for each input variant"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": "REWRITE-ARCHITECTURE.md §4: value-position match is one of only two genuinely non-Go runtime mechanics."
     },
     {

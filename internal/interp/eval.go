@@ -55,9 +55,47 @@ func (ip *Interp) evalExpr(expr ast.Expr, scope *Env) (Value, error) {
 		return ip.evalVariantLit(e, scope)
 	case *ast.IndexExpr:
 		return ip.evalIndex(e, scope)
+	case *ast.MatchExpr:
+		// A value-position match (`return match`, `x := match`, `var x = match`)
+		// yields the selected arm's value. A statement-position match is
+		// intercepted earlier in execStmt and never reaches here.
+		return ip.evalMatch(e, scope)
 	default:
 		return Value{}, fmt.Errorf("interp: unsupported expression %T", expr)
 	}
+}
+
+// evalMatch evaluates a value-position match: it evaluates the scrutinee to a
+// tagged-union value, dispatches on its variant tag to the matching arm (sharing
+// selectMatchArm/armScopeFor with statement-position match so dispatch stays
+// uniform), binds the matched payload into a fresh child scope, evaluates that
+// arm's body as an expression, and returns its value. A non-variant scrutinee is
+// a descriptive refusal. A tag matching no arm — unreachable in a
+// sema-proven-exhaustive program — raises a loud `unreachable` panic rather than
+// producing a silent zero value.
+func (ip *Interp) evalMatch(m *ast.MatchExpr, scope *Env) (Value, error) {
+	subj, err := ip.evalExpr(m.Subject, scope)
+	if err != nil {
+		return Value{}, err
+	}
+	if subj.Kind != KindVariant || subj.Variant == nil {
+		return Value{}, fmt.Errorf("interp: match subject must be a variant, got %s", subj.Kind)
+	}
+	arm, vp := selectMatchArm(m, subj)
+	if arm == nil {
+		return Value{}, unreachableMatch(subj)
+	}
+	return ip.evalArmValue(arm.Body, armScopeFor(vp, subj, scope))
+}
+
+// evalArmValue evaluates a value-position match arm body and returns its value.
+// A value-position arm body is an expression (the parser produces `=> expr`); a
+// statement/block body in value position is a descriptive refusal.
+func (ip *Interp) evalArmValue(body ast.Node, scope *Env) (Value, error) {
+	if e, ok := body.(ast.Expr); ok {
+		return ip.evalExpr(e, scope)
+	}
+	return Value{}, fmt.Errorf("interp: value-position match arm body must be an expression, got %T", body)
 }
 
 // evalCompositeLit evaluates a composite literal into a struct, slice, or map

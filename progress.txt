@@ -354,6 +354,53 @@
   edits don't shift later offsets. Still single-document (locals/params/qualified
   imports/cross-file out of scope, consistent with US-048/049).
 
+## [2026-06-28T01:50:00Z] - US-014
+- Added VALUE-POSITION match to the goscript interpreter: a `match` used as an
+  expression — `return match`, `x := match`, `var x = match` — now yields the
+  selected arm's value as an expression result (one of the two non-Go runtime
+  mechanics). Dispatch is uniform with statement-position match (US-013).
+- internal/interp/interp.go: factored the arm-selection + arm-scope logic out of
+  execMatch/execArm into two SHARED helpers so statement- and value-position
+  match stay in lock-step (one place to change dispatch):
+  - selectMatchArm(m, subj) (*ast.MatchArm, *ast.VariantPattern): the variant arm
+    whose pattern tag == subj.Variant.Tag, else a `_` rest arm (nil vp), else
+    (nil, nil) -> caller raises the loud default.
+  - armScopeFor(vp, subj, scope) *Env: child scope binding vp.Binding (when named)
+    to the whole variant value (payload read as `binding.field`).
+  - unreachableMatch(subj) error: the shared panicSignal "unreachable: non-
+    exhaustive match on <TypeID>" default. execMatch/execArm now call these.
+- internal/interp/eval.go: evalExpr gained `case *ast.MatchExpr` -> evalMatch
+  (value position; statement-position match is still intercepted earlier in
+  execStmt and never reaches evalExpr, so no conflict). evalMatch mirrors
+  execMatch but evaluates the selected arm body via evalArmValue and RETURNS its
+  Value. evalArmValue evaluates the arm body as an ast.Expr (the parser's value-
+  position `=> expr` arm); a non-expression body in value position is a
+  descriptive refusal. All three value positions (return / := / var =) reach
+  evalExpr through existing callers (execReturn non-call result, execAssign RHS,
+  execDecl spec values) so NO caller changes were needed.
+- internal/interp/value_match_test.go (new): TestValueMatchInReturn,
+  TestValueMatchInShortVar, TestValueMatchInVarDecl (each over Point/Circle/Square
+  with payload-computing arms), TestValueMatchRestArmSuppliesValue (`_` arm),
+  TestValueMatchDefaultIsUnreachable (hand-built value-match over an uncovered tag
+  -> panicSignal "unreachable"), TestValueMatchOnNonVariantIsRefused. Drives a
+  02-match-shaped program through newInterp+evalFn. stdlib testing, no testify.
+- prd.json (US-014 passes:true), progress.txt
+- history/20260627-feature-us-014-eval-value-position-match/ (initiative)
+- Learnings for future iterations:
+  - Value- and statement-position match now share selectMatchArm + armScopeFor +
+    unreachableMatch. US-015/US-016 (Result/Option as tagged unions) get
+    value-position match over Ok/Err/Some/None for FREE once those construct
+    VariantVals — the SAME tag dispatch applies, in both positions. Keep match
+    tag-keyed, not enum-specific.
+  - A value-position arm body is an ast.Expr (parser `=> expr`); a NESTED value-
+    position match arm (`=> match {...}`) is covered for free because evalArmValue
+    -> evalExpr dispatches *ast.MatchExpr recursively.
+  - The non-exhaustive default is a panicSignal in BOTH positions (returned as an
+    error from evalMatch; raised as an error from execMatch) — loud, not silent.
+  - interp deps stay clean for the US-022 gate (go list -deps ./internal/interp:
+    no go/types, internal/backend, internal/typecheck).
+---
+
 ## [2026-06-28T01:05:00Z] - US-013
 - Added STATEMENT-POSITION match to the goscript interpreter: a `match` in
   statement position dispatches on the scrutinee variant's tag, binds the matched
