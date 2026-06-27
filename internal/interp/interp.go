@@ -251,13 +251,46 @@ func recvIsPointer(fn *ast.FuncDecl) bool {
 // function with no receiver). It returns ErrNoMain when no such function is
 // declared. An empty body is a successful no-op; richer statement evaluation is
 // added by later stories. Run returns nil on successful completion.
+//
+// Before any evaluation Run validates the program through the NATIVE semantic
+// checks (gate) and refuses a program that violates a static guarantee. The
+// guarantee is computed solely from internal/sema's AST checks — the
+// interpreter never reaches for the go/types depth checker (REWRITE-
+// ARCHITECTURE.md §3.2: the go/types-over-lowered-Go crutch is fine for the
+// Go-transpile path but NOT for the interpreter; types are checked statically
+// and erased at runtime). So goscript runs in a host with no Go toolchain.
 func (ip *Interp) Run() error {
+	if err := ip.gate(); err != nil {
+		return err
+	}
 	main := ip.findMain()
 	if main == nil {
 		return ErrNoMain
 	}
 	_, err := ip.callFunc(&FuncValue{Name: "main", Decl: main, Env: ip.root}, nil)
 	return err
+}
+
+// gate runs the native sema checks over the parsed AST + resolved Info and
+// refuses the program when a static guarantee is violated, BEFORE evaluation.
+// It returns a located, named error for the FIRST Error-severity diagnostic
+// (in sema.Check's fixed source order) — carrying the source position
+// (line:col), the diagnostic's stable code, and its message — or nil when no
+// Error-severity diagnostic is present. Warning-severity diagnostics are
+// located deferrals, not violated guarantees, so they do NOT block the run.
+//
+// The checks are sema.Check (exhaustiveness, field-completeness, must-use,
+// implements, `?`-propagation, assert, convert): the AST reimplementation of
+// the lexical guarantees, so the gate depends ONLY on internal/sema and not on
+// internal/typecheck or go/types.
+func (ip *Interp) gate() error {
+	for _, d := range sema.Check(ip.file, ip.info) {
+		if d.Severity != sema.Error {
+			continue
+		}
+		return fmt.Errorf("interp: refused before run: %s: [%s] %s", d.Pos.String(), d.Code, d.Message)
+	}
+	return nil
 }
 
 // callFunc invokes a function value with the already-evaluated argument values,

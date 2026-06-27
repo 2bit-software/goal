@@ -1,5 +1,42 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T06:45:00Z] - US-022
+- Proved US-022 "Gate interp on native sema only": the goscript interpreter's
+  Run() now validates the program through the NATIVE sema checks BEFORE any
+  evaluation. A static-guarantee violation (canonically a non-exhaustive
+  `match`) is a LOUD, LOCATED refusal before `func main` is found or run;
+  Warning-severity diagnostics (located deferrals like an unresolved-enum
+  match) do NOT block. The gate reads ONLY internal/sema — the interpreter
+  never reaches for go/types or internal/typecheck, so goscript runs in a host
+  with no Go toolchain (REWRITE-ARCHITECTURE.md §3.2: types checked statically,
+  erased at runtime).
+- internal/interp/interp.go: Run() now calls the new `gate()` as its first
+  statement (before findMain). `gate()` iterates `sema.Check(ip.file, ip.info)`
+  and returns `interp: refused before run: <line:col>: [<code>] <message>` for
+  the FIRST sema.Error (skipping sema.Warning), nil otherwise. Uses only the
+  already-imported goal/internal/sema — NO new dependency.
+- internal/interp/gate_test.go (new): TestRunRefusesNonExhaustiveMatch (refusal
+  names the code + is located), TestRunAllowsExhaustiveMatch (no false refusal),
+  TestRunDoesNotBlockOnWarning (unresolved-enum warning is not refused),
+  TestInterpHasNoGoTypesOrTypecheckDep (`go list -deps goal/internal/interp`
+  contains neither go/types nor goal/internal/typecheck). stdlib testing, no
+  testify.
+- prd.json (US-022 passes:true), progress.txt
+- history/20260627-feature-us-022-gate-interp-on-native-sema-only/ (initiative)
+- Learnings for future iterations:
+  - sema.Check(file, info) is the ONE native validation aggregate (exhaustive,
+    fields, must-use, implements, question, closed, assert, convert). Any later
+    interp story needing a pre-run static guard reuses Run()'s gate() — it is
+    the native-only validation seam. Refuse on Severity==Error; let Warning
+    through (it is a deferral, not a violated guarantee).
+  - PARSER GOTCHA (cost a test rerun): the parser does NOT insert a semicolon
+    after a BARE `return` before a newline, so a `=> return` match arm followed
+    by ANOTHER arm swallows the next arm's pattern as the return expression
+    ("expected IDENT, found =>"). In a multi-arm test fixture use a block-body
+    arm (`=> {}`) or `return <value>`; a bare-return arm only parses as the
+    LAST arm before `}`.
+---
+
 ## [2026-06-28T06:10:00Z] - US-021
 - Proved US-021 "Eval derive and from": the goscript interpreter now evaluates
   `derive func` conversions field-by-field over the resolved sema facts. Each
@@ -271,6 +308,17 @@
 ---
 
 ## Codebase Patterns
+- The goscript interpreter validates input through the NATIVE sema aggregate
+  only: Run()'s gate() runs sema.Check(file, info) before evaluating main and
+  refuses on the FIRST sema.Error (Warnings are deferrals that do NOT block).
+  sema.Check is the one native validation seam (exhaustive/fields/must-use/
+  implements/question/closed/assert/convert) — any pre-run static guard reuses
+  it. internal/interp must NEVER depend on go/types or internal/typecheck
+  (TestInterpHasNoGoTypesOrTypecheckDep pins this via `go list -deps`).
+- PARSER: no semicolon is inserted after a BARE `return` before a newline, so a
+  `=> return` match arm followed by another arm swallows the next arm's pattern
+  ("expected IDENT, found =>"). In a multi-arm fixture use a block-body arm
+  (`=> {}`) or `return <value>`; a bare-return arm only parses as the LAST arm.
 - The goscript interpreter (internal/interp) evaluates NO top-level `const`/iota
   bindings yet, and sema.Info carries no defined-type/alias table — so an interp
   test program cannot reference an enum const (e.g. `RoleMember` is "undefined"

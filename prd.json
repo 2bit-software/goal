@@ -269,7 +269,7 @@
         "A unit test asserts a non-exhaustive-match program is refused with a located diagnostic, and a dependency test (via `go list -deps` or a source scan) asserts internal/interp does not depend on internal/typecheck or go/types"
       ],
       "priority": 22,
-      "passes": false,
+      "passes": true,
       "notes": "REWRITE-ARCHITECTURE.md §3.2: the go/types-over-lowered-Go crutch is fine for the Go-transpile path but NOT for the interpreter. Static checks must be native; types are checked statically and erased at runtime."
     },
     {
