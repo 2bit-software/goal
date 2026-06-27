@@ -1,5 +1,62 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T05:20:00Z] - US-020
+- Proved US-020 "Eval defaults expansion": the goscript interpreter now expands
+  a `...defaults` spread in a STRUCT composite literal at construction. Every
+  declared field the literal did NOT set explicitly is filled with that field's
+  safe runtime zero value; every explicitly set field is preserved. The fill is
+  position-INDEPENDENT (runs after all explicit elements are collected), so
+  `...defaults` before or after an explicit field never overwrites it.
+- internal/interp/eval.go:
+  - evalCompositeLit's `case *ast.Ident:` (struct) branch now accepts a
+    `*ast.SpreadElement`: `X` == Ident "defaults" sets a wantDefaults flag; any
+    OTHER spread (`...derive`) is a LOCATED refusal ("only ...defaults is
+    supported") — US-021's job, refused loud not silent. After the element loop,
+    wantDefaults calls fillDefaults.
+  - fillDefaults(typeName, fields, pos): reads the declared fields from
+    ip.info.Structs (via structFields, base-name keyed) — an UNKNOWN struct type
+    is a located "unknown struct type" refusal, never a silent empty fill — and
+    fills each absent field with ip.zeroValue(f.Type, 0).
+  - zeroValue(typ, depth): the runtime analogue of backend zeroLit, derived from
+    the SEMA TYPE STRING (the interp erases static types): ""/false/0 for
+    string/bool/int+float kinds; NilVal for *T/map/chan/func/non-empty-iface/
+    any/error; an EMPTY SliceVal for []T (so range/len stay valid); a RECURSIVELY
+    zero-filled StructVal for a named in-file struct (depth-guarded); NilVal for
+    an unresolvable named type. Reads ONLY sema.Info — no internal/backend.
+  - baseTypeName(t): strips leading `*` and `pkg.` qualifier (mirrors
+    scan.BaseType locally so interp imports neither scan nor backend). Added the
+    `strings` import.
+- internal/interp/defaults_test.go (new): TestDefaultsFillsOmittedPrimitivesAndPreservesSet
+  (name/logins preserved, email""/active false defaulted),
+  TestDefaultsDoesNotOverwriteExplicitFieldBeforeOrAfter (spread BEFORE an
+  explicit field), TestDefaultsFillsNestedStructAndSlice (omitted Addr -> zeroed
+  Addr{}, omitted []string -> empty slice; explicit Addr preserved),
+  TestNonDefaultsSpreadIsRefused (hand-built `...derive` -> error),
+  TestDefaultsUnknownStructIsRefused. Modeled on features/08-no-zero-value
+  defaults_primitives + defaults_refs. stdlib testing, no testify.
+- prd.json (US-020 passes:true), progress.txt
+- history/20260627-feature-us-020-eval-defaults-expansion/ (initiative)
+- Learnings for future iterations:
+  - `...defaults` parses to *ast.SpreadElement{X: *ast.Ident "defaults"} inside a
+    *ast.CompositeLit — intercept it in evalCompositeLit's struct branch, NOT in
+    evalExpr. A bare `...derive(s)` would be the same node with a different X
+    (US-021). The declared-field source is sema.Info.Structs (Name+Type strings);
+    the interp has no Go types, so zeros are computed from the type STRING.
+  - The interp evaluates NO top-level `const`/iota: a test program cannot
+    reference an enum/const value like `RoleMember` (undefined at runtime). Set
+    explicitly-preserved fields to plain literals, or default them. Likewise a
+    DEFINED type over a primitive (`type Role int`) has no alias table in
+    sema.Info, so zeroValue("Role") currently yields NilVal, not IntVal(0) — the
+    feature-08 fixtures set such fields explicitly so it is unexercised; if a
+    future story needs it, resolve defined-type underlyings from ip.file's
+    TypeSpecs (as backend buildTypeDecls does).
+  - A defaulted slice is an EMPTY SliceVal (not NilVal) so len/range/append stay
+    valid — the one intentional divergence from backend zeroLit's literal "nil"
+    (behaviorally identical for a Go nil slice).
+  - interp deps stay clean for the US-022 gate (go list -deps ./internal/interp:
+    no go/types, internal/backend, internal/typecheck).
+---
+
 ## [2026-06-28T04:40:00Z] - US-019
 - Proved US-019 "Eval assert at runtime": the goscript interpreter now evaluates
   goal's `assert` statement — a true condition is a no-op (evaluation continues),
@@ -149,6 +206,14 @@
 ---
 
 ## Codebase Patterns
+- The goscript interpreter (internal/interp) evaluates NO top-level `const`/iota
+  bindings yet, and sema.Info carries no defined-type/alias table — so an interp
+  test program cannot reference an enum const (e.g. `RoleMember` is "undefined"
+  at runtime), and a runtime zero of a defined type over a primitive
+  (`type Role int`) resolves through interp.zeroValue to NilVal, not IntVal(0).
+  When writing interp test fixtures, set such fields with plain literals or
+  default them; if a story ever needs defined-type underlyings, resolve them
+  from ip.file's TypeSpecs the way internal/backend buildTypeDecls does.
 - The goscript-runtime PRD (US-001..US-028) builds the tree-walking interpreter
   (planned internal/interp) + capability model (internal/cap) over the shared
   AST+sema front-end. internal/cap (US-001) is the authority seam: a Capability

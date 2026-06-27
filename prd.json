@@ -245,7 +245,7 @@
         "A unit test over an 08-no-zero-value/defaults shape asserts unset fields receive defaults and set fields are preserved"
       ],
       "priority": 20,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
