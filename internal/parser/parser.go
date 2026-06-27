@@ -634,6 +634,10 @@ func (p *parser) parseStmt() ast.Stmt {
 	case token.SEMICOLON:
 		t := p.advance()
 		return &ast.EmptyStmt{Semicolon: t.Pos}
+	case token.MATCH:
+		// Statement-position match: the same MatchExpr node, wrapped as a
+		// statement (the AST has no separate MatchStmt).
+		return &ast.ExprStmt{X: p.parseMatchExpr()}
 	default:
 		return p.parseSimpleStmt(false)
 	}
@@ -866,7 +870,8 @@ func stmtExpr(s ast.Stmt) ast.Expr {
 func startsExpr(k token.Kind) bool {
 	switch k {
 	case token.IDENT, token.INT, token.FLOAT, token.IMAG, token.CHAR, token.STRING, token.LPAREN,
-		token.ADD, token.SUB, token.NOT, token.XOR, token.AND, token.ARROW, token.MUL:
+		token.ADD, token.SUB, token.NOT, token.XOR, token.AND, token.ARROW, token.MUL,
+		token.MATCH:
 		return true
 	}
 	return false
@@ -949,6 +954,9 @@ func (p *parser) parseUnary() ast.Expr {
 func (p *parser) parseOperand() ast.Expr {
 	t := p.cur()
 	switch t.Kind {
+	case token.MATCH:
+		// Value-position match: `var x = match s { … }`, `return match s { … }`.
+		return p.parseMatchExpr()
 	case token.IDENT:
 		p.advance()
 		return &ast.Ident{NamePos: t.Pos, Name: t.Lit}
