@@ -648,3 +648,39 @@
     (internal). US-019 layers full Pratt expressions + postfix ? onto the same
     expression parser (parseExpr/parseOperand/parsePostfix) used here.
 ---
+
+## [2026-06-27T04:40:00Z] - US-019
+- Upgraded internal/parser from a flat operand+postfix expression grammar to
+  precedence-correct parsing (Phase 1.4, expression tier). parseExpr now does
+  precedence climbing over Go's five binary levels via parseBinary(minPrec)
+  (left-assoc: the recursive call uses opPrec+1), layered on parseUnary for the
+  prefix operators (+ - ! ^ & <- as ast.UnaryExpr; *x as ast.StarExpr). goal's
+  postfix `?` joins the existing selector/call/index chain in parsePostfix as a
+  dedicated ast.UnwrapExpr, so it binds tightest and "falls out of the grammar":
+  f(x)? unwraps the call, a.b? unwraps the selector. startsExpr broadened to
+  include unary-operator starts so a unary-led expression is recognized after
+  `return`.
+- A precedence() helper maps token kinds to 1..5 (0 = non-binary); ARROW (`<-`)
+  is deliberately 0 (unary-only, matching Go — channel send is a statement).
+- Files changed:
+  - internal/parser/parser.go (precedence + parseBinary + parseUnary; parseExpr
+    rewired; QUESTION case in parsePostfix; startsExpr broadened; doc refresh)
+  - internal/parser/parser_test.go (TestParseExpressionPrecedence: f(x)?, a.b?,
+    a+b*c==d, a-b-c, -a*b, via a parseExprInBody helper)
+  - history/20260627-feature-us-019-parse-expressions-pratt-postfix-question/
+- Commit: 9fb591b
+- Learnings for future iterations:
+  - Every expression caller (parseExprList, parseValueSpec, parseSimpleStmt,
+    control headers, return, array length, index, composite elts) routes through
+    the single parseExpr entry point, so they ALL gained full precedence with no
+    call-site change. When extending expressions (US-021 match, US-022 variant
+    construction/spread), hook into parseUnary/parseOperand/parsePostfix, not the
+    callers.
+  - exprLev composite-literal suppression is preserved — parseUnary/parseBinary
+    don't touch exprLev; the LBRACE guard in parsePostfix still governs composite
+    literals in control headers. Keep that invariant when adding expr forms.
+  - The new-test idiom for a bare expression: wrap it as
+    `package p\nfunc f() { _ = <expr> }`, ParseFile, then read
+    FuncDecl.Body.List[0].(*ast.AssignStmt).Rhs[0]. Reuse parseExprInBody.
+  - Postfix `?` lives in the postfix chain (tightest), so `-x?` is `-(x?)`.
+---

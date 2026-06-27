@@ -233,7 +233,7 @@
         "A test asserts f(x)? , a.b? , and a mixed-precedence binary expression parse to the expected tree shape"
       ],
       "priority": 19,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
