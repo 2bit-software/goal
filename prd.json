@@ -293,7 +293,7 @@
         "A unit test runs a printing program under a set with Stdout denied and asserts a capability-denied error is raised and nothing is written"
       ],
       "priority": 24,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

@@ -139,7 +139,7 @@ func (ip *Interp) evalHostCall(sel *ast.SelectorExpr, call *ast.CallExpr, scope 
 	// pure registry: fmt.Println is a stdout EFFECT routed through emitStdout
 	// (gated by cap.Stdout) so it reaches the interpreter's configurable sink.
 	if key == "fmt.Println" {
-		return nil, ip.emitStdout(func(w io.Writer) error {
+		return nil, ip.emitStdout(sel.Pos(), func(w io.Writer) error {
 			_, err := fmt.Fprintln(w, goArgs(args)...)
 			return err
 		})

@@ -167,17 +167,35 @@ func New(file *ast.File, info *sema.Info, opts ...Option) *Interp {
 	return ip
 }
 
+// CapabilityError is the located, named refusal raised when a host effect is
+// attempted under a capability set that does NOT grant the authority the effect
+// requires (US-024). It carries the denied capability (so a host or test can
+// tell which authority was missing) and the source position of the refused
+// effect (so the refusal is located), consistent with the interpreter's other
+// loud, located refusals (gate, unresolved host symbol). A denied effect is a
+// host-policy refusal surfaced as a returned error — not a program panic and
+// not a silent no-op — so a caller can match it with errors.As.
+type CapabilityError struct {
+	Cap cap.Capability
+	Pos token.Pos
+}
+
+// Error renders the located, named capability-denied message.
+func (e CapabilityError) Error() string {
+	return fmt.Sprintf("interp: %s: capability denied: %s not granted", e.Pos.String(), e.Cap)
+}
+
 // emitStdout routes a standard-output write through the cap.Stdout authority:
 // when the interpreter's capability set grants Stdout it performs
 // write(ip.stdout) (the configurable sink), returning write's error; when
-// Stdout is NOT granted it performs no write and returns nil. Turning the
-// not-granted branch into a located, named capability-denied refusal is the
-// next story (US-024); here the routing seam exists and the default GrantAll
-// authority performs the effect. It is the single seam every stdout effect
-// (today the fmt-family writes) flows through.
-func (ip *Interp) emitStdout(write func(io.Writer) error) error {
+// Stdout is NOT granted it is a LOCATED, NAMED refusal — it performs no write
+// and returns a CapabilityError naming cap.Stdout at the effect's source
+// position (US-024). It is the single seam every stdout effect (today the
+// fmt-family writes) flows through; the caller supplies the effect's position
+// so the refusal can be located.
+func (ip *Interp) emitStdout(pos token.Pos, write func(io.Writer) error) error {
 	if !ip.caps.Has(cap.Stdout) {
-		return nil
+		return CapabilityError{Cap: cap.Stdout, Pos: pos}
 	}
 	w := ip.stdout
 	if w == nil {

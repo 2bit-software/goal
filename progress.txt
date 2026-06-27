@@ -1,5 +1,47 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T08:10:00Z] - US-024
+- Proved US-024 "Enforce capability denial": the goscript interpreter's
+  capability gate now REFUSES a denied effect loudly instead of silently
+  skipping it. Running under a cap.CapabilitySet that does not grant cap.Stdout
+  makes the standard-output effect (fmt.Println via emitStdout) fail with a
+  LOCATED, NAMED CapabilityError — nothing reaches the sink — turning the US-023
+  placeholder (not-granted -> return nil) into a real sandbox refusal. The
+  granted path is unchanged.
+- internal/interp/interp.go: added `type CapabilityError{Cap cap.Capability;
+  Pos token.Pos}` with `Error() -> "interp: <line:col>: capability denied: <Cap>
+  not granted"` (named via cap.Capability.String(), located via token.Pos.String()).
+  emitStdout's signature gained the effect's source position
+  (`emitStdout(pos token.Pos, write func(io.Writer) error) error`); the
+  not-granted branch now returns `CapabilityError{Cap: cap.Stdout, Pos: pos}`
+  WITHOUT calling write (FR-4 nothing written). cap + token + fmt were already
+  imported — no new dependency, US-022 gate holds.
+- internal/interp/host.go: evalHostCall's fmt.Println interception passes
+  `sel.Pos()` into emitStdout so the refusal is located at the call.
+- internal/interp/cap_io_test.go: the existing direct emitStdout call (US-023's
+  TestEmitStdoutRoutesThroughConfiguredSink) now passes `token.Pos{}` for the new
+  position arg (added the token import).
+- internal/interp/cap_deny_test.go (new): TestPrintlnUnderDeniedStdoutIsRefused
+  (DenyAll -> Run returns a CapabilityError naming Stdout, located, buf empty),
+  TestEmitStdoutDeniedReturnsLocatedNamedErrorAndSkipsWrite (gate drives directly:
+  the write func is NOT invoked under denial; error located at the supplied 7:2),
+  TestPrintlnUnderGrantedStdoutStillPrints (FR-5 regression: GrantAll still prints
+  "hello 42\n", nil error). stdlib testing, no testify.
+- prd.json (US-024 passes:true), progress.txt
+- history/20260627-feature-us-024-enforce-capability-denial/ (initiative)
+- Learnings for future iterations:
+  - A denied capability is a RETURNED typed error (CapabilityError), NOT a
+    panicSignal: it is a host-policy refusal of an effect, matchable via
+    errors.As, distinct from a program panic. Future effect sites (time/env/file/
+    net) reuse this: gate the effect on caps.Has(cap.X) and, when not granted,
+    return CapabilityError{Cap: cap.X, Pos: <effect pos>} BEFORE performing it.
+  - emitStdout now REQUIRES the effect's source position so the refusal is
+    located; the only caller (host.go fmt.Println) supplies sel.Pos(). Any new
+    stdout effect routed through emitStdout must thread a real position (a test
+    calling it directly can pass token.Pos{} or a synthetic token.Pos{Line,Col}).
+  - token.Pos is a STRUCT ({Offset,Line,Col}), not an int — you cannot pass 0;
+    use token.Pos{} (or a literal with Line/Col) when a position is unavailable.
+
 ## [2026-06-28T07:30:00Z] - US-023
 - Proved US-023 "Route runtime IO through cap": the goscript interpreter's host
   effects now flow through a cap.CapabilitySet instead of touching the OS
@@ -365,13 +407,17 @@
   Interp carries `caps cap.CapabilitySet` + a configurable `stdout io.Writer`,
   constructed via `New(file, info, opts ...Option)` (defaults cap.GrantAll() +
   os.Stdout; WithCapabilities/WithStdout override). Every stdout effect flows
-  through `emitStdout(write func(io.Writer) error)` — it writes through ip.stdout
-  only when caps.Has(cap.Stdout). An EFFECTFUL stdlib shim (fmt.Println) cannot
-  live in the pure package-level hostFuncs map — it is intercepted by key in
-  evalHostCall and routed through the gate; pure value shims stay in the registry.
-  Future effects (time/env) reuse the same emit-gate pattern; US-024 turns the
-  not-granted branch into a located, named refusal. cap is dependency-free, so it
-  does not breach the US-022 dependency gate.
+  through `emitStdout(pos token.Pos, write func(io.Writer) error)` — it writes
+  through ip.stdout only when caps.Has(cap.Stdout). An EFFECTFUL stdlib shim
+  (fmt.Println) cannot live in the pure package-level hostFuncs map — it is
+  intercepted by key in evalHostCall and routed through the gate (passing
+  sel.Pos()); pure value shims stay in the registry. US-024 made denial REAL: the
+  not-granted branch returns a LOCATED, NAMED CapabilityError{Cap,Pos} (a returned
+  typed error, errors.As-matchable — NOT a panicSignal) and performs no write.
+  Future effects (time/env/file/net) reuse the same emit-gate pattern: gate on
+  caps.Has(cap.X), else return CapabilityError{Cap: cap.X, Pos: effectPos}. cap is
+  dependency-free, so it does not breach the US-022 dependency gate. NOTE token.Pos
+  is a struct ({Offset,Line,Col}), not an int — use token.Pos{} when unavailable.
 - PARSER: no semicolon is inserted after a BARE `return` before a newline, so a
   `=> return` match arm followed by another arm swallows the next arm's pattern
   ("expected IDENT, found =>"). In a multi-arm fixture use a block-body arm

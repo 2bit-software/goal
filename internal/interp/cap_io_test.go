@@ -15,6 +15,7 @@ import (
 	"goal/internal/cap"
 	"goal/internal/parser"
 	"goal/internal/sema"
+	"goal/internal/token"
 )
 
 const printlnProgram = `package main
@@ -69,7 +70,7 @@ func TestEmitStdoutRoutesThroughConfiguredSink(t *testing.T) {
 	}
 	var buf bytes.Buffer
 	ip := New(file, sema.Resolve(file), WithStdout(&buf))
-	err = ip.emitStdout(func(w io.Writer) error {
+	err = ip.emitStdout(token.Pos{}, func(w io.Writer) error {
 		_, e := w.Write([]byte("sentinel"))
 		return e
 	})
