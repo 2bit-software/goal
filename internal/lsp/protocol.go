@@ -42,12 +42,14 @@ type InitializeResult struct {
 }
 
 // ServerCapabilities advertises what the server can do: full-document sync, an idiomatize
-// fix-all code action, document-symbol (outline) support, and semantic tokens.
+// fix-all code action, document-symbol (outline) support, semantic tokens, and
+// go-to-definition.
 type ServerCapabilities struct {
 	TextDocumentSync       int                    `json:"textDocumentSync"`
 	CodeActionProvider     *CodeActionOptions     `json:"codeActionProvider,omitempty"`
 	DocumentSymbolProvider bool                   `json:"documentSymbolProvider,omitempty"`
 	SemanticTokensProvider *SemanticTokensOptions `json:"semanticTokensProvider,omitempty"`
+	DefinitionProvider     bool                   `json:"definitionProvider,omitempty"`
 }
 
 // SemanticTokensOptions advertises the server's semantic-tokens support: the legend that
@@ -124,6 +126,19 @@ type TextEdit struct {
 // DocumentSymbolParams is a textDocument/documentSymbol request for one document's outline.
 type DocumentSymbolParams struct {
 	TextDocument textDocumentIdentifier `json:"textDocument"`
+}
+
+// DefinitionParams is a textDocument/definition request: the document and the 0-based cursor
+// position whose referenced symbol should be resolved to its declaration.
+type DefinitionParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+	Position     Position               `json:"position"`
+}
+
+// Location is a span within a document, the response to a go-to-definition request.
+type Location struct {
+	URI   string `json:"uri"`
+	Range Range  `json:"range"`
 }
 
 // DocumentSymbol is one outline entry: Range covers the whole declaration, SelectionRange the

@@ -3,6 +3,22 @@
 ## Codebase Patterns
 - Zero-dependency: stdlib only. Tests use stdlib `testing` (NO testify), even
   though the injected go.md rule mentions testify — the project constraint wins.
+- LSP go-to-definition (US-048) introduces the AST SYMBOL GRAPH the later editor
+  stories (US-049 hover, US-050 references/rename) build on. internal/lsp/
+  definition.go resolveDefinition parses (parser.ParseFile), builds a name-keyed
+  declIndex (funcs/types/variants[enum][tag] -> declaration Range) over
+  file.Decls BEFORE walking references (so a forward call resolves), then
+  collectRefs (refVisitor, keyed by structural parent exactly like
+  semantictokens roleVisitor) records each reference identifier's byte span ->
+  target declaration Range. The handler maps the 0-based cursor to a byte offset
+  with offsetForPosition (the inverse of check.OffsetToPosition — none existed in
+  the tree) and returns the ref whose [start,end) covers it. Nil *Location
+  marshals to JSON null, the best-effort contract shared with documentSymbol /
+  semanticTokens (unknown URI / no symbol / unparseable -> null, never an error).
+  Variants are keyed UNDER their enum because a variant tag is ALSO its own
+  declaration ident; tests must locate the reference occurrence, not the first
+  (declaration) occurrence. Resolution is single-document — locals, params,
+  qualified imports, and cross-file are out of scope for this milestone.
 - New packages live under `internal/`; fixtures go in a sibling `testdata/` dir
   (see internal/{analyze,check,pipeline,corpus}/testdata).
 - Verify gates (prd.json verifyCommands): `go build ./...`, `go vet ./...`,
@@ -290,6 +306,39 @@
   encoder, so wire indices can't drift. GOTCHA: a `?` inside a string ("?") lexes as
   STRING, not QUESTION — a test locating the postfix `?` by substring must avoid a
   stray `?` string in its sample.
+
+## [2026-06-27T17:30:00Z] - US-048
+- Added textDocument/definition to the goal LSP, resolved from the AST symbol
+  graph of the open document. A function/method call, an enum-variant reference
+  (construction value, match pattern, or Enum.Variant selector), and a
+  type/enum/sealed name reference each resolve to the range of their declaration;
+  an unknown URI, a position over no resolvable symbol, or unparseable source
+  yields a null result (best-effort, like documentSymbol/semanticTokens).
+- Implementation: build a name-keyed declaration index over file.Decls, then walk
+  the AST recording each reference identifier's byte span -> declaration Range
+  (refVisitor keyed by structural parent, mirroring the semantic-token role
+  visitor). The index is built before references so a forward call resolves. The
+  cursor (0-based line/char) maps to a byte offset via offsetForPosition (inverse
+  of check.OffsetToPosition); the ref whose [start,end) covers the offset wins.
+- Files changed:
+  - internal/lsp/definition.go (new: definition handler, resolveDefinition,
+    declIndex/buildDeclIndex, refVisitor/collectRefs, identRange, offsetForPosition)
+  - internal/lsp/protocol.go (Location, DefinitionParams,
+    ServerCapabilities.DefinitionProvider)
+  - internal/lsp/server.go (advertise definitionProvider; route textDocument/definition)
+  - internal/lsp/definition_test.go (new: FunctionCall, EnumVariant, TypeName,
+    NoSymbol, Unparseable, Handler, AdvertisesDefinition)
+  - prd.json (US-048 passes:true), progress.txt
+  - history/20260627-feature-us-048-lsp-go-to-definition/ (initiative)
+- Learnings for future iterations:
+  - The declIndex + refVisitor are the seed of the symbol graph US-049 (hover)
+    and US-050 (references/rename) extend: hover reads the declaration a ref
+    points at; references inverts the map (declaration -> all ref spans).
+  - Variant tags double as their own declaration ident, so the index keys
+    variants under the enclosing enum (variants[enum][tag]); a test resolving a
+    variant must target the reference occurrence, not the 1st (decl) occurrence.
+  - Type references unwrap only a bare *Ident (no slice/map/pointer element);
+    broaden in a later story if editor users need container-element navigation.
 
 ## [2026-06-27T16:30:00Z] - US-047
 - Added LSP semantic tokens, classified from the AST. The server advertises a
