@@ -79,6 +79,30 @@
   checked-in golden: `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`
   (TestBootstrapGoldenMatches fails otherwise). No CLI flag-drift test exists; the
   guide drift test only covers diagnostic codes.
+- AST-backend goal-construct LOWERING is folded into internal/backend (no separate
+  `lower` package — REWRITE-ARCHITECTURE marks lower/ir OPTIONAL, and emit.go does
+  direct AST->Go-text). Per-construct encoders live in internal/backend/lower.go,
+  mirrored VERBATIM from the legacy internal/pass/*.go (known-good build+vet-clean
+  encodings) but read off sema facts instead of token scans. backend.Transpile
+  MUST call sema.Resolve(file) (NOT sema.New(), which is empty) so the emitter has
+  Enums/Sealed/Methods; the emitter stores `info *sema.Info` (nil-safe accessors
+  enumOf/isSealed) + a local `pointerRecv` set (sema.Methods is star-stripped, so
+  pointer-vs-value receiver is recomputed by walking File.Decls). US-034+ add more
+  constructs the same way: encoder in lower.go, dispatch case in emit.go decl/expr.
+- The three meanings of `Enum.Variant(x)` are distinct AST nodes, so emit-time
+  lowering needs NO pass-ordering hack: a payload construction is *ast.VariantLit
+  (parser builds it only for >=1 labeled arg), a DATA-LESS construction
+  (`Status.Pending`) stays an *ast.SelectorExpr (lower it in the SelectorExpr case,
+  GUARDED by info.Enums membership + VSet so io.Writer / receiver selectors are
+  untouched), and a destructuring is *ast.VariantPattern (never emitted as a value).
+  Recursive e.expr over VariantLit args lowers nested constructions for free.
+- A struct `implements` clause (StructType.Implements) lowers to a SEPARATE
+  top-level decl emitted AFTER the type decl (implementsMarkers, called from decl()
+  after genDecl) — never inside the struct. structType drops the clause and emits
+  plain Go. Sealed iface -> marker METHOD `func (T) isI() {}`; ordinary iface ->
+  `var _ I = T{}` (or `(*T)(nil)` when T has any pointer-receiver method). A
+  qualified iface (io.Writer) is never sealed (sealed are in-file) so it routes to
+  the var-assertion branch; render the iface name via typeExprName (Ident/Selector).
 
 ## [2026-06-27T01:56:33Z] - US-001
 - Implemented internal/corpus: a runner-independent Case model and JSON manifest
@@ -1336,4 +1360,53 @@
     simplified to "non-`E.Variant` arg => defer Warning unresolved-err-value" rather
     than porting the lexical checker's param/var/match-binding passthrough analysis;
     it produces no false Error and satisfies the fixture.
+---
+
+## [2026-06-27T08:30:00Z] - US-033
+- Phase 2 lowering: the AST Go backend now lowers goal's closed types — enums,
+  sealed interfaces, the struct `implements` clause, and variant construction —
+  so the 01-enums and 07-implements transpile cases pass the behavioral tier
+  (corpus.RunCompile: temp-module go build + go vet) through `--engine=ast`.
+- Approach: folded lowering into internal/backend (no separate `lower` package;
+  the arch doc marks lower/ir optional and emit.go already does direct emission).
+  New internal/backend/lower.go holds the encoders mirrored from internal/pass
+  (genEnum/genSealedInterface/genMarkerMethod/exported/pointerReceiverSet, plus
+  nil-safe enumOf/isSealed over *sema.Info). backend.Transpile now resolves real
+  semantics via sema.Resolve(file) (was sema.New(), which is empty), and
+  goBackend.Emit threads info into emitFile(file, info). The emitter gained
+  `info *sema.Info` + a `pointerRecv` set (computed locally because sema.Methods
+  is star-stripped and can't say pointer-vs-value).
+- emit.go lowering: decl() dispatches *ast.EnumDecl -> genEnum (marker interface +
+  per-variant structs + per-variant marker methods) and *ast.SealedInterfaceDecl
+  -> genSealedInterface; structType drops the implements clause (plain struct);
+  implementsMarkers (called from decl after genDecl) emits the §8.5 marker AFTER
+  the type decl — sealed -> `func (T) isI() {}`, else pointerRecv -> `var _ I =
+  (*T)(nil)`, else `var _ I = T{}` (iface name via typeExprName, Ident/Selector);
+  selectorExpr lowers a DATA-LESS variant (`Status.Pending` ->
+  `Status(Status_Pending{})`, guarded by info.Enums + VSet so ordinary/qualified
+  selectors are untouched); variantLit lowers payload construction
+  (`Status.Active(since: now())` -> `Status(Status_Active{Since: now()})`, labels
+  exported, values recursive so nested payloads lower for free).
+- Files changed:
+  - internal/backend/lower.go (new: encoders + nil-safe accessors)
+  - internal/backend/backend.go (Transpile sema.Resolve; Emit threads info)
+  - internal/backend/emit.go (info+pointerRecv on emitter; enum/sealed/implements/
+    construction lowering; structType drops implements)
+  - internal/backend/backend_test.go (TestASTEngineEnumsImplementsBehavioralTier
+    over all 7 cases; TestASTEngineEnumEncoding; TestASTEngineImplementsMarkers)
+  - prd.json (US-033 passes:true), progress.txt
+  - history/20260627-feature-us-033-lower-emit-enums-implements/ (initiative)
+- Learnings for future iterations:
+  - The encoders in internal/pass/{enums,implements}.go are the canonical,
+    build+vet-clean reference; mirror their text verbatim when reimplementing a
+    construct on the AST so the behavioral tier (and later exact goldens, US-042)
+    line up. The only fact sema lacks is pointer-vs-value receiver — recompute it.
+  - Output already matches the checked-in goldens for all 7 cases EXCEPT
+    `type Time int64` vs golden `type Time = int64`: the emitter does not preserve
+    a type-alias `=` (TypeSpec.Assign) — a pre-existing US-032 plain-Go gap, NOT a
+    US-033 concern; both forms build+vet so the behavioral tier is green. Exact
+    parity (and the alias fix, if surfaced) belongs to US-042's golden regen.
+  - US-034 (Result/Option) is next; it follows the same seam: add the encoder to
+    lower.go, a dispatch case to emit.go, and a behavioral-tier test over the
+    03-result/04-option transpile cases.
 ---

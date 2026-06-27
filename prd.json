@@ -401,8 +401,8 @@
         "The 01-enums and 07-implements transpile cases pass the behavioral tier through the new backend"
       ],
       "priority": 33,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Folded goal-construct lowering into internal/backend (no separate lower pkg; arch doc marks lower/ir optional). New internal/backend/lower.go holds the encoders mirrored from internal/pass (genEnum/genSealedInterface/genMarkerMethod/exported/pointerReceiverSet + nil-safe enumOf/isSealed over sema.Info). backend.Transpile now calls sema.Resolve(file) (was sema.New()) so the emitter has Enums/Sealed facts; goBackend.Emit threads info into emitFile(file, info). emit.go: decl() dispatches EnumDecl->genEnum and SealedInterfaceDecl->genSealedInterface; structType drops the implements clause (emits plain struct); implementsMarkers emits the §8.5 marker AFTER the type decl (sealed->func (T) isI(){}; else pointerRecv->var _ I=(*T)(nil); else var _ I=T{}); selectorExpr lowers a data-less enum variant (Status.Pending->Status(Status_Pending{}), guarded by info.Enums membership so io.Writer/c.n are untouched); variantLit lowers payload construction (Status.Active(since: now())->Status(Status_Active{Since: now()}), labels exported, values recursive so nested constructions lower for free). AC2: TestASTEngineEnumsImplementsBehavioralTier runs all 7 (4 01-enums + 3 07-implements) cases through backend.Transpile + corpus.RunCompile (build+vet). Output matches goldens modulo `type Time int64` vs golden `type Time = int64` alias (pre-existing US-032 TypeSpec.Assign gap; both build+vet; exact parity is US-042)."
     },
     {
       "id": "US-034",

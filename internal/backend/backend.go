@@ -52,10 +52,10 @@ func (GoFormatter) Format(src []byte) ([]byte, error) {
 // constructs — those return an error identifying the unsupported node (US-032+).
 type goBackend struct{}
 
-// Emit renders file to Go source. info is unused for the plain-Go subset but is
-// part of the seam US-027+ populate.
-func (goBackend) Emit(file *ast.File, _ *sema.Info) (pipeline.Output, error) {
-	src, err := emitFile(file)
+// Emit renders file to Go source, lowering goal-specific constructs through the
+// resolved semantic facts in info (enums, sealed interfaces, methods).
+func (goBackend) Emit(file *ast.File, info *sema.Info) (pipeline.Output, error) {
+	src, err := emitFile(file, info)
 	if err != nil {
 		return pipeline.Output{}, err
 	}
@@ -76,7 +76,7 @@ func Transpile(src string) (pipeline.Output, error) {
 	if err != nil {
 		return pipeline.Output{}, fmt.Errorf("parse: %w", err)
 	}
-	out, err := goBackend{}.Emit(file, sema.New())
+	out, err := goBackend{}.Emit(file, sema.Resolve(file))
 	if err != nil {
 		return pipeline.Output{}, err
 	}

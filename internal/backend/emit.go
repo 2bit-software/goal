@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"goal/internal/ast"
+	"goal/internal/sema"
 )
 
 // emitter renders the plain-Go subset of the goal AST to Go source text. It is
@@ -22,12 +23,19 @@ import (
 type emitter struct {
 	b   strings.Builder
 	err error
+	// info carries the resolved semantic facts the goal-construct lowering reads
+	// (enums, sealed interfaces); nil-safe — the plain-Go subset ignores it.
+	info *sema.Info
+	// pointerRecv is the set of type names with a pointer-receiver method, used to
+	// address an `implements` assertion as `(*T)(nil)` rather than `T{}`.
+	pointerRecv map[string]bool
 }
 
-// emitFile renders a whole *ast.File to Go source text, or returns the first
-// unsupported-node error encountered.
-func emitFile(f *ast.File) (string, error) {
-	var e emitter
+// emitFile renders a whole *ast.File to Go source text, lowering goal-specific
+// constructs through info, or returns the first unsupported-node error
+// encountered.
+func emitFile(f *ast.File, info *sema.Info) (string, error) {
+	e := emitter{info: info, pointerRecv: pointerReceiverSet(f)}
 	e.file(f)
 	if e.err != nil {
 		return "", e.err
@@ -66,10 +74,104 @@ func (e *emitter) decl(d ast.Decl) {
 	switch d := d.(type) {
 	case *ast.GenDecl:
 		e.genDecl(d)
+		// A struct `implements` clause lowers to a separate marker/assertion decl
+		// emitted right after the type declaration (the clause itself is dropped
+		// from the struct by structType).
+		e.implementsMarkers(d)
 	case *ast.FuncDecl:
 		e.funcDecl(d)
+	case *ast.EnumDecl:
+		e.enumDecl(d)
+	case *ast.SealedInterfaceDecl:
+		e.sealedInterfaceDecl(d)
 	default:
 		e.fail("unsupported declaration %T", d)
+	}
+}
+
+// enumDecl lowers a goal `enum` to the §8.1 closed-sum encoding: a marker
+// interface, one struct per variant, and a marker method per variant. The
+// variants come from the resolved sema.Enum so a field type carrying an embedded
+// comma is rendered correctly.
+func (e *emitter) enumDecl(d *ast.EnumDecl) {
+	if d.Name == nil {
+		e.fail("enum declaration has no name")
+		return
+	}
+	en := enumOf(e.info, d.Name.Name)
+	if en == nil {
+		e.fail("enum %s not resolved", d.Name.Name)
+		return
+	}
+	e.p(genEnum(en))
+}
+
+// sealedInterfaceDecl lowers `sealed interface Name {}` to its marker interface
+// `type Name interface{ isName() }`.
+func (e *emitter) sealedInterfaceDecl(d *ast.SealedInterfaceDecl) {
+	if d.Name == nil {
+		e.fail("sealed interface declaration has no name")
+		return
+	}
+	e.p(genSealedInterface(d.Name.Name))
+}
+
+// implementsMarkers emits the §8.5 marker/assertion for every struct in d that
+// carries an `implements` clause: a sealed interface yields the marker method
+// `func (T) isI() {}`; an ordinary interface yields the compile-time assertion
+// `var _ I = T{}` (or `var _ I = (*T)(nil)` when T has a pointer-receiver method).
+func (e *emitter) implementsMarkers(d *ast.GenDecl) {
+	for _, s := range d.Specs {
+		ts, ok := s.(*ast.TypeSpec)
+		if !ok || ts.Name == nil {
+			continue
+		}
+		st, ok := ts.Type.(*ast.StructType)
+		if !ok || st.Implements == nil {
+			continue
+		}
+		e.p("\n\n")
+		e.implementsMarker(ts.Name.Name, st.Implements)
+	}
+}
+
+func (e *emitter) implementsMarker(typeName string, clause *ast.ImplementsClause) {
+	iface := typeExprName(clause.Type)
+	if iface == "" {
+		e.fail("implements clause on %s has an unsupported interface type %T", typeName, clause.Type)
+		return
+	}
+	switch {
+	case isSealed(e.info, iface):
+		e.p(genMarkerMethod(typeName, iface))
+	case e.pointerRecv[typeName]:
+		e.p(fmt.Sprintf("var _ %s = (*%s)(nil)", iface, typeName))
+	default:
+		e.p(fmt.Sprintf("var _ %s = %s{}", iface, typeName))
+	}
+}
+
+// typeExprName renders a (possibly qualified) type name expression — an *Ident
+// (`Shape`), a *SelectorExpr (`io.Writer`), or a pointer to one — to its text, or
+// "" if the shape is unsupported.
+func typeExprName(x ast.Expr) string {
+	switch x := x.(type) {
+	case *ast.Ident:
+		return x.Name
+	case *ast.SelectorExpr:
+		base := typeExprName(x.X)
+		if base == "" || x.Sel == nil {
+			return ""
+		}
+		return base + "." + x.Sel.Name
+	case *ast.StarExpr:
+		inner := typeExprName(x.X)
+		if inner == "" {
+			return ""
+		}
+		return "*" + inner
+	default:
+		return ""
 	}
 }
 
@@ -179,12 +281,10 @@ func (e *emitter) fieldList(fl *ast.FieldList, open, close string) {
 
 // structType emits a struct type. Fields are newline-separated (a comma between
 // struct fields is a Go syntax error); gofmt then aligns them. A goal
-// `implements` clause is goal-specific and lowered by a later story (US-033).
+// `implements` clause is dropped here — the satisfaction marker/assertion it
+// implies is emitted as a separate decl by implementsMarkers — so the struct
+// itself renders as plain Go.
 func (e *emitter) structType(x *ast.StructType) {
-	if x.Implements != nil {
-		e.fail("unsupported struct implements clause (goal implements is a later story)")
-		return
-	}
 	e.p("struct {\n")
 	if x.Fields != nil {
 		for _, f := range x.Fields.List {
@@ -412,9 +512,9 @@ func (e *emitter) expr(x ast.Expr) {
 		e.p(" ")
 		e.expr(x.Y)
 	case *ast.SelectorExpr:
-		e.expr(x.X)
-		e.p(".")
-		e.p(x.Sel.Name)
+		e.selectorExpr(x)
+	case *ast.VariantLit:
+		e.variantLit(x)
 	case *ast.StarExpr:
 		e.p("*")
 		e.expr(x.X)
@@ -481,6 +581,57 @@ func (e *emitter) expr(x ast.Expr) {
 	default:
 		e.fail("unsupported expression %T", x)
 	}
+}
+
+// selectorExpr emits a selector, lowering a data-less enum variant reference
+// (`Status.Pending`, which parses to a SelectorExpr) to its construction encoding
+// `Status(Status_Pending{})`. The guard requires the base to be an *Ident naming a
+// resolved enum whose variant set contains the selector, so ordinary and
+// package-qualified selectors (`io.Writer`, `c.n`) are emitted unchanged.
+func (e *emitter) selectorExpr(x *ast.SelectorExpr) {
+	if id, ok := x.X.(*ast.Ident); ok && x.Sel != nil {
+		if en := enumOf(e.info, id.Name); en != nil && en.VSet[x.Sel.Name] {
+			e.p(fmt.Sprintf("%s(%s_%s{})", id.Name, id.Name, x.Sel.Name))
+			return
+		}
+	}
+	e.expr(x.X)
+	e.p(".")
+	if x.Sel != nil {
+		e.p(x.Sel.Name)
+	}
+}
+
+// variantLit emits a payload variant construction `Enum.V(label: x)` as its
+// encoding `Enum(Enum_V{Label: x})`: labels are exported and argument values are
+// emitted recursively, so a nested construction in a payload lowers for free.
+func (e *emitter) variantLit(x *ast.VariantLit) {
+	enum, ok := x.Enum.(*ast.Ident)
+	if !ok || enumOf(e.info, enum.Name) == nil {
+		e.fail("unsupported variant construction (enum not resolved): %T", x.Enum)
+		return
+	}
+	if x.Variant == nil {
+		e.fail("variant construction has no variant tag")
+		return
+	}
+	e.p(fmt.Sprintf("%s(%s_%s{", enum.Name, enum.Name, x.Variant.Name))
+	for i, a := range x.Args {
+		if i > 0 {
+			e.p(", ")
+		}
+		la, ok := a.(*ast.LabeledArg)
+		if !ok {
+			e.fail("unsupported non-labeled variant argument %T", a)
+			return
+		}
+		if la.Label != nil {
+			e.p(exported(la.Label.Name))
+			e.p(": ")
+		}
+		e.expr(la.Value)
+	}
+	e.p("})")
 }
 
 func (e *emitter) sliceExpr(x *ast.SliceExpr) {
