@@ -7,11 +7,12 @@
 // pass, these positions are kept so the parser, diagnostics, fmt, and the LSP can
 // point at exact source locations.
 //
-// Scope (US-012): the core Go subset. The goal-specific single-token lexemes
-// '?' (QUESTION), '=>' (FAT_ARROW), and '...' (ELLIPSIS), the '///' doc comment
-// (DOC_COMMENT), and attaching comments as trivia are deferred to US-013; here a
-// '///' simply scans as an ordinary '//' line comment and a bare '=>' lexes as
-// '=' then '>'.
+// Beyond the core Go subset the lexer emits the goal-specific single-token
+// lexemes as first-class tokens: '?' (QUESTION), '=>' (FAT_ARROW, one token —
+// not '=' then '>'), and '...' (ELLIPSIS). A '///' doc comment is retained as a
+// DOC_COMMENT token (distinct from an ordinary '//' COMMENT), keeping its text
+// as trivia. The contextual keywords implements/sealed/from/derive are not
+// reserved, so they lex as IDENT and the parser disambiguates them by position.
 package lexer
 
 import (
@@ -68,6 +69,22 @@ func (l *Lexer) peek() rune {
 		return eof
 	}
 	r, _ := utf8.DecodeRuneInString(l.src[l.rdOffset:])
+	return r
+}
+
+// peek2 returns the rune two positions ahead of ch without advancing, or eof.
+// It is used for the longest-match lexemes '///' and '...' where one lookahead
+// past peek is needed to commit to the three-character form.
+func (l *Lexer) peek2() rune {
+	if l.rdOffset >= len(l.src) {
+		return eof
+	}
+	_, w := utf8.DecodeRuneInString(l.src[l.rdOffset:])
+	next := l.rdOffset + w
+	if next >= len(l.src) {
+		return eof
+	}
+	r, _ := utf8.DecodeRuneInString(l.src[next:])
 	return r
 }
 
@@ -265,6 +282,12 @@ func (l *Lexer) scanOperator(pos token.Pos) token.Token {
 	switch ch {
 	case '/':
 		if l.peek() == '/' {
+			// '///' is a doc comment (DOC_COMMENT, retained as trivia); a plain
+			// '//' is an ordinary line COMMENT. Longest match: check the third
+			// '/' before committing to the two-slash form.
+			if l.peek2() == '/' {
+				return l.scanDocComment(pos)
+			}
 			return l.scanLineComment(pos)
 		}
 		if l.peek() == '*' {
@@ -362,9 +385,21 @@ func (l *Lexer) scanOperator(pos token.Pos) token.Token {
 		}
 		return tok(token.GTR, pos)
 	case '=':
-		// US-013 will fold '=>' into one FAT_ARROW token here; for US-012 a '>'
-		// after '=' lexes as a separate GTR.
-		return l.op2(pos, token.ASSIGN, '=', token.EQL)
+		// '=>' is one FAT_ARROW token (match-arm), longest-matched before the
+		// '='/'==' forms — never '=' then '>'.
+		l.next()
+		switch l.ch {
+		case '>':
+			l.next()
+			return tok(token.FAT_ARROW, pos)
+		case '=':
+			l.next()
+			return tok(token.EQL, pos)
+		}
+		return tok(token.ASSIGN, pos)
+	case '?':
+		l.next()
+		return tok(token.QUESTION, pos)
 	case '!':
 		return l.op2(pos, token.NOT, '=', token.NEQ)
 	case ':':
@@ -394,12 +429,21 @@ func (l *Lexer) scanOperator(pos token.Pos) token.Token {
 		l.next()
 		return tok(token.SEMICOLON, pos)
 	case '.':
-		// US-013 owns '...' (ELLIPSIS); here '.' is always PERIOD.
+		// '...' is one ELLIPSIS token (variadic / spread), longest-matched
+		// before a single PERIOD. A bare '.' (or '..') stays PERIOD; the
+		// '.'-then-digit FLOAT path in Next() is unaffected because '...' has no
+		// digit after the first dot.
+		if l.peek() == '.' && l.peek2() == '.' {
+			l.next() // first '.'
+			l.next() // second '.'
+			l.next() // third '.'
+			return tok(token.ELLIPSIS, pos)
+		}
 		l.next()
 		return tok(token.PERIOD, pos)
 	}
 
-	// Unrecognized input — including the goal lexemes reserved for US-013 ('?').
+	// Unrecognized input.
 	lit := string(l.ch)
 	l.next()
 	return token.Token{Kind: token.ILLEGAL, Lit: lit, Pos: pos}
@@ -423,6 +467,17 @@ func (l *Lexer) scanLineComment(pos token.Pos) token.Token {
 		l.next()
 	}
 	return token.Token{Kind: token.COMMENT, Lit: l.src[start:l.offset], Pos: pos}
+}
+
+// scanDocComment consumes a /// doc comment to (but not including) the end of
+// line, emitting a DOC_COMMENT token whose Lit retains the full '/// ...' text
+// as trivia. It mirrors scanLineComment but tags the goal doc-comment kind.
+func (l *Lexer) scanDocComment(pos token.Pos) token.Token {
+	start := l.offset
+	for l.ch != eof && l.ch != '\n' {
+		l.next()
+	}
+	return token.Token{Kind: token.DOC_COMMENT, Lit: l.src[start:l.offset], Pos: pos}
 }
 
 // scanBlockComment consumes a /* ... */ comment, which may span lines.

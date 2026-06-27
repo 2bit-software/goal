@@ -409,3 +409,35 @@
     scanOperator, emit '?'→QUESTION (currently ILLEGAL), and special-case '///'
     in the comment path to DOC_COMMENT, retaining comment text as trivia.
 ---
+
+## [2026-06-27T04:30:00Z] - US-013
+- Wired the goal-specific lexemes into internal/lexer (Phase 1.3). The token
+  kinds already existed (US-011); this story makes the US-012 lexer emit them as
+  single tokens instead of the deferred fallbacks: '?'→QUESTION (was ILLEGAL),
+  '=>'→FAT_ARROW one token (was ASSIGN then GTR), '...'→ELLIPSIS one token (was
+  three PERIODs), and '///<line>'→DOC_COMMENT retained as trivia (was an
+  ordinary '//' COMMENT). The contextual keywords implements/sealed/from/derive
+  already lexed as IDENT via token.Lookup (token.keywords omits them) — no code
+  change, just a pinned assertion (TestKeywordVsIdent already covered it).
+- Added a peek2() two-rune lookahead so '///' and '...' can be longest-matched
+  past peek(); the '/' case checks the third '/' before committing to '//', the
+  '=' case checks for '>' before '='/'==', and the '.' case checks for two more
+  dots before a single PERIOD. The '.'-then-digit FLOAT path in Next() is
+  unaffected ('...' has no digit after the first dot). scanDocComment mirrors
+  scanLineComment but tags DOC_COMMENT and keeps the full '/// ...' text.
+- Files changed:
+  - internal/lexer/lexer.go (peek2, scanDocComment, '?'/'='/'.'/'/' cases,
+    refreshed package + case doc comments)
+  - internal/lexer/lexer_test.go (TestGoalLexemes, TestGoalLexemesInContext,
+    TestDocCommentTrivia; freshened TestComments doc)
+  - history/20260627-feature-us-013-lex-goal-specific-lexemes-and-trivia/ (initiative)
+- Learnings for future iterations:
+  - Longest-match ordering is load-bearing: check '///' before '//', '=>' before
+    '='/'==', '...' before '.'. peek2() is the seam for the three-char forms; the
+    two-char '=>' uses the existing l.next()+switch idiom.
+  - A '///'-prefixed line is ALWAYS a DOC_COMMENT (even '////...'), consumed to
+    end of line; the parser (later story) decides attachment. Lexer-level
+    "trivia" here just means "emitted as a distinct DOC_COMMENT token".
+  - US-014+ (AST nodes / parser) consume token.QUESTION/FAT_ARROW/ELLIPSIS/
+    DOC_COMMENT directly; the lexer now never fakes them.
+---

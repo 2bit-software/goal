@@ -161,7 +161,7 @@
         "A test asserts each of these lexemes produces exactly one token of the expected kind and that comments attach as trivia"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "=> must be one token, not '=' then '>' as the splice passes treat it."
     },
     {

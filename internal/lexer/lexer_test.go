@@ -185,8 +185,100 @@ func TestIllegal(t *testing.T) {
 	}
 }
 
+// TestGoalLexemes is a US-013 acceptance test: the goal-specific operators each
+// lex to exactly one token of the expected kind — '?' is QUESTION, '=>' is a
+// single FAT_ARROW (not '=' then '>'), and '...' is a single ELLIPSIS (not three
+// PERIODs).
+func TestGoalLexemes(t *testing.T) {
+	cases := []struct {
+		src  string
+		want token.Kind
+	}{
+		{"?", token.QUESTION},
+		{"=>", token.FAT_ARROW},
+		{"...", token.ELLIPSIS},
+	}
+	for _, c := range cases {
+		got := Tokens(c.src)
+		if len(got) != 2 { // lexeme + EOF
+			t.Fatalf("%q: got %d tokens, want 2 (lexeme + EOF): %v", c.src, len(got), got)
+		}
+		if got[0].Kind != c.want {
+			t.Errorf("%q: Kind = %s, want %s", c.src, got[0].Kind, c.want)
+		}
+		if got[0].Pos != (token.Pos{Offset: 0, Line: 1, Col: 1}) {
+			t.Errorf("%q: Pos = %v, want 0/1:1", c.src, got[0].Pos)
+		}
+	}
+}
+
+// TestGoalLexemesInContext guards the longest-match boundaries: '=>' beside an
+// '=' is FAT_ARROW (not EQL), and '...' is distinct from a trailing single '.'.
+func TestGoalLexemesInContext(t *testing.T) {
+	// a => b : IDENT FAT_ARROW IDENT EOF
+	got := Tokens("a => b")
+	want := []token.Kind{token.IDENT, token.FAT_ARROW, token.IDENT, token.EOF}
+	if len(got) != len(want) {
+		t.Fatalf("`a => b`: got %d tokens, want %d: %v", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i].Kind != w {
+			t.Errorf("`a => b` token %d Kind = %s, want %s", i, got[i].Kind, w)
+		}
+	}
+
+	// xs... : IDENT ELLIPSIS EOF (ellipsis is one token, not three PERIODs)
+	got = Tokens("xs...")
+	want = []token.Kind{token.IDENT, token.ELLIPSIS, token.EOF}
+	if len(got) != len(want) {
+		t.Fatalf("`xs...`: got %d tokens, want %d: %v", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i].Kind != w {
+			t.Errorf("`xs...` token %d Kind = %s, want %s", i, got[i].Kind, w)
+		}
+	}
+
+	// f(x)? : the postfix unwrap is a lone QUESTION after the call
+	got = Tokens("f(x)?")
+	want = []token.Kind{token.IDENT, token.LPAREN, token.IDENT, token.RPAREN, token.QUESTION, token.EOF}
+	if len(got) != len(want) {
+		t.Fatalf("`f(x)?`: got %d tokens, want %d: %v", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i].Kind != w {
+			t.Errorf("`f(x)?` token %d Kind = %s, want %s", i, got[i].Kind, w)
+		}
+	}
+}
+
+// TestDocCommentTrivia is a US-013 acceptance test: '///' and the rest of its
+// line lex to a single DOC_COMMENT token whose text is retained as trivia,
+// distinct from an ordinary '//' COMMENT.
+func TestDocCommentTrivia(t *testing.T) {
+	got := Tokens("/// doc line\nx // note")
+	want := []struct {
+		kind token.Kind
+		lit  string
+	}{
+		{token.DOC_COMMENT, "/// doc line"},
+		{token.IDENT, "x"},
+		{token.COMMENT, "// note"},
+		{token.EOF, ""},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d tokens, want %d: %v", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i].Kind != w.kind || got[i].Lit != w.lit {
+			t.Errorf("token %d = {%s %q}, want {%s %q}", i, got[i].Kind, got[i].Lit, w.kind, w.lit)
+		}
+	}
+}
+
 // TestComments confirms // line and /* */ block comments are recognized as
-// COMMENT tokens (US-013 will reclassify /// and attach trivia).
+// COMMENT tokens, distinct from the /// DOC_COMMENT trivia (see
+// TestDocCommentTrivia).
 func TestComments(t *testing.T) {
 	got := Tokens("x // hi\n/* a */ y")
 	want := []struct {
