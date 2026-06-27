@@ -137,7 +137,7 @@
         "A unit test asserts Kind/String round-trips and Pos ordering"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

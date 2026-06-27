@@ -344,3 +344,33 @@
   - zsh `ls -d features/*/transpiler` returning "no matches found" (exit 1) is the
     PASS signal for "no path remains" — guard it as `|| echo NONE` in scripts.
 ---
+
+## [2026-06-27T03:17:00Z] - US-011
+- Added internal/token (Phase 1.1), the first stone of the AST front-end: a Kind
+  for every goal lexeme + a first-class Pos{Offset,Line,Col}. Modeled on go/token
+  (iota-backed Kind, *_beg/*_end range markers, kindNames table, String()), but
+  zero-import (a tiny local itoa keeps the package import-free). The goal-specific
+  lexemes the splice passes faked are first-class kinds: QUESTION(?), FAT_ARROW(=>)
+  as ONE token (asserted distinct from ASSIGN/GTR), ELLIPSIS(...), DOC_COMMENT(///).
+  Contextual keywords implements/sealed/from/derive are deliberately NOT kinds —
+  they lex as IDENT; tests pin IsKeyword==false and Lookup==(ILLEGAL,false) for them.
+- Lookup(name)(Kind,bool) is the inverse of String over the operator+keyword ranges
+  (keyword map then operator map; unknown -> (ILLEGAL,false)). Pos.Less orders by
+  byte Offset (Offset is the canonical total order; Line/Col carried for diagnostics).
+- Files changed:
+  - internal/token/token.go (Kind + constants + String/Lookup/IsKeyword + range
+    predicates + Pos + Less + Token{Kind,Lit,Pos})
+  - internal/token/token_test.go (round-trip over both ranges, goal lexemes,
+    contextual-keyword exclusion, unknown lookup, class predicates, Pos ordering)
+  - history/20260627-feature-us-011-token-package-with-positions/ (initiative)
+- Commit: 73bcb02
+- Learnings for future iterations:
+  - US-012 (lexer) emits []token.Token; the kinds/positions it needs already exist
+    here. '///' (DOC_COMMENT) must be matched BEFORE '//' (COMMENT) and '=>'
+    (FAT_ARROW) BEFORE '=' in the lexer's longest-match logic.
+  - Only true reserved words are keyword kinds (Go reserved + match/enum/assert).
+    Adding a contextual keyword as a Kind here would break the parser's positional
+    disambiguation design — keep them IDENT.
+  - The package is intentionally import-free (local itoa) so it sits at the very
+    bottom of the dependency graph; do not add imports lightly.
+---
