@@ -601,3 +601,50 @@
   - Function bodies: parseBlockSkip records Lbrace/Rbrace and balances braces; US-018
     fills in BlockStmt.List by parsing the token span between them.
 ---
+
+## [2026-06-26T21:40:00Z] - US-018
+- Implemented statement parsing in internal/parser (Phase 1.4, statement tier).
+  parseBlockSkip (balanced-brace skip) is replaced by parseBlock, which fills
+  ast.BlockStmt.List by parsing statements; parseFuncDecl now calls it. Added
+  parseStmt (leading-token dispatch) and the statement parsers: parseSimpleStmt
+  (expr stmt / assignment / short-var / inc-dec, with range detection),
+  parseIfStmt (init/cond + else-if chain + else block), parseForStmt (infinite,
+  condition-only, three-clause init;cond;post, and range forms), parseSwitchStmt
+  + parseCaseClause (expression switch with case/default), parseReturnStmt,
+  parseCallStmt (defer/go), parseBranchStmt (break/continue/goto/fallthrough),
+  DeclStmt-wrapped const/var/type, and EmptyStmt for a stray ';'.
+- Files changed:
+  - internal/parser/parser.go (parseBlock + all statement methods; exprLev field
+    + composite-literal suppression in control headers; package doc refreshed)
+  - internal/parser/parser_test.go (TestParseFunctionBodyStatements: a 13-stmt
+    body exercising every required form; asserts list shape + per-stmt details)
+  - prd.json (US-018 passes:true)
+  - history/20260627-feature-us-018-parse-statements/ (initiative + spec)
+- Learnings for future iterations:
+  - NO SEMICOLON INSERTION (carried from US-017): statement lists are delimited
+    structurally. parseBlock loops until RBRACE; each statement parser consumes
+    exactly its tokens and stops. Explicit ';' (three-clause for header) is lexed
+    as token.SEMICOLON and consumed where the grammar expects it; a stray one is
+    an EmptyStmt.
+  - COMPOSITE-LITERAL vs BLOCK ambiguity is the load-bearing gotcha: with no
+    semicolons, `ident {` at statement level is read as a composite literal. The
+    fix is go/parser's exprLev: parser.exprLev < 0 while parsing a control-clause
+    header suppresses the brace-composite in parsePostfix, so a trailing body `{`
+    is taken as the block. Bracketed contexts (parens/index/call/composite elts)
+    do exprLev++ so composites are re-enabled inside them (`if check(T{})`). A
+    statement whose final expression is a bare Ident/Selector/Index that is then
+    immediately followed by a standalone block `{...}` is STILL ambiguous at
+    exprLev 0 — order test inputs so a block follows a literal/call-terminated
+    statement, not a bare-ident one. This is inherent to the tokenization until
+    newline-aware lexing or `?`/full-expr work changes it.
+  - for/if/switch headers share a pattern: set exprLev=-1, parse a simple stmt;
+    if a ';' follows it was the Init (cond/tag parsed next), else the simple stmt
+    WAS the cond/tag (extract via stmtExpr, which pulls X out of an ExprStmt);
+    restore exprLev before parsing the body block.
+  - Range detection lives in parseSimpleStmt(allowRange): after the assign token
+    (:= or =), a `range` keyword yields *ast.RangeStmt (Key/Value from the lhs
+    list) instead of an AssignStmt. parseForStmt passes allowRange=true.
+  - internal/parser still imports only lexer+token+ast; tests stay package parser
+    (internal). US-019 layers full Pratt expressions + postfix ? onto the same
+    expression parser (parseExpr/parseOperand/parsePostfix) used here.
+---

@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"testing"
 
 	"goal/internal/ast"
@@ -298,5 +299,183 @@ func TestParseFileWellFormedNoError(t *testing.T) {
 	}
 	if _, ok := file.Decls[0].(*ast.FuncDecl); !ok {
 		t.Errorf("Decls[0] is %T, want *ast.FuncDecl", file.Decls[0])
+	}
+}
+
+// stmtSrc exercises every statement form in scope for US-018 inside one function
+// body: short-var and ordinary assignment, a const/var declaration, a nested
+// block, an if/else-if/else chain, all three for shapes (three-clause,
+// condition-only, and range), an expression switch, defer, go, increment, and
+// return. The standalone block is placed after a literal-terminated statement so
+// the body "{" is not misread as a composite literal.
+const stmtSrc = `package sample
+
+func body(n int) int {
+	x := 0
+	{
+		z := 1
+		x = z
+	}
+	var y int
+	y = n
+	if n {
+		x = 1
+	} else if y {
+		x = 2
+	} else {
+		x = 3
+	}
+	for i := 0; i; i++ {
+		x = i
+	}
+	for n {
+		break
+	}
+	for k, v := range items {
+		x = v
+		continue
+	}
+	switch x {
+	case 1:
+		x = 10
+	default:
+		x = 0
+	}
+	defer cleanup()
+	go run()
+	x++
+	return x
+}
+`
+
+func TestParseFunctionBodyStatements(t *testing.T) {
+	file, err := ParseFile(stmtSrc)
+	if err != nil {
+		t.Fatalf("ParseFile returned error: %v", err)
+	}
+	fn, ok := file.Decls[0].(*ast.FuncDecl)
+	if !ok {
+		t.Fatalf("Decls[0] is %T, want *ast.FuncDecl", file.Decls[0])
+	}
+	if fn.Body == nil {
+		t.Fatal("function body is nil")
+	}
+	list := fn.Body.List
+
+	// The statement list shape, in order.
+	wantKinds := []string{
+		"*ast.AssignStmt", // x := 0
+		"*ast.BlockStmt",  // { ... }
+		"*ast.DeclStmt",   // var y int
+		"*ast.AssignStmt", // y = n
+		"*ast.IfStmt",     // if/else-if/else
+		"*ast.ForStmt",    // for i := 0; i; i++
+		"*ast.ForStmt",    // for n
+		"*ast.RangeStmt",  // for k, v := range items
+		"*ast.SwitchStmt", // switch x
+		"*ast.DeferStmt",  // defer cleanup()
+		"*ast.GoStmt",     // go run()
+		"*ast.IncDecStmt", // x++
+		"*ast.ReturnStmt", // return x
+	}
+	if len(list) != len(wantKinds) {
+		t.Fatalf("body has %d statements, want %d", len(list), len(wantKinds))
+	}
+	for i, want := range wantKinds {
+		if got := fmt.Sprintf("%T", list[i]); got != want {
+			t.Errorf("stmt[%d] = %s, want %s", i, got, want)
+		}
+	}
+
+	// 1: short-var declaration uses DEFINE.
+	if a := list[0].(*ast.AssignStmt); a.Tok != token.DEFINE {
+		t.Errorf("stmt[0] tok = %s, want :=", a.Tok)
+	}
+	// 2: nested block has its own two statements.
+	if b := list[1].(*ast.BlockStmt); len(b.List) != 2 {
+		t.Errorf("nested block has %d statements, want 2", len(b.List))
+	}
+	// 3: declaration statement wraps a var GenDecl.
+	if d := list[2].(*ast.DeclStmt); d.Decl.(*ast.GenDecl).Tok != token.VAR {
+		t.Errorf("stmt[2] decl tok = %s, want var", d.Decl.(*ast.GenDecl).Tok)
+	}
+	// 4: ordinary assignment uses ASSIGN.
+	if a := list[3].(*ast.AssignStmt); a.Tok != token.ASSIGN {
+		t.Errorf("stmt[3] tok = %s, want =", a.Tok)
+	}
+
+	// 5: if with a condition and an else-if chain ending in an else block.
+	ifs := list[4].(*ast.IfStmt)
+	if ifs.Cond == nil {
+		t.Error("if has nil condition")
+	}
+	elseIf, ok := ifs.Else.(*ast.IfStmt)
+	if !ok {
+		t.Fatalf("if.Else is %T, want *ast.IfStmt", ifs.Else)
+	}
+	if _, ok := elseIf.Else.(*ast.BlockStmt); !ok {
+		t.Errorf("else-if.Else is %T, want *ast.BlockStmt", elseIf.Else)
+	}
+
+	// 6: three-clause for has Init, Cond, and Post.
+	f3 := list[5].(*ast.ForStmt)
+	if f3.Init == nil || f3.Cond == nil || f3.Post == nil {
+		t.Errorf("three-clause for: Init=%v Cond=%v Post=%v, want all set", f3.Init, f3.Cond, f3.Post)
+	}
+	if _, ok := f3.Post.(*ast.IncDecStmt); !ok {
+		t.Errorf("three-clause for Post is %T, want *ast.IncDecStmt", f3.Post)
+	}
+
+	// 7: condition-only for has a Cond but no Init/Post.
+	f1 := list[6].(*ast.ForStmt)
+	if f1.Init != nil || f1.Post != nil || f1.Cond == nil {
+		t.Errorf("condition-only for: Init=%v Cond=%v Post=%v", f1.Init, f1.Cond, f1.Post)
+	}
+
+	// 8: range for binds key and value.
+	rng := list[7].(*ast.RangeStmt)
+	if rng.Tok != token.DEFINE {
+		t.Errorf("range tok = %s, want :=", rng.Tok)
+	}
+	if k, ok := rng.Key.(*ast.Ident); !ok || k.Name != "k" {
+		t.Errorf("range key = %v, want k", rng.Key)
+	}
+	if v, ok := rng.Value.(*ast.Ident); !ok || v.Name != "v" {
+		t.Errorf("range value = %v, want v", rng.Value)
+	}
+	if x, ok := rng.X.(*ast.Ident); !ok || x.Name != "items" {
+		t.Errorf("range X = %v, want items", rng.X)
+	}
+
+	// 9: switch with two clauses (a case and a default).
+	sw := list[8].(*ast.SwitchStmt)
+	if sw.Tag == nil {
+		t.Error("switch tag is nil")
+	}
+	if len(sw.Body.List) != 2 {
+		t.Fatalf("switch has %d clauses, want 2", len(sw.Body.List))
+	}
+	c0 := sw.Body.List[0].(*ast.CaseClause)
+	if len(c0.List) != 1 {
+		t.Errorf("case[0] has %d expressions, want 1", len(c0.List))
+	}
+	if def := sw.Body.List[1].(*ast.CaseClause); def.List != nil {
+		t.Errorf("case[1] (default) List = %v, want nil", def.List)
+	}
+
+	// 10/11: defer and go carry a call expression.
+	if d := list[9].(*ast.DeferStmt); d.Call == nil {
+		t.Error("defer has nil call")
+	}
+	if g := list[10].(*ast.GoStmt); g.Call == nil {
+		t.Error("go has nil call")
+	}
+	// 12: increment.
+	if inc := list[11].(*ast.IncDecStmt); inc.Tok != token.INC {
+		t.Errorf("stmt[11] tok = %s, want ++", inc.Tok)
+	}
+	// 13: return with one result.
+	if r := list[12].(*ast.ReturnStmt); len(r.Results) != 1 {
+		t.Errorf("return has %d results, want 1", len(r.Results))
 	}
 }

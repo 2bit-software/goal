@@ -221,7 +221,7 @@
         "A test parses a function body with each statement form and asserts the statement list"
       ],
       "priority": 18,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

@@ -4,13 +4,23 @@
 // import block(s), and the func/type/var/const declarations of the Go subset into
 // an *ast.File.
 //
-// It is deliberately scoped to top-level structure. Function bodies are captured
-// as a balanced-brace *ast.BlockStmt with no statement list (statement parsing is
-// a later story); declaration initializer values use a minimal operand+postfix
-// expression parser (precedence-climbing, unary, and postfix `?` arrive later);
-// and the goal-specific declarations (enum/sealed/implements/from/derive) are not
-// handled here. Type expressions, however, are parsed fully for the Go subset
-// because they are part of a declaration's shape.
+// Function bodies are parsed into a real statement list (US-018): assignment and
+// short-var declarations, if/for/switch (incl. range and three-clause for),
+// return/defer/go/break/continue, nested blocks, and const/var/type declared
+// inside a body. Declaration initializer values and statement expressions still
+// use a minimal operand+postfix expression parser (precedence-climbing, unary,
+// and postfix `?` arrive in a later story); and the goal-specific declarations
+// (enum/sealed/implements/from/derive) are not handled here. Type expressions,
+// however, are parsed fully for the Go subset because they are part of a
+// declaration's shape.
+//
+// Because the lexer inserts no semicolons, a statement list is delimited
+// structurally: each statement parser consumes exactly its tokens and stops, and
+// the block loop runs until the closing brace. An explicit ';' (as written in a
+// three-clause for header) is still lexed and consumed where the grammar expects
+// it. Control-clause headers parse their expressions with composite-literal
+// braces suppressed (exprLev < 0) so a trailing body '{' is taken as the block,
+// not as a composite literal.
 //
 // The lexer emits no semicolon/newline terminators, so declaration boundaries are
 // structural: top-level declarations dispatch on their leading keyword, and
@@ -30,9 +40,10 @@ import (
 
 // parser holds the token stream and cursor for one source file.
 type parser struct {
-	toks []token.Token // lexed tokens, trivia removed, ending in EOF
-	pos  int           // index of the current token
-	errs []error       // accumulated parse errors
+	toks    []token.Token // lexed tokens, trivia removed, ending in EOF
+	pos     int           // index of the current token
+	errs    []error       // accumulated parse errors
+	exprLev int           // <0 while parsing a control-clause header (suppresses composite-literal braces)
 }
 
 // ParseFile tokenizes src and parses it into an *ast.File. It returns the parse
@@ -267,7 +278,7 @@ func (p *parser) parseFuncDecl() *ast.FuncDecl {
 	ft.Results = p.parseResults()
 	fd.Type = ft
 	if p.at(token.LBRACE) {
-		fd.Body = p.parseBlockSkip()
+		fd.Body = p.parseBlock()
 	}
 	return fd
 }
@@ -564,29 +575,286 @@ func (p *parser) parseResults() *ast.FieldList {
 	return nil
 }
 
-// parseBlockSkip consumes a balanced-brace block, recording its brace positions
-// but not parsing its statements (statement parsing is a later story).
-func (p *parser) parseBlockSkip() *ast.BlockStmt {
+// ----------------------------------------------------------------------------
+// Statements
+//
+// The lexer emits no semicolon/newline terminators, so a statement list is
+// delimited structurally: parseBlock loops until the closing brace, and each
+// statement parser consumes exactly its own tokens and stops. An explicit ';'
+// (written in a three-clause for header) is lexed as token.SEMICOLON and consumed
+// where the grammar expects it; a stray one is an empty statement.
+
+// parseBlock parses a braced statement list { ... }, filling BlockStmt.List.
+func (p *parser) parseBlock() *ast.BlockStmt {
 	lb := p.expect(token.LBRACE)
 	b := &ast.BlockStmt{Lbrace: lb.Pos}
-	depth := 1
-	for !p.at(token.EOF) {
-		switch p.kind() {
-		case token.LBRACE:
-			depth++
-		case token.RBRACE:
-			depth--
-			if depth == 0 {
-				b.Rbrace = p.cur().Pos
-				p.advance()
-				return b
-			}
-		}
-		p.advance()
+	for !p.at(token.RBRACE) && !p.at(token.EOF) {
+		b.List = append(b.List, p.parseStmt())
 	}
-	p.errorf(p.cur().Pos, "unterminated block")
-	b.Rbrace = p.cur().Pos
+	rb := p.expect(token.RBRACE)
+	b.Rbrace = rb.Pos
 	return b
+}
+
+// parseStmt parses a single statement, dispatching on the leading token.
+func (p *parser) parseStmt() ast.Stmt {
+	switch p.kind() {
+	case token.LBRACE:
+		return p.parseBlock()
+	case token.IF:
+		return p.parseIfStmt()
+	case token.FOR:
+		return p.parseForStmt()
+	case token.SWITCH:
+		return p.parseSwitchStmt()
+	case token.RETURN:
+		return p.parseReturnStmt()
+	case token.DEFER:
+		return p.parseCallStmt(token.DEFER)
+	case token.GO:
+		return p.parseCallStmt(token.GO)
+	case token.BREAK, token.CONTINUE, token.GOTO, token.FALLTHROUGH:
+		return p.parseBranchStmt()
+	case token.CONST, token.VAR, token.TYPE:
+		return &ast.DeclStmt{Decl: p.parseGenDecl(p.kind())}
+	case token.SEMICOLON:
+		t := p.advance()
+		return &ast.EmptyStmt{Semicolon: t.Pos}
+	default:
+		return p.parseSimpleStmt(false)
+	}
+}
+
+// parseSimpleStmt parses a simple statement: an expression statement, an
+// assignment/short-var declaration, or an increment/decrement. When allowRange is
+// set (only in a for header), a `range x` operand after the assignment token
+// yields a *ast.RangeStmt instead.
+func (p *parser) parseSimpleStmt(allowRange bool) ast.Stmt {
+	lhs := p.parseExprList()
+	switch p.kind() {
+	case token.ASSIGN, token.DEFINE,
+		token.ADD_ASSIGN, token.SUB_ASSIGN, token.MUL_ASSIGN, token.QUO_ASSIGN,
+		token.REM_ASSIGN, token.AND_ASSIGN, token.OR_ASSIGN, token.XOR_ASSIGN,
+		token.SHL_ASSIGN, token.SHR_ASSIGN, token.AND_NOT_ASSIGN:
+		tok := p.advance()
+		if allowRange && p.at(token.RANGE) && (tok.Kind == token.ASSIGN || tok.Kind == token.DEFINE) {
+			return p.parseRangeRest(lhs, tok)
+		}
+		rhs := p.parseExprList()
+		return &ast.AssignStmt{Lhs: lhs, TokPos: tok.Pos, Tok: tok.Kind, Rhs: rhs}
+	case token.INC, token.DEC:
+		tok := p.advance()
+		return &ast.IncDecStmt{X: lhs[0], TokPos: tok.Pos, Tok: tok.Kind}
+	default:
+		if len(lhs) > 1 {
+			p.errorf(p.cur().Pos, "expected := or = (multiple expressions in statement), found %s", describe(p.cur()))
+		}
+		return &ast.ExprStmt{X: lhs[0]}
+	}
+}
+
+// parseRangeRest builds a RangeStmt from an already-parsed key/value list and the
+// assignment token, with the cursor on the `range` keyword.
+func (p *parser) parseRangeRest(lhs []ast.Expr, tok token.Token) *ast.RangeStmt {
+	p.expect(token.RANGE)
+	rs := &ast.RangeStmt{TokPos: tok.Pos, Tok: tok.Kind, X: p.parseExpr()}
+	if len(lhs) > 0 {
+		rs.Key = lhs[0]
+	}
+	if len(lhs) > 1 {
+		rs.Value = lhs[1]
+	}
+	return rs
+}
+
+// parseIfStmt parses an if statement with an optional init statement and else
+// branch.
+func (p *parser) parseIfStmt() ast.Stmt {
+	ifPos := p.expect(token.IF).Pos
+	s := &ast.IfStmt{If: ifPos}
+
+	prev := p.exprLev
+	p.exprLev = -1
+	s1 := p.parseSimpleStmt(false)
+	if p.at(token.SEMICOLON) {
+		p.advance()
+		s.Init = s1
+		s.Cond = p.parseExpr()
+	} else {
+		s.Cond = stmtExpr(s1)
+	}
+	p.exprLev = prev
+
+	s.Body = p.parseBlock()
+	if p.at(token.ELSE) {
+		p.advance()
+		if p.at(token.IF) {
+			s.Else = p.parseIfStmt()
+		} else {
+			s.Else = p.parseBlock()
+		}
+	}
+	return s
+}
+
+// parseForStmt parses a for statement in its infinite, condition-only,
+// three-clause, and range forms.
+func (p *parser) parseForStmt() ast.Stmt {
+	forPos := p.expect(token.FOR).Pos
+
+	// for { ... }
+	if p.at(token.LBRACE) {
+		return &ast.ForStmt{For: forPos, Body: p.parseBlock()}
+	}
+
+	prev := p.exprLev
+	p.exprLev = -1
+
+	// for range x { ... }
+	if p.at(token.RANGE) {
+		p.advance()
+		x := p.parseExpr()
+		p.exprLev = prev
+		return &ast.RangeStmt{For: forPos, X: x, Body: p.parseBlock()}
+	}
+
+	var s1 ast.Stmt
+	if !p.at(token.SEMICOLON) {
+		s1 = p.parseSimpleStmt(true)
+		if rs, ok := s1.(*ast.RangeStmt); ok {
+			rs.For = forPos
+			p.exprLev = prev
+			rs.Body = p.parseBlock()
+			return rs
+		}
+	}
+
+	// Three-clause for: init ; cond ; post
+	if p.at(token.SEMICOLON) {
+		p.advance()
+		s := &ast.ForStmt{For: forPos, Init: s1}
+		if !p.at(token.SEMICOLON) {
+			s.Cond = p.parseExpr()
+		}
+		p.expect(token.SEMICOLON)
+		if !p.at(token.LBRACE) {
+			s.Post = p.parseSimpleStmt(false)
+		}
+		p.exprLev = prev
+		s.Body = p.parseBlock()
+		return s
+	}
+
+	// Condition-only for: s1 carries the condition.
+	s := &ast.ForStmt{For: forPos, Cond: stmtExpr(s1)}
+	p.exprLev = prev
+	s.Body = p.parseBlock()
+	return s
+}
+
+// parseSwitchStmt parses an expression switch with an optional init and tag.
+func (p *parser) parseSwitchStmt() ast.Stmt {
+	swPos := p.expect(token.SWITCH).Pos
+	sw := &ast.SwitchStmt{Switch: swPos}
+
+	prev := p.exprLev
+	p.exprLev = -1
+	if !p.at(token.LBRACE) {
+		s1 := p.parseSimpleStmt(false)
+		if p.at(token.SEMICOLON) {
+			p.advance()
+			sw.Init = s1
+			if !p.at(token.LBRACE) {
+				sw.Tag = p.parseExpr()
+			}
+		} else {
+			sw.Tag = stmtExpr(s1)
+		}
+	}
+	p.exprLev = prev
+
+	lb := p.expect(token.LBRACE)
+	body := &ast.BlockStmt{Lbrace: lb.Pos}
+	for p.at(token.CASE) || p.at(token.DEFAULT) {
+		body.List = append(body.List, p.parseCaseClause())
+	}
+	rb := p.expect(token.RBRACE)
+	body.Rbrace = rb.Pos
+	sw.Body = body
+	return sw
+}
+
+// parseCaseClause parses one case or default clause within a switch body.
+func (p *parser) parseCaseClause() ast.Stmt {
+	cc := &ast.CaseClause{Case: p.cur().Pos}
+	if p.at(token.CASE) {
+		p.advance()
+		cc.List = p.parseExprList()
+	} else {
+		p.expect(token.DEFAULT)
+	}
+	cc.Colon = p.expect(token.COLON).Pos
+	for !p.at(token.CASE) && !p.at(token.DEFAULT) && !p.at(token.RBRACE) && !p.at(token.EOF) {
+		if p.at(token.SEMICOLON) {
+			p.advance()
+			continue
+		}
+		cc.Body = append(cc.Body, p.parseStmt())
+	}
+	return cc
+}
+
+// parseReturnStmt parses a return statement with an optional result list.
+func (p *parser) parseReturnStmt() ast.Stmt {
+	pos := p.expect(token.RETURN).Pos
+	r := &ast.ReturnStmt{Return: pos}
+	if startsExpr(p.kind()) {
+		r.Results = p.parseExprList()
+	}
+	return r
+}
+
+// parseCallStmt parses a defer or go statement, whose operand must be a call.
+func (p *parser) parseCallStmt(tok token.Kind) ast.Stmt {
+	pos := p.expect(tok).Pos
+	x := p.parseExpr()
+	call, ok := x.(*ast.CallExpr)
+	if !ok {
+		p.errorf(pos, "expected function call after %s", tok.String())
+	}
+	if tok == token.DEFER {
+		return &ast.DeferStmt{Defer: pos, Call: call}
+	}
+	return &ast.GoStmt{Go: pos, Call: call}
+}
+
+// parseBranchStmt parses break/continue/goto/fallthrough, with an optional label.
+func (p *parser) parseBranchStmt() ast.Stmt {
+	t := p.advance()
+	b := &ast.BranchStmt{TokPos: t.Pos, Tok: t.Kind}
+	if t.Kind != token.FALLTHROUGH && p.at(token.IDENT) {
+		b.Label = p.ident()
+	}
+	return b
+}
+
+// stmtExpr extracts the expression from a simple statement that turned out to be a
+// bare condition/tag (an *ast.ExprStmt); it returns nil otherwise.
+func stmtExpr(s ast.Stmt) ast.Expr {
+	if es, ok := s.(*ast.ExprStmt); ok {
+		return es.X
+	}
+	return nil
+}
+
+// startsExpr reports whether k can begin an operand for the minimal expression
+// parser.
+func startsExpr(k token.Kind) bool {
+	switch k {
+	case token.IDENT, token.INT, token.FLOAT, token.IMAG, token.CHAR, token.STRING, token.LPAREN:
+		return true
+	}
+	return false
 }
 
 // ----------------------------------------------------------------------------
@@ -615,7 +883,10 @@ func (p *parser) parseOperand() ast.Expr {
 		return &ast.BasicLit{ValuePos: t.Pos, Kind: t.Kind, Value: t.Lit}
 	case token.LPAREN:
 		p.advance()
+		prev := p.exprLev
+		p.exprLev++
 		inner := p.parseExpr()
+		p.exprLev = prev
 		rp := p.expect(token.RPAREN)
 		return &ast.ParenExpr{Lparen: t.Pos, X: inner, Rparen: rp.Pos}
 	default:
@@ -638,7 +909,9 @@ func (p *parser) parsePostfix(x ast.Expr) ast.Expr {
 		case token.LBRACK:
 			x = p.parseIndexSuffix(x)
 		case token.LBRACE:
-			if !compositeOK(x) {
+			// In a control-clause header (exprLev < 0), a "{" begins the body
+			// block, not a composite literal.
+			if p.exprLev < 0 || !compositeOK(x) {
 				return x
 			}
 			x = p.parseCompositeLit(x)
@@ -662,6 +935,8 @@ func compositeOK(x ast.Expr) bool {
 func (p *parser) parseCallSuffix(fun ast.Expr) ast.Expr {
 	lp := p.expect(token.LPAREN)
 	call := &ast.CallExpr{Fun: fun, Lparen: lp.Pos}
+	prev := p.exprLev
+	p.exprLev++
 	for !p.at(token.RPAREN) && !p.at(token.EOF) {
 		call.Args = append(call.Args, p.parseExpr())
 		if p.at(token.COMMA) {
@@ -670,6 +945,7 @@ func (p *parser) parseCallSuffix(fun ast.Expr) ast.Expr {
 			break
 		}
 	}
+	p.exprLev = prev
 	rp := p.expect(token.RPAREN)
 	call.Rparen = rp.Pos
 	return call
@@ -678,7 +954,10 @@ func (p *parser) parseCallSuffix(fun ast.Expr) ast.Expr {
 // parseIndexSuffix parses a single index applied to x.
 func (p *parser) parseIndexSuffix(x ast.Expr) ast.Expr {
 	lb := p.expect(token.LBRACK)
+	prev := p.exprLev
+	p.exprLev++
 	idx := p.parseExpr()
+	p.exprLev = prev
 	rb := p.expect(token.RBRACK)
 	return &ast.IndexExpr{X: x, Lbrack: lb.Pos, Index: idx, Rbrack: rb.Pos}
 }
@@ -688,6 +967,8 @@ func (p *parser) parseIndexSuffix(x ast.Expr) ast.Expr {
 func (p *parser) parseCompositeLit(typ ast.Expr) ast.Expr {
 	lb := p.expect(token.LBRACE)
 	cl := &ast.CompositeLit{Type: typ, Lbrace: lb.Pos}
+	prev := p.exprLev
+	p.exprLev++
 	for !p.at(token.RBRACE) && !p.at(token.EOF) {
 		cl.Elts = append(cl.Elts, p.parseElement())
 		if p.at(token.COMMA) {
@@ -696,6 +977,7 @@ func (p *parser) parseCompositeLit(typ ast.Expr) ast.Expr {
 			break
 		}
 	}
+	p.exprLev = prev
 	rb := p.expect(token.RBRACE)
 	cl.Rbrace = rb.Pos
 	return cl
