@@ -257,8 +257,10 @@ func (*ValueSpec) specNode() {}
 
 // TypeSpec is a single type declaration: a name bound to a type expression.
 type TypeSpec struct {
-	Name *Ident // type name
-	Type Expr   // the underlying type expression
+	Name       *Ident     // type name
+	TypeParams *FieldList // generic type parameters in "[...]"; nil when non-generic
+	Assign     token.Pos  // position of "=" for an alias declaration; zero otherwise
+	Type       Expr       // the underlying type expression
 }
 
 func (s *TypeSpec) Pos() token.Pos {

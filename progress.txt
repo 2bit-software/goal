@@ -218,9 +218,36 @@
   are produced ONLY from real backend output — never hand-edit them. The exact tier uses
   single-file backend.Transpile (no //line directives), so regen output matches by construction.
 - Source-position mapping is engine-agnostic: pipeline.AddLineDirectives (exported) inserts
-  name-anchored `//line` directives and is applied by BOTH pipeline.TranspilePackage and
-  backend.TranspilePackage. Any new package-mode emit path must apply it or `goal build` errors
-  stop mapping back to .goal source (TestBuildErrorMapsToGoalSource guards this).
+  name-anchored `//line` directives. Any new package-mode emit path must apply it or `goal build`
+  errors stop mapping back to .goal source (TestBuildErrorMapsToGoalSource guards this).
+- THE SPLICE ENGINE IS GONE (US-043). internal/pass is deleted; internal/pipeline now holds ONLY
+  the engine-independent Output/GoFile/PackageOutput types + sourcemap (AddLineDirectives) — there
+  is no pipeline.Transpile/TranspilePackage anymore. backend.Transpile / backend.TranspilePackage
+  is the ONE front-end; every transpile call site (cmd/goalc, cmd/build-playground, cmd/goal-wasm,
+  internal/guide, internal/typecheck, corpus behavioral runners) uses it. The --engine flag is
+  removed; parseFlags returns (emit, emitDir, root, err). Add transpile consumers via backend.*,
+  never pipeline.*.
+- internal/typecheck (the go/types depth checker, on the DEFAULT `goal build/check` path) transpiles
+  internally — it now uses backend.TranspilePackage. The AST backend therefore must faithfully emit
+  whatever real goal programs feed the depth checker, including constructs ABSENT from the corpus:
+  generic type-parameter DECLARATIONS (`type Box[T any]`) and type ALIASES (`type T = U`). The splice
+  engine masked these by passing them through verbatim; the AST parser/emitter must handle them.
+- Generic type-parameter DECLARATIONS are parsed in parser.parseTypeSpec via atTypeParams()
+  (disambiguates `type T[P any]` from `[]T`/`[N]T`/`[3]T` arrays using kindAt(2): typeparams iff
+  `[` then IDENT then COMMA-or-type-start) + parseTypeParams() (shared-constraint name lists like
+  `[T, U any]`). They live on ast.TypeSpec.TypeParams *FieldList and emit via fieldList(fl,"[","]").
+  Generic INSTANTIATION (`Box[int]`) already parsed via parseIndexSuffix (IndexExpr/IndexListExpr).
+  kindAt(n) is the new n-token lookahead helper (peekKind == kindAt(1)).
+- Type ALIASES carry on ast.TypeSpec.Assign token.Pos (zero == defined type). parser records the
+  `=` position; emit.go's TypeSpec case emits `= ` when Assign is non-zero. Sexpr SKIPS token.Pos so
+  AST snapshots are unaffected; but the BACKEND OUTPUT changed (`type T int64` -> `type T = int64`),
+  so any corpus golden with an alias must be regenerated (-update-goldens). Aliases vs defined types
+  have DIFFERENT go/types identity — emitting the alias faithfully is what makes the depth checker's
+  signature-equivalence checks pass (TestImplementsAliasEqualSignatureIsNotAMismatch).
+- scan.Splice/Replacement and the analyze fact tables are STILL LIVE (consumed by check/fix/lsp/
+  typecheck/project). Nothing in scan/analyze was used SOLELY by the deleted splice passes, so the
+  "dead scanning" can only be removed once US-044 (fix->AST) and US-046 (lsp->AST) migrate those
+  consumers off the token scanner. Don't try to delete scan/analyze symbols until then.
 
 ## [2026-06-27T13:30:00Z] - US-042
 - Made the AST backend the canonical/default front-end and regenerated every exact golden
@@ -1891,4 +1918,44 @@
   - Adding a sema check is: new file CheckX(file,info) returning []Diagnostic with
     messages verbatim from internal/check for // want parity, then one line in
     sema.Check. Same pattern as US-029/030/031.
+---
+
+## [2026-06-27T15:00:00Z] - US-043
+- Deleted the obsolete token-splice machinery so the project has ONE front-end (the AST backend,
+  default since US-042). Removed internal/pass (20 files) and the pipeline splice engine
+  (Transpile/TranspilePackage/runPasses/doctestFile/preludeFile/Passes/Pass), keeping only the
+  engine-independent pipeline.Output/GoFile/PackageOutput types + sourcemap.go. Re-pointed every
+  remaining splice call site onto the AST backend and removed the --engine=splice flag.
+- Files changed:
+  - DELETED: internal/pass/* (entire package); internal/pipeline/{foreign,pipeline_package,
+    question_arity,question_refusal}_test.go (splice-only internal tests)
+  - internal/pipeline/pipeline.go (stripped to the Output/GoFile/PackageOutput types),
+    sourcemap_test.go (kept AddLineDirectives unit test; dropped the splice TranspilePackage proof)
+  - cmd/goal/main.go + main_test.go (removed --engine flag, consts, parseFlags engine return;
+    transpileAll always backend.TranspilePackage), cmd/goalc, cmd/build-playground, cmd/goal-wasm,
+    internal/guide (pipeline.Transpile -> backend.Transpile), internal/typecheck (TranspilePackage)
+  - internal/corpus/{behavior_runner,doctest_behavior_runner,package_runner}_test.go (-> backend.*),
+    runner.go/package_runner.go/backend/package.go (adapter doc comments -> backend)
+  - internal/ast/ast.go + walk.go (TypeSpec.TypeParams + TypeSpec.Assign), internal/parser/parser.go
+    (parseTypeParams/atTypeParams/kindAt + alias-pos recording), internal/backend/emit.go (TypeSpec
+    type-params + alias `=` emission)
+  - features/**/*.go.expected + testdata/enum_match_result.go.expected (7 alias goldens regenerated),
+    AI-KNOWLEDGE-BOOTSTRAP.md (--engine gone)
+  - prd.json (US-043 passes:true), progress.txt
+  - history/20260627-refactor-us-043-delete-splice-passes-dead-scanning/ (initiative)
+- Commit: e4c4017
+- Learnings for future iterations:
+  - The KEY surprise: internal/typecheck's depth checks (on the default `goal build/check` path) ran
+    THROUGH the splice engine, so splice was still on the default path even after US-042. The splice
+    token-rewriter passed generics + aliases through verbatim; the AST front-end parses everything and
+    lacked both. Deleting splice forced typecheck onto backend, which REQUIRED closing those two AST
+    gaps in-story (generic type-param DECL parsing + faithful alias emit) — neither is in the corpus,
+    so only typecheck's hand-written depth-check tests exercise them.
+  - scan/analyze could NOT be pruned: fix/lsp/check/typecheck/project still consume the token scanner
+    and fact tables; nothing was used solely by pass. "Delete dead scanning" only becomes possible
+    after US-044 (fix->AST) and US-046 (lsp->AST). This story's deletion is internal/pass + the
+    pipeline splice engine; the scan/analyze cleanup is sequenced behind the tool migrations.
+  - Regenerating goldens after an emit change: `go test ./internal/corpus -run TestUpdateGoldens
+    -update-goldens`; regenerating the AI guide after a flag/command change:
+    `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md` (both have drift tests).
 ---

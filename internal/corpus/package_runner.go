@@ -15,14 +15,14 @@ import (
 // PackageTranspiler lowers a multi-file goal package to its Go output. It is the
 // package-mode counterpart of [Transpiler]: the seam that lets the corpus judge
 // any front-end's package driver by the same yardstick.
-// pipeline.TranspilePackage satisfies it via [PackageTranspilerFunc].
+// backend.TranspilePackage satisfies it via [PackageTranspilerFunc].
 type PackageTranspiler interface {
 	TranspilePackage(pkg *project.Package) (pipeline.PackageOutput, error)
 }
 
 // PackageTranspilerFunc adapts a plain package-transpile function to the
 // [PackageTranspiler] interface, so a free function such as
-// pipeline.TranspilePackage can be passed where a PackageTranspiler is expected.
+// backend.TranspilePackage can be passed where a PackageTranspiler is expected.
 type PackageTranspilerFunc func(pkg *project.Package) (pipeline.PackageOutput, error)
 
 // TranspilePackage calls the wrapped function.

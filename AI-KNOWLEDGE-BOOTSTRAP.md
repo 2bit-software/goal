@@ -51,12 +51,10 @@ via `//line` directives), then, if you have doctests, `goal build --emit` follow
 
 **Commands:**
 
-- `goal build [--emit[=dir]] [--engine=splice|ast] [path]` — transpile and `go build` the package(s)
+- `goal build [--emit[=dir]] [path]` — transpile and `go build` the package(s)
     - `--emit[=dir]` — also write generated .go beside each .goal (or under dir)
-    - `--engine=splice|ast` — front-end engine: ast (default) or the legacy splice engine
-- `goal run [--emit[=dir]] [--engine=splice|ast] [path]` — transpile and `go run` the sole main package
+- `goal run [--emit[=dir]] [path]` — transpile and `go run` the sole main package
     - `--emit[=dir]` — also write generated .go beside each .goal (or under dir)
-    - `--engine=splice|ast` — front-end engine: ast (default) or the legacy splice engine
 - `goal check [path]` — run the static checker over the package(s)
 - `goal fix [-inplace] [path]` — rewrite plain-Go patterns into idiomatic goal (Result + `?`)
     - `-inplace` — write changes back to each file instead of printing to stdout
@@ -178,8 +176,11 @@ package status
 
 type Time = int64
 
-func render(t Time)    {}
-func showPlaceholder() {}
+func render(t Time) {
+}
+
+func showPlaceholder() {
+}
 
 type Status interface{ isStatus() }
 
@@ -197,9 +198,9 @@ func (Status_Active) isStatus()    {}
 func (Status_Cancelled) isStatus() {}
 
 func handle2(s Status) {
-	switch __goal_v := s.(type) {
+	switch v := s.(type) {
 	case Status_Active:
-		render(__goal_v.Since)
+		render(v.Since)
 	default:
 		showPlaceholder()
 	}
@@ -265,9 +266,9 @@ type Config struct {
 	Raw string
 }
 
-func parse(s string) (__goal_ok Config, __goal_err error) {
+func parse(s string) (ok Config, err error) {
 	if s == "" {
-		return __goal_ok, errors.New("empty input")
+		return ok, errors.New("empty input")
 	}
 	return Config{Raw: s}, nil
 }
@@ -355,12 +356,15 @@ func find(id ID) *User {
 	return &u
 }
 
-func greet(u User) {}
-func prompt()      {}
+func greet(u User) {
+}
+
+func prompt() {
+}
 
 func handle(id ID) {
-	if __goal_o := find(id); __goal_o != nil {
-		u := *__goal_o
+	if o := find(id); o != nil {
+		u := *o
 		greet(u)
 	} else {
 		prompt()
@@ -423,22 +427,22 @@ type Config struct {
 	Raw string
 }
 
-func readFile(p string) (__goal_ok []byte, __goal_err error) {
+func readFile(p string) (ok []byte, err error) {
 	return []byte(p), nil
 }
 
-func parse(raw []byte) (__goal_ok Config, __goal_err error) {
+func parse(raw []byte) (ok Config, err error) {
 	return Config{Raw: string(raw)}, nil
 }
 
-func loadConfig(p string) (__goal_ok Config, __goal_err error) {
-	raw, __goal_err := readFile(p)
-	if __goal_err != nil {
-		return __goal_ok, __goal_err
+func loadConfig(p string) (ok Config, err error) {
+	raw, err := readFile(p)
+	if err != nil {
+		return ok, err
 	}
-	cfg, __goal_err := parse(raw)
-	if __goal_err != nil {
-		return __goal_ok, __goal_err
+	cfg, err := parse(raw)
+	if err != nil {
+		return ok, err
 	}
 	return cfg, nil
 }
@@ -534,16 +538,19 @@ func parse(s string) Result[Config, ParseError] {
 	return Ok[Config, ParseError]{Value: Config{Raw: s}}
 }
 
-func run(c Config)        {}
-func report(e ParseError) {}
+func run(c Config) {
+}
+
+func report(e ParseError) {
+}
 
 func handle(input string) {
-	switch __goal_e := parse(input).(type) {
+	switch r := parse(input).(type) {
 	case Ok[Config, ParseError]:
-		cfg := __goal_e.Value
+		cfg := r.Value
 		run(cfg)
 	case Err[Config, ParseError]:
-		e := __goal_e.Value
+		e := r.Value
 		report(e)
 	default:
 		panic("unreachable: non-exhaustive Result[Config, ParseError] (compiler invariant violated)")
@@ -680,7 +687,6 @@ type User struct {
 	admin bool
 }
 
-// newAdmin sets every field explicitly — a complete literal passes through verbatim.
 func newAdmin() User {
 	return User{name: "root", email: "root@x", role: RoleAdmin, admin: true}
 }
@@ -714,7 +720,7 @@ func newStore(name string) Store {
 _rejected with:_
 
 ```text
-pass defaults: `...defaults` at 9:27 cannot default field `entries` of type `map[string]int`: a nil map panics on write — set it explicitly (e.g. `map[string]int{}`)
+backend: `...defaults` cannot default field `entries` of type `map[string]int`: a nil map panics on write — set it explicitly (e.g. `map[string]int{}`)
 ```
 
 **Why:** a `nil` map reads fine but panics the moment something writes to it — exactly the
@@ -758,8 +764,6 @@ _transpiles to:_
 ```go
 package bank
 
-// withdraw asserts an invariant the type system can't capture (amount > 0). The
-// bare form needs no message: the panic carries the source expression text.
 func withdraw(balance int, amount int) int {
 	if !(amount > 0) {
 		panic("assertion failed: amount > 0")
@@ -876,12 +880,17 @@ _transpiles to:_
 ```go
 package conv
 
-// Local stand-in (see to_storage.goal / SYNTAX.md).
-type UUID struct{ s string }
+type UUID struct {
+	s string
+}
 
-func (u UUID) String() string { return u.s }
+func (u UUID) String() string {
+	return u.s
+}
 
-func uuidToString(u UUID) string { return u.String() }
+func uuidToString(u UUID) string {
+	return u.String()
+}
 
 type Group struct {
 	Name    string
@@ -893,8 +902,6 @@ type IDList struct {
 	Members []string
 }
 
-// Container recursion (built-in deriver rule): Members []UUID -> []string is filled
-// automatically from the registered UUID -> string; the user writes only the leaf.
 func toIDs(g Group) IDList {
 	var out IDList
 	out.Name = g.Name
@@ -1037,20 +1044,20 @@ func square(x int) int {
 	return x * x
 }
 
-func makeUser(name string, age int) (__goal_ok User, __goal_err error) {
+func makeUser(name string, age int) (ok User, err error) {
 	if !(age >= 0) {
 		panic("assertion failed: age >= 0: " + fmt.Sprintf("negative age: %d", age))
 	}
 	if name == "" {
-		return __goal_ok, errors.New("empty name")
+		return ok, errors.New("empty name")
 	}
 	return User{name: name, role: 0, active: false}, nil
 }
 
-func register(name string, age int) (__goal_ok User, __goal_err error) {
-	u, __goal_err := makeUser(name, age)
-	if __goal_err != nil {
-		return __goal_ok, __goal_err
+func register(name string, age int) (ok User, err error) {
+	u, err := makeUser(name, age)
+	if err != nil {
+		return ok, err
 	}
 	return u, nil
 }
@@ -1234,9 +1241,9 @@ func (Cmd_Greet) isCmd() {}
 func (Cmd_Quit) isCmd()  {}
 
 func render(c Cmd) string {
-	switch __goal_v := c.(type) {
+	switch v := c.(type) {
 	case Cmd_Greet:
-		return "hello, " + __goal_v.Name
+		return "hello, " + v.Name
 	case Cmd_Quit:
 		return "bye"
 	default:
@@ -1244,9 +1251,6 @@ func render(c Cmd) string {
 	}
 }
 
-// / Greets a person by name.
-// / >>> greet("Ada")
-// / "hello, Ada"
 func greet(name string) string {
 	return render(Cmd(Cmd_Greet{Name: name}))
 }

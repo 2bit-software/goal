@@ -97,6 +97,15 @@ func (p *parser) peekKind() token.Kind {
 	return token.EOF
 }
 
+// kindAt returns the kind of the token n positions ahead of the current one
+// (kindAt(1) == peekKind), or EOF past the end.
+func (p *parser) kindAt(n int) token.Kind {
+	if p.pos+n < len(p.toks) {
+		return p.toks[p.pos+n].Kind
+	}
+	return token.EOF
+}
+
 // advance consumes the current token and returns it. The cursor never moves past
 // the trailing EOF, guaranteeing progress without overrun.
 func (p *parser) advance() token.Token {
@@ -264,15 +273,58 @@ func (p *parser) parseImportSpec() *ast.ImportSpec {
 	return spec
 }
 
-// parseTypeSpec parses a single type declaration: a name, an optional "=" (type
-// alias), and the underlying type expression.
+// parseTypeSpec parses a single type declaration: a name, an optional generic
+// type-parameter list, an optional "=" (type alias), and the underlying type
+// expression.
 func (p *parser) parseTypeSpec() *ast.TypeSpec {
 	spec := &ast.TypeSpec{Name: p.ident()}
+	if p.atTypeParams() {
+		spec.TypeParams = p.parseTypeParams()
+	}
 	if p.at(token.ASSIGN) {
-		p.advance() // alias form: type T = U
+		spec.Assign = p.advance().Pos // alias form: type T = U
 	}
 	spec.Type = p.parseType()
 	return spec
+}
+
+// atTypeParams reports whether the current "[" begins a generic type-parameter
+// list (e.g. `[T any]`) rather than an array/slice type (`[]T`, `[N]T`, `[3]T`).
+// A type-parameter list always opens with `ident` followed by a constraint type
+// or a comma; an array length is either absent (`[]`), a non-identifier, or an
+// identifier immediately followed by `]`.
+func (p *parser) atTypeParams() bool {
+	if !p.at(token.LBRACK) || p.peekKind() != token.IDENT {
+		return false
+	}
+	k2 := p.kindAt(2) // token after the first identifier inside "["
+	return k2 == token.COMMA || startsTypeKind(k2)
+}
+
+// parseTypeParams parses a generic type-parameter list "[ name... constraint,
+// ... ]". Names sharing a constraint (`[T, U any]`) collect onto one Field; a
+// new constraint after a comma (`[T any, U int]`) starts a new Field.
+func (p *parser) parseTypeParams() *ast.FieldList {
+	fl := &ast.FieldList{}
+	lb := p.expect(token.LBRACK)
+	fl.Opening = lb.Pos
+	for !p.at(token.RBRACK) && !p.at(token.EOF) {
+		f := &ast.Field{Names: []*ast.Ident{p.ident()}}
+		for p.at(token.COMMA) && p.peekKind() == token.IDENT {
+			p.advance() // consume the comma separating shared names
+			f.Names = append(f.Names, p.ident())
+		}
+		f.Type = p.parseType() // the shared constraint
+		fl.List = append(fl.List, f)
+		if p.at(token.COMMA) {
+			p.advance()
+		} else {
+			break
+		}
+	}
+	rb := p.expect(token.RBRACK)
+	fl.Closing = rb.Pos
+	return fl
 }
 
 // parseValueSpec parses a single const/var spec: a name list, an optional type,

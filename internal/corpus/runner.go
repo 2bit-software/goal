@@ -10,15 +10,15 @@ import (
 )
 
 // Transpiler lowers goal source to its transpile output. It is the seam that
-// lets the corpus judge any front-end — the current pipeline, the future AST
-// backend, the self-hosted compiler — by the same yardstick. pipeline.Transpile
-// satisfies it via [TranspilerFunc].
+// lets the corpus judge any front-end — the AST backend, a future self-hosted
+// compiler — by the same yardstick. backend.Transpile satisfies it via
+// [TranspilerFunc].
 type Transpiler interface {
 	Transpile(src string) (pipeline.Output, error)
 }
 
 // TranspilerFunc adapts a plain transpile function to the [Transpiler]
-// interface, so a free function such as pipeline.Transpile can be passed where a
+// interface, so a free function such as backend.Transpile can be passed where a
 // Transpiler is expected.
 type TranspilerFunc func(src string) (pipeline.Output, error)
 

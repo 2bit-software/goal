@@ -16,9 +16,9 @@ import (
 	"strings"
 
 	"goal"
+	"goal/internal/backend"
 	"goal/internal/byexample"
 	"goal/internal/check"
-	"goal/internal/pipeline"
 )
 
 //go:embed feedback_sample.goal
@@ -198,7 +198,7 @@ func writeFeatures(b *strings.Builder) error {
 // Go, the generated test for a doctest example, or the located error for a feature whose
 // example is intentionally rejected. The label names which of these it is.
 func lower(f byexample.Feature) (out, label string, err error) {
-	res, terr := pipeline.Transpile(f.Source)
+	res, terr := backend.Transpile(f.Source)
 	switch f.OutputKind {
 	case "error":
 		if terr == nil {
@@ -274,7 +274,7 @@ func writeStarter(b *strings.Builder) error {
 	b.WriteString("Layout (inside a Go module): `myapp/go.mod` + `myapp/app/main.goal`.\n\n")
 	fmt.Fprintf(b, "```goal\n%s\n```\n\n", strings.TrimRight(string(src), "\n"))
 
-	res, terr := pipeline.Transpile(string(src))
+	res, terr := backend.Transpile(string(src))
 	if terr != nil {
 		return fmt.Errorf("transpile starter: %w", terr)
 	}

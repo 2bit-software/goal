@@ -4,7 +4,7 @@
 // Defs/Uses flow primitive — that the lexical checker (internal/check, which runs on the
 // original source) must defer.
 //
-// It rests on Phase A: pipeline.TranspilePackage produces a compilable Go package whose
+// It rests on Phase A: backend.TranspilePackage produces a compilable Go package whose
 // //line directives (U5) make go/parser/go/types report positions in the .goal source
 // (SPIKE-B1). So a depth diagnostic is goal-located for free — see GoalPos.
 //
@@ -21,8 +21,8 @@ import (
 	"go/types"
 
 	"goal/internal/analyze"
+	"goal/internal/backend"
 	"goal/internal/check"
-	"goal/internal/pipeline"
 	"goal/internal/project"
 )
 
@@ -50,7 +50,7 @@ type Package struct {
 // a transpile or parse failure (a goal-compiler bug — the lowered Go must be valid Go);
 // Go type errors in the user's program are collected into Package.Errors instead.
 func Load(pkg *project.Package) (*Package, error) {
-	out, err := pipeline.TranspilePackage(pkg)
+	out, err := backend.TranspilePackage(pkg)
 	if err != nil {
 		return nil, fmt.Errorf("transpile: %w", err)
 	}

@@ -3,11 +3,11 @@ package corpus
 import (
 	"testing"
 
-	"goal/internal/pipeline"
+	"goal/internal/backend"
 )
 
 // TestCompileRunner is the behavioral conformance tier: every transpile case in
-// the committed manifest is transpiled through pipeline.Transpile and its
+// the committed manifest is transpiled through backend.Transpile and its
 // generated Go must build and vet cleanly in an isolated temp module. It proves
 // conformance by behavior (the Go compiles) rather than by exact spelling.
 //
@@ -23,7 +23,7 @@ func TestCompileRunner(t *testing.T) {
 		t.Fatalf("Load(%q): %v", manifestPath, err)
 	}
 
-	tp := TranspilerFunc(pipeline.Transpile)
+	tp := TranspilerFunc(backend.Transpile)
 	seen := 0
 	for _, c := range m.Cases {
 		if c.Kind != KindTranspile || c.Mode != ModeFile {

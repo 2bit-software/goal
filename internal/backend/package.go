@@ -1,9 +1,8 @@
 package backend
 
 // package.go is the AST engine's package-mode driver: the counterpart of the
-// single-file Transpile for a whole goal package. It is what makes the new
-// front-end reach package-mode behavioral parity with the splice engine's
-// pipeline.TranspilePackage (US-041 gap 3):
+// single-file Transpile for a whole goal package. It is the sole package-mode
+// front-end (the splice engine it superseded was removed in US-043):
 //
 //   - Cross-file sema: every file is resolved and the facts merged into ONE
 //     *sema.Info (sema.ResolvePackage), so a file lowers a `match`/derive/`?` over

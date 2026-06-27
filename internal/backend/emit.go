@@ -320,7 +320,13 @@ func (e *emitter) spec(s ast.Spec) {
 		if s.Name != nil {
 			e.p(s.Name.Name)
 		}
+		if s.TypeParams != nil {
+			e.fieldList(s.TypeParams, "[", "]")
+		}
 		e.p(" ")
+		if s.Assign != (token.Pos{}) {
+			e.p("= ")
+		}
 		e.expr(s.Type)
 	default:
 		e.fail("unsupported spec %T", s)

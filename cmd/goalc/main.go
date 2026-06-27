@@ -7,8 +7,8 @@ import (
 	"io"
 	"os"
 
+	"goal/internal/backend"
 	"goal/internal/check"
-	"goal/internal/pipeline"
 )
 
 func main() {
@@ -56,7 +56,7 @@ func run(args []string, stdin io.Reader, out, errOut io.Writer) error {
 			return fmt.Errorf("%s rejected: %d checker error(s)", files[0], countErrors(diags))
 		}
 	}
-	result, err := pipeline.Transpile(string(src))
+	result, err := backend.Transpile(string(src))
 	if err != nil {
 		return err
 	}

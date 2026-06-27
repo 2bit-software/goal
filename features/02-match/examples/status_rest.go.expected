@@ -1,6 +1,6 @@
 package status
 
-type Time int64
+type Time = int64
 
 func render(t Time) {
 }

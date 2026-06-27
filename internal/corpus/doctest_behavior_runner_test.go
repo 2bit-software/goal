@@ -3,11 +3,11 @@ package corpus
 import (
 	"testing"
 
-	"goal/internal/pipeline"
+	"goal/internal/backend"
 )
 
 // TestDoctestExecRunner is the behavioral doctest tier: every doctest case in
-// the committed manifest is transpiled through pipeline.Transpile, and its
+// the committed manifest is transpiled through backend.Transpile, and its
 // generated package plus generated _test.go sidecar must pass `go test` in an
 // isolated temp module. It proves doctest behavior by executing it, not merely
 // by compiling or text-matching the sidecar.
@@ -26,7 +26,7 @@ func TestDoctestExecRunner(t *testing.T) {
 		t.Fatalf("Load(%q): %v", manifestPath, err)
 	}
 
-	tp := TranspilerFunc(pipeline.Transpile)
+	tp := TranspilerFunc(backend.Transpile)
 	ran := 0
 	for _, c := range m.Cases {
 		if c.Kind != KindDoctest {

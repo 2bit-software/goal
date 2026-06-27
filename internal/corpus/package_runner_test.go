@@ -3,7 +3,7 @@ package corpus
 import (
 	"testing"
 
-	"goal/internal/pipeline"
+	"goal/internal/backend"
 )
 
 // TestPackageRunner runs every Mode=package case in the committed manifest
@@ -24,7 +24,7 @@ func TestPackageRunner(t *testing.T) {
 		t.Fatalf("Load(%q): %v", manifestPath, err)
 	}
 
-	pt := PackageTranspilerFunc(pipeline.TranspilePackage)
+	pt := PackageTranspilerFunc(backend.TranspilePackage)
 	ran := 0
 	for _, c := range m.Cases {
 		if c.Mode != ModePackage {

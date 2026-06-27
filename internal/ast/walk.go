@@ -152,6 +152,9 @@ func Walk(v Visitor, node Node) {
 		if n.Name != nil {
 			Walk(v, n.Name)
 		}
+		if n.TypeParams != nil {
+			Walk(v, n.TypeParams)
+		}
 		walkExpr(v, n.Type)
 
 	// Expressions (leaves first).

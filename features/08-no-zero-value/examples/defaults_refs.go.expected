@@ -5,7 +5,7 @@ type Addr struct {
 	port int
 }
 
-type Name string
+type Name = string
 
 type Settings struct {
 	primary  Addr
