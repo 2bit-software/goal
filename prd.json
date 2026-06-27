@@ -257,7 +257,7 @@
         "A unit test over a 12-derive-convert shape asserts a derived conversion produces the expected target struct"
       ],
       "priority": 21,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

@@ -1,5 +1,70 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T06:10:00Z] - US-021
+- Proved US-021 "Eval derive and from": the goscript interpreter now evaluates
+  `derive func` conversions field-by-field over the resolved sema facts. Each
+  target field is sourced from its same-named source field: identity (sf==tf)
+  copies the value through; a differing type is bridged through its registered
+  `from func` (sema.Info.FromRegistry); nested in-file structs and slice/array/
+  map containers recurse over a TOTAL element conversion. A fallible `(T, error)`
+  derive threads a conversion's error as its second result; an unsourced or
+  unconvertible target field is a LOUD, located refusal, never a silent zero.
+  This is the runtime analogue of the Go backend's genConversion/resolveField,
+  but it builds a runtime Value and selects each strategy from the resolved sema
+  TYPE STRINGS (the interp erases static types).
+- internal/interp/interp.go: added `derives map[string]*ast.FuncDecl` to Interp
+  (init in New). registerFuncs now routes a `fn.Mod == ast.FuncDerive` decl into
+  `derives` (even when bodyless) instead of binding it as an ordinary callable —
+  a derive is NOT runnable as a body (`_` skips + `...derive(src)` fill). A
+  `from func` keeps its ordinary registration (it has a real body) and is invoked
+  by name as the bridge conversion.
+- internal/interp/derive.go (new): evalDerive (intercepted call -> [target] for a
+  total derive, [target, errVal] for a fallible one), deriveConvert (build the
+  target struct map: overrides first, then same-named-field fill, then zero-fill a
+  `_`-skipped field; nil pointer source -> zero target; unsourced field ->
+  located refusal), convertFieldValue (identity / registry total / registry
+  fallible / slice / array / map / nested-struct recursion; pointer/Option and
+  anything else -> loud "no conversion"). A fallible leaf error rides the new
+  `deriveErrVal` signal so the enclosing derive returns it. callNamedConv invokes
+  a registered `from func` by root-scope lookup + callFunc (mirrors
+  callConversion). Local type-string splitters (deriveTargetType, deriveOverridesOf,
+  findFieldFold, derefTypeName, sliceElem, arrayElem, mapKeyVal, typeName) mirror
+  backend/lower.go so interp imports NO internal/backend (US-022 envelope).
+- internal/interp/eval.go: evalExpr's Ident case now resolves the predeclared
+  `nil` to NilVal (so a `from func ... (T, error)` can `return T{}, nil` /
+  `return v, nil`). evalCallMulti intercepts an Ident-callee call whose name is a
+  registered derive (not shadowed) -> evalDerive, before the generic call path.
+- internal/interp/derive_test.go (new): TestDeriveTotalNestedStructAndRegistryBridge
+  (the features/12 derive_nested_struct shape: identity Name, nested Addr->AddrV2,
+  Zip string->Code bridge), TestDeriveFallibleSucceedsAndReturnsNilError,
+  TestDeriveFalliblePropagatesConversionError (errors.New "empty id" value),
+  TestDeriveUnsourcedFieldIsRefused ("not sourced" + names field B). stdlib
+  testing, no testify.
+- prd.json (US-021 passes:true), progress.txt
+- history/20260627-feature-us-021-eval-derive-and-from/ (initiative)
+- Learnings for future iterations:
+  - A `derive func` is bodyless (or carries a `_`/`...derive(src)` body the
+    ordinary evaluator cannot run), so it is NOT an ordinary callable. Register it
+    in a dedicated `ip.derives` map and intercept the call in evalCallMulti. A
+    `from func` is the opposite — it has a real body, registers normally, and is
+    the bridge conversion invoked by name (callNamedConv, like callConversion).
+  - Conversion strategy is chosen from the sema TYPE STRINGS (Field.Type,
+    FromRegistry keys), exactly like the backend — but the interp produces a
+    Value. The backend's string splitters port verbatim; keep them LOCAL to interp
+    so the US-022 envelope (no internal/backend) holds (go list -deps confirms).
+  - The predeclared `nil` identifier was previously unhandled (it fell through to
+    scope.Lookup and 404'd); evalExpr now maps it to NilVal. A fallible `from func`
+    success path (`return v, nil`) and any future nil-returning host shim depend
+    on this.
+  - A fallible field conversion error is threaded via the `deriveErrVal` sentinel
+    (errors.As) so a `(T, error)` derive surfaces it as its second result; a
+    container element conversion must be TOTAL (a fallible element conv is
+    refused), matching the backend's elemConv contract.
+  - Pointer/Option field recursion is a deliberate loud refusal (the interp models
+    no address-of); the file-mode features/12 fixtures don't need it and
+    cross-package derives stay on the package-mode corpus runner.
+---
+
 ## [2026-06-28T05:20:00Z] - US-020
 - Proved US-020 "Eval defaults expansion": the goscript interpreter now expands
   a `...defaults` spread in a STRUCT composite literal at construction. Every
