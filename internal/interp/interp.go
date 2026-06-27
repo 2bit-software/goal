@@ -16,6 +16,8 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 
 	"goal/internal/ast"
 	"goal/internal/sema"
@@ -81,6 +83,12 @@ type Interp struct {
 	// the concrete declaration for the runtime type of x. Both value-receiver
 	// and pointer-receiver methods are registered here.
 	methods map[string]map[string]*ast.FuncDecl
+
+	// imports maps each imported package's local name (the alias, or the last
+	// element of the import path when unaliased) to its import path. It lets a
+	// selector call `pkg.Sym(...)` be recognized as a host-package call and
+	// routed to the host-function bridge (host.go).
+	imports map[string]string
 }
 
 // New constructs an interpreter over the shared AST + sema front-end. file is the
@@ -92,10 +100,42 @@ type Interp struct {
 // function is visible to its own body (recursion), to forward references, and to
 // unit tests that evaluate a call against the root scope.
 func New(file *ast.File, info *sema.Info) *Interp {
-	ip := &Interp{file: file, info: info, root: NewEnv(), methods: map[string]map[string]*ast.FuncDecl{}}
+	ip := &Interp{file: file, info: info, root: NewEnv(), methods: map[string]map[string]*ast.FuncDecl{}, imports: map[string]string{}}
+	ip.registerImports()
 	ip.registerFuncs()
 	ip.registerMethods()
 	return ip
+}
+
+// registerImports records every import's local name -> import path, so a
+// selector call whose receiver names an imported package is recognized as a
+// host-package call. The local name is the explicit alias when present (an "_"
+// blank or "." dot import contributes no usable name) and otherwise the last
+// path element. A spec with no parseable path is skipped.
+func (ip *Interp) registerImports() {
+	if ip.file == nil {
+		return
+	}
+	for _, spec := range ip.file.Imports {
+		if spec == nil || spec.Path == nil {
+			continue
+		}
+		path, err := strconv.Unquote(spec.Path.Value)
+		if err != nil || path == "" {
+			continue
+		}
+		name := ""
+		if spec.Name != nil {
+			name = spec.Name.Name
+		}
+		if name == "" {
+			name = path[strings.LastIndex(path, "/")+1:]
+		}
+		if name == "" || name == "_" || name == "." {
+			continue
+		}
+		ip.imports[name] = path
+	}
 }
 
 // registerFuncs binds every top-level plain function declaration in the root

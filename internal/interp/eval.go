@@ -221,11 +221,21 @@ func (ip *Interp) evalCallMulti(call *ast.CallExpr, scope *Env) ([]Value, error)
 			return ip.evalBuiltin(id.Name, call, scope)
 		}
 	}
+	// A selector call whose receiver names an imported package — and is not
+	// shadowed by a local binding of that name — is a host-package call
+	// (fmt.Sprintf, errors.New, ...). Route it to the host-function bridge,
+	// which resolves a registered shim or raises a located, named refusal.
+	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+		if pkg, ok := sel.X.(*ast.Ident); ok && ip.imports[pkg.Name] != "" {
+			if _, err := scope.Lookup(pkg.Name); err != nil {
+				return ip.evalHostCall(sel, call, scope)
+			}
+		}
+	}
 	// A method call x.M(...) is a selector whose receiver evaluates to a struct
 	// value with a method M declared on its type. If that resolves, dispatch the
 	// method; otherwise fall through to the generic path (so a struct field
-	// holding a function value, or a package-qualified call deferred to US-011,
-	// is handled as before).
+	// holding a function value is handled as before).
 	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
 		if vals, handled, err := ip.tryMethodCall(sel, call, scope); handled {
 			return vals, err

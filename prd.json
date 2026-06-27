@@ -137,7 +137,7 @@
         "A unit test runs a goal program calling fmt.Sprintf and asserts the produced string, and asserts an unregistered imported call yields a descriptive error naming the missing symbol"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "The behavioral gate (US-027) needs this for doctests/programs that call the stdlib. Unshimmed symbols are an explicit, named refusal, never a silent failure."
     },
     {

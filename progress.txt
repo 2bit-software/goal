@@ -354,6 +354,50 @@
   edits don't shift later offsets. Still single-document (locals/params/qualified
   imports/cross-file out of scope, consistent with US-048/049).
 
+## [2026-06-27T23:45:00Z] - US-011
+- Added the host-function bridge: internal/interp now resolves a curated set of
+  imported stdlib calls to native Go, and an unresolved imported call is a
+  LOCATED, NAMED refusal rather than a silent nil.
+- internal/interp/host.go (new): `hostFuncs` registry keyed "<import-path>.<Sym>"
+  (fmt.Sprintf, fmt.Sprint, fmt.Println, fmt.Errorf, errors.New). `evalHostCall`
+  resolves the package path + symbol, evaluates args, and either invokes the
+  shim or returns `interp: <line:col>: unresolved imported call <pkg.Sym> (no
+  host function registered)` using sel.Pos().String(). `goArg`/`goArgs` convert
+  runtime Values to Go fmt args (primitives pass through; an error struct becomes
+  a real Go error so %w/%v render the message; other composites render via
+  Value.String()). Errors are represented as StructVal("error",{"message":...})
+  via errVal — a lightweight encoding distinct from Result/Option (US-015/016).
+- internal/interp/interp.go: Interp gains `imports map[string]string` (local
+  package name -> import path), populated in New via registerImports (alias when
+  present, else last path element; skips _/. imports). Added strconv+strings.
+- internal/interp/eval.go: evalCallMulti intercepts a selector call whose X
+  names an imported package AND is NOT shadowed (scope.Lookup fails) and routes
+  it to evalHostCall, BEFORE tryMethodCall. A local binding shadowing a package
+  name therefore falls through to ordinary method/function dispatch.
+- internal/interp/host_test.go (new): TestHostSprintf ("x-7"), TestHostSprint,
+  TestHostErrorsNew, TestHostErrorfWrapsError ("ctx: inner" — proves the %w
+  error bridge), TestUnregisteredImportedCallNamedError (names strings.ToUpper +
+  located), TestShadowedPackageNameNotRoutedToHost. Reuses the existing evalFn
+  helper from composite_test.go (do NOT redeclare it). stdlib testing, no testify.
+- prd.json (US-011 passes:true), progress.txt
+- history/20260627-feature-us-011-host-function-bridge-for-stdlib/ (initiative)
+- Learnings for future iterations:
+  - Imported-package calls are recognized structurally: call.Fun is a
+    *ast.SelectorExpr whose X is an *ast.Ident in ip.imports and not shadowed in
+    scope. The host registry is keyed by the REAL import PATH (so an aliased
+    import resolves correctly), and the located refusal names that path+symbol.
+  - Errors are StructVal("error",{"message":...}) for now; goArg bridges them to
+    a real Go error for fmt. US-015/US-016 introduce the Result/Option
+    tagged-union encodings separately — do not conflate the two; this error
+    struct is only the fmt.Errorf/errors.New result carrier.
+  - fmt.Println writes os.Stdout directly; US-023 will route host effects through
+    cap.CapabilitySet. The new `os` import does not breach the US-022 envelope
+    (go list -deps ./internal/interp still excludes go/types, internal/backend,
+    internal/typecheck).
+  - Add a new shim by extending hostFuncs; an unshimmed symbol is automatically
+    a loud named refusal, no extra code needed.
+---
+
 ## [2026-06-27T23:00:00Z] - US-010
 - Added the len/append/make/panic builtins and value- + pointer-receiver method
   dispatch to the goscript interpreter.
