@@ -254,6 +254,43 @@
   typecheck/project). Nothing in scan/analyze was used SOLELY by the deleted splice passes, so the
   "dead scanning" can only be removed once US-044 (fix->AST) and US-046 (lsp->AST) migrate those
   consumers off the token scanner. Don't try to delete scan/analyze symbols until then.
+- `goal fmt` (internal/goalfmt.Source) is a position-driven REINDENTER, NOT an AST
+  pretty-printer: it parses with parser.ParseFile only as a validity gate, then rewrites
+  RAW SOURCE LINES (normalizing leading indent = one tab per delimiter-nesting depth from
+  lexer.Tokens, trailing whitespace, and blank-line runs) — never printing the bare AST
+  (which would drop // and /* comments). Because only whitespace the lexer skips changes,
+  the token stream/AST/meaning is invariant and it is idempotent by construction. Any
+  future fmt enhancement (struct-field alignment, switch-case dedent) must keep that
+  raw-source, position-driven discipline — do NOT switch to AST printing.
+
+## [2026-06-27T11:00:00Z] - US-045
+- Added `goal fmt`, the canonical comment-preserving source formatter (internal/goalfmt).
+  Source(src) parses as a validity gate then reindents raw source lines by delimiter
+  nesting computed over lexer.Tokens (so braces inside comments/strings never miscount),
+  trims trailing whitespace, collapses blank-line runs, and ends with one newline —
+  preserving comments, string contents, operator spacing, and field alignment verbatim.
+  Idempotent by construction (Source(Source(s))==Source(s)); proven over every corpus
+  .goal input. Added `goal fmt [-w] [path]` to cmd/goal (mirrors `goal fix`).
+- Files changed:
+  - internal/goalfmt/format.go (new: Source + reindent + collapseBlanks + isOpener/isCloser)
+  - internal/goalfmt/format_test.go (new: TestIdempotentOverCorpus, TestPreservesComments,
+    TestReindentsAndIsStable, TestRejectsUnparseable)
+  - cmd/goal/main.go (guideCommands fmt entry; run "fmt" dispatch; parseFmtFlags; cmdFmt)
+  - AI-KNOWLEDGE-BOOTSTRAP.md (regenerated for the new subcommand, +2 lines)
+  - prd.json (US-045 passes:true), progress.txt
+  - history/20260627-feature-us-045-goal-fmt-source-printer/ (initiative)
+- Learnings for future iterations:
+  - The corpus has NO /* */ block comments, NO raw (backtick) string literals (every
+    backtick is inside a // comment), and NO switch — so multi-line-token protection and
+    switch-case dedent are guarded defensively but not corpus-exercised. Switch bodies
+    would indent by pure delimiter nesting (case not dedented); revisit only if a switch
+    case ever lands in the corpus and the flat look matters.
+  - Idempotency hinges on lexer Pos.Line agreeing with strings.Split("\n") indexing
+    (line == split-index+1); confirmed and held across all 108 inputs. Output text comes
+    from raw lines, not token Lit, so comment/string/alignment fidelity is automatic.
+  - US-046 (LSP onto AST) is next; goalfmt does not touch scan/analyze, so the dead-scan
+    cleanup still waits on US-046.
+---
 
 ## [2026-06-27T13:30:00Z] - US-042
 - Made the AST backend the canonical/default front-end and regenerated every exact golden

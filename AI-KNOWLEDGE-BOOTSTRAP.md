@@ -58,6 +58,8 @@ via `//line` directives), then, if you have doctests, `goal build --emit` follow
 - `goal check [path]` — run the static checker over the package(s)
 - `goal fix [-inplace] [path]` — rewrite plain-Go patterns into idiomatic goal (Result + `?`)
     - `-inplace` — write changes back to each file instead of printing to stdout
+- `goal fmt [-w] [path]` — format .goal source into the canonical, comment-preserving layout
+    - `-w` — write the formatted result back to each file instead of printing to stdout
 - `goal ai [section]` — print the AI bootstrap guide (how to write goal) to stdout
 - `goal lsp` — run the language server (editor diagnostics) over stdio
 

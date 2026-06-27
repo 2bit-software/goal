@@ -25,6 +25,7 @@ import (
 	"goal/internal/backend"
 	"goal/internal/check"
 	"goal/internal/fix"
+	"goal/internal/goalfmt"
 	"goal/internal/guide"
 	"goal/internal/lsp"
 	"goal/internal/pipeline"
@@ -62,6 +63,12 @@ var guideCommands = []guide.Command{
 		Summary: "rewrite plain-Go patterns into idiomatic goal (Result + `?`)",
 		Usage:   "goal fix [-inplace] [path]",
 		Flags:   []guide.Flag{{Name: "-inplace", Summary: "write changes back to each file instead of printing to stdout"}},
+	},
+	{
+		Name:    "fmt",
+		Summary: "format .goal source into the canonical, comment-preserving layout",
+		Usage:   "goal fmt [-w] [path]",
+		Flags:   []guide.Flag{{Name: "-w", Summary: "write the formatted result back to each file instead of printing to stdout"}},
 	},
 	{
 		Name:    "ai",
@@ -110,6 +117,12 @@ func run(args []string, out, errOut io.Writer) error {
 			return err
 		}
 		return cmdFix(path, inplace, out, errOut)
+	case "fmt":
+		path, write, err := parseFmtFlags(rest)
+		if err != nil {
+			return err
+		}
+		return cmdFmt(path, write, out, errOut)
 	case "build", "run", "check":
 		emit, emitDir, root, err := parseFlags(rest)
 		if err != nil {
@@ -246,6 +259,87 @@ func cmdFix(path string, inplace bool, out, errOut io.Writer) error {
 			continue
 		}
 		if _, err := io.WriteString(out, newSrc); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// parseFmtFlags pulls the -w (write-in-place) flag and a single optional path (a .goal
+// file or a directory, default ".") out of args.
+func parseFmtFlags(args []string) (path string, write bool, err error) {
+	path = "."
+	gotPath := false
+	for _, a := range args {
+		switch {
+		case a == "-w" || a == "--write":
+			write = true
+		case strings.HasPrefix(a, "-"):
+			return "", false, fmt.Errorf("unknown flag %q", a)
+		default:
+			if gotPath {
+				return "", false, fmt.Errorf("expected a single path, got extra %q", a)
+			}
+			path, gotPath = a, true
+		}
+	}
+	path = strings.TrimSuffix(strings.TrimSuffix(path, "..."), "/")
+	if path == "" {
+		path = "."
+	}
+	return path, write, nil
+}
+
+// cmdFmt formats a .goal file or every .goal file under a directory into the canonical,
+// comment-preserving layout. By default it prints each formatted file to stdout; with -w
+// it writes changed files back in place and lists them. A file that does not parse is a
+// failure — goalfmt never reformats malformed source.
+func cmdFmt(path string, write bool, out, errOut io.Writer) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	type fileRef struct{ path, src string }
+	var files []fileRef
+	if info.IsDir() {
+		pkgs, err := project.Discover(path)
+		if err != nil {
+			return err
+		}
+		if len(pkgs) == 0 {
+			return fmt.Errorf("no .goal packages found under %s", path)
+		}
+		for _, pkg := range pkgs {
+			for _, f := range pkg.Files {
+				files = append(files, fileRef{f.Path, f.Src})
+			}
+		}
+	} else {
+		if !strings.HasSuffix(path, project.Ext) {
+			return fmt.Errorf("not a .goal file: %s", path)
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		files = append(files, fileRef{path, string(src)})
+	}
+
+	for _, fr := range files {
+		formatted, err := goalfmt.Source(fr.src)
+		if err != nil {
+			return fmt.Errorf("%s: %w", fr.path, err)
+		}
+		if write {
+			if formatted != fr.src {
+				if err := os.WriteFile(fr.path, []byte(formatted), 0o644); err != nil {
+					return err
+				}
+				fmt.Fprintln(out, "formatted", fr.path)
+			}
+			continue
+		}
+		if _, err := io.WriteString(out, formatted); err != nil {
 			return err
 		}
 	}
