@@ -312,3 +312,35 @@
     root/go.mod) so the in-module foreign import path links; copy the foreign Go
     package flat under importPath-minus-modulePrefix.
 ---
+
+## [2026-06-26T00:00:00Z] - US-010
+- Archived the 11 superseded standalone per-feature transpilers (Phase 0.10).
+  Each features/NN/transpiler/ was its own Go module (module
+  goal/features/NN/transpiler with its own go.mod), excluded from the root `goal`
+  module, so they never participated in go build/vet/test ./... — they only
+  implied they were still live. `git mv`d each to attic/features/NN/transpiler/.
+  No features/*/transpiler path remains (glob check returns nothing). Pure
+  relocation: no root-module source, the corpus manifest, or any .go file
+  referenced these dirs, so the move is inert to the root module — build, vet,
+  and the full test suite stay green (verified before and after).
+- Files changed:
+  - features/{01-enums,02-match,03-result,04-option,05-question-prop,06-error-e,
+    07-implements,08-no-zero-value,10-assert,11-doctests,12-derive-convert}/
+    transpiler/  ->  attic/features/<same>/transpiler/ (git mv, contents intact)
+  - prd.json (US-010 passes:true)
+  - history/20260627-refactor-us-010-archive-legacy-per-feature-transpilers/
+    (initiative: INITIATIVE.md, scope.md, scaffold-notes.md)
+- Learnings for future iterations:
+  - The features/NN/transpiler dirs are SEPARATE Go modules (own go.mod), so the
+    root module's go list/build/test never saw them; archiving them is a no-op
+    for the verify gates. Confirm with `go list ./...` (no goal/features/...
+    packages appear).
+  - features/_cut/09-pure/transpiler is a deeper path NOT matched by the glob
+    `features/*/transpiler`; it is an already-cut area and was intentionally left
+    in place (out of US-010 scope).
+  - TODO.md prose mentions "`transpiler/` + `examples/`" per feature — these are
+    descriptive deliverable lists, not live code paths, and were left untouched;
+    the acceptance gate is the `features/*/transpiler` glob, which is now empty.
+  - zsh `ls -d features/*/transpiler` returning "no matches found" (exit 1) is the
+    PASS signal for "no path remains" — guard it as `|| echo NONE` in scripts.
+---

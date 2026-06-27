@@ -125,7 +125,7 @@
         "go build ./... and go test ./... remain green (these were separate modules excluded from the root module)"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
