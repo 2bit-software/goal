@@ -1,7 +1,7 @@
 {
-  "name": "US-013 lex goal-specific lexemes and trivia",
+  "name": "us-014-core-ast-nodes-and-walk",
   "type": "feature",
-  "dir": "history/20260627-feature-us-013-lex-goal-specific-lexemes-and-trivia",
+  "dir": "history/20260627-feature-us-014-core-ast-nodes-and-walk",
   "workflow": "feature",
-  "created_at": "2026-06-27T03:27:46Z"
+  "created_at": "2026-06-27T03:34:36Z"
 }

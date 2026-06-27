@@ -1,0 +1,262 @@
+package ast
+
+// Visitor is invoked by Walk for each node it encounters. If the result Visitor
+// w is non-nil, Walk descends into the node's children with w, then calls
+// w.Visit(nil) to signal that all children have been visited; if w is nil, Walk
+// does not descend into the node.
+type Visitor interface {
+	Visit(node Node) (w Visitor)
+}
+
+// Walk traverses an AST in depth-first pre-order: it visits node, and if
+// v.Visit(node) returns a non-nil Visitor w, it recursively walks each of node's
+// non-nil children with w and then calls w.Visit(nil). A nil node is a no-op.
+//
+// Every node in the tree is passed to Visit exactly once (the trailing
+// Visit(nil) calls carry a nil node and are not part of that count). New
+// goal-specific node types add cases to the switch below.
+func Walk(v Visitor, node Node) {
+	if node == nil {
+		return
+	}
+	if v = v.Visit(node); v == nil {
+		return
+	}
+
+	switch n := node.(type) {
+	// Support nodes.
+	case *Field:
+		walkIdentList(v, n.Names)
+		walkExpr(v, n.Type)
+		if n.Tag != nil {
+			Walk(v, n.Tag)
+		}
+	case *FieldList:
+		for _, f := range n.List {
+			Walk(v, f)
+		}
+
+	// File.
+	case *File:
+		if n.Name != nil {
+			Walk(v, n.Name)
+		}
+		for _, d := range n.Decls {
+			Walk(v, d)
+		}
+
+	// Declarations.
+	case *GenDecl:
+		for _, s := range n.Specs {
+			Walk(v, s)
+		}
+	case *FuncDecl:
+		if n.Recv != nil {
+			Walk(v, n.Recv)
+		}
+		if n.Name != nil {
+			Walk(v, n.Name)
+		}
+		if n.Type != nil {
+			Walk(v, n.Type)
+		}
+		if n.Body != nil {
+			Walk(v, n.Body)
+		}
+
+	// Specs.
+	case *ImportSpec:
+		if n.Name != nil {
+			Walk(v, n.Name)
+		}
+		if n.Path != nil {
+			Walk(v, n.Path)
+		}
+	case *ValueSpec:
+		walkIdentList(v, n.Names)
+		walkExpr(v, n.Type)
+		walkExprList(v, n.Values)
+	case *TypeSpec:
+		if n.Name != nil {
+			Walk(v, n.Name)
+		}
+		walkExpr(v, n.Type)
+
+	// Expressions (leaves first).
+	case *Ident, *BasicLit:
+		// no children
+
+	case *ParenExpr:
+		walkExpr(v, n.X)
+	case *UnaryExpr:
+		walkExpr(v, n.X)
+	case *BinaryExpr:
+		walkExpr(v, n.X)
+		walkExpr(v, n.Y)
+	case *SelectorExpr:
+		walkExpr(v, n.X)
+		if n.Sel != nil {
+			Walk(v, n.Sel)
+		}
+	case *IndexExpr:
+		walkExpr(v, n.X)
+		walkExpr(v, n.Index)
+	case *SliceExpr:
+		walkExpr(v, n.X)
+		walkExpr(v, n.Low)
+		walkExpr(v, n.High)
+		walkExpr(v, n.Max)
+	case *CallExpr:
+		walkExpr(v, n.Fun)
+		walkExprList(v, n.Args)
+	case *StarExpr:
+		walkExpr(v, n.X)
+	case *KeyValueExpr:
+		walkExpr(v, n.Key)
+		walkExpr(v, n.Value)
+	case *CompositeLit:
+		walkExpr(v, n.Type)
+		walkExprList(v, n.Elts)
+	case *FuncLit:
+		if n.Type != nil {
+			Walk(v, n.Type)
+		}
+		if n.Body != nil {
+			Walk(v, n.Body)
+		}
+
+	// Type expressions.
+	case *ArrayType:
+		walkExpr(v, n.Len)
+		walkExpr(v, n.Elt)
+	case *MapType:
+		walkExpr(v, n.Key)
+		walkExpr(v, n.Value)
+	case *StructType:
+		if n.Fields != nil {
+			Walk(v, n.Fields)
+		}
+	case *InterfaceType:
+		if n.Methods != nil {
+			Walk(v, n.Methods)
+		}
+	case *FuncType:
+		if n.Params != nil {
+			Walk(v, n.Params)
+		}
+		if n.Results != nil {
+			Walk(v, n.Results)
+		}
+	case *ChanType:
+		walkExpr(v, n.Value)
+	case *Ellipsis:
+		walkExpr(v, n.Elt)
+
+	// Statements.
+	case *BlockStmt:
+		walkStmtList(v, n.List)
+	case *ExprStmt:
+		walkExpr(v, n.X)
+	case *AssignStmt:
+		walkExprList(v, n.Lhs)
+		walkExprList(v, n.Rhs)
+	case *IncDecStmt:
+		walkExpr(v, n.X)
+	case *ReturnStmt:
+		walkExprList(v, n.Results)
+	case *IfStmt:
+		if n.Init != nil {
+			Walk(v, n.Init)
+		}
+		walkExpr(v, n.Cond)
+		if n.Body != nil {
+			Walk(v, n.Body)
+		}
+		if n.Else != nil {
+			Walk(v, n.Else)
+		}
+	case *ForStmt:
+		if n.Init != nil {
+			Walk(v, n.Init)
+		}
+		walkExpr(v, n.Cond)
+		if n.Post != nil {
+			Walk(v, n.Post)
+		}
+		if n.Body != nil {
+			Walk(v, n.Body)
+		}
+	case *RangeStmt:
+		walkExpr(v, n.Key)
+		walkExpr(v, n.Value)
+		walkExpr(v, n.X)
+		if n.Body != nil {
+			Walk(v, n.Body)
+		}
+	case *SwitchStmt:
+		if n.Init != nil {
+			Walk(v, n.Init)
+		}
+		walkExpr(v, n.Tag)
+		if n.Body != nil {
+			Walk(v, n.Body)
+		}
+	case *CaseClause:
+		walkExprList(v, n.List)
+		walkStmtList(v, n.Body)
+	case *DeferStmt:
+		if n.Call != nil {
+			Walk(v, n.Call)
+		}
+	case *GoStmt:
+		if n.Call != nil {
+			Walk(v, n.Call)
+		}
+	case *BranchStmt:
+		if n.Label != nil {
+			Walk(v, n.Label)
+		}
+	case *DeclStmt:
+		if n.Decl != nil {
+			Walk(v, n.Decl)
+		}
+	case *EmptyStmt:
+		// no children
+	}
+
+	v.Visit(nil)
+}
+
+// walkExpr walks an optional expression child, skipping a nil interface.
+func walkExpr(v Visitor, x Expr) {
+	if x != nil {
+		Walk(v, x)
+	}
+}
+
+// walkExprList walks a slice of expressions.
+func walkExprList(v Visitor, list []Expr) {
+	for _, x := range list {
+		if x != nil {
+			Walk(v, x)
+		}
+	}
+}
+
+// walkIdentList walks a slice of identifiers.
+func walkIdentList(v Visitor, list []*Ident) {
+	for _, id := range list {
+		if id != nil {
+			Walk(v, id)
+		}
+	}
+}
+
+// walkStmtList walks a slice of statements.
+func walkStmtList(v Visitor, list []Stmt) {
+	for _, s := range list {
+		if s != nil {
+			Walk(v, s)
+		}
+	}
+}
