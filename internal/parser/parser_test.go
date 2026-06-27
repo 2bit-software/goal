@@ -479,3 +479,134 @@ func TestParseFunctionBodyStatements(t *testing.T) {
 		t.Errorf("return has %d results, want 1", len(r.Results))
 	}
 }
+
+// parseExprInBody parses a single expression by wrapping it in a function body
+// assignment (`func f() { _ = <expr> }`) and returns the assigned value, so the
+// expression flows through the real parseExpr path used everywhere.
+func parseExprInBody(t *testing.T, expr string) ast.Expr {
+	t.Helper()
+	src := "package p\nfunc f() { _ = " + expr + " }"
+	file, err := ParseFile(src)
+	if err != nil {
+		t.Fatalf("ParseFile(%q) returned error: %v", expr, err)
+	}
+	fn := file.Decls[0].(*ast.FuncDecl)
+	assign, ok := fn.Body.List[0].(*ast.AssignStmt)
+	if !ok {
+		t.Fatalf("body[0] is %T, want *ast.AssignStmt", fn.Body.List[0])
+	}
+	if len(assign.Rhs) != 1 {
+		t.Fatalf("assignment has %d rhs values, want 1", len(assign.Rhs))
+	}
+	return assign.Rhs[0]
+}
+
+// TestParseExpressionPrecedence pins the US-019 acceptance criteria: postfix `?`
+// parses to UnwrapExpr over its operand, and binary operators nest by Go
+// precedence with left associativity, with unary binding tighter than binary.
+func TestParseExpressionPrecedence(t *testing.T) {
+	// f(x)? -> UnwrapExpr wrapping a CallExpr.
+	t.Run("unwrap call", func(t *testing.T) {
+		x := parseExprInBody(t, "f(x)?")
+		u, ok := x.(*ast.UnwrapExpr)
+		if !ok {
+			t.Fatalf("got %T, want *ast.UnwrapExpr", x)
+		}
+		if _, ok := u.X.(*ast.CallExpr); !ok {
+			t.Fatalf("unwrap operand is %T, want *ast.CallExpr", u.X)
+		}
+	})
+
+	// a.b? -> UnwrapExpr wrapping a SelectorExpr.
+	t.Run("unwrap selector", func(t *testing.T) {
+		x := parseExprInBody(t, "a.b?")
+		u, ok := x.(*ast.UnwrapExpr)
+		if !ok {
+			t.Fatalf("got %T, want *ast.UnwrapExpr", x)
+		}
+		sel, ok := u.X.(*ast.SelectorExpr)
+		if !ok {
+			t.Fatalf("unwrap operand is %T, want *ast.SelectorExpr", u.X)
+		}
+		if sel.Sel.Name != "b" {
+			t.Errorf("selector field = %q, want b", sel.Sel.Name)
+		}
+	})
+
+	// a + b * c == d -> (a + (b * c)) == d.
+	t.Run("mixed precedence", func(t *testing.T) {
+		x := parseExprInBody(t, "a + b * c == d")
+		eq, ok := x.(*ast.BinaryExpr)
+		if !ok || eq.Op != token.EQL {
+			t.Fatalf("top = %T op %v, want *ast.BinaryExpr op ==", x, opOf(x))
+		}
+		if name(eq.Y) != "d" {
+			t.Errorf("rhs of == = %q, want d", name(eq.Y))
+		}
+		add, ok := eq.X.(*ast.BinaryExpr)
+		if !ok || add.Op != token.ADD {
+			t.Fatalf("lhs of == = %T op %v, want *ast.BinaryExpr op +", eq.X, opOf(eq.X))
+		}
+		if name(add.X) != "a" {
+			t.Errorf("lhs of + = %q, want a", name(add.X))
+		}
+		mul, ok := add.Y.(*ast.BinaryExpr)
+		if !ok || mul.Op != token.MUL {
+			t.Fatalf("rhs of + = %T op %v, want *ast.BinaryExpr op *", add.Y, opOf(add.Y))
+		}
+		if name(mul.X) != "b" || name(mul.Y) != "c" {
+			t.Errorf("* operands = %q, %q, want b, c", name(mul.X), name(mul.Y))
+		}
+	})
+
+	// a - b - c -> ((a - b) - c): left associative.
+	t.Run("left associative", func(t *testing.T) {
+		x := parseExprInBody(t, "a - b - c")
+		outer, ok := x.(*ast.BinaryExpr)
+		if !ok || outer.Op != token.SUB {
+			t.Fatalf("top = %T op %v, want *ast.BinaryExpr op -", x, opOf(x))
+		}
+		if name(outer.Y) != "c" {
+			t.Errorf("rhs of outer - = %q, want c", name(outer.Y))
+		}
+		inner, ok := outer.X.(*ast.BinaryExpr)
+		if !ok || inner.Op != token.SUB {
+			t.Fatalf("lhs of outer - = %T, want a nested - expression", outer.X)
+		}
+		if name(inner.X) != "a" || name(inner.Y) != "b" {
+			t.Errorf("inner - operands = %q, %q, want a, b", name(inner.X), name(inner.Y))
+		}
+	})
+
+	// -a * b -> (-a) * b: unary binds tighter than binary.
+	t.Run("unary tighter than binary", func(t *testing.T) {
+		x := parseExprInBody(t, "-a * b")
+		mul, ok := x.(*ast.BinaryExpr)
+		if !ok || mul.Op != token.MUL {
+			t.Fatalf("top = %T op %v, want *ast.BinaryExpr op *", x, opOf(x))
+		}
+		un, ok := mul.X.(*ast.UnaryExpr)
+		if !ok || un.Op != token.SUB {
+			t.Fatalf("lhs of * = %T, want *ast.UnaryExpr op -", mul.X)
+		}
+		if name(un.X) != "a" {
+			t.Errorf("unary operand = %q, want a", name(un.X))
+		}
+	})
+}
+
+// name returns the identifier name of an *ast.Ident expression, or "" otherwise.
+func name(e ast.Expr) string {
+	if id, ok := e.(*ast.Ident); ok {
+		return id.Name
+	}
+	return ""
+}
+
+// opOf renders a binary expression's operator for diagnostics, or "?" otherwise.
+func opOf(e ast.Expr) string {
+	if b, ok := e.(*ast.BinaryExpr); ok {
+		return b.Op.String()
+	}
+	return "?"
+}

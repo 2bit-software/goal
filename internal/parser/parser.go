@@ -7,9 +7,9 @@
 // Function bodies are parsed into a real statement list (US-018): assignment and
 // short-var declarations, if/for/switch (incl. range and three-clause for),
 // return/defer/go/break/continue, nested blocks, and const/var/type declared
-// inside a body. Declaration initializer values and statement expressions still
-// use a minimal operand+postfix expression parser (precedence-climbing, unary,
-// and postfix `?` arrive in a later story); and the goal-specific declarations
+// inside a body. Expressions parse with full Go operator precedence and left
+// associativity (precedence climbing), prefix/unary operators, and goal's
+// postfix `?` unwrap as ast.UnwrapExpr (US-019); the goal-specific declarations
 // (enum/sealed/implements/from/derive) are not handled here. Type expressions,
 // however, are parsed fully for the Go subset because they are part of a
 // declaration's shape.
@@ -847,27 +847,87 @@ func stmtExpr(s ast.Stmt) ast.Expr {
 	return nil
 }
 
-// startsExpr reports whether k can begin an operand for the minimal expression
-// parser.
+// startsExpr reports whether k can begin an expression — an operand or a
+// prefix/unary operator (+ - ! ^ & <- and the pointer-deref *).
 func startsExpr(k token.Kind) bool {
 	switch k {
-	case token.IDENT, token.INT, token.FLOAT, token.IMAG, token.CHAR, token.STRING, token.LPAREN:
+	case token.IDENT, token.INT, token.FLOAT, token.IMAG, token.CHAR, token.STRING, token.LPAREN,
+		token.ADD, token.SUB, token.NOT, token.XOR, token.AND, token.ARROW, token.MUL:
 		return true
 	}
 	return false
 }
 
 // ----------------------------------------------------------------------------
-// Minimal expressions (operand + postfix only)
+// Expressions (precedence climbing + unary + postfix)
 //
-// Declaration initializer values need just enough expression grammar to capture
-// literals, names, calls, indexing, selectors, and composite literals. Full
-// precedence-climbing, unary operators, and postfix `?` are a later story; this
-// parser intentionally stops at the first token it cannot extend.
+// Expressions parse with Go's operator precedence and left associativity via
+// precedence climbing (parseBinary), prefix/unary operators (parseUnary), and a
+// postfix chain (parsePostfix) of selector/call/index/composite-literal suffixes
+// plus goal's postfix `?` unwrap. The postfix chain binds tightest, then unary,
+// then binary by precedence level. `?` therefore wraps the fully-built postfix
+// operand: `f(x)?` unwraps the call result and `a.b?` unwraps the selector.
 
-// parseExpr parses an operand followed by any postfix chain.
+// lowestBinaryPrec is the precedence of the loosest binary operator (||); a
+// minPrec of lowestBinaryPrec admits every binary operator.
+const lowestBinaryPrec = 1
+
+// precedence returns the binary-operator precedence of k (1..5, Go semantics) or
+// 0 when k is not a binary operator. `<-` (ARROW) is unary-only here, so it
+// returns 0.
+func precedence(k token.Kind) int {
+	switch k {
+	case token.LOR:
+		return 1
+	case token.LAND:
+		return 2
+	case token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ:
+		return 3
+	case token.ADD, token.SUB, token.OR, token.XOR:
+		return 4
+	case token.MUL, token.QUO, token.REM, token.SHL, token.SHR, token.AND, token.AND_NOT:
+		return 5
+	}
+	return 0
+}
+
+// parseExpr parses a full expression: a precedence-climbing tower of binary
+// operators over unary operands, each operand carrying its postfix chain.
 func (p *parser) parseExpr() ast.Expr {
-	return p.parsePostfix(p.parseOperand())
+	return p.parseBinary(lowestBinaryPrec)
+}
+
+// parseBinary parses a binary-operator expression whose operators have
+// precedence >= minPrec, left associative. With minPrec one above the current
+// operator's precedence on the recursive call, equal-precedence operators nest
+// to the left.
+func (p *parser) parseBinary(minPrec int) ast.Expr {
+	x := p.parseUnary()
+	for {
+		opPrec := precedence(p.kind())
+		if opPrec < minPrec {
+			return x
+		}
+		op := p.advance()
+		y := p.parseBinary(opPrec + 1)
+		x = &ast.BinaryExpr{X: x, OpPos: op.Pos, Op: op.Kind, Y: y}
+	}
+}
+
+// parseUnary parses a prefix/unary expression. `+ - ! ^ & <-` produce a
+// UnaryExpr over the (recursively unary) operand; `*x` produces a StarExpr
+// (pointer dereference); anything else is an operand plus its postfix chain.
+func (p *parser) parseUnary() ast.Expr {
+	switch p.kind() {
+	case token.ADD, token.SUB, token.NOT, token.XOR, token.AND, token.ARROW:
+		op := p.advance()
+		return &ast.UnaryExpr{OpPos: op.Pos, Op: op.Kind, X: p.parseUnary()}
+	case token.MUL:
+		star := p.advance()
+		return &ast.StarExpr{Star: star.Pos, X: p.parseUnary()}
+	default:
+		return p.parsePostfix(p.parseOperand())
+	}
 }
 
 // parseOperand parses a primary operand: an identifier, a basic literal, or a
@@ -908,6 +968,9 @@ func (p *parser) parsePostfix(x ast.Expr) ast.Expr {
 			x = p.parseCallSuffix(x)
 		case token.LBRACK:
 			x = p.parseIndexSuffix(x)
+		case token.QUESTION:
+			q := p.advance()
+			x = &ast.UnwrapExpr{X: x, Question: q.Pos}
 		case token.LBRACE:
 			// In a control-clause header (exprLev < 0), a "{" begins the body
 			// block, not a composite literal.
