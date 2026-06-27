@@ -15,6 +15,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"goal/internal/ast"
 )
 
 // Kind discriminates the dynamic kind of a Value.
@@ -90,11 +92,15 @@ type MapValue struct {
 	Entries map[string]Value
 }
 
-// FuncValue is the runtime representation of a function value. In this story it
-// is a minimal carrier (name only); parameter binding and calling are wired in
-// the interpreter-entry and call-evaluation stories.
+// FuncValue is the runtime representation of a function value. It carries the
+// declaration it closes over (Decl) and the lexical scope in which it was
+// defined (Env) so a call can bind parameters in a fresh child of that scope and
+// run the body. Name is retained for rendering. A name-only carrier (Decl == nil)
+// is still valid for tests/diagnostics that do not call the function.
 type FuncValue struct {
 	Name string
+	Decl *ast.FuncDecl // the function declaration; nil for a name-only carrier
+	Env  *Env          // the lexical scope the function closes over; nil for a name-only carrier
 }
 
 // Variant is the UNIVERSAL tagged union. It backs every sum type uniformly:
@@ -148,9 +154,22 @@ func MapVal(entries map[string]Value) Value {
 	return Value{Kind: KindMap, Map: &MapValue{Entries: entries}}
 }
 
-// FuncVal constructs a function value carrying the given name.
+// FuncVal constructs a name-only function value (no declaration). It is the
+// minimal carrier used where the function is not called (rendering, identity
+// equality); use FuncDeclVal to construct a callable function value.
 func FuncVal(name string) Value {
 	return Value{Kind: KindFunc, Func: &FuncValue{Name: name}}
+}
+
+// FuncDeclVal constructs a callable function value over the given declaration and
+// its defining scope. A call binds parameters in a fresh child of env and runs
+// decl.Body.
+func FuncDeclVal(decl *ast.FuncDecl, env *Env) Value {
+	name := ""
+	if decl != nil && decl.Name != nil {
+		name = decl.Name.Name
+	}
+	return Value{Kind: KindFunc, Func: &FuncValue{Name: name, Decl: decl, Env: env}}
 }
 
 // VariantVal constructs a tagged-union value. It is the single constructor for

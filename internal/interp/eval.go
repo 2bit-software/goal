@@ -44,9 +44,50 @@ func (ip *Interp) evalExpr(expr ast.Expr, scope *Env) (Value, error) {
 		return ip.evalBinary(e, scope)
 	case *ast.UnaryExpr:
 		return ip.evalUnary(e, scope)
+	case *ast.CallExpr:
+		return ip.evalCall(e, scope)
 	default:
 		return Value{}, fmt.Errorf("interp: unsupported expression %T", expr)
 	}
+}
+
+// evalCall evaluates a call in single-value position: it requires the callee to
+// produce exactly one result. A call producing zero or several values in a
+// single-value context is a descriptive refusal (a multi-value call is only
+// legal as the sole right-hand side of a multi-assignment or a return).
+func (ip *Interp) evalCall(call *ast.CallExpr, scope *Env) (Value, error) {
+	vals, err := ip.evalCallMulti(call, scope)
+	if err != nil {
+		return Value{}, err
+	}
+	if len(vals) != 1 {
+		return Value{}, fmt.Errorf("interp: multi-value call used in single-value context (%d values)", len(vals))
+	}
+	return vals[0], nil
+}
+
+// evalCallMulti evaluates a call and returns all of the callee's result values.
+// It resolves the callee to a function value, evaluates each argument in order,
+// and dispatches to callFunc (which binds parameters and runs the body). A
+// non-function callee is a descriptive refusal; an undefined callee surfaces the
+// located *NotFoundError from the scope lookup.
+func (ip *Interp) evalCallMulti(call *ast.CallExpr, scope *Env) ([]Value, error) {
+	callee, err := ip.evalExpr(call.Fun, scope)
+	if err != nil {
+		return nil, err
+	}
+	if callee.Kind != KindFunc || callee.Func == nil {
+		return nil, fmt.Errorf("interp: cannot call %s", callee.Kind)
+	}
+	args := make([]Value, len(call.Args))
+	for i, a := range call.Args {
+		v, err := ip.evalExpr(a, scope)
+		if err != nil {
+			return nil, err
+		}
+		args[i] = v
+	}
+	return ip.callFunc(callee.Func, args)
 }
 
 // evalBasicLit decodes a basic literal token into a runtime Value. Integer

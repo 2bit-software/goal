@@ -354,6 +354,53 @@
   edits don't shift later offsets. Still single-document (locals/params/qualified
   imports/cross-file out of scope, consistent with US-048/049).
 
+## [2026-06-27T16:20:00Z] - US-007
+- Added function declarations as values + calls + recursion to the goscript
+  interpreter. New now registers every top-level plain func (Recv==nil, named,
+  bodied) into root as a FuncDeclVal closing over root, so a function is visible
+  to its own body (recursion) and to forward refs. A call (*ast.CallExpr in
+  evalExpr) resolves the callee via the scope chain, evaluates args, and dispatches
+  to callFunc: flatten params (grouped `a, b int` -> two names), arity-check, bind
+  in a FRESH child of the func's defining scope, run the body, recover the return.
+  Return is a non-local control signal (returnSignal{vals []Value}, an error
+  sentinel) threaded UP through execBlock/execStmt and recovered at the call
+  boundary with errors.As — never escapes as a real error. Added the minimum
+  if/return needed for recursive base cases (full control flow is US-008).
+- Multi-return: callFunc/evalCallMulti return []Value (no tuple Kind added).
+  evalExpr's CallExpr requires exactly 1 result (single-value context);
+  execAssign gained a multi-result branch (len(Lhs)>1 && len(Rhs)==1 && sole RHS
+  is a CallExpr -> spread positionally), and `return f()` spreads a multi-call.
+- Files changed:
+  - internal/interp/value.go (FuncValue grows Decl *ast.FuncDecl + Env *Env;
+    new FuncDeclVal ctor; ast import; old name-only FuncVal kept)
+  - internal/interp/interp.go (returnSignal; registerFuncs in New; Run via
+    callFunc; callFunc + flattenParams; execStmt ReturnStmt/IfStmt cases;
+    execReturn/execIf; execAssign multi-result branch; bindTargets extracted)
+  - internal/interp/eval.go (evalExpr CallExpr case; evalCall + evalCallMulti)
+  - internal/interp/call_test.go (new: RecursiveFactorial, RecursiveFibonacci,
+    MultiReturnAssignment, MultiValueCallInSingleValueContext, ArgCountMismatch,
+    CallNonFunction, UndefinedCall, FunctionDeclIsAValue — stdlib testing,
+    no testify)
+  - prd.json (US-007 passes:true), progress.txt
+  - history/20260627-feature-us-007-eval-functions-and-calls/ (initiative)
+- Learnings for future iterations:
+  - The return/control-flow seam is set: returnSignal is an error sentinel that
+    execBlock/execStmt propagate and callFunc recovers. US-008 (for/switch/
+    break/continue) adds break/continue the SAME way (their own sentinel signal
+    types caught by the loop/switch boundary), and execIf already opens child
+    scopes the way US-008's blocks should.
+  - Functions are registered in New (load-time), so a `package interp` test can
+    `New(...)` then `ip.evalExpr(call("fn", args...), ip.root)` to observe a
+    return value — the direct-evalExpr seam from US-005/US-006 extends to calls.
+    Build call/assign AST nodes by hand (ast.CallExpr/AssignStmt) in tests; no
+    new parser entry point is needed.
+  - Multi-value calls are modelled as []Value end-to-end (callFunc/evalCallMulti),
+    NOT a tuple Value — avoids ambiguity with a genuine slice. A call is single-
+    value everywhere except the sole RHS of a multi-assign / sole `return` operand.
+  - value.go now imports goal/internal/ast; interp deps stay clean for the US-022
+    gate (go list -deps: no go/types, internal/backend, internal/typecheck).
+---
+
 ## [2026-06-27T15:54:00Z] - US-006
 - Added variable declaration + assignment to the goscript interpreter. execStmt
   (interp.go) now dispatches *ast.DeclStmt (var/const) via execDecl and

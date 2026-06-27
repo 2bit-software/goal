@@ -89,7 +89,7 @@
         "A unit test runs recursive factorial and fibonacci goal functions and asserts their returned values"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
