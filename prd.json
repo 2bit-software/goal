@@ -65,7 +65,7 @@
         "A test runs all doctest cases against pipeline.Transpile and all pass"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

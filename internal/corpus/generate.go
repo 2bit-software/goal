@@ -24,6 +24,12 @@ import (
 //     Checker expectations live inline as // want markers in the source, so the
 //     emitted [Case] carries an empty Expected and [NormalizeNone].
 //
+// A transpile pair whose golden is a doctest sidecar (an emitted _test.go: it
+// imports "testing" and contains a func Test...) additionally yields a
+// [KindDoctest] case sharing the same Input and Expected. The transpile case is
+// retained as-is, so the doctest case is purely additive — the doctest runner
+// compares the emitted Output.Test sidecar against the same golden.
+//
 // Paths stored in the returned manifest are repo-root-relative and
 // slash-separated for portability. Cases are sorted by Input so repeated
 // generation over an unchanged corpus produces byte-identical output.
@@ -47,14 +53,27 @@ func Generate(root string) (Manifest, error) {
 				continue
 			}
 			rel := relSlash(root, in)
+			expRel := relSlash(root, expected)
 			cases = append(cases, Case{
 				ID:        idFromRel(rel),
 				Kind:      KindTranspile,
 				Input:     rel,
-				Expected:  relSlash(root, expected),
+				Expected:  expRel,
 				Mode:      ModeFile,
 				Normalize: NormalizeGofmt,
 			})
+			// When the golden is a doctest sidecar, additionally index a
+			// doctest case so the doctest runner can compare Output.Test.
+			if isDoctestSidecar(expected) {
+				cases = append(cases, Case{
+					ID:        idFromRel(rel) + "-doctest",
+					Kind:      KindDoctest,
+					Input:     rel,
+					Expected:  expRel,
+					Mode:      ModeFile,
+					Normalize: NormalizeGofmt,
+				})
+			}
 		}
 	}
 
@@ -90,6 +109,21 @@ func Generate(root string) (Manifest, error) {
 func fileExists(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && info.Mode().IsRegular()
+}
+
+// isDoctestSidecar reports whether the golden at expectedPath is an emitted
+// doctest sidecar (a generated _test.go) rather than a main-output golden. A
+// sidecar imports the "testing" package and declares at least one test
+// function, which deterministically distinguishes the doctest examples (whose
+// golden is the emitted _test.go) from ordinary transpile goldens — including
+// sources that merely contain /// doctests but whose golden is the main output.
+func isDoctestSidecar(expectedPath string) bool {
+	data, err := os.ReadFile(expectedPath)
+	if err != nil {
+		return false
+	}
+	s := string(data)
+	return strings.Contains(s, `"testing"`) && strings.Contains(s, "func Test")
 }
 
 // relSlash returns p relative to root with forward slashes. If p is not under

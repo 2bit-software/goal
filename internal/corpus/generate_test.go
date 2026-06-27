@@ -15,13 +15,15 @@ func TestGenerateCounts(t *testing.T) {
 		t.Fatalf("Generate: %v", err)
 	}
 
-	var transpile, check, other int
+	var transpile, check, doctest, other int
 	for _, c := range m.Cases {
 		switch c.Kind {
 		case KindTranspile:
 			transpile++
 		case KindCheck:
 			check++
+		case KindDoctest:
+			doctest++
 		default:
 			other++
 		}
@@ -33,8 +35,13 @@ func TestGenerateCounts(t *testing.T) {
 	if check != 50 {
 		t.Errorf("check cases = %d, want 50", check)
 	}
+	// Doctest cases are additive: each transpile pair whose golden is an emitted
+	// _test.go sidecar (the four feature-11 examples) also yields a doctest case.
+	if doctest != 4 {
+		t.Errorf("doctest cases = %d, want 4", doctest)
+	}
 	if other != 0 {
-		t.Errorf("unexpected non-transpile/non-check cases = %d, want 0", other)
+		t.Errorf("unexpected non-transpile/non-check/non-doctest cases = %d, want 0", other)
 	}
 }
 

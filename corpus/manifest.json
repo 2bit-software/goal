@@ -273,8 +273,24 @@
       "normalize": "gofmt"
     },
     {
+      "id": "features-11-doctests-examples-add-doctest",
+      "kind": "doctest",
+      "input": "features/11-doctests/examples/add.goal",
+      "expected": "features/11-doctests/examples/add.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
       "id": "features-11-doctests-examples-enum",
       "kind": "transpile",
+      "input": "features/11-doctests/examples/enum.goal",
+      "expected": "features/11-doctests/examples/enum.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-11-doctests-examples-enum-doctest",
+      "kind": "doctest",
       "input": "features/11-doctests/examples/enum.goal",
       "expected": "features/11-doctests/examples/enum.go.expected",
       "mode": "file",
@@ -289,8 +305,24 @@
       "normalize": "gofmt"
     },
     {
+      "id": "features-11-doctests-examples-mixed-doctest",
+      "kind": "doctest",
+      "input": "features/11-doctests/examples/mixed.goal",
+      "expected": "features/11-doctests/examples/mixed.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
       "id": "features-11-doctests-examples-multi",
       "kind": "transpile",
+      "input": "features/11-doctests/examples/multi.goal",
+      "expected": "features/11-doctests/examples/multi.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-11-doctests-examples-multi-doctest",
+      "kind": "doctest",
       "input": "features/11-doctests/examples/multi.goal",
       "expected": "features/11-doctests/examples/multi.go.expected",
       "mode": "file",

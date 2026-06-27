@@ -125,3 +125,36 @@
   - US-006 will rewire internal/check/check_test.go to delegate to this runner so
     its hardcoded testdata/check path walk disappears.
 ---
+
+## [2026-06-27T05:30:00Z] - US-005
+- Implemented the doctest sidecar runner (Phase 0.5). Doctest cases are now
+  first-class in the manifest: Generate emits an additive KindDoctest case for
+  every transpile pair whose golden is an emitted _test.go doctest sidecar
+  (detected by isDoctestSidecar: golden imports "testing" AND contains
+  "func Test"). This selects exactly the 4 feature-11 examples (add/enum/mixed/
+  multi) and excludes testdata/doctest_funcs (whose golden is the main Go
+  output). The transpile classification is untouched, so US-002's 51/50 counts
+  hold; the manifest is now 105 cases (51 transpile + 50 check + 4 doctest).
+- RunDoctest(root, Case, Transpiler) transpiles the input and compares the
+  emitted Output.Test sidecar to the golden after gofmt-normalizing both sides;
+  errors loudly on an empty sidecar or a mismatch. TestDoctestRunner drives all
+  4 doctest cases through pipeline.Transpile (t.Fatalf on zero cases).
+- Files changed:
+  - internal/corpus/generate.go (isDoctestSidecar + additive doctest case)
+  - internal/corpus/generate_test.go (doctest==4 assertion; 51/50 kept)
+  - internal/corpus/doctest_runner.go (RunDoctest)
+  - internal/corpus/doctest_runner_test.go (whole-corpus doctest test)
+  - corpus/manifest.json (regenerated, +4 doctest cases)
+  - history/20260627-feature-us-005-doctest-sidecar-runner/ (initiative)
+- Learnings for future iterations:
+  - Doctest cases SHARE Input/Expected with their transpile twin and use ID
+    suffix "-doctest". The doctest case asserts Output.Test specifically, whereas
+    RunTranspile's sidecar fallback accepts either output — so the doctest tier
+    is the strict check.
+  - A doctest sidecar golden is content-identified (imports "testing" + func
+    Test), NOT path-identified — keeps generation free of hardcoded feature
+    numbers, consistent with the US-006 anti-hardcoding goal.
+  - Regenerate the manifest after any generate.go change:
+    `go run ./cmd/corpus-gen -root .` (or `go generate ./internal/corpus`).
+  - US-008 (run doctests behaviorally) consumes these same KindDoctest cases.
+---
