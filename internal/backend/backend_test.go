@@ -221,6 +221,84 @@ func TestASTEngineImplementsMarkers(t *testing.T) {
 	}
 }
 
+// resultOptionCases lists the 03-result and 04-option transpile cases the US-034
+// lowering must carry through the new backend: open-E Result[T, error] -> native
+// (T, error) named returns and Option[T] -> *T, including statement-position
+// match over each.
+var resultOptionCases = []string{
+	"features/03-result/examples/result_int.goal",
+	"features/03-result/examples/result_match.goal",
+	"features/03-result/examples/result_parse.goal",
+	"features/03-result/examples/result_passthrough.goal",
+	"features/04-option/examples/option_int.goal",
+	"features/04-option/examples/option_find.goal",
+	"features/04-option/examples/option_exists.goal",
+	"features/04-option/examples/option_passthrough.goal",
+}
+
+// TestASTEngineResultOptionBehavioralTier is US-034 AC2: every 03-result and
+// 04-option transpile case passes the behavioral tier (temp-module go build + go
+// vet) through the new AST backend, proving the open-E Result (T, error) and
+// Option *T lowering — including statement-position match — produces build +
+// vet-clean Go.
+func TestASTEngineResultOptionBehavioralTier(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns the go toolchain; skipped under -short")
+	}
+	if len(resultOptionCases) == 0 {
+		t.Fatal("no result/option cases to run")
+	}
+	for _, input := range resultOptionCases {
+		t.Run(input, func(t *testing.T) {
+			c := corpus.Case{
+				ID:    input,
+				Kind:  corpus.KindTranspile,
+				Mode:  corpus.ModeFile,
+				Input: input,
+			}
+			if err := corpus.RunCompile(repoRoot, c, corpus.TranspilerFunc(backend.Transpile)); err != nil {
+				t.Fatalf("behavioral tier failed: %v", err)
+			}
+		})
+	}
+}
+
+// TestASTEngineResultOptionEncoding pins the AC1 lowering shapes: an open-E
+// Result function emits a native (T, error) return and the Ok/Err pair, and an
+// Option function emits *T with nil / address-of returns.
+func TestASTEngineResultOptionEncoding(t *testing.T) {
+	cases := []struct {
+		file  string
+		wants []string
+	}{
+		{"../../features/03-result/examples/result_int.goal", []string{
+			"(__goal_ok int, __goal_err error)", "return n, nil", "return __goal_ok,",
+		}},
+		{"../../features/03-result/examples/result_match.goal", []string{
+			"__goal_v, __goal_err := parse(input)", "if __goal_err != nil {",
+		}},
+		{"../../features/04-option/examples/option_int.goal", []string{
+			") *int {", "return nil", "return &__goal_some",
+		}},
+		{"../../features/04-option/examples/option_find.goal", []string{
+			"if __goal_o := find(id); __goal_o != nil {", "u := *__goal_o",
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.file, func(t *testing.T) {
+			out, err := backend.Transpile(mustRead(t, c.file))
+			if err != nil {
+				t.Fatalf("Transpile: %v", err)
+			}
+			for _, want := range c.wants {
+				if !strings.Contains(out.Go, want) {
+					t.Errorf("missing %q in:\n%s", want, out.Go)
+				}
+			}
+		})
+	}
+}
+
 func mustRead(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)

@@ -19,6 +19,106 @@ import (
 // The encoders emit syntactically valid, token-correct Go text (the emitter's
 // format-once discipline) — readability is the Formatter's job.
 
+// Gensym names for the open-E Result / Option lowering (§8.3, §8.4). They mirror
+// internal/pass/pass.go so the AST backend emits the same shapes the splice
+// engine does (US-035 retires the literal __goal_ prefix for `?` propagation;
+// US-042 regenerates the exact goldens). The behavioral tier judges by build +
+// vet, so the exact spelling is not load-bearing — only that the names a lowered
+// signature declares match the names its body references.
+const (
+	okName   = "__goal_ok"   // named success return / Ok arm-binding target
+	errName  = "__goal_err"  // named error return / Err arm-binding target
+	valName  = "__goal_v"    // Ok value captured at a statement-position match
+	someName = "__goal_some" // boxed Some value when the payload is not addressable
+	optBase  = "__goal_o"    // Option pointer temporary at a statement-position match
+)
+
+// roKind classifies a function result type as one of goal's lowered core types.
+type roKind int
+
+const (
+	roNone       roKind = iota // not a Result/Option result
+	roResultOpen               // open-E Result[T, error] -> native (T, error)
+	roOption                   // Option[T] -> *T
+)
+
+// resultOptionKind classifies a function's single unnamed result type as open-E
+// Result, Option, or neither, and returns the success type expression (the T in
+// Result[T, error] / Option[T]) for the two recognized cases. A closed-E Result
+// (Result[T, E] where E is not error) is roNone here — its sum encoding is a
+// later story (US-037). A named or multi-value result is roNone.
+func resultOptionKind(t *ast.FuncType) (roKind, ast.Expr) {
+	if t == nil || t.Results == nil || len(t.Results.List) != 1 {
+		return roNone, nil
+	}
+	f := t.Results.List[0]
+	if len(f.Names) != 0 {
+		return roNone, nil
+	}
+	switch ty := f.Type.(type) {
+	case *ast.IndexListExpr:
+		if id, ok := ty.X.(*ast.Ident); ok && id.Name == "Result" &&
+			len(ty.Indices) == 2 && isErrorIdent(ty.Indices[1]) {
+			return roResultOpen, ty.Indices[0]
+		}
+	case *ast.IndexExpr:
+		if id, ok := ty.X.(*ast.Ident); ok && id.Name == "Option" {
+			return roOption, ty.Index
+		}
+	}
+	return roNone, nil
+}
+
+// isErrorIdent reports whether x is the bare type name `error`.
+func isErrorIdent(x ast.Expr) bool {
+	id, ok := x.(*ast.Ident)
+	return ok && id.Name == "error"
+}
+
+// matchQualifier returns the enum/type qualifier of a match's first
+// variant-pattern arm (`Result`, `Option`, or an enum name), or "" when the first
+// arm is not a qualified variant pattern. It picks the lowering strategy for a
+// statement-position match the same way the splice engine's scan.MatchQualifier
+// does, but reads it off the parsed arm instead of the token stream.
+func matchQualifier(m *ast.MatchExpr) string {
+	for _, arm := range m.Arms {
+		vp, ok := arm.Pattern.(*ast.VariantPattern)
+		if !ok {
+			continue
+		}
+		if id, ok := vp.Enum.(*ast.Ident); ok {
+			return id.Name
+		}
+	}
+	return ""
+}
+
+// usesIdent reports whether the subtree rooted at n references an identifier
+// named name. It is used to decide whether a match arm captures its payload
+// binding (so an unused Ok value is discarded with `_` rather than declared and
+// left unused, which would fail to compile).
+func usesIdent(n ast.Node, name string) bool {
+	found := false
+	ast.Walk(identFinder(func(node ast.Node) bool {
+		if id, ok := node.(*ast.Ident); ok && id.Name == name {
+			found = true
+		}
+		return !found // stop descending once found
+	}), n)
+	return found
+}
+
+// identFinder adapts a func to the ast.Visitor interface; it keeps descending
+// while the func returns true.
+type identFinder func(ast.Node) bool
+
+func (f identFinder) Visit(n ast.Node) ast.Visitor {
+	if n == nil || !f(n) {
+		return nil
+	}
+	return f
+}
+
 // enumOf returns the resolved enum named name, or nil when info or the enum is
 // absent (nil-safe so the plain-Go path, which carries no enums, is harmless).
 func enumOf(info *sema.Info, name string) *sema.Enum {

@@ -29,6 +29,14 @@ type emitter struct {
 	// pointerRecv is the set of type names with a pointer-receiver method, used to
 	// address an `implements` assertion as `(*T)(nil)` rather than `T{}`.
 	pointerRecv map[string]bool
+	// fnKind is the enclosing function's Result/Option kind, so a `return
+	// Result.Ok/Err` / `return Option.Some/None` constructor lowers to the native
+	// (T, error) pair / pointer form. roNone outside a Result/Option function.
+	fnKind roKind
+	// renames maps an identifier to its replacement within the currently-emitting
+	// match arm body (e.g. an Ok binding `cfg` -> `__goal_v`). Empty outside a
+	// match arm; consulted by the Ident emission.
+	renames map[string]string
 }
 
 // emitFile renders a whole *ast.File to Go source text, lowering goal-specific
@@ -237,8 +245,16 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 	}
 	e.funcSig(d.Type)
 	if d.Body != nil {
+		// The body's Result/Option constructor returns lower against the enclosing
+		// function's kind; save/restore so a nested func literal cannot leak its
+		// kind outward (goal has no func-literal bodies today, but this keeps the
+		// invariant honest).
+		kind, _ := resultOptionKind(d.Type)
+		prev := e.fnKind
+		e.fnKind = kind
 		e.p(" ")
 		e.block(d.Body)
+		e.fnKind = prev
 	}
 }
 
@@ -251,6 +267,17 @@ func (e *emitter) funcSig(t *ast.FuncType) {
 	e.fieldList(t.Params, "(", ")")
 	if t.Results != nil && len(t.Results.List) > 0 {
 		e.p(" ")
+		// An open-E Result[T, error] return lowers to native named Go returns
+		// (__goal_ok T, __goal_err error): the named success return makes the
+		// Err-path zero value available without synthesizing a type-specific zero
+		// literal (§8.3). An Option[T] return needs no special case here — it falls
+		// through to the IndexExpr lowering, which renders *T.
+		if kind, success := resultOptionKind(t); kind == roResultOpen {
+			e.p("(" + okName + " ")
+			e.expr(success)
+			e.p(", " + errName + " error)")
+			return
+		}
 		// Multiple results, or a single named result, need parentheses; a single
 		// unnamed result does not. gofmt will drop redundant parens, so we always
 		// parenthesize when there is more than one field or any field is named.
@@ -347,7 +374,13 @@ func (e *emitter) stmt(s ast.Stmt) {
 	case *ast.BlockStmt:
 		e.block(s)
 	case *ast.ExprStmt:
-		e.expr(s.X)
+		// A statement-position `match` over a Result/Option lowers to an if/else
+		// split (§8.3/§8.4); any other expression statement emits verbatim.
+		if m, ok := s.X.(*ast.MatchExpr); ok {
+			e.matchStmt(m)
+		} else {
+			e.expr(s.X)
+		}
 	case *ast.AssignStmt:
 		e.exprList(s.Lhs)
 		e.p(" ")
@@ -358,11 +391,7 @@ func (e *emitter) stmt(s ast.Stmt) {
 		e.expr(s.X)
 		e.p(s.Tok.String())
 	case *ast.ReturnStmt:
-		e.p("return")
-		if len(s.Results) > 0 {
-			e.p(" ")
-			e.exprList(s.Results)
-		}
+		e.returnStmt(s)
 	case *ast.IfStmt:
 		e.ifStmt(s)
 	case *ast.ForStmt:
@@ -495,7 +524,13 @@ func (e *emitter) rangeStmt(s *ast.RangeStmt) {
 func (e *emitter) expr(x ast.Expr) {
 	switch x := x.(type) {
 	case *ast.Ident:
-		e.p(x.Name)
+		// A match-arm binding rename (e.g. the Ok payload `cfg` -> `__goal_v`)
+		// applies here; outside a renaming arm, renames is empty.
+		if r, ok := e.renames[x.Name]; ok {
+			e.p(r)
+		} else {
+			e.p(x.Name)
+		}
 	case *ast.BasicLit:
 		e.p(x.Value)
 	case *ast.ParenExpr:
@@ -519,10 +554,7 @@ func (e *emitter) expr(x ast.Expr) {
 		e.p("*")
 		e.expr(x.X)
 	case *ast.IndexExpr:
-		e.expr(x.X)
-		e.p("[")
-		e.expr(x.Index)
-		e.p("]")
+		e.indexExpr(x)
 	case *ast.IndexListExpr:
 		e.expr(x.X)
 		e.p("[")
@@ -632,6 +664,233 @@ func (e *emitter) variantLit(x *ast.VariantLit) {
 		e.expr(la.Value)
 	}
 	e.p("})")
+}
+
+// indexExpr emits a single-index expression, lowering an `Option[T]` type to its
+// pointer encoding `*T` (§8.4). The guard requires the base to be the `Option`
+// type name, so ordinary indexing (`xs[0]`) and other generic instantiations are
+// emitted unchanged.
+func (e *emitter) indexExpr(x *ast.IndexExpr) {
+	if id, ok := x.X.(*ast.Ident); ok && id.Name == "Option" {
+		e.p("*")
+		e.expr(x.Index)
+		return
+	}
+	e.expr(x.X)
+	e.p("[")
+	e.expr(x.Index)
+	e.p("]")
+}
+
+// returnStmt emits a return, lowering a Result/Option constructor in the
+// enclosing function (§8.3/§8.4) to the native (T, error) pair / pointer form.
+func (e *emitter) returnStmt(s *ast.ReturnStmt) {
+	if len(s.Results) == 1 {
+		switch e.fnKind {
+		case roResultOpen:
+			if e.emitResultReturn(s.Results[0]) {
+				return
+			}
+		case roOption:
+			if e.emitOptionReturn(s.Results[0]) {
+				return
+			}
+		}
+	}
+	e.p("return")
+	if len(s.Results) > 0 {
+		e.p(" ")
+		e.exprList(s.Results)
+	}
+}
+
+// emitResultReturn lowers `return Result.Ok(X)` -> `return X, nil` and
+// `return Result.Err(X)` -> `return __goal_ok, X` (the named zero success
+// return). It reports whether it handled the expression.
+func (e *emitter) emitResultReturn(x ast.Expr) bool {
+	call, ok := x.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel == nil {
+		return false
+	}
+	if base, ok := sel.X.(*ast.Ident); !ok || base.Name != "Result" {
+		return false
+	}
+	switch sel.Sel.Name {
+	case "Ok":
+		e.p("return ")
+		e.exprList(call.Args)
+		e.p(", nil")
+		return true
+	case "Err":
+		e.p("return " + okName + ", ")
+		e.exprList(call.Args)
+		return true
+	}
+	return false
+}
+
+// emitOptionReturn lowers `return Option.None` -> `return nil` and
+// `return Option.Some(x)` -> `return &x` (addressable identifier) or a boxed
+// `__goal_some := x; return &__goal_some` (§8.4). It reports whether it handled
+// the expression.
+func (e *emitter) emitOptionReturn(x ast.Expr) bool {
+	switch v := x.(type) {
+	case *ast.SelectorExpr:
+		if base, ok := v.X.(*ast.Ident); ok && base.Name == "Option" && v.Sel != nil && v.Sel.Name == "None" {
+			e.p("return nil")
+			return true
+		}
+	case *ast.CallExpr:
+		sel, ok := v.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel == nil || sel.Sel.Name != "Some" {
+			return false
+		}
+		if base, ok := sel.X.(*ast.Ident); !ok || base.Name != "Option" {
+			return false
+		}
+		if len(v.Args) != 1 {
+			return false
+		}
+		if _, ok := v.Args[0].(*ast.Ident); ok {
+			e.p("return &")
+			e.expr(v.Args[0])
+			return true
+		}
+		e.p(someName + " := ")
+		e.expr(v.Args[0])
+		e.p("\nreturn &" + someName)
+		return true
+	}
+	return false
+}
+
+// matchStmt lowers a statement-position match over a Result or Option to an
+// if/else split (§8.3/§8.4). Enum and value-position match are later stories
+// (US-036) and yield a descriptive error here.
+func (e *emitter) matchStmt(m *ast.MatchExpr) {
+	switch q := matchQualifier(m); q {
+	case "Result":
+		e.resultMatch(m)
+	case "Option":
+		e.optionMatch(m)
+	default:
+		e.fail("unsupported statement-position match on %q (only Result/Option match is lowered; enum/value-position match is a later story)", q)
+	}
+}
+
+// resultMatch lowers `match scrut { Result.Ok(v) => …; Result.Err(e) => … }` to
+// `lhs, __goal_err := scrut; if __goal_err != nil { errBody } else { okBody }`.
+// The Ok binding is renamed to __goal_v (discarded with `_` when unused) and the
+// Err binding to __goal_err, so an arm body that constructs another Result
+// composes with the rename through emitResultReturn.
+func (e *emitter) resultMatch(m *ast.MatchExpr) {
+	if e.calleeMode(m.Subject) == sema.ModeResultClosed {
+		e.fail("closed-E Result match is a later story (US-037)")
+		return
+	}
+	okArm, errArm := armByVariant(m, "Ok"), armByVariant(m, "Err")
+	if okArm == nil || errArm == nil {
+		e.fail("Result match must have both Result.Ok and Result.Err arms")
+		return
+	}
+	okBinding := bindingName(okArm.Pattern)
+	okLHS := "_"
+	if okBinding != "" && usesIdent(okArm.Body, okBinding) {
+		okLHS = valName
+	}
+	e.p(okLHS + ", " + errName + " := ")
+	e.expr(m.Subject)
+	e.p("\nif " + errName + " != nil {\n")
+	e.armBodyRenamed(errArm.Body, bindingName(errArm.Pattern), errName)
+	e.p("\n} else {\n")
+	e.armBodyRenamed(okArm.Body, okBinding, valName)
+	e.p("\n}")
+}
+
+// optionMatch lowers `match opt { Option.Some(b) => …; Option.None => … }` to
+// `if __goal_o := opt; __goal_o != nil { b := *__goal_o; someBody } else
+// { noneBody }`. The Some binding keeps its name (declared only when used).
+func (e *emitter) optionMatch(m *ast.MatchExpr) {
+	someArm, noneArm := armByVariant(m, "Some"), armByVariant(m, "None")
+	if someArm == nil || noneArm == nil {
+		e.fail("Option match must have both Option.Some and Option.None arms")
+		return
+	}
+	e.p("if " + optBase + " := ")
+	e.expr(m.Subject)
+	e.p("; " + optBase + " != nil {\n")
+	if b := bindingName(someArm.Pattern); b != "" && usesIdent(someArm.Body, b) {
+		e.p(b + " := *" + optBase + "\n")
+	}
+	e.armBody(someArm.Body)
+	e.p("\n} else {\n")
+	e.armBody(noneArm.Body)
+	e.p("\n}")
+}
+
+// armByVariant returns the arm whose variant-pattern tag is variant, or nil.
+func armByVariant(m *ast.MatchExpr, variant string) *ast.MatchArm {
+	for _, arm := range m.Arms {
+		if vp, ok := arm.Pattern.(*ast.VariantPattern); ok && vp.Variant != nil && vp.Variant.Name == variant {
+			return arm
+		}
+	}
+	return nil
+}
+
+// bindingName returns a variant pattern's payload binding name, or "".
+func bindingName(p ast.Expr) string {
+	if vp, ok := p.(*ast.VariantPattern); ok && vp.Binding != nil {
+		return vp.Binding.Name
+	}
+	return ""
+}
+
+// calleeMode returns the Result/Option mode of the function a match scrutinee
+// directly calls, so a closed-E Result match is not mis-lowered by the open-E
+// path. It is ModeNone for a non-call scrutinee or an unresolved callee.
+func (e *emitter) calleeMode(x ast.Expr) sema.Mode {
+	call, ok := x.(*ast.CallExpr)
+	if !ok {
+		return sema.ModeNone
+	}
+	id, ok := call.Fun.(*ast.Ident)
+	if !ok || e.info == nil || e.info.FuncSignatures == nil {
+		return sema.ModeNone
+	}
+	return e.info.FuncSignatures[id.Name].Mode
+}
+
+// armBodyRenamed emits a match arm body with binding renamed to target for the
+// duration of the body (the rename is scoped to this body alone).
+func (e *emitter) armBodyRenamed(body ast.Node, binding, target string) {
+	if binding != "" {
+		if e.renames == nil {
+			e.renames = map[string]string{}
+		}
+		e.renames[binding] = target
+		defer delete(e.renames, binding)
+	}
+	e.armBody(body)
+}
+
+// armBody emits a match arm body: a statement/block as a statement, or an
+// expression as an expression statement.
+func (e *emitter) armBody(n ast.Node) {
+	switch b := n.(type) {
+	case nil:
+		// empty arm body
+	case ast.Stmt:
+		e.stmt(b)
+	case ast.Expr:
+		e.expr(b)
+	default:
+		e.fail("unsupported match arm body %T", n)
+	}
 }
 
 func (e *emitter) sliceExpr(x *ast.SliceExpr) {

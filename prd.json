@@ -413,8 +413,8 @@
         "The 03-result and 04-option transpile cases pass the behavioral tier through the new backend"
       ],
       "priority": 34,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "AST backend lowers open-E Result[T,error]->native named (__goal_ok T, __goal_err error) returns and Option[T]->*T in internal/backend (emit.go dispatch + lower.go helpers; no separate lower pkg). return Result.Ok(X)->`X, nil`, Result.Err(X)->`__goal_ok, X`; return Option.None->nil, Option.Some(id)->&id else box `__goal_some := x; return &__goal_some`. Statement-position match intercepted in ExprStmt: Result->`lhs, __goal_err := scrut; if __goal_err != nil {errBody} else {okBody}` (Ok binding renamed to __goal_v via emitter.renames, _ when unused; Err binding renamed to __goal_err); Option->`if __goal_o := scrut; __goal_o != nil { [bind := *__goal_o] someBody } else { noneBody }`. fnKind on the emitter scopes constructor lowering; closed-E Result match guarded via sema FuncSignatures mode (US-037). Output is byte-identical to the checked-in 03/04 goldens. AC2: TestASTEngineResultOptionBehavioralTier runs all 8 03-result/04-option cases through backend.Transpile + corpus.RunCompile (build+vet)."
     },
     {
       "id": "US-035",

@@ -96,6 +96,16 @@
   GUARDED by info.Enums membership + VSet so io.Writer / receiver selectors are
   untouched), and a destructuring is *ast.VariantPattern (never emitted as a value).
   Recursive e.expr over VariantLit args lowers nested constructions for free.
+- Function-scoped backend lowering rides on emitter.fnKind (set+restored around
+  the body in funcDecl from resultOptionKind off the result type): a `return
+  Ctor(...)` is only lowered when fnKind matches, the AST analogue of the splice
+  passes' sigAt/funcSpans scoping. A statement-position match parses to ExprStmt{X:
+  *MatchExpr} and is intercepted in stmt()'s ExprStmt case (NOT expr()); value-
+  position match stays in expr() and still errors until US-036. Match-arm binding
+  renames use emitter.renames (consulted in the Ident case, set per-arm via
+  armBodyRenamed+defer delete); a generic ast.Node arm Body is dispatched by
+  armBody() (ast.Stmt->stmt, ast.Expr->expr-statement). US-035/036/037 extend this
+  same seam (encoder in lower.go + dispatch case in emit.go).
 - A struct `implements` clause (StructType.Implements) lowers to a SEPARATE
   top-level decl emitted AFTER the type decl (implementsMarkers, called from decl()
   after genDecl) — never inside the struct. structType drops the clause and emits
@@ -103,6 +113,60 @@
   `var _ I = T{}` (or `(*T)(nil)` when T has any pointer-receiver method). A
   qualified iface (io.Writer) is never sealed (sealed are in-file) so it routes to
   the var-assertion branch; render the iface name via typeExprName (Ident/Selector).
+
+## [2026-06-27T12:30:00Z] - US-034
+- The AST backend lowers a function's enclosing Result/Option mode via an
+  `emitter.fnKind` (roNone/roResultOpen/roOption from resultOptionKind off the
+  *ast.FuncType result), set+restored around the body in funcDecl. A `return
+  Result.Ok/Err(...)` / `return Option.Some/None` constructor is lowered ONLY when
+  fnKind matches — so a bare `return` or a non-Result return is untouched. This is
+  the AST analogue of the splice passes' funcSpans/sigAt scoping (internal/pass/
+  result.go, option.go), but read off the parse tree.
+- Statement-position match is intercepted in the stmt() *ast.ExprStmt case (a
+  statement-position match parses to ExprStmt{X: *MatchExpr}); matchQualifier(m)
+  (first VariantPattern's Enum Ident name) picks Result vs Option lowering. Enum
+  and value-position match still error (US-036). Value-position match lives in
+  assign/return, reaches expr() not stmt(), and still hits expr's default fail.
+- Match-arm binding rename is done with an `emitter.renames map[string]string`
+  consulted in the Ident emission, set for the duration of one arm body
+  (armBodyRenamed, defer delete). Result renames Ok binding->__goal_v (or `_` if
+  usesIdent says unused) and Err binding->__goal_err; Option does NOT rename (it
+  declares `bind := *__goal_o` keeping the original name). usesIdent walks the arm
+  body via an identFinder ast.Visitor adapter.
+- A match-arm Body is a generic ast.Node: armBody() type-switches ast.Stmt
+  (block/return) -> e.stmt, ast.Expr -> e.expr (expression statement). Assert
+  ast.Stmt BEFORE ast.Expr (disjoint interfaces, but order documents intent).
+- Output is BYTE-IDENTICAL to the checked-in 03-result/04-option goldens (reusing
+  the __goal_ names from internal/pass/pass.go) — a good omen for US-042's golden
+  regen, though US-035 will retire the __goal_ prefix for `?` propagation.
+- Closed-E Result match is refused (not mis-lowered) by the open-E path via
+  emitter.calleeMode (sema.Info.FuncSignatures[callee].Mode == ModeResultClosed
+  -> e.fail); the open-E path is correct for all of feature 03. Closed-E is US-037.
+- Files changed:
+  - internal/backend/lower.go (name consts; roKind/resultOptionKind; isErrorIdent;
+    matchQualifier; usesIdent + identFinder visitor)
+  - internal/backend/emit.go (emitter.fnKind/renames; funcDecl fnKind scope;
+    funcSig open-E named returns; indexExpr Option->*T; Ident rename; returnStmt +
+    emitResultReturn/emitOptionReturn; matchStmt/resultMatch/optionMatch + armBody/
+    armBodyRenamed/armByVariant/bindingName/calleeMode)
+  - internal/backend/backend_test.go (TestASTEngineResultOptionBehavioralTier over
+    all 8 03/04 cases; TestASTEngineResultOptionEncoding pins the shapes)
+  - prd.json (US-034 passes:true), progress.txt
+  - history/20260627-feature-us-034-lower-emit-result-and-option/ (initiative)
+- Learnings for future iterations:
+  - US-035 (? with real gensym), US-036 (value-position match), US-037 (closed-E
+    Result) extend the same seam: an encoder/helper in lower.go + a dispatch case
+    in emit.go. The fnKind/renames/calleeMode machinery is reusable — US-037's
+    closed-E match can branch off matchStmt where resultMatch currently guards.
+  - resultOptionKind keys on the result TYPE EXPRESSION (IndexListExpr Result[T,
+    error] with isErrorIdent on the 2nd arg; IndexExpr Option[T]); it does NOT read
+    sema, so it is correct even where sema is unpopulated. sema is consulted only
+    for the closed-E match guard (calleeMode).
+  - Option[T] -> *T is lowered in the expr() IndexExpr case (indexExpr), so it
+    fires wherever the type appears, not just return position; the Result open-E
+    NAMED-return form is funcSig-only (named returns only make sense in return
+    position).
+---
 
 ## [2026-06-27T01:56:33Z] - US-001
 - Implemented internal/corpus: a runner-independent Case model and JSON manifest
