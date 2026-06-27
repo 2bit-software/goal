@@ -14,6 +14,7 @@ package interp
 
 import (
 	"errors"
+	"fmt"
 
 	"goal/internal/ast"
 	"goal/internal/sema"
@@ -73,16 +74,33 @@ func (ip *Interp) findMain() *ast.FuncDecl {
 	return nil
 }
 
-// execBlock executes a block's statements in the given scope. In this story the
-// body of the trivial entry point is empty, so this is a no-op; US-005 onward
-// dispatch each statement form here.
+// execBlock executes a block's statements in the given scope. This is the
+// statement-dispatch seam later stories extend. US-005 wires expression
+// statements (an expression evaluated for its effect/value); declarations,
+// assignment, control flow, and the goal-specific forms arrive in US-006+.
 func (ip *Interp) execBlock(block *ast.BlockStmt, scope *Env) error {
 	if block == nil {
 		return nil
 	}
-	_ = scope
-	for range block.List {
-		// Statement evaluation is added by later stories (US-005+).
+	for _, stmt := range block.List {
+		if err := ip.execStmt(stmt, scope); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// execStmt executes a single statement. Unsupported statement forms are a
+// descriptive, named refusal rather than a silent no-op; later stories add the
+// remaining forms.
+func (ip *Interp) execStmt(stmt ast.Stmt, scope *Env) error {
+	switch s := stmt.(type) {
+	case *ast.ExprStmt:
+		_, err := ip.evalExpr(s.X, scope)
+		return err
+	case *ast.EmptyStmt:
+		return nil
+	default:
+		return fmt.Errorf("interp: unsupported statement %T", stmt)
+	}
 }
