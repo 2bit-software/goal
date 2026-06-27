@@ -96,3 +96,32 @@
   - US-005 (doctest sidecar runner) overlaps the feature-11 cases this runner
     already covers via the sidecar fallback; it will add the dedicated tier.
 ---
+
+## [2026-06-27T04:10:00Z] - US-004
+- Implemented the interface-based check runner (Phase 0.4). Added a Checker
+  interface{ Check(src string)([]check.Diagnostic,error) } plus a CheckerFunc
+  adapter so the free check.Analyze satisfies it without changing the check
+  package. RunCheck(root, Case, Checker) reads each KindCheck case's .goal input,
+  runs the checker, and matches diagnostics against inline `// want "substr"`
+  markers using the same semantics as internal/check/check_test.go: each marker
+  is satisfied by a diagnostic on the SAME line whose Message contains substr;
+  any unclaimed Error-severity diagnostic fails the case; Warnings may go
+  unclaimed.
+- TestCheckRunner drives all 50 check cases from corpus/manifest.json through
+  CheckerFunc(check.Analyze); all pass. It t.Fatalf's if the manifest yields zero
+  check cases.
+- Files changed:
+  - internal/corpus/check_runner.go (Checker + CheckerFunc + RunCheck + marker parse)
+  - internal/corpus/check_runner_test.go (whole-corpus check test)
+  - history/20260627-feature-us-004-interface-based-check-runner/ (initiative)
+- Learnings for future iterations:
+  - No import cycle: internal/check imports only internal/analyze, so corpus may
+    import check (same direction as corpus->pipeline in US-003).
+  - The // want marker regexp `//\s*want\s+"([^"]*)"` and OffsetToPosition line
+    mapping are reused verbatim from the existing check harness — keep them in
+    sync if the marker syntax ever changes.
+  - check.Error is the Error severity const; check.Diagnostic carries Pos (byte
+    offset), Severity, Code, Message. Use check.OffsetToPosition(src, d.Pos).Line.
+  - US-006 will rewire internal/check/check_test.go to delegate to this runner so
+    its hardcoded testdata/check path walk disappears.
+---
