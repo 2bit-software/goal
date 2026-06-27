@@ -354,6 +354,36 @@
   edits don't shift later offsets. Still single-document (locals/params/qualified
   imports/cross-file out of scope, consistent with US-048/049).
 
+## [2026-06-27T20:30:00Z] - US-002
+- Added internal/interp, the goscript interpreter's uniform runtime VALUE model
+  (value.go). A single Value{Kind, ...payload} covers int, float, string, bool,
+  nil, struct, slice, map, and function, plus the UNIVERSAL tagged union
+  Variant{TypeID, Tag, Fields} used uniformly for enum / Result / Option — NOT the
+  Go backend's (T,error)/*T optimizations (REWRITE-ARCHITECTURE.md §4). Provides
+  constructors (IntVal/FloatVal/StrVal/BoolVal/NilVal/StructVal/SliceVal/MapVal/
+  FuncVal/VariantVal), Field(name)(Value,bool) read-back, Equal, and String().
+- Files changed:
+  - internal/interp/value.go (new: Kind enum+String; Value; StructValue/MapValue/
+    FuncValue wrappers; Variant; constructors; Field/Equal/String + helpers)
+  - internal/interp/value_test.go (new: TestConstructEachKind,
+    TestVariantUniformForSumTypes, TestFieldReadBack, TestEqual,
+    TestEqualFuncByIdentity, TestString — stdlib testing, no testify)
+  - prd.json (US-002 passes:true), progress.txt
+  - history/20260627-feature-us-002-define-interp-value-model/ (initiative)
+- Learnings for future iterations:
+  - The ONE Variant{TypeID, Tag, Fields} is the seam US-012 (enum construction),
+    US-015 (Result), and US-016 (Option) build on: Result is TypeID="Result"
+    Tag="Ok"/"Err"; Option is TypeID="Option" Tag="Some"/"None"; enums use the
+    enum name + case name. Do not special-case them — they share VariantVal.
+  - Equality is structural for primitives/composites/variants but IDENTITY for
+    function values (FuncValue is a name-only carrier until call eval, US-004+);
+    don't expect two FuncVal("f") to be Equal.
+  - String()/renderFields sort map+field keys for deterministic rendering — keep
+    that discipline so later golden/string assertions stay stable.
+  - v1 Map is string-keyed (MapValue.Entries map[string]Value); non-string map
+    keys are deferred to a later eval story (US-009/US-010).
+---
+
 ## [2026-06-27T15:14:00Z] - US-001
 - First story of the goscript-runtime PRD. Added internal/cap, the capability/
   authority seam: a Capability iota enum (Stdout, Stdin, FileRead, FileWrite, Net,

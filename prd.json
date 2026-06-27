@@ -29,7 +29,7 @@
         "A unit test constructs a Variant and each primitive/composite Value, reads a Variant field back by name, and asserts Value equality and String() rendering"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "REWRITE-ARCHITECTURE.md §4: the interpreter IGNORES the Go-codegen optimizations (Result->(T,error), Option->*T) and uses the universal tagged-union. Do not reuse backend/go's lowering."
     },
     {
