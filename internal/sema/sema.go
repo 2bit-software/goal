@@ -99,6 +99,13 @@ type Info struct {
 	// Methods maps a concrete type name to the methods declared on it (value- and
 	// pointer-receiver alike, keyed by the star-stripped receiver type name).
 	Methods map[string][]Method
+	// Interfaces maps an in-file interface type name to its directly declared
+	// methods (name + normalized signature). Embedded interfaces are recorded
+	// separately in EmbeddedIfaces and folded in by the implements check.
+	Interfaces map[string][]Method
+	// EmbeddedIfaces maps an in-file interface type name to the names of the
+	// interfaces it embeds (a qualified name like "io.Reader" survives intact).
+	EmbeddedIfaces map[string][]string
 }
 
 // New returns an empty *Info. Back-ends that do not yet need semantic facts (the

@@ -1,0 +1,121 @@
+package sema
+
+// mustuse.go is the AST reimplementation of internal/check's feature-03 (Result)
+// must-use guarantee: the value of a `Result`-returning call must be used — consumed
+// by `?`, a `match`, a named bind, a `return`, or as an argument — never dropped on
+// the floor. A bare `Result`-returning call statement drops the value (the success is
+// unreachable and the error branch is silently discarded) and is rejected.
+//
+// Where the lexical checker (internal/check/mustuse.go) reconstructs "is this call a
+// statement, a match scrutinee, or an interface method signature?" from a flat token
+// stream (with interface-brace-span heuristics to skip method declarations), this
+// check reads the answer off the parse tree:
+//
+//   - A dropped Result is an *ast.ExprStmt whose X is an *ast.CallExpr to a
+//     Result-returning function. A `f(...)?` is NOT a drop: it parses as
+//     ExprStmt{X: *ast.UnwrapExpr}, so X is the UnwrapExpr, not the CallExpr.
+//   - A `match f(...) { … }`, a `return f(...)`, a `x := f(...)` bind, and an argument
+//     `g(f(...))` all place the call somewhere other than an ExprStmt's top-level X, so
+//     they are never mistaken for a drop.
+//   - An interface method *signature* is a *FuncType in an InterfaceType, never an
+//     ExprStmt — so the legacy interface-span skip is unnecessary here.
+//
+// Diagnostic severities, codes, and messages mirror internal/check/mustuse.go so the
+// corpus's inline // want markers are satisfied unchanged.
+
+import (
+	"fmt"
+
+	"goal/internal/ast"
+	"goal/internal/token"
+)
+
+// CheckMustUse enforces feature-03 (must-use): a `Result`-returning call dropped as a
+// bare statement is an Error (`dropped-result`); a `_ :=`/`_ =` whole-Result discard is
+// deferred with a located Warning (`unresolved-result-discard`), since the sanctioned
+// explicit-discard surface for a Result is not yet defined. Every other position
+// (consumed by `?`/`match`/bind/`return`/argument) carries no obligation.
+func CheckMustUse(file *ast.File, info *Info) []Diagnostic {
+	var diags []Diagnostic
+	ast.Walk(visitorFunc(func(n ast.Node) bool {
+		switch s := n.(type) {
+		case *ast.ExprStmt:
+			if name, ok := resultCallName(s.X, info); ok {
+				diags = append(diags, droppedResult(s.X.Pos(), name))
+			}
+		case *ast.AssignStmt:
+			if d, ok := underscoreDiscard(s, info); ok {
+				diags = append(diags, d)
+			}
+		}
+		return true
+	}), file)
+	return diags
+}
+
+// resultCallName reports the callee name when e is a direct call `f(...)` to an in-file
+// `Result`-returning function (open-E or closed-E), and whether it was one. A call whose
+// Fun is not a bare identifier (a method/selector call, a conversion) carries no in-file
+// must-use obligation here, matching the lexical checker's IDENT-callee scan.
+func resultCallName(e ast.Expr, info *Info) (string, bool) {
+	call, ok := e.(*ast.CallExpr)
+	if !ok {
+		return "", false
+	}
+	id, ok := call.Fun.(*ast.Ident)
+	if !ok {
+		return "", false
+	}
+	if isResultFunc(info, id.Name) {
+		return id.Name, true
+	}
+	return "", false
+}
+
+// underscoreDiscard reports the deferral Warning when assignment s is a whole-Result
+// discard `_ := f(...)` / `_ = f(...)` whose single right-hand side is a direct call to
+// a Result-returning function. An LHS with more than the lone `_` (e.g. `x, _ := …`) is
+// an ordinary inspected-assign and is left alone.
+func underscoreDiscard(s *ast.AssignStmt, info *Info) (Diagnostic, bool) {
+	if len(s.Lhs) != 1 || len(s.Rhs) != 1 || !isBlank(s.Lhs[0]) {
+		return Diagnostic{}, false
+	}
+	name, ok := resultCallName(s.Rhs[0], info)
+	if !ok {
+		return Diagnostic{}, false
+	}
+	return Diagnostic{
+		Pos:      s.Rhs[0].Pos(),
+		Severity: Warning,
+		Feature:  "03-result",
+		Code:     "unresolved-result-discard",
+		Message: fmt.Sprintf("cannot verify the `Result` from `%s(…)` is handled: it is discarded with `_ :=`, but the sanctioned explicit-discard surface for a `Result` is not yet defined — must-use deferred",
+			name),
+	}, true
+}
+
+// droppedResult builds the Error for a `Result`-returning call dropped as a statement.
+// The message mirrors internal/check/mustuse.go's classifyStatementCall stmtDropped case.
+func droppedResult(pos token.Pos, callee string) Diagnostic {
+	return Diagnostic{
+		Pos:      pos,
+		Severity: Error,
+		Feature:  "03-result",
+		Code:     "dropped-result",
+		Message: fmt.Sprintf("the `Result` returned by `%s(…)` is dropped: a `Result` must be used — consume it with `match %s(…) { Result.Ok(v) => … Result.Err(e) => … }`, propagate it with `%s(…)?`, or bind it with `x := %s(…)`",
+			callee, callee, callee, callee),
+	}
+}
+
+// isResultFunc reports whether name is an in-file function returning a Result (open-E
+// ModeResult or closed-E ModeResultClosed) — the callees the must-use obligation attaches to.
+func isResultFunc(info *Info, name string) bool {
+	sig, ok := info.FuncSignatures[name]
+	return ok && (sig.Mode == ModeResult || sig.Mode == ModeResultClosed)
+}
+
+// isBlank reports whether e is the blank identifier `_`.
+func isBlank(e ast.Expr) bool {
+	id, ok := e.(*ast.Ident)
+	return ok && id.Name == "_"
+}

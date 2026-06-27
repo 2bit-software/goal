@@ -28,6 +28,8 @@ func Resolve(f *ast.File) *Info {
 		Structs:        map[string][]Field{},
 		FromRegistry:   map[[2]string]ConvEntry{},
 		Methods:        map[string][]Method{},
+		Interfaces:     map[string][]Method{},
+		EmbeddedIfaces: map[string][]string{},
 	}
 	if f == nil {
 		return info
@@ -83,19 +85,66 @@ func (info *Info) resolveEnum(d *ast.EnumDecl) {
 }
 
 // resolveTypeDecl records every `type X struct {…}` in a (possibly grouped) type
-// declaration as ordered struct fields. Sealed interfaces are their own decl node
-// (handled in Resolve); ordinary interfaces and aliases are not modeled here.
+// declaration as ordered struct fields, and every `type X interface {…}` as its
+// declared method set plus embedded-interface names. Sealed interfaces are their
+// own decl node (handled in Resolve); aliases are not modeled here.
 func (info *Info) resolveTypeDecl(d *ast.GenDecl) {
 	for _, s := range d.Specs {
 		ts, ok := s.(*ast.TypeSpec)
 		if !ok || ts.Name == nil {
 			continue
 		}
-		st, ok := ts.Type.(*ast.StructType)
-		if !ok || st.Fields == nil {
+		switch t := ts.Type.(type) {
+		case *ast.StructType:
+			if t.Fields != nil {
+				info.Structs[ts.Name.Name] = structFields(t.Fields)
+			}
+		case *ast.InterfaceType:
+			info.resolveInterface(ts.Name.Name, t)
+		}
+	}
+}
+
+// resolveInterface records an in-file interface's directly declared methods (into
+// Interfaces) and its embedded interface names (into EmbeddedIfaces). A method spec
+// is a Field carrying a name and a *FuncType; an embedded interface is a Field with
+// no names whose type renders to a (possibly qualified) interface name. The method
+// Sig is normalized with the same helpers as a concrete method (resolveMethod), so
+// the implements check compares interface and concrete signatures apples-to-apples.
+func (info *Info) resolveInterface(name string, it *ast.InterfaceType) {
+	// Register the interface even when empty, so a declared-but-method-less
+	// interface resolves (resolved=true) instead of looking out-of-file.
+	if _, seen := info.Interfaces[name]; !seen {
+		info.Interfaces[name] = nil
+	}
+	if it.Methods == nil {
+		return
+	}
+	for _, f := range it.Methods.List {
+		if f == nil {
 			continue
 		}
-		info.Structs[ts.Name.Name] = structFields(st.Fields)
+		if len(f.Names) == 0 {
+			// Embedded interface: its type is the embedded interface name.
+			if emb := typeString(f.Type); emb != "" {
+				info.EmbeddedIfaces[name] = append(info.EmbeddedIfaces[name], emb)
+			}
+			continue
+		}
+		ft, ok := f.Type.(*ast.FuncType)
+		if !ok {
+			continue
+		}
+		params := paramTypeListFL(ft.Params)
+		results := paramTypeListFL(ft.Results)
+		for _, n := range f.Names {
+			info.Interfaces[name] = append(info.Interfaces[name], Method{
+				Name:        n.Name,
+				Sig:         joinTypes(params) + "|" + joinTypes(results),
+				Arity:       resultArity(ft.Results),
+				EndsInError: resultEndsInError(ft.Results),
+			})
+		}
 	}
 }
 

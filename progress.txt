@@ -1237,3 +1237,53 @@
     implements/question) adds its check to sema.Check and a sibling runner test
     the same way.
 ---
+
+## [2026-06-27T00:00:00Z] - US-031
+- Reimplemented the remaining lexical static checks over the AST in internal/sema,
+  wired into sema.Check (so the corpus SemaCheck adapter carries them automatically):
+  must-use (feature 03), implements (feature 07), and the `?`-propagation checks —
+  CheckQuestion (open-E feature 05 arity/refusal) and CheckClosed (closed-E feature
+  06 From-totality + Result.Err closedness).
+- Correct by construction off the parse tree, where the token scanner had to
+  reconstruct shape:
+  - A dropped Result is `*ast.ExprStmt{X: *ast.CallExpr{Fun: *ast.Ident}}` to a
+    ModeResult/ModeResultClosed func. A consumed `f()?` is `ExprStmt{X: *UnwrapExpr}`
+    (X is the UnwrapExpr, not the CallExpr) — so the drop walk never misreads a
+    propagation, and match/return/bind/argument positions are never an ExprStmt's
+    top-level CallExpr. No interface-brace-span skip needed (an interface method is a
+    *FuncType, never an ExprStmt).
+  - A match-arm `Result.Err(b)` is a `*ast.VariantPattern`; a constructed
+    `Result.Err(E.V)` is `*ast.CallExpr{Fun: *SelectorExpr}` — distinct nodes, so the
+    closedness walk never misreads a binding as a construction (legacy false positive
+    structurally impossible).
+- Files changed:
+  - internal/sema/sema.go (Info += Interfaces, EmbeddedIfaces)
+  - internal/sema/resolve.go (init the two maps; resolveInterface records in-file
+    interface method sets + embeddings; resolveTypeDecl now switches struct/interface)
+  - internal/sema/mustuse.go + _test.go (CheckMustUse)
+  - internal/sema/implements.go + _test.go (CheckImplements + requiredMethods)
+  - internal/sema/question.go + _test.go (CheckQuestion + CheckClosed)
+  - internal/sema/check.go (wire the four checks into Check)
+  - internal/corpus/sema_question_test.go (TestSemaQuestionImplementsRunner over
+    03-result/06-error-e/07-implements — 21 cases, all pass)
+  - history/20260627-feature-us-031-mustuse-implements-question-checks-on-ast/
+- Learnings for future iterations:
+  - sema had NO interface model — only structs. resolveInterface adds Interfaces
+    (own methods) + EmbeddedIfaces (embedded names). Build interface Method.Sig with
+    the SAME paramTypeListFL/joinTypes normalization resolveMethod uses, or the
+    implements signature compare won't match. Leave interface Method.Raw EMPTY so
+    sigForMsg falls back to sigText and the missing-method suggestion renders
+    `Name() results` (matching the legacy // want markers).
+  - sema.Check now runs ALL checks for EVERY SemaCheck caller, so the 02-match and
+    08-no-zero-value runners exercise the new checks too. Before adding a check,
+    confirm it cannot false-Error on those fixtures (it can't: no 02/08 fixture has a
+    dropped Result statement, a struct `implements`, or a `?` in a Result function).
+  - `?` sites are read only at well-formed statement positions (UnwrapExpr as an
+    AssignStmt RHS or a bare ExprStmt X) via collectQuestionSites — this matches 100%
+    of the corpus and avoids a `question-not-statement`-style Error on grammar the
+    parser never produces.
+  - The closed-E Err passthrough (a bare-ident Err arg like `Result.Err(e)`) is
+    simplified to "non-`E.Variant` arg => defer Warning unresolved-err-value" rather
+    than porting the lexical checker's param/var/match-binding passthrough analysis;
+    it produces no false Error and satisfies the fixture.
+---

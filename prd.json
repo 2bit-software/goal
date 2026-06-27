@@ -377,8 +377,8 @@
         "Every must-use, implements, and question case in testdata/check passes through the sema checker via the corpus runner"
       ],
       "priority": 31,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Ported must-use (03), implements (07), and the ?-checks (05 open-E CheckQuestion + 06 closed-E CheckClosed) onto the AST in internal/sema, wired into sema.Check. Correct by construction: a dropped Result is ExprStmt{X:CallExpr}, a consumed `f()?` is ExprStmt{X:UnwrapExpr} (X is the UnwrapExpr, not the call), so the drop walk never misreads a propagation; a match-arm Result.Err(b) is a VariantPattern, a constructed Result.Err(E.V) is CallExpr{Fun:SelectorExpr}, so the closedness walk never misreads a binding (legacy false positives structurally impossible). Extended Info with Interfaces/EmbeddedIfaces (resolveInterface) so implements folds embedded interfaces; interface method Sig uses the same paramTypeListFL/joinTypes normalization as concrete methods, Raw left empty so the missing-method suggestion renders `Name() results`. ?-sites are read only at well-formed statement positions (AssignStmt RHS / ExprStmt X). Messages mirror internal/check/{mustuse,implements,question,closed}.go verbatim for // want parity. corpus.TestSemaQuestionImplementsRunner drives all 03-result/06-error-e/07-implements cases (21) through SemaCheck via RunCheck; all pass. sema.Check now runs the new checks for the 02/08 runners too (verified no false Error)."
     },
     {
       "id": "US-032",

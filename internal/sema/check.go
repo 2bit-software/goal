@@ -52,12 +52,17 @@ type Diagnostic struct {
 
 // Check runs every sema check currently implemented against the resolved file and
 // returns the accumulated diagnostics. US-029 wires exhaustiveness (CheckExhaustive);
-// US-030 wires field-completeness (CheckFields); US-031 adds the remaining guarantees
-// here.
+// US-030 wires field-completeness (CheckFields); US-031 wires the remaining lexical
+// guarantees: must-use (03), implements (07), and the `?`-propagation checks
+// (CheckQuestion for open-E feature 05, CheckClosed for closed-E feature 06).
 func Check(file *ast.File, info *Info) []Diagnostic {
 	var diags []Diagnostic
 	diags = append(diags, CheckExhaustive(file, info)...)
 	diags = append(diags, CheckFields(file, info)...)
+	diags = append(diags, CheckMustUse(file, info)...)
+	diags = append(diags, CheckImplements(file, info)...)
+	diags = append(diags, CheckQuestion(file, info)...)
+	diags = append(diags, CheckClosed(file, info)...)
 	return diags
 }
 
