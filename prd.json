@@ -389,8 +389,8 @@
         "A goal file using only plain-Go constructs transpiles through the new backend and passes the behavioral tier"
       ],
       "priority": 32,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "internal/backend/emit.go now covers the full ordinary-Go subset the parser produces: added *ast.SwitchStmt/*ast.CaseClause emission (switchStmt/caseClause: optional init + tag, case e1,e2:/default: clauses) — the US-026 seed emitter omitted them. Also fixed a latent US-026 bug: fieldList joined struct fields / interface methods with COMMAS (invalid Go gofmt can't repair) — replaced the StructType/InterfaceType expr cases with newline-separating structType/interfaceType emitters; interface methods now render `Name(params) results` not `Name func(...)`. AC2 proven by corpus.RunCompile (temp-module go build+vet) over new testdata/plain_full.goal (switch, struct+composite, interface, map+range, slice, defer, multi-return, const/var). Func-literal IIFEs and trailing variadic call spread are NOT in goal's parsed subset (parser rejects them) — out of scope. Format-once discipline unchanged (GoFormatter). Goal-specific nodes still return descriptive unsupported errors (US-033+)."
     },
     {
       "id": "US-033",

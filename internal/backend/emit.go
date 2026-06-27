@@ -7,13 +7,14 @@ import (
 	"goal/internal/ast"
 )
 
-// emitter renders the plain-Go subset of the goal AST to Go source text. It is the
-// seed of backend/go: US-026 covers only the ordinary-Go nodes a no-goal-specific
-// fixture exercises (package/import/func/var/const/type plus the basic
-// statements, expressions, and type forms). Any node it does not handle — every
-// goal-specific node (enum/match/`?`/construct/spread/assert, from/derive
-// modifiers) and any Go form not yet wired — yields a descriptive error, since
-// those are lowered by later stories (US-032+).
+// emitter renders the plain-Go subset of the goal AST to Go source text. It is
+// backend/go: US-026 seeded it with the ordinary-Go nodes a no-goal-specific
+// fixture exercises, and US-032 completed the ordinary-Go statement set (notably
+// expression switch / case clauses) so the emitter covers the whole Go subset
+// the parser produces (package/import/func/var/const/type plus every statement,
+// expression, and type form). Any node it does not handle — every goal-specific
+// node (enum/match/`?`/construct/spread/assert, from/derive modifiers) — yields a
+// descriptive error, since those are lowered by later stories (US-033+).
 //
 // The emitter does not format: it emits syntactically valid, token-correct Go
 // (balanced braces, spaces between tokens), and the Formatter normalizes layout
@@ -159,10 +160,10 @@ func (e *emitter) funcSig(t *ast.FuncType) {
 	}
 }
 
-// fieldList emits a delimited field list (params, results, struct fields). Fields
-// are comma-separated for parameter/result lists; struct/interface braces pass
-// open/close "{"/"}" and rely on the same comma joining, which gofmt rewrites to
-// newlines.
+// fieldList emits a comma-separated, parenthesized field list — the form used by
+// parameter, result, and receiver lists. Struct fields and interface methods are
+// NOT comma-separated (commas there are a Go syntax error gofmt cannot repair);
+// they go through structType / interfaceType, which newline-separate instead.
 func (e *emitter) fieldList(fl *ast.FieldList, open, close string) {
 	e.p(open)
 	if fl != nil {
@@ -174,6 +175,48 @@ func (e *emitter) fieldList(fl *ast.FieldList, open, close string) {
 		}
 	}
 	e.p(close)
+}
+
+// structType emits a struct type. Fields are newline-separated (a comma between
+// struct fields is a Go syntax error); gofmt then aligns them. A goal
+// `implements` clause is goal-specific and lowered by a later story (US-033).
+func (e *emitter) structType(x *ast.StructType) {
+	if x.Implements != nil {
+		e.fail("unsupported struct implements clause (goal implements is a later story)")
+		return
+	}
+	e.p("struct {\n")
+	if x.Fields != nil {
+		for _, f := range x.Fields.List {
+			e.field(f)
+			e.p("\n")
+		}
+	}
+	e.p("}")
+}
+
+// interfaceType emits an interface type. Each element is on its own line: a named
+// method renders as `Name(params) results` (no `func` keyword), an embedded
+// interface as its type name.
+func (e *emitter) interfaceType(x *ast.InterfaceType) {
+	e.p("interface {\n")
+	if x.Methods != nil {
+		for _, m := range x.Methods.List {
+			if len(m.Names) > 0 {
+				e.identList(m.Names)
+				if ft, ok := m.Type.(*ast.FuncType); ok {
+					e.funcSig(ft)
+				} else if m.Type != nil {
+					e.p(" ")
+					e.expr(m.Type)
+				}
+			} else if m.Type != nil {
+				e.expr(m.Type)
+			}
+			e.p("\n")
+		}
+	}
+	e.p("}")
 }
 
 func (e *emitter) field(f *ast.Field) {
@@ -226,6 +269,8 @@ func (e *emitter) stmt(s ast.Stmt) {
 		e.forStmt(s)
 	case *ast.RangeStmt:
 		e.rangeStmt(s)
+	case *ast.SwitchStmt:
+		e.switchStmt(s)
 	case *ast.DeclStmt:
 		e.decl(s.Decl)
 	case *ast.DeferStmt:
@@ -282,6 +327,51 @@ func (e *emitter) forStmt(s *ast.ForStmt) {
 		e.p(" ")
 	}
 	e.block(s.Body)
+}
+
+// switchStmt emits an expression switch: an optional init statement, an optional
+// tag expression, and a brace block of case/default clauses. Like the if/for
+// headers, the tag is just an expression and the clauses carry their own
+// statement lists; gofmt normalizes the layout afterward.
+func (e *emitter) switchStmt(s *ast.SwitchStmt) {
+	e.p("switch ")
+	if s.Init != nil {
+		e.stmt(s.Init)
+		e.p("; ")
+	}
+	if s.Tag != nil {
+		e.expr(s.Tag)
+		e.p(" ")
+	}
+	e.p("{\n")
+	if s.Body != nil {
+		for _, c := range s.Body.List {
+			cc, ok := c.(*ast.CaseClause)
+			if !ok {
+				e.fail("unsupported switch body element %T (expected case clause)", c)
+				return
+			}
+			e.caseClause(cc)
+		}
+	}
+	e.p("}")
+}
+
+// caseClause emits one clause of a switch: "case e1, e2:" (a non-empty
+// expression list) or "default:" (an empty list), followed by the clause's
+// statement list.
+func (e *emitter) caseClause(c *ast.CaseClause) {
+	if len(c.List) > 0 {
+		e.p("case ")
+		e.exprList(c.List)
+		e.p(":\n")
+	} else {
+		e.p("default:\n")
+	}
+	for _, s := range c.Body {
+		e.stmt(s)
+		e.p("\n")
+	}
 }
 
 func (e *emitter) rangeStmt(s *ast.RangeStmt) {
@@ -375,15 +465,9 @@ func (e *emitter) expr(x ast.Expr) {
 		e.p("]")
 		e.expr(x.Value)
 	case *ast.StructType:
-		if x.Implements != nil {
-			e.fail("unsupported struct implements clause (goal implements is a later story)")
-			return
-		}
-		e.p("struct")
-		e.fieldList(x.Fields, "{", "}")
+		e.structType(x)
 	case *ast.InterfaceType:
-		e.p("interface")
-		e.fieldList(x.Methods, "{", "}")
+		e.interfaceType(x)
 	case *ast.FuncType:
 		e.p("func")
 		e.funcSig(x)

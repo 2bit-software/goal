@@ -1,0 +1,59 @@
+package shapes
+
+import (
+	"fmt"
+	"strings"
+)
+
+const maxSides = 12
+
+var defaultName = "polygon"
+
+// Shape describes a named polygon.
+type Shape struct {
+	Name  string
+	Sides int
+}
+
+// Classifier names a shape's kind.
+type Classifier interface {
+	Classify(s Shape) string
+}
+
+// Kind classifies a shape by its side count using an expression switch with
+// case and default clauses.
+func Kind(s Shape) string {
+	switch s.Sides {
+	case 0, 1, 2:
+		return "degenerate"
+	case 3:
+		return "triangle"
+	case 4:
+		return "quad"
+	default:
+		if s.Sides > maxSides {
+			return "many"
+		}
+		return "polygon"
+	}
+}
+
+// Describe builds shapes from a name/side map and joins their descriptions.
+func Describe(sides map[string]int) string {
+	parts := make([]string, 0)
+	for name, n := range sides {
+		s := Shape{Name: name, Sides: n}
+		parts = append(parts, fmt.Sprintf("%s:%s", s.Name, Kind(s)))
+	}
+	return strings.Join(parts, ",")
+}
+
+// Total sums a slice of side counts and reports whether any were seen.
+func Total(counts []int) (int, bool) {
+	defer fmt.Println(defaultName)
+	sum := 0
+	for _, c := range counts {
+		sum = sum + c
+	}
+	return sum, len(counts) > 0
+}

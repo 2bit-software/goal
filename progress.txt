@@ -67,6 +67,14 @@
   return a descriptive `backend: unsupported <kind> %T` error — later stories
   (US-032+) fill them in. internal/backend's test is EXTERNAL (package
   backend_test) so it can import internal/corpus (corpus does not import backend).
+- backend/emit.go field separators are CONTEXT-sensitive: param/result/receiver
+  lists are comma-joined (fieldList), but STRUCT FIELDS and INTERFACE METHODS must
+  be newline/semicolon-separated (structType/interfaceType) — a comma there is a
+  Go SYNTAX error that the format-once GoFormatter pass reports as "generated Go
+  did not parse", not a layout nit. Interface methods render `Name(params)
+  results` (funcSig without the `func` keyword); embedded interfaces emit the bare
+  type. goal's parser has NO func-literal-as-expression (IIFE) and NO trailing
+  variadic call spread (`f(xs...)`), so neither belongs in a plain-Go fixture.
 - After changing cmd/goal subcommand/flag docs (guideCommands), regenerate the
   checked-in golden: `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`
   (TestBootstrapGoldenMatches fails otherwise). No CLI flag-drift test exists; the
@@ -389,6 +397,48 @@
   - zsh `ls -d features/*/transpiler` returning "no matches found" (exit 1) is the
     PASS signal for "no path remains" — guard it as `|| echo NONE` in scripts.
 ---
+
+## [2026-06-27T11:30:00Z] - US-032
+- Phase 2 emitter completion: internal/backend/emit.go now emits the FULL
+  ordinary-Go subset the parser produces, not just the US-026 seed set. Added
+  expression-switch emission (*ast.SwitchStmt + *ast.CaseClause via switchStmt/
+  caseClause) — the seed emitter failed on any plain-Go `switch`. Also fixed a
+  latent US-026 bug surfaced by the first struct-bearing fixture: fieldList
+  COMMA-joined struct fields / interface methods (`struct { A int, B int }` is a
+  Go SYNTAX error gofmt cannot repair). Replaced the StructType/InterfaceType
+  expr cases with newline-separating structType/interfaceType emitters; interface
+  methods now render `Name(params) results` (no `func` keyword). The struct
+  `implements` guard moved into structType (still fails — goal-specific, US-033).
+- AC2 (behavioral tier) proven by corpus.RunCompile over a new full-subset
+  fixture (switch, struct type + composite literal, interface type, map literal +
+  range, slice, defer, multi-return, const/var) — generated Go builds + vets in a
+  temp module. AC1 (switch -> valid Go) proven by a focused transpile+format test.
+- Files changed:
+  - internal/backend/emit.go (switchStmt/caseClause; structType/interfaceType;
+    doc refresh; fieldList doc clarified to params/results/recv only)
+  - internal/backend/testdata/plain_full.goal (new full-subset fixture)
+  - internal/backend/backend_test.go (TestASTEngineEmitsSwitch,
+    TestASTEngineBehavioralTierFull)
+  - prd.json (US-032 passes:true), progress.txt
+  - history/20260627-feature-us-032-emit-go-subset-from-ast/ (initiative)
+- Learnings for future iterations:
+  - STRUCT FIELDS and INTERFACE METHODS are newline/semicolon-separated in Go, NOT
+    comma-separated; the emitter must not route them through the comma-joining
+    fieldList (which is correct ONLY for param/result/receiver lists). A bad
+    separator here is a parse error, so the format-once GoFormatter pass surfaces
+    it as "generated Go did not parse" — not a layout nit. Any future field-list
+    emission must pick the right separator by context.
+  - Interface method form is `Name(params) results`, distinct from a struct field
+    `name Type`: render the method's *ast.FuncType via funcSig WITHOUT the `func`
+    keyword; embedded interfaces emit just the type name.
+  - goal's parser does NOT accept func-literal IIFEs (`func(){}()` — parseOperand
+    has no FUNC case; token.FUNC there is the func-TYPE) nor trailing variadic
+    call spread (`f(xs...)` — CallExpr has no Ellipsis field). Keep them out of
+    plain-Go fixtures; they are not part of goal's Go subset.
+  - The behavioral-tier seam for ANY ad-hoc plain-Go fixture is unchanged from
+    US-026: corpus.Case{Kind:KindTranspile, Mode:ModeFile, Input:<repo-rel path>}
+    + corpus.RunCompile(repoRoot, c, corpus.TranspilerFunc(backend.Transpile)),
+    -short-skipped (spawns the go toolchain). US-033+ reuse it per goal construct.
 
 ## [2026-06-27T03:17:00Z] - US-011
 - Added internal/token (Phase 1.1), the first stone of the AST front-end: a Kind

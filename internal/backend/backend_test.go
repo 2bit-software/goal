@@ -82,6 +82,58 @@ func TestASTEngineBehavioralTier(t *testing.T) {
 	}
 }
 
+// TestASTEngineEmitsSwitch asserts the emitter handles expression switch
+// statements (case + default), the ordinary-Go form the US-026 seed emitter
+// omitted. The output must be valid, gofmt-parseable Go that still contains the
+// switch/case/default keywords.
+func TestASTEngineEmitsSwitch(t *testing.T) {
+	const src = `package p
+
+func classify(n int) string {
+	switch n {
+	case 0:
+		return "zero"
+	case 1, 2:
+		return "small"
+	default:
+		return "many"
+	}
+}
+`
+	out, err := backend.Transpile(src)
+	if err != nil {
+		t.Fatalf("Transpile: %v", err)
+	}
+	if _, err := format.Source([]byte(out.Go)); err != nil {
+		t.Fatalf("engine output is not valid Go: %v\n--- output ---\n%s", err, out.Go)
+	}
+	for _, kw := range []string{"switch", "case", "default"} {
+		if !strings.Contains(out.Go, kw) {
+			t.Fatalf("expected emitted Go to contain %q, got:\n%s", kw, out.Go)
+		}
+	}
+}
+
+// TestASTEngineBehavioralTierFull is the AC-2 witness over the full ordinary-Go
+// subset: a goal file exercising switch, struct/map/slice composites, defer, a
+// multi-return func, and type/const/var declarations transpiles through the new
+// engine and the generated Go builds + vets cleanly via the corpus behavioral
+// tier (temp-module go build + go vet).
+func TestASTEngineBehavioralTierFull(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns the go toolchain; skipped under -short")
+	}
+	c := corpus.Case{
+		ID:    "plain-full-go-subset",
+		Kind:  corpus.KindTranspile,
+		Mode:  corpus.ModeFile,
+		Input: "internal/backend/testdata/plain_full.goal",
+	}
+	if err := corpus.RunCompile(repoRoot, c, corpus.TranspilerFunc(backend.Transpile)); err != nil {
+		t.Fatalf("behavioral tier failed for the full Go subset: %v", err)
+	}
+}
+
 func readFixture(t *testing.T) string {
 	t.Helper()
 	b, err := os.ReadFile("testdata/plain.goal")
