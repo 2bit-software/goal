@@ -59,13 +59,14 @@ func ParseFile(src string) (*ast.File, error) {
 	return file, nil
 }
 
-// newParser lexes src and strips comment/doc-comment trivia, leaving a token
-// slice that always ends in EOF.
+// newParser lexes src and strips ordinary `//` comment trivia, but KEEPS
+// `///` DOC_COMMENT tokens in the stream so doctests can be collected and
+// attached to the following declaration (US-023). The slice always ends in EOF.
 func newParser(src string) *parser {
 	all := lexer.Tokens(src)
 	toks := make([]token.Token, 0, len(all))
 	for _, t := range all {
-		if t.Kind == token.COMMENT || t.Kind == token.DOC_COMMENT {
+		if t.Kind == token.COMMENT {
 			continue
 		}
 		toks = append(toks, t)
@@ -153,6 +154,12 @@ func (p *parser) parseFile() *ast.File {
 	file.Name = &ast.Ident{NamePos: name.Pos, Name: name.Lit}
 
 	for !p.at(token.EOF) {
+		// A `///` doc-comment run preceding a declaration is collected and
+		// attached to the following function (US-023).
+		doc := p.collectDoc()
+		if p.at(token.EOF) {
+			break
+		}
 		d := p.parseDecl()
 		if d == nil {
 			// Unknown construct at top level: report and skip one token so the
@@ -160,6 +167,9 @@ func (p *parser) parseFile() *ast.File {
 			p.errorf(p.cur().Pos, "expected declaration, found %s", describe(p.cur()))
 			p.advance()
 			continue
+		}
+		if fd, ok := d.(*ast.FuncDecl); ok && doc != nil {
+			fd.Doc = doc
 		}
 		file.Decls = append(file.Decls, d)
 		if gd, ok := d.(*ast.GenDecl); ok && gd.Tok == token.IMPORT {
@@ -188,6 +198,15 @@ func (p *parser) parseDecl() ast.Decl {
 		// interface declaration.
 		if p.isContextual("sealed") {
 			return p.parseSealedInterfaceDecl()
+		}
+		// `from func` / `derive func`: the contextual modifier (lexed as IDENT)
+		// precedes an ordinary func declaration (US-023). Recorded as a modifier
+		// on the FuncDecl, not as a token kind.
+		if p.isContextual("from") && p.peekKind() == token.FUNC {
+			return p.parseModFuncDecl(ast.FuncFrom)
+		}
+		if p.isContextual("derive") && p.peekKind() == token.FUNC {
+			return p.parseModFuncDecl(ast.FuncDerive)
 		}
 		return nil
 	}
@@ -603,6 +622,12 @@ func (p *parser) parseBlock() *ast.BlockStmt {
 	lb := p.expect(token.LBRACE)
 	b := &ast.BlockStmt{Lbrace: lb.Pos}
 	for !p.at(token.RBRACE) && !p.at(token.EOF) {
+		// A stray `///` doc comment inside a body is not attached to anything;
+		// skip it so statement parsing is unaffected (US-023).
+		if p.at(token.DOC_COMMENT) {
+			p.advance()
+			continue
+		}
 		b.List = append(b.List, p.parseStmt())
 	}
 	rb := p.expect(token.RBRACE)
@@ -638,6 +663,8 @@ func (p *parser) parseStmt() ast.Stmt {
 		// Statement-position match: the same MatchExpr node, wrapped as a
 		// statement (the AST has no separate MatchStmt).
 		return &ast.ExprStmt{X: p.parseMatchExpr()}
+	case token.ASSERT:
+		return p.parseAssertStmt()
 	default:
 		return p.parseSimpleStmt(false)
 	}

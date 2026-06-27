@@ -1,0 +1,75 @@
+package ast
+
+// This file declares goal's remaining source-level constructs that are neither
+// closed-type declarations (goal_decl.go) nor match/construction expressions
+// (goal_expr.go): the `assert` statement and the `///` doc-comment / doctest
+// surface. Together with the from/derive modifier (recorded on FuncDecl, see
+// goal_decl.go) they complete the goal grammar the parser must represent.
+//
+// `assert` is a reserved keyword (token.ASSERT); `///` lexes as a single
+// token.DOC_COMMENT retained as trivia by the lexer. Ordinary `//` comments are
+// dropped by the parser; doc comments are kept and attached to the following
+// declaration as a structured DocComment so doctests survive into the AST.
+
+import "goal/internal/token"
+
+// AssertStmt is a goal `assert` statement. The bare form is `assert <cond>`; the
+// printf-message form is `assert <cond>, <format>, <args...>` where only the
+// first top-level comma after the condition separates the message — commas
+// nested inside the condition (e.g. a call's arguments) stay part of Cond. Msg
+// is nil and Args is empty for the bare form.
+type AssertStmt struct {
+	Assert token.Pos // position of the "assert" keyword
+	Cond   Expr      // the asserted condition
+	Comma  token.Pos // position of the "," before the message; zero for the bare form
+	Msg    Expr      // printf format string (a *BasicLit); nil for the bare form
+	Args   []Expr    // printf arguments; nil/empty for the bare form
+}
+
+func (s *AssertStmt) Pos() token.Pos { return s.Assert }
+func (s *AssertStmt) End() token.Pos {
+	if n := len(s.Args); n > 0 && s.Args[n-1] != nil {
+		return s.Args[n-1].End()
+	}
+	if s.Msg != nil {
+		return s.Msg.End()
+	}
+	if s.Cond != nil {
+		return s.Cond.End()
+	}
+	const n = len("assert")
+	return token.Pos{Offset: s.Assert.Offset + n, Line: s.Assert.Line, Col: s.Assert.Col + n}
+}
+func (*AssertStmt) stmtNode() {}
+
+// DocComment is a run of consecutive `///` doc-comment lines attached to a
+// declaration. Lines holds each line's text with the leading `///` (and at most
+// one following space) stripped; Doctests holds the `>>>` examples extracted
+// from those lines. A doc run with no `>>>` line is still represented (with an
+// empty Doctests), since it documents the declaration. It is a support node
+// (Node only, like Field/Variant), reached via FuncDecl.Doc.
+type DocComment struct {
+	Slash    token.Pos  // position of the first "///"
+	Lines    []string   // each /// line, prefix-stripped, in source order
+	Doctests []*Doctest // the >>> examples, in source order
+}
+
+func (d *DocComment) Pos() token.Pos { return d.Slash }
+func (d *DocComment) End() token.Pos {
+	n := 0
+	if len(d.Lines) > 0 {
+		// Approximate: end of the first line. Doc comments are single-token-per
+		// line trivia; a precise multi-line End is not needed by any consumer.
+		n = len(d.Lines[0]) + len("/// ")
+	}
+	return token.Pos{Offset: d.Slash.Offset + n, Line: d.Slash.Line, Col: d.Slash.Col + n}
+}
+
+// Doctest is one `>>>` example inside a DocComment: an input expression and its
+// expected output. Input is the text after `>>> `; Expected is the run of
+// following non-`>>>` doc lines, in order. Doctest is plain data (not a Node);
+// it carries no source positions of its own.
+type Doctest struct {
+	Input    string   // the source after ">>> "
+	Expected []string // the expected-output lines following the input
+}

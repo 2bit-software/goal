@@ -154,14 +154,16 @@ func (*GenDecl) declNode() {}
 
 // FuncDecl is a function or method declaration. Recv is nil for a plain function.
 // Mod records a goal `from`/`derive` modifier (FuncPlain when absent); ModPos is
-// the position of that modifier keyword.
+// the position of that modifier keyword. Doc holds the `///` doc-comment run
+// (with any doctests) attached to the declaration, or nil when absent.
 type FuncDecl struct {
-	Mod    FuncMod    // goal modifier: FuncPlain, FuncFrom, or FuncDerive
-	ModPos token.Pos  // position of the from/derive keyword; zero when FuncPlain
-	Recv   *FieldList // receiver (methods); or nil
-	Name   *Ident     // function/method name
-	Type   *FuncType  // signature (params and results)
-	Body   *BlockStmt // body; or nil for a bodyless declaration
+	Doc    *DocComment // attached /// doc-comment run; or nil
+	Mod    FuncMod     // goal modifier: FuncPlain, FuncFrom, or FuncDerive
+	ModPos token.Pos   // position of the from/derive keyword; zero when FuncPlain
+	Recv   *FieldList  // receiver (methods); or nil
+	Name   *Ident      // function/method name
+	Type   *FuncType   // signature (params and results)
+	Body   *BlockStmt  // body; or nil for a bodyless declaration
 }
 
 func (d *FuncDecl) Pos() token.Pos {

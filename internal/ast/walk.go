@@ -51,6 +51,9 @@ func Walk(v Visitor, node Node) {
 			Walk(v, s)
 		}
 	case *FuncDecl:
+		if n.Doc != nil {
+			Walk(v, n.Doc)
+		}
 		if n.Recv != nil {
 			Walk(v, n.Recv)
 		}
@@ -63,6 +66,8 @@ func Walk(v Visitor, node Node) {
 		if n.Body != nil {
 			Walk(v, n.Body)
 		}
+	case *DocComment:
+		// no Node children (Lines/Doctests are plain data)
 
 	// Goal declarations.
 	case *EnumDecl:
@@ -292,6 +297,10 @@ func Walk(v Visitor, node Node) {
 		}
 	case *EmptyStmt:
 		// no children
+	case *AssertStmt:
+		walkExpr(v, n.Cond)
+		walkExpr(v, n.Msg)
+		walkExprList(v, n.Args)
 	}
 
 	v.Visit(nil)
