@@ -173,7 +173,7 @@
         "A test builds a tree by hand and asserts Walk visits every node exactly once"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

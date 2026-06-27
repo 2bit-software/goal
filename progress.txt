@@ -441,3 +441,43 @@
   - US-014+ (AST nodes / parser) consume token.QUESTION/FAT_ARROW/ELLIPSIS/
     DOC_COMMENT directly; the lexer now never fakes them.
 ---
+
+## [2026-06-27T03:43:00Z] - US-014
+- Added internal/ast (Phase 1.4), the one structural model the whole rewrite is
+  built around. ast.go declares the position-carrying Node interface
+  (Pos()/End()), the closed category markers Decl/Stmt/Expr/Spec (each embeds
+  Node + a private marker method, so membership stays package-closed), and the
+  Go-subset node set: File, GenDecl/FuncDecl, ImportSpec/ValueSpec/TypeSpec,
+  Field/FieldList, the Go exprs (Ident, BasicLit, Paren/Unary/Binary/Selector/
+  Index/Slice/Call/Star/CompositeLit/KeyValue/FuncLit), the type exprs
+  (Array/Map/Struct/Interface/Func/Chan/Ellipsis), and the Go stmts (Block/Expr/
+  Assign/IncDec/Return/If/For/Range/Switch/CaseClause/Defer/Go/Branch/Decl/Empty).
+- walk.go adds Visitor{ Visit(Node) Visitor } and Walk(v, node): pre-order,
+  go/ast convention — visit node, recurse into children only when Visit returns
+  non-nil, then Visit(nil) to mark end-of-children. Walk(v, nil) and nil child
+  fields are no-ops (guarded). Helpers walkExpr/walkExprList/walkIdentList/
+  walkStmtList keep the nil-skipping in one place.
+- ast_test.go (package ast, stdlib testing only) builds a representative *File
+  tree by hand, registering every constructed node via an `add` helper, then a
+  collector Visitor records each non-nil Visit. Asserts: visited count ==
+  constructed count, every node visited exactly once (visit-count map), and no
+  unexpected node visited. Plus TestWalkNilNodeIsNoop.
+- Files changed:
+  - internal/ast/ast.go (Node/Decl/Stmt/Expr/Spec + all Go-subset nodes)
+  - internal/ast/walk.go (Visitor + Walk + walk* helpers)
+  - internal/ast/ast_test.go (Walk-visits-every-node-once + nil no-op)
+  - history/20260627-feature-us-014-core-ast-nodes-and-walk/ (initiative)
+- Commit: c42a8ad
+- Learnings for future iterations:
+  - Modeled on go/ast trimmed to goal's subset, but nodes carry our own
+    token.Pos (Offset/Line/Col) — positions live on the tree, not re-derived.
+  - US-015 (enum/sealed/implements/from-derive decls) and US-016 (match/pattern/
+    construction exprs) ADD nodes here and ADD cases to Walk's type switch; the
+    switch is intentionally open. Keep marker methods (declNode/stmtNode/
+    exprNode/specNode) on every new node so it joins the right category.
+  - The "visited exactly once" property is the go/ast Walk invariant: a node is
+    counted on the single non-nil Visit(node) call; the trailing Visit(nil)
+    end-markers carry nil and are not counted. The test's collector ignores nil.
+  - token.Pos zero value is token.Pos{} (all-zero); FieldList/FuncType guard
+    "Opening/Func is set" by comparing against token.Pos{}.
+---
