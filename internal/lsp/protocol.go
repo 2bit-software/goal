@@ -42,11 +42,38 @@ type InitializeResult struct {
 }
 
 // ServerCapabilities advertises what the server can do: full-document sync, an idiomatize
-// fix-all code action, and document-symbol (outline) support.
+// fix-all code action, document-symbol (outline) support, and semantic tokens.
 type ServerCapabilities struct {
-	TextDocumentSync       int                `json:"textDocumentSync"`
-	CodeActionProvider     *CodeActionOptions `json:"codeActionProvider,omitempty"`
-	DocumentSymbolProvider bool               `json:"documentSymbolProvider,omitempty"`
+	TextDocumentSync       int                    `json:"textDocumentSync"`
+	CodeActionProvider     *CodeActionOptions     `json:"codeActionProvider,omitempty"`
+	DocumentSymbolProvider bool                   `json:"documentSymbolProvider,omitempty"`
+	SemanticTokensProvider *SemanticTokensOptions `json:"semanticTokensProvider,omitempty"`
+}
+
+// SemanticTokensOptions advertises the server's semantic-tokens support: the legend that
+// maps each token's type/modifier index back to a name, and that full-document requests are
+// served (range and delta requests are out of scope for this milestone).
+type SemanticTokensOptions struct {
+	Legend SemanticTokensLegend `json:"legend"`
+	Full   bool                 `json:"full"`
+}
+
+// SemanticTokensLegend is the ordered list of token-type and token-modifier names; a token's
+// numeric type/modifier in the data array indexes into these slices.
+type SemanticTokensLegend struct {
+	TokenTypes     []string `json:"tokenTypes"`
+	TokenModifiers []string `json:"tokenModifiers"`
+}
+
+// SemanticTokensParams is a textDocument/semanticTokens/full request for one document.
+type SemanticTokensParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+}
+
+// SemanticTokens is the full-document response: Data is the flat, delta-encoded 5-tuple
+// stream [deltaLine, deltaStartChar, length, tokenType, tokenModifiers] in document order.
+type SemanticTokens struct {
+	Data []uint `json:"data"`
 }
 
 // CodeActionOptions declares which code-action kinds the server offers.
@@ -121,6 +148,62 @@ const (
 	symEnumMember = 22
 	symStruct     = 23
 )
+
+// Semantic token-type indices. Each is an index into semanticTokenTypes (their order MUST
+// match), which the legend exposes to the client so it can map the numeric type back to a
+// standard LSP token-type name and theme it.
+const (
+	semKeyword = iota
+	semType
+	semEnum
+	semInterface
+	semStruct
+	semParameter
+	semVariable
+	semProperty
+	semEnumMember
+	semFunction
+	semMethod
+	semString
+	semNumber
+	semComment
+	semOperator
+)
+
+// semanticTokenTypes is the legend's ordered token-type names; index i is the name of the
+// token type whose numeric value is i (semKeyword, semType, …). They are the standard LSP
+// semantic token-type names so a client maps them to its theme without configuration.
+var semanticTokenTypes = []string{
+	semKeyword:    "keyword",
+	semType:       "type",
+	semEnum:       "enum",
+	semInterface:  "interface",
+	semStruct:     "struct",
+	semParameter:  "parameter",
+	semVariable:   "variable",
+	semProperty:   "property",
+	semEnumMember: "enumMember",
+	semFunction:   "function",
+	semMethod:     "method",
+	semString:     "string",
+	semNumber:     "number",
+	semComment:    "comment",
+	semOperator:   "operator",
+}
+
+// semanticTokenModifiers is the legend's ordered modifier names. The server does not yet
+// emit modifiers (every token's modifier bitset is 0), but the legend must still declare a
+// non-nil list so the wire shape is complete.
+var semanticTokenModifiers = []string{"declaration"}
+
+// defaultSemanticLegend returns the legend advertised at initialize and used to encode the
+// token stream — the single source of truth for the type/modifier ordering.
+func defaultSemanticLegend() SemanticTokensLegend {
+	return SemanticTokensLegend{
+		TokenTypes:     semanticTokenTypes,
+		TokenModifiers: semanticTokenModifiers,
+	}
+}
 
 // ServerInfo identifies the server in client logs.
 type ServerInfo struct {

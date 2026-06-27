@@ -126,6 +126,7 @@ func (s *Server) handle(m *rpcMessage) (stop bool) {
 				TextDocumentSync:       fullSync,
 				CodeActionProvider:     &CodeActionOptions{CodeActionKinds: []string{"source.fixAll", "source.fixAll.goal"}},
 				DocumentSymbolProvider: true,
+				SemanticTokensProvider: &SemanticTokensOptions{Legend: defaultSemanticLegend(), Full: true},
 			},
 			ServerInfo: ServerInfo{Name: "goal-lsp", Version: serverVersion},
 		})
@@ -143,6 +144,8 @@ func (s *Server) handle(m *rpcMessage) (stop bool) {
 		s.reply(m.ID, s.codeActions(m.Params))
 	case "textDocument/documentSymbol":
 		s.reply(m.ID, s.documentSymbols(m.Params))
+	case "textDocument/semanticTokens/full":
+		s.reply(m.ID, s.semanticTokens(m.Params))
 	case "initialized", "$/setTrace", "textDocument/didSave":
 		// no-op notifications
 	default:

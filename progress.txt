@@ -273,6 +273,53 @@
   package path needs analyze.EnrichForeign), so don't expect sema there yet.
   rangeOf still uses check.OffsetToPosition, so symbols.go keeps the internal/check
   import even though the scan import is gone.
+- LSP semantic tokens (US-047) are computed by overlaying an AST role map on the
+  lexer token STREAM, not by walking the AST alone: lexer.Tokens gives ordered
+  positions + lengths + the lexer-confident classes (keywords incl. match/enum,
+  comments, string/char, int/float/imag, and the goal operators QUESTION/FAT_ARROW/
+  ELLIPSIS), and astRoles (parser.ParseFile + ast.Walk roleVisitor) supplies the
+  identifier ROLE keyed by Ident byte offset. roleVisitor fixes a name's role by its
+  STRUCTURAL parent (handled at the EnumDecl/TypeSpec/FuncDecl/VariantLit/
+  VariantPattern/CallExpr node, NOT at the bare Ident) and always returns itself so
+  Walk still descends into bodies. An IDENT with no recorded role is NOT emitted —
+  builtins like int stay grammar-coloured rather than mislabelled. The wire form is
+  the LSP delta-encoded 5-tuple [dLine,dStartChar,length,type,modifiers], 0-based via
+  check.OffsetToPosition; tokenLen falls back to len(Kind.String()) for empty-Lit
+  operators. The legend ordering is one source of truth: the sem* index constants
+  index semanticTokenTypes, shared by the advertised SemanticTokensProvider and the
+  encoder, so wire indices can't drift. GOTCHA: a `?` inside a string ("?") lexes as
+  STRING, not QUESTION — a test locating the postfix `?` by substring must avoid a
+  stray `?` string in its sample.
+
+## [2026-06-27T16:30:00Z] - US-047
+- Added LSP semantic tokens, classified from the AST. The server advertises a
+  semanticTokensProvider (legend + full:true) at initialize and serves
+  textDocument/semanticTokens/full, returning the delta-encoded token stream for the
+  open buffer. Classification combines the lexer (positions/lengths + keyword/literal/
+  comment/goal-operator colouring) with an AST-derived identifier role map (enum,
+  enumMember, type/struct/interface, function/method, parameter, property, variable),
+  mirroring the US-046 parse+walk pattern. Best-effort: unknown URI or unparseable
+  source yields an empty (non-nil) token set, no panic.
+- Files changed:
+  - internal/lsp/semantictokens.go (new: semanticTokens handler, computeSemanticTokens,
+    classifyToken, tokenLen, astRoles + roleVisitor, typeSpecRole)
+  - internal/lsp/protocol.go (SemanticTokensOptions/Legend/Params/SemanticTokens types;
+    ServerCapabilities.SemanticTokensProvider; sem* legend indices +
+    semanticTokenTypes/Modifiers + defaultSemanticLegend)
+  - internal/lsp/server.go (advertise SemanticTokensProvider; route
+    textDocument/semanticTokens/full)
+  - internal/lsp/semantictokens_test.go (new: EnumMatchQuestion AC test, WellFormed,
+    EmptyAndUnparseable, Handler)
+  - internal/lsp/server_test.go (assert initialize advertises semanticTokensProvider)
+  - prd.json (US-047 passes:true), progress.txt
+  - history/20260627-feature-us-047-lsp-semantic-tokens/ (initiative)
+- Learnings for future iterations:
+  - US-048..US-050 (definition, hover, rename) extend this same AST document model;
+    roleVisitor's offset->role map is a seed for the symbol graph, and astRoles is the
+    place to enrich identifier classification when a resolver lands.
+  - Diagnostic findings are still analyze/scan-based; semantic tokens do NOT touch the
+    checker, so the dead-scan cleanup still waits on the checker migrating off analyze.
+---
 
 ## [2026-06-27T15:00:00Z] - US-046
 - Switched the LSP document model to the AST. internal/lsp/symbols.go collectSymbols
