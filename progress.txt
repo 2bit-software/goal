@@ -354,6 +354,38 @@
   edits don't shift later offsets. Still single-document (locals/params/qualified
   imports/cross-file out of scope, consistent with US-048/049).
 
+## [2026-06-27T21:30:00Z] - US-004
+- Added internal/interp/interp.go, the interpreter ENTRY seam: goscript is a
+  back-end over the SHARED front-end (REWRITE-ARCHITECTURE.md §3.1). New(file
+  *ast.File, info *sema.Info) *Interp constructs the interpreter from the exact
+  artifacts the Go transpiler back-end consumes (parsed AST + resolved sema),
+  NOT the Go backend's lowered form. Run() error locates the top-level `func
+  main` (findMain: *ast.FuncDecl with Recv==nil && Name.Name=="main"; methods
+  and a nil Name are skipped), opens a child Env scope, and walks the body via
+  execBlock. An empty main body is a successful no-op; an absent main returns the
+  named sentinel ErrNoMain ("interp: no func main declared"). execBlock is the
+  statement-dispatch seam US-005+ extend (Run already returns error, so no API
+  break later).
+- Files changed:
+  - internal/interp/interp.go (new: Interp, New, Run, findMain, execBlock,
+    ErrNoMain)
+  - internal/interp/interp_test.go (new: TestRunTrivialMain [AC],
+    TestRunMissingMainErrors, TestConstructFromSharedFrontEnd — stdlib testing,
+    no testify; parses+resolves via parser.ParseFile + sema.Resolve)
+  - prd.json (US-004 passes:true), progress.txt
+  - history/20260627-feature-us-004-interpreter-entry-over-ast-and-sema/ (initiative)
+- Learnings for future iterations:
+  - Use sema.Resolve(file) (NOT sema.New(), which is empty) to exercise the real
+    front-end — same discipline backend.Transpile follows. The interpreter
+    retains the *ast.File + *sema.Info pointers for later eval stories.
+  - interp.go imports ONLY errors + goal/internal/ast + goal/internal/sema — no
+    internal/backend, no go/types. This keeps the §3.1 native-front-end seam
+    clean ahead of US-022's stricter dependency gate; keep it that way as eval
+    stories grow.
+  - The eval stories (US-005 literals/operators onward) hang off execBlock's
+    per-statement loop; Run's child-scope + error return are the fixed seam.
+---
+
 ## [2026-06-27T15:27:00Z] - US-003
 - Added internal/interp/env.go, the interpreter's lexical environment: a
   parent-linked scope chain of name -> Value bindings. NewEnv() makes a root
