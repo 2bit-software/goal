@@ -1,8 +1,9 @@
 package fix
 
 import (
-	"goal/internal/analyze"
+	"goal/internal/ast"
 	"goal/internal/scan"
+	"goal/internal/sema"
 )
 
 // fixSwitchToMatch reports a `switch` whose case labels name variants of an in-file enum as
@@ -11,61 +12,46 @@ import (
 // statement bodies, so a faithful mechanical rewrite is not expressible for the general
 // case. Surfacing the opportunity (so the author converts the arms and gains the
 // missing-variant check) is the safe, useful step. Returns no replacements.
-func fixSwitchToMatch(src string, toks []scan.Token, t *analyze.Tables, changes *[]Change, reports *[]Report) []scan.Replacement {
-	for i := range toks {
-		if toks[i].Text != "switch" || !scan.IsLineStart(src, toks[i].Start) {
-			continue
+func fixSwitchToMatch(src string, file *ast.File, info *sema.Info, changes *[]Change, reports *[]Report) []scan.Replacement {
+	ast.Walk(visitFn(func(n ast.Node) bool {
+		sw, ok := n.(*ast.SwitchStmt)
+		if !ok {
+			return true
 		}
-		bo := switchBodyBrace(toks, i)
-		if bo < 0 {
-			continue
-		}
-		enum := switchEnumQualifier(toks, bo, t)
+		enum := switchEnumQualifier(sw, info)
 		if enum == "" {
-			continue
+			return true
 		}
-		*reports = append(*reports, Report{lineOf(src, toks[i].Start), Suggest, "match",
+		*reports = append(*reports, Report{lineOf(src, sw.Switch.Offset), Suggest, "match",
 			"`switch` over enum `" + enum + "`; a `match` would be checked for exhaustiveness"})
-	}
+		return true
+	}), file)
 	return nil
 }
 
-// switchBodyBrace returns the token index of the `{` opening a switch's clause block: the
-// first `{` at paren/bracket depth 0 after the switch keyword (a composite literal in the
-// scrutinee sits inside parens, so it is not mistaken for the block). Returns -1 if none.
-func switchBodyBrace(toks []scan.Token, si int) int {
-	depth := 0
-	for k := si + 1; k < len(toks); k++ {
-		switch toks[k].Text {
-		case "(", "[":
-			depth++
-		case ")", "]":
-			depth--
-		case "{":
-			if depth == 0 {
-				return k
-			}
-		}
-	}
-	return -1
-}
-
-// switchEnumQualifier returns the enum type name a switch's first `case` label qualifies
+// switchEnumQualifier returns the enum type name a switch's first case label qualifies
 // (`case Status.Active:` -> "Status") when that name is a declared in-file enum, or "" when
 // the switch is not over an in-file enum (a plain value switch, a type switch, or a switch
 // whose first label is not `Enum.Variant`).
-func switchEnumQualifier(toks []scan.Token, bo int, t *analyze.Tables) string {
-	bc := scan.MatchBrace(toks, bo)
-	for k := bo + 1; k+2 < bc; k++ {
-		if toks[k].Text != "case" {
-			continue
+func switchEnumQualifier(sw *ast.SwitchStmt, info *sema.Info) string {
+	if sw.Body == nil {
+		return ""
+	}
+	for _, st := range sw.Body.List {
+		cc, ok := st.(*ast.CaseClause)
+		if !ok || len(cc.List) == 0 {
+			continue // skip a `default` clause; find the first `case`
 		}
-		// First label must be `Ident . Ident`.
-		if !scan.IsIdent(toks[k+1].Text) || toks[k+2].Text != "." {
+		// The first label must be `Ident.Ident`.
+		sel, ok := cc.List[0].(*ast.SelectorExpr)
+		if !ok {
 			return ""
 		}
-		q := toks[k+1].Text
-		if _, ok := t.Enums[q]; ok {
+		q := identName(sel.X)
+		if q == "" {
+			return ""
+		}
+		if info.Enums != nil && info.Enums[q] != nil {
 			return q
 		}
 		return ""

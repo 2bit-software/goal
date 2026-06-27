@@ -533,8 +533,8 @@
         "The existing fix test suite passes unchanged in observable behavior"
       ],
       "priority": 44,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "internal/fix now drives every rule off the parsed AST: fix.File parses each fixed-point pass with parser.ParseFile and resolves name-keyed facts with sema.Resolve (FuncSignatures.Mode/T, Enums), replacing scan.Lex + analyze.Build + analyze.FuncSpans/SigAt + scan.ScanFuncs (grep confirms none remain in internal/fix). Detection is structural: result-sig reads FuncType.Results (FieldList Opening/Closing parens; all-unnamed (T,error) tuple only) and classifies ReturnStmts (walkReturns skips nested FuncLit by not descending into exprs); propagate matches consecutive AssignStmt+IfStmt (value-binding) and IfStmt.Init (init-guard) over BinaryExpr nil-guards + one valid propagation ReturnStmt (Result.Err(v) CallExpr / zero,err / Option.None SelectorExpr / nil); Option `*o`->`o` deref via StarExpr walk with escape detection; switch-over-enum walks SwitchStmt first CaseClause SelectorExpr label vs info.Enums; call-site walks ModeNone IfStmt value-binding guards. Edits stay minimal scan.Replacement byte splices applied with scan.Splice (pure string utils, NOT lexing) so untouched code/comments are byte-preserved — printing the AST would reflow. GOTCHA: the parser drops // and /* comments, so the comment-block refusal must stay a raw byte-range spanHasComment scan over the source offsets (token.Pos.Offset), not an AST check. analyze.ZeroLit is kept (a pure helper) fed by an AST-built typeDecls map. Public API (File/Change/Report/Level) unchanged; cmd/goal + internal/lsp consume it as-is. fix_test.go is byte-identical (no diff) and green; full suite (build/vet/test) green. On unparseable source fix.File no-ops the iteration (conservative contract)."
     },
     {
       "id": "US-045",

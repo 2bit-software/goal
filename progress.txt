@@ -7,6 +7,12 @@
   (see internal/{analyze,check,pipeline,corpus}/testdata).
 - Verify gates (prd.json verifyCommands): `go build ./...`, `go vet ./...`,
   `go test ./... -count=1`. All must be green before committing.
+- AST-driven tools that must PRESERVE source formatting (internal/fix, and the
+  coming goal fmt / LSP edits) compute byte ranges from node Pos()/End() offsets
+  and emit minimal scan.Replacement edits via scan.Splice (pure string utils, not
+  lexing) — never print the AST (it reflows). The parser DROPS // and /* comments,
+  so any "don't drop a comment" guard must scan the raw source byte range
+  (spanHasComment over token.Pos.Offset), not the AST.
 - Follow REWRITE-ARCHITECTURE.md phasing; §10 details Phases 0–2 (the approved
   scope). Phase 0 = corpus hardening (US-001..US-010).
 - Each story runs through the morse-code `feature` workflow in --automode on the
@@ -1958,4 +1964,35 @@
   - Regenerating goldens after an emit change: `go test ./internal/corpus -run TestUpdateGoldens
     -update-goldens`; regenerating the AI guide after a flag/command change:
     `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md` (both have drift tests).
+---
+
+## [2026-06-27] - US-044
+- Moved internal/fix (goal fix / idiomatize) off token re-lexing onto the parsed AST.
+  fix.File now parses each fixed-point pass with parser.ParseFile and resolves facts
+  with sema.Resolve, replacing scan.Lex + analyze.Build + analyze.FuncSpans/SigAt +
+  scan.ScanFuncs. All four rules (result-sig, propagate, switch->match, call-site)
+  detect candidates structurally over AST nodes; edits remain minimal scan.Replacement
+  byte splices applied with scan.Splice, so untouched code/comments are byte-preserved.
+- Files changed: internal/fix/{fix,resultsig,propagate,match,callsite}.go (rewritten);
+  prd.json (US-044 passes:true); history/20260627-refactor-us-044-move-fix-onto-ast/*.
+- Learnings for future iterations:
+  - The parser strips // and /* comments, so any fix/fmt rule that must NOT drop a
+    comment has to scan the raw source byte range (spanHasComment over token.Pos.Offset),
+    not the AST. The AST cannot see comments. This is the key constraint for US-045 (goal
+    fmt) too — comment fidelity needs raw-source / position-anchored handling.
+  - To emit minimal, format-preserving edits from the AST, compute byte ranges from node
+    Pos()/End() offsets and splice with scan.Replacement/scan.Splice (pure string utils,
+    NOT lexing). Printing the AST would reflow everything; fix/fmt-idempotence tests
+    compare exact bytes, so reflow would break them.
+  - FuncType.Results is a *ast.FieldList with Opening/Closing paren positions: zero
+    Opening == unparenthesized single result; >=2 all-unnamed fields ending in `error`
+    == the (T,error) tuple. sema.FuncSig.Mode (ModeNone/ModeResult/ModeResultClosed/
+    ModeOption) + .T give the propagation shape without any token scan.
+  - The three meanings of Enum.Variant(x) are already distinct nodes, and a statement
+    `return Result.Err(err)` is one CallExpr over a SelectorExpr — so propagation-vs-
+    construction is told apart structurally (no skip-lists). `*o` deref is a StarExpr{X:Ident}.
+  - To skip returns inside nested function literals, walk statements only and never
+    descend into expressions (FuncLit is an expr) — closure returns become unreachable.
+  - analyze.ZeroLit is a pure type->zero-literal helper (no lexing); reuse it with a
+    typeDecls map built by walking File.Decls TypeSpecs instead of analyze.Build.
 ---
