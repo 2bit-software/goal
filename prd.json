@@ -305,7 +305,7 @@
         "A unit test runs the doctest corpus cases through RunInterp and asserts they pass"
       ],
       "priority": 25,
-      "passes": false,
+      "passes": true,
       "notes": "REWRITE-ARCHITECTURE.md §6: the behavioral conformance tier was built to be implementation-independent — 'the conformance suite the self-hosted compiler and the interpreter both run'. Reuse it, do not invent a new oracle."
     },
     {

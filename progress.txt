@@ -1,5 +1,58 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T09:00:00Z] - US-025
+- Proved US-025 "Add corpus interpreter runner": the implementation-independent
+  behavioral conformance tier now judges the goscript INTERPRETER on the same
+  yardstick as the Go backend. internal/corpus.RunInterp loads a doctest corpus
+  case, runs it through internal/interp.RunDoctests, and asserts each `///  >>>`
+  example's evaluated runtime result matches its documented expected value — the
+  interpreter analogue of RunDoctestExec (which transpiles + runs `go test`), but
+  in-process with NO Go toolchain. A wrong result, a parse/eval failure, a
+  wrong-kind case, or a doctest case with zero examples is a LOUD, case-identified
+  error, never a silent pass.
+- internal/interp/doctest.go (new): exported RunDoctests(src) (failures
+  []DoctestFailure, ran int, err error). Parses + sema.Resolve + New, then for each
+  FuncDecl.Doc.Doctests evaluates the input expression via ip.evalExpr(expr, ip.root)
+  and compares Value.String() to the trimmed joined Expected. DoctestFailure{Func,
+  Input,Expected,Got}. parseDoctestExpr wraps the input in
+  `func __doctest__(){ __dt := <input> }`, parses it (parser exposes only ParseFile,
+  no ParseExpr), and lifts the AssignStmt.Rhs[0] expr node. A value mismatch is a
+  returned failure; a structural/eval problem is a returned error.
+- internal/interp/doctest_test.go (new): TestRunDoctestsAllPass (add/repeat, ran=2,
+  no failures), TestRunDoctestsReportsMismatch (mutated `/// 5`->`/// 6` -> one
+  failure w/ populated fields), TestRunDoctestsEvalErrorIsLoud (undefined symbol ->
+  error naming it). stdlib testing, no testify.
+- internal/corpus/interp_runner.go (new): RunInterp(root, c) — kind guard, read
+  Input, interp.RunDoctests, ran==0 loud failure, failure list -> case-identified
+  error, else nil. Mirrors RunDoctestExec's case-id error wording.
+- internal/corpus/interp_runner_test.go (new): TestInterpRunner (drives every
+  manifest Kind=doctest case through RunInterp, t.Fatalf on zero), plus WrongKind,
+  MutatedExpectedFails (temp .goal, not a corpus mutation), NoExamplesFails. stdlib
+  testing, no testify.
+- prd.json (US-025 passes:true), progress.txt
+- history/20260627-feature-us-025-corpus-interpreter-runner/ (initiative)
+- Learnings for future iterations:
+  - The interpreter has NO ParseExpr — parser exposes only ParseFile. To evaluate a
+    bare goal EXPRESSION (a doctest `>>>` line, or any future "run this snippet"
+    need), wrap it in `func __x(){ __dt := <expr> }`, ParseFile it, and lift
+    AssignStmt.Rhs[0]; then ip.evalExpr(expr, ip.root) against an interp built from
+    the real program (funcs/enums/methods already registered by New).
+  - Value.String() IS the doctest behavioral oracle: it already renders int->`5`,
+    string->`"abab"` (strconv.Quote), bool->`true` — exactly the Go-literal spelling
+    the doctest goldens paste as the `want :=` literal. So a result that passes the
+    Go doctest tier passes RunInterp and vice versa, with no separate renderer.
+  - internal/corpus now imports internal/interp (no cycle: interp imports
+    parser/sema/ast/cap/token, never corpus). The RunInterp corpus test stays in
+    package corpus (internal test) because interp does NOT pull in pipeline/check —
+    the import-cycle caveat (external _test package) only applies to runners that
+    delegate through pipeline/check. US-027 (whole-corpus interp gate) builds on
+    RunInterp; US-026 (CLI interp engine) is separate.
+  - US-025 needed NO change to existing production files — it composes existing
+    seams (interp.New/evalExpr/Value.String, corpus.Case/Load/manifest). The interp
+    doctest eval does NOT run main or the sema gate; it evaluates expressions
+    directly against the registered root scope.
+---
+
 ## [2026-06-28T08:10:00Z] - US-024
 - Proved US-024 "Enforce capability denial": the goscript interpreter's
   capability gate now REFUSES a denied effect loudly instead of silently
