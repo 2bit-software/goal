@@ -1,0 +1,70 @@
+{
+  "workflow": "refactor",
+  "status": "running",
+  "current_step": "done",
+  "definition_hash": "192b018dd58927c16278c08c574ab39a4cb3e429f1a1956ee898336c2bf6b4a1",
+  "visits": {
+    "cleanup": 1,
+    "cutover": 1,
+    "done": 1,
+    "scaffold": 1,
+    "start": 1,
+    "verify-new": 1
+  },
+  "gate_results": {
+    "cleanup": {
+      "cleanup-check": [
+        {
+          "visit": 1,
+          "status": "human-review",
+          "exit_code": 2,
+          "at": "2026-06-28T23:30:36Z"
+        },
+        {
+          "visit": 1,
+          "status": "pass",
+          "exit_code": 0,
+          "at": "2026-06-28T23:30:38Z"
+        }
+      ]
+    },
+    "cutover": {
+      "cutover-approval": [
+        {
+          "visit": 1,
+          "status": "human-review",
+          "exit_code": 2,
+          "at": "2026-06-28T23:30:29Z"
+        },
+        {
+          "visit": 1,
+          "status": "pass",
+          "exit_code": 0,
+          "at": "2026-06-28T23:30:31Z"
+        }
+      ]
+    },
+    "verify-new": {
+      "new-tests-pass": [
+        {
+          "visit": 1,
+          "status": "human-review",
+          "exit_code": 2,
+          "at": "2026-06-28T23:30:12Z"
+        },
+        {
+          "visit": 1,
+          "status": "pass",
+          "exit_code": 0,
+          "at": "2026-06-28T23:30:24Z"
+        }
+      ]
+    }
+  },
+  "paused_at": null,
+  "state_bag": {
+    "automode": true
+  },
+  "started_at": "2026-06-28T23:26:53Z",
+  "updated_at": "2026-06-28T23:30:38Z"
+}

@@ -124,7 +124,7 @@
         "The corpus behavioral conformance tier passes on the new backend path"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-001 (sema.EnrichForeign) and US-006. backend/package.go currently calls analyze.BuildPackage + analyze.EnrichForeign at lines ~113-114 while already using sema.ResolvePackage elsewhere."
     },
     {

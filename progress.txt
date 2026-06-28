@@ -4057,3 +4057,28 @@
   - LeadIdent had zero callers (dead) but was relocated anyway per the story's
     explicit utility list; harmless to keep in textedit.
 ---
+
+## [2026-06-28T24:30:00Z] - US-009 (checker-onto-ast PRD)
+- Migrated internal/backend/package.go off internal/analyze. The package-mode
+  driver (TranspilePackage) now builds foreign type facts via sema.EnrichForeign
+  instead of analyze.BuildPackage + analyze.EnrichForeign. internal/backend now
+  imports no internal/analyze symbols.
+- enrichForeign(info, srcs, dir) -> enrichForeign(info, files []*ast.File, dir):
+  aggregates every parsed file's ast.File.Imports and calls
+  sema.EnrichForeign(info, imports, dir, nil). Removed the now-unused srcs []string
+  slice in TranspilePackage and the hand-rolled Structs/FromRegistry copy loops.
+- Files: internal/backend/package.go, prd.json, progress.txt. Initiative artifacts
+  under history/20260628-refactor-us-009-migrate-backend-onto-sema-enrichment/.
+- Learnings for future iterations:
+  - sema.ResolvePackage(files) already populates in-package Structs, FromRegistry,
+    FuncSignatures, enums, and sealed facts. The old analyze copy only re-added
+    Structs (bare-keyed, skipped when in-package) and FromRegistry (already present)
+    — both redundant. analyze.EnrichForeign never added foreign FromRegistry entries.
+  - sema.EnrichForeign keys foreign structs as `alias.Type` (no collision with bare
+    in-package names) and additionally fills FuncSignatures + ForeignMethods — a
+    superset of what the old analyze copy provided, so the swap is behavior-preserving
+    or strictly richer. It loads ALL imports (deduped by path, blank imports skipped)
+    rather than filtering by needed alias; the extra unused entries are inert.
+  - Only US-010 remains: with backend off analyze, internal/analyze and the
+    text/scanner lexer have no live consumers left to delete.
+---

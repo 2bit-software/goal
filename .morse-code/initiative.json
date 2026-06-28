@@ -1,0 +1,7 @@
+{
+  "name": "us-009-migrate-backend-onto-sema-enrichment",
+  "type": "refactor",
+  "dir": "history/20260628-refactor-us-009-migrate-backend-onto-sema-enrichment",
+  "workflow": "refactor",
+  "created_at": "2026-06-28T23:26:53Z"
+}

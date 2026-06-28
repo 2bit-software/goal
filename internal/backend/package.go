@@ -6,22 +6,20 @@ package backend
 //
 //   - Cross-file sema: every file is resolved and the facts merged into ONE
 //     *sema.Info (sema.ResolvePackage), so a file lowers a `match`/derive/`?` over
-//     an enum, struct, or signature declared in a sibling file. This mirrors
-//     analyze.BuildPackage / analyze.Merge.
+//     an enum, struct, or signature declared in a sibling file.
 //   - A single shared prelude: the closed-E Result sum encoding is emitted once for
 //     the package (goal_prelude.go), not per file, by suppressing the inline
 //     prelude in each file's emit (emitFileWith) and appending the shared one.
 //   - Foreign-import resolution: a `derive func` / `from func` whose source or
 //     target is an out-of-package Go type needs that type's field set. The foreign
-//     loading (read the imported package's exported structs) is reused from
-//     internal/analyze.EnrichForeign — the one IO seam — and folded into the merged
-//     sema.Info so the AST derive lowering resolves the foreign fields by name.
+//     loading (read the imported package's exported decls) is sema.EnrichForeign —
+//     the one IO seam — driven by the files' parsed import specs and folded into the
+//     merged sema.Info so the AST derive lowering resolves the foreign fields by name.
 
 import (
 	"fmt"
 	"strings"
 
-	"goal/internal/analyze"
 	"goal/internal/ast"
 	"goal/internal/parser"
 	"goal/internal/pipeline"
@@ -37,18 +35,16 @@ import (
 // the only IO is foreign-import resolution, which reads the imported Go packages.
 func TranspilePackage(pkg *project.Package) (pipeline.PackageOutput, error) {
 	files := make([]*ast.File, len(pkg.Files))
-	srcs := make([]string, len(pkg.Files))
 	for i, f := range pkg.Files {
 		parsed, err := parser.ParseFile(f.Src)
 		if err != nil {
 			return pipeline.PackageOutput{}, fmt.Errorf("%s: parse: %w", f.Name, err)
 		}
 		files[i] = parsed
-		srcs[i] = f.Src
 	}
 
 	info := sema.ResolvePackage(files)
-	enrichForeign(info, srcs, pkg.Dir)
+	enrichForeign(info, files, pkg.Dir)
 
 	var out pipeline.PackageOutput
 	var usedOption bool
@@ -102,32 +98,22 @@ func TranspilePackage(pkg *project.Package) (pipeline.PackageOutput, error) {
 	return out, nil
 }
 
-// enrichForeign folds the struct field sets of imported Go packages that a
-// `derive func` / `from func` references by qualifier into the merged sema.Info,
-// so the AST derive lowering can resolve an out-of-package source/target type. The
-// foreign loading (resolve import path -> directory -> parse exported structs) is
-// reused from internal/analyze, the one explicitly-IO seam; resolution failures are
-// non-fatal (an unresolved import simply leaves derive to defer as before). Foreign
-// facts never overwrite an in-package fact (the in-file resolution wins).
-func enrichForeign(info *sema.Info, srcs []string, dir string) {
-	t := analyze.BuildPackage(srcs)
-	analyze.EnrichForeign(t, srcs, dir, nil)
-	for name, fields := range t.Structs {
-		if _, ours := info.Structs[name]; ours {
-			continue
-		}
-		conv := make([]sema.Field, len(fields))
-		for i, f := range fields {
-			conv[i] = sema.Field{Name: f.Name, Type: f.Type}
-		}
-		info.Structs[name] = conv
+// enrichForeign folds the struct field sets and method/function signatures of the
+// Go packages imported by the package's files into the merged sema.Info, so the AST
+// derive lowering (and `?` resolution) can resolve an out-of-package source/target
+// type. The foreign loading (resolve import path -> directory -> parse exported
+// decls) is sema.EnrichForeign, the one explicitly-IO seam; it is driven by each
+// file's parsed import specs and resolution failures are non-fatal (an unresolved
+// import simply leaves derive to defer as before). Foreign structs are keyed
+// `alias.Type`, so they never collide with the bare in-package struct names that
+// sema.ResolvePackage already populated; in-package FromRegistry entries likewise
+// come from sema.ResolvePackage and need no foreign supplement.
+func enrichForeign(info *sema.Info, files []*ast.File, dir string) {
+	var imports []*ast.ImportSpec
+	for _, f := range files {
+		imports = append(imports, f.Imports...)
 	}
-	for key, entry := range t.FromRegistry {
-		if _, ours := info.FromRegistry[key]; ours {
-			continue
-		}
-		info.FromRegistry[key] = sema.ConvEntry{Name: entry.Name, Fallible: entry.Fallible}
-	}
+	sema.EnrichForeign(info, imports, dir, nil)
 }
 
 // goName maps a source file name to its generated Go name: foo.goal -> foo.go.
