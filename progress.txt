@@ -1,5 +1,48 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T20:30:00Z] - US-001 (checker-onto-ast PRD)
+- Proved US-001 "Add foreign enrichment to sema.Info": sema can now resolve
+  out-of-package struct fields and method signatures into sema.Info WITHOUT
+  analyze.Tables and WITHOUT re-lexing. New `sema.EnrichForeign(info,
+  imports []*ast.ImportSpec, dir string, resolve DirResolver) []error` reads
+  the imported Go packages (stdlib go/parser) driven by the parsed goal file's
+  import specs (ast.File.Imports), folding exported foreign structs into
+  info.Structs (keyed `alias.Type`, fields qualified by alias), exported methods
+  into the NEW info.ForeignMethods (keyed `alias.Recv.Method`), and exported
+  receiver-less funcs into info.FuncSignatures (keyed `alias.Func`). A foreign
+  entry carries only the `?`-relevant facts (Arity, EndsInError; Mode=ModeNone),
+  mirroring analyze.Tables.
+- Mechanism: ported the Go-toolchain reader from internal/analyze/foreign.go
+  (foreignDecls, goTypeString qualify-by-alias, foreignRecvBase, endsInErrorAST,
+  arity, DefaultResolver + moduleResolve/goListResolve), but the import list now
+  comes from the AST, not scan.Lex/analyze.ParseImports — so the lexer is off
+  this path. The rendering matches analyze byte-for-byte, which the parity test
+  pins.
+- Files: internal/sema/sema.go (Info.ForeignMethods field),
+  internal/sema/resolve.go (init + Merge ForeignMethods),
+  internal/sema/foreign.go (new: DirResolver, DefaultResolver, EnrichForeign +
+  reader helpers), internal/sema/foreign_test.go (new: parity vs
+  analyze.EnrichForeign over the shared ../analyze/testdata/extpkg fixture, plus
+  resolve-error-non-fatal and nil-resolver-default tests).
+- Learnings for future iterations:
+  - sema/foreign.go aliases stdlib go/ast as `goast`/go/parser as `goparser`
+    because the package already imports goal's internal/ast as `ast`; foreign
+    reader helpers are renamed (goResultArity, foreignFields, goExprText) to
+    avoid colliding with resolve.go's resultArity/typeString.
+  - Foreign struct fields MUST be rendered with the qualify-by-alias renderer
+    (goTypeString), NOT sema.typeString (which does not qualify a package-local
+    name), or the foreign Structs entries diverge from analyze and the registry
+    lookups by string miss. The parity test (compare info.Structs +
+    info.ForeignMethods against analyze.Build+EnrichForeign for the same src)
+    is the gate against future drift.
+  - The shared foreign fixture lives at internal/analyze/testdata/extpkg
+    (Outer/Inner structs + Inner.Close method + Mkdir/Open/Triple funcs); reuse
+    it from sema via the relative path ../analyze/testdata/extpkg.
+  - This is the shared unit for US-009 (backend onto sema enrichment): the
+    backend can drop analyze.BuildPackage+analyze.EnrichForeign in favor of
+    sema.ResolvePackage + sema.EnrichForeign(info, file.Imports, dir, nil).
+---
+
 ## [2026-06-28T19:10:00Z] - US-003
 - Proved US-003 "Allow `?` on method calls returning Result": `?` now works on a
   method call whose method returns a Result (or a trailing error), for both a

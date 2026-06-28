@@ -42,6 +42,7 @@ func (info *Info) Merge(o *Info) {
 	maps.Copy(info.Structs, o.Structs)
 	maps.Copy(info.FromRegistry, o.FromRegistry)
 	maps.Copy(info.Methods, o.Methods)
+	maps.Copy(info.ForeignMethods, o.ForeignMethods)
 	maps.Copy(info.Interfaces, o.Interfaces)
 	maps.Copy(info.EmbeddedIfaces, o.EmbeddedIfaces)
 }
@@ -58,6 +59,7 @@ func Resolve(f *ast.File) *Info {
 		Structs:        map[string][]Field{},
 		FromRegistry:   map[[2]string]ConvEntry{},
 		Methods:        map[string][]Method{},
+		ForeignMethods: map[string]FuncSig{},
 		Interfaces:     map[string][]Method{},
 		EmbeddedIfaces: map[string][]string{},
 	}

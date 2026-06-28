@@ -104,6 +104,13 @@ type Info struct {
 	// Methods maps a concrete type name to the methods declared on it (value- and
 	// pointer-receiver alike, keyed by the star-stripped receiver type name).
 	Methods map[string][]Method
+	// ForeignMethods maps `pkg.Type.Method` (the goal-source spelling of an
+	// imported type's method) to its return signature, so a check can resolve a
+	// `recv.Method()?` whose receiver is an out-of-package type without
+	// analyze.Tables. Populated by EnrichForeign (foreign.go); a foreign entry
+	// carries only the `?`-relevant facts (Arity, EndsInError), with Mode left
+	// ModeNone — mirroring analyze.Tables.ForeignMethods.
+	ForeignMethods map[string]FuncSig
 	// Interfaces maps an in-file interface type name to its directly declared
 	// methods (name + normalized signature). Embedded interfaces are recorded
 	// separately in EmbeddedIfaces and folded in by the implements check.
