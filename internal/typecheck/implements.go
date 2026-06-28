@@ -6,9 +6,9 @@ import (
 	"go/types"
 	"strings"
 
-	"goal/internal/scan"
+	goalast "goal/internal/ast"
 	"goal/internal/sema"
-	"goal/internal/textedit"
+	goaltoken "goal/internal/token"
 )
 
 // CheckImplements verifies, with real go/types identity, that every
@@ -19,27 +19,26 @@ import (
 //     (the documented §07 lexical ceiling), and
 //   - a qualified interface like io.Writer is actually checked, not deferred.
 //
-// It locates each clause in the goal source (the clause is erased by lowering) and
+// It locates each clause by walking the goal AST (the clause is erased by lowering) and
 // verifies it against the type-checked package, reporting at the clause position.
 func CheckImplements(p *Package) []Diagnostic {
 	if p.Types == nil {
 		return nil
 	}
 	var diags []Diagnostic
-	for _, f := range p.Src.Files {
-		for _, c := range implementsClauses(f.Src) {
+	for i, gf := range p.goalFiles {
+		path := p.Src.Files[i].Path
+		for _, c := range implementsClauses(gf) {
 			tObj := p.Lookup(c.typeName)
 			if tObj == nil {
 				continue // T not in package scope; nothing to verify
 			}
-			pos := goalPosition(f, c.off)
-			for _, iface := range c.ifaces {
-				if p.Tables.Sealed[iface] {
-					continue // sealed marker method — satisfied by construction
-				}
-				if d := verifyImplements(p, tObj.Type(), c.typeName, iface, pos); d != nil {
-					diags = append(diags, *d)
-				}
+			if p.Sema.Sealed[c.iface] {
+				continue // sealed marker method — satisfied by construction
+			}
+			pos := token.Position{Filename: path, Line: c.pos.Line, Column: c.pos.Col}
+			if d := verifyImplements(p, tObj.Type(), c.typeName, c.iface, pos); d != nil {
+				diags = append(diags, *d)
 			}
 		}
 	}
@@ -98,58 +97,63 @@ func resolveInterface(p *Package, iface string) *types.Interface {
 	return it
 }
 
-// implClause is one `type T struct implements I, J { … }` clause located in source.
+// implClause is one `type T struct implements I { … }` clause located on the parse
+// tree. The goal grammar admits a single asserted interface per clause, so iface is a
+// scalar (the legacy token-scanner locator's comma-list handling was dead capability —
+// the parser models exactly one `Type Expr`).
 type implClause struct {
 	typeName string
-	ifaces   []string
-	off      int // byte offset of the `implements` keyword
+	iface    string
+	pos      goaltoken.Pos // position of the `implements` keyword (1-based Line/Col)
 }
 
-// implementsClauses finds every inline implements clause in src (mirrors the lexical 07
-// check's locator: the clause sits between `struct` and the body `{`).
-func implementsClauses(src string) []implClause {
-	toks := scan.Lex(src)
+// implementsClauses finds every `type T struct implements I` clause in a parsed goal
+// file by walking its top-level type declarations, reading the asserted interface and
+// the clause position straight off ast.StructType.Implements. This is the AST analogue
+// of the lexical 07 check's token scan, correct by construction.
+func implementsClauses(f *goalast.File) []implClause {
 	var out []implClause
-	for i := 0; i+2 < len(toks); i++ {
-		if toks[i].Text != "type" || !textedit.IsIdent(toks[i+1].Text) || toks[i+2].Text != "struct" {
+	for _, d := range f.Decls {
+		gd, ok := d.(*goalast.GenDecl)
+		if !ok || gd.Tok != goaltoken.TYPE {
 			continue
 		}
-		open := -1
-		for k := i + 3; k < len(toks); k++ {
-			if toks[k].Text == "{" {
-				open = k
-				break
+		for _, s := range gd.Specs {
+			ts, ok := s.(*goalast.TypeSpec)
+			if !ok || ts.Name == nil {
+				continue
 			}
-		}
-		if open < 0 {
-			continue
-		}
-		imp := -1
-		for k := i + 3; k < open; k++ {
-			if toks[k].Text == "implements" {
-				imp = k
-				break
+			st, ok := ts.Type.(*goalast.StructType)
+			if !ok || st.Implements == nil {
+				continue
 			}
+			iface := ifaceName(st.Implements.Type)
+			if iface == "" {
+				continue
+			}
+			out = append(out, implClause{
+				typeName: ts.Name.Name,
+				iface:    iface,
+				pos:      st.Implements.Implements,
+			})
 		}
-		if imp < 0 {
-			continue
-		}
-		out = append(out, implClause{
-			typeName: toks[i+1].Text,
-			ifaces:   splitList(src[toks[imp].End:toks[open].Start]),
-			off:      toks[imp].Start,
-		})
 	}
 	return out
 }
 
-// splitList splits a comma-separated interface list into trimmed, non-empty names.
-func splitList(s string) []string {
-	var out []string
-	for part := range strings.SplitSeq(s, ",") {
-		if p := strings.TrimSpace(part); p != "" {
-			out = append(out, p)
+// ifaceName renders an `implements` clause's asserted interface as a dotted name: an
+// *Ident (Shape) or a *SelectorExpr (io.Writer). Anything else yields "".
+func ifaceName(e goalast.Expr) string {
+	switch x := e.(type) {
+	case *goalast.Ident:
+		return x.Name
+	case *goalast.SelectorExpr:
+		base := ifaceName(x.X)
+		if base == "" || x.Sel == nil {
+			return ""
 		}
+		return base + "." + x.Sel.Name
+	default:
+		return ""
 	}
-	return out
 }

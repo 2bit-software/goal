@@ -25,6 +25,40 @@
   CalleeKey, FirstBodyBrace, ParamsClose, TopLevelComma, IsBareQuestionStmt)
   stay in internal/scan, which now imports textedit for the pure bits.
 
+## [2026-06-28T24:00:00Z] - US-007 (checker-onto-ast PRD)
+- Migrated internal/typecheck (depth checker) off internal/analyze and the
+  internal/scan token lexer. typecheck now builds its name-keyed facts from
+  sema.ResolvePackage / sema.Info instead of analyze.BuildPackage / analyze.Tables,
+  and locates `implements` clauses by walking the goal AST instead of scan.Lex.
+- Package.Tables (*analyze.Tables) -> Package.Sema (*sema.Info), plus a private
+  goalFiles []*ast.File (parsed goal ASTs aligned with Src.Files by index, retained
+  for the implements walk). Load parses each file once with the goal parser.ParseFile
+  (the same parse backend.TranspilePackage already did, so it cannot newly fail) then
+  calls sema.ResolvePackage.
+- mustuse.go: p.Tables.{FuncSignatures,Structs} -> p.Sema.*, analyze.ModeResult ->
+  sema.ModeResult. implements.go: p.Tables.Sealed -> p.Sema.Sealed; new AST-walk
+  implementsClauses(*ast.File) over top-level type decls reading StructType.Implements
+  (interface off ImplementsClause.Type via new ifaceName; clause position off
+  ImplementsClause.Implements, a goal token.Pos already carrying 1-based Line/Col).
+  Dropped the now-dead goalPosition/offsetLineCol/splitList helpers.
+- Files: internal/typecheck/{typecheck,mustuse,implements,typecheck_test}.go,
+  prd.json, progress.txt. Initiative artifacts under
+  history/20260628-refactor-us-007-migrate-typecheck-off-analyze-and-scan/.
+- Learnings for future iterations:
+  - typecheck imports go/ast, go/parser, go/token under their bare names, so the
+    goal equivalents must be aliased (goalast/goalparser/goaltoken) when both are
+    needed in one file.
+  - The goal parser models exactly ONE interface per `implements` clause
+    (ImplementsClause.Type is a single Expr) — the legacy scan locator's
+    comma-separated-list handling was dead capability; goal source cannot express
+    `implements I, J`. An AST walk loses nothing.
+  - sema.Info mirrors analyze.Tables field-for-field for the facts depth checks read
+    (FuncSignatures with Mode, Structs, Sealed), and sema.Mode constants line up with
+    analyze.Mode by order, so the swap is mechanical. Remaining live analyze/scan
+    consumers after this story: project, pipeline/sourcemap (US-008), backend/package
+    (US-009); then US-010 deletes analyze + the scanner.
+---
+
 ## [2026-06-28T23:55:00Z] - US-005 (checker-onto-ast PRD)
 - Deleted the legacy lexical checker internal/check and migrated every remaining
   live consumer onto sema / token. internal/check is gone; no live import of it

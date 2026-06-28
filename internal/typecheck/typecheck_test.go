@@ -52,9 +52,9 @@ func TestLoadTypedView(t *testing.T) {
 	if len(p.Info.Defs) == 0 || len(p.Info.Uses) == 0 {
 		t.Errorf("Info not populated: Defs=%d Uses=%d", len(p.Info.Defs), len(p.Info.Uses))
 	}
-	// Merged tables carry what goal said (so a check knows which question to ask).
-	if _, ok := p.Tables.FuncSignatures["greet"]; !ok {
-		t.Error("merged tables missing greet")
+	// Merged sema facts carry what goal said (so a check knows which question to ask).
+	if _, ok := p.Sema.FuncSignatures["greet"]; !ok {
+		t.Error("merged sema facts missing greet")
 	}
 	// A user declaration is found by its goal name, and its position maps to .goal.
 	dog := p.Lookup("Dog")

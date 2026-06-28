@@ -98,7 +98,7 @@
         "All existing depth-check tests pass"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "typecheck.go uses analyze.BuildPackage + Tables; mustuse.go uses analyze.ModeResult; implements.go uses scan.Lex to find `type X struct`. Replace each with sema.Info / AST walks."
     },
     {

@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 
-	"goal/internal/analyze"
 	"goal/internal/sema"
 )
 
@@ -78,8 +77,8 @@ func discardedResultError(p *Package, as *ast.AssignStmt) *Diagnostic {
 	if !ok {
 		return nil
 	}
-	sig, ok := p.Tables.FuncSignatures[callee.Name]
-	if !ok || sig.Mode != analyze.ModeResult {
+	sig, ok := p.Sema.FuncSignatures[callee.Name]
+	if !ok || sig.Mode != sema.ModeResult {
 		return nil
 	}
 	if !isBlank(as.Lhs[1]) {
@@ -108,8 +107,8 @@ func discardedResultError(p *Package, as *ast.AssignStmt) *Diagnostic {
 func checkDroppedField(p *Package) []Diagnostic {
 	consulted := consultedFields(p)
 
-	names := make([]string, 0, len(p.Tables.Structs))
-	for name := range p.Tables.Structs {
+	names := make([]string, 0, len(p.Sema.Structs))
+	for name := range p.Sema.Structs {
 		names = append(names, name)
 	}
 	sort.Strings(names) // deterministic diagnostic order
@@ -167,7 +166,7 @@ func isResultNamed(p *Package, t types.Type) bool {
 // single type argument; a multi-argument `Result[T, E]` line it mis-splits is recognized
 // from go/types instead — see isResultNamed.)
 func optionDeclared(p *Package, sname, fname string) bool {
-	for _, f := range p.Tables.Structs[sname] {
+	for _, f := range p.Sema.Structs[sname] {
 		if f.Name == fname && strings.HasPrefix(strings.TrimSpace(f.Type), "Option[") {
 			return true
 		}

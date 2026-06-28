@@ -19,10 +19,10 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"strings"
 
-	"goal/internal/analyze"
+	goalast "goal/internal/ast"
 	"goal/internal/backend"
+	goalparser "goal/internal/parser"
 	"goal/internal/project"
 	"goal/internal/sema"
 )
@@ -38,12 +38,21 @@ type Package struct {
 	Types  *types.Package
 	Info   *types.Info
 	Files  []*ast.File
-	Tables *analyze.Tables
+	// Sema is the merged name-keyed semantic facts (signatures, structs, sealed
+	// interfaces) resolved from the goal AST. It is the depth checker's source of
+	// goal-level facts, replacing the legacy analyze.Tables: a depth check reads it
+	// to know which question to ask (which functions are Result-mode, which structs
+	// exist, which interfaces are sealed).
+	Sema   *sema.Info
 	Errors []error
 	// Src is the original goal package (pre-lowering): some depth checks locate a
 	// construct in the goal source (an `implements` clause, a `derive func`) and then
 	// verify it against the type information, rather than reconstruct it from the AST.
 	Src *project.Package
+	// goalFiles holds each source file's parsed goal AST, aligned with Src.Files by
+	// index. The implements check walks these to locate `implements` clauses off the
+	// parse tree rather than re-lexing the source.
+	goalFiles []*goalast.File
 }
 
 // Load transpiles a goal package, parses the lowered Go, and type-checks it with
@@ -56,11 +65,19 @@ func Load(pkg *project.Package) (*Package, error) {
 		return nil, fmt.Errorf("transpile: %w", err)
 	}
 
-	srcs := make([]string, len(pkg.Files))
+	// Parse each file's goal AST and resolve the package's name-keyed facts. This is
+	// the same parse backend.TranspilePackage just performed, so it cannot fail here
+	// where transpile succeeded. The merged Info replaces analyze.BuildPackage's
+	// Tables; the parsed files are retained for the implements clause walk.
+	goalFiles := make([]*goalast.File, len(pkg.Files))
 	for i, f := range pkg.Files {
-		srcs[i] = f.Src
+		gf, perr := goalparser.ParseFile(f.Src)
+		if perr != nil {
+			return nil, fmt.Errorf("parse goal source %s: %w", f.Path, perr)
+		}
+		goalFiles[i] = gf
 	}
-	tables := analyze.BuildPackage(srcs)
+	semaInfo := sema.ResolvePackage(goalFiles)
 
 	fset := token.NewFileSet()
 	var files []*ast.File
@@ -78,7 +95,7 @@ func Load(pkg *project.Package) (*Package, error) {
 		Types:      map[ast.Expr]types.TypeAndValue{},
 		Selections: map[*ast.SelectorExpr]*types.Selection{},
 	}
-	p := &Package{Fset: fset, Info: info, Files: files, Tables: tables, Src: pkg}
+	p := &Package{Fset: fset, Info: info, Files: files, Sema: semaInfo, Src: pkg, goalFiles: goalFiles}
 	conf := types.Config{
 		Importer: importer.Default(),
 		Error:    func(e error) { p.Errors = append(p.Errors, e) },
@@ -103,30 +120,6 @@ type Diagnostic struct {
 // String renders the diagnostic as `file:line:col: severity: [code] message`.
 func (d Diagnostic) String() string {
 	return fmt.Sprintf("%s: %s: [%s] %s", d.Pos, d.Severity, d.Code, d.Message)
-}
-
-// goalPosition turns a byte offset into a goal source file into a token.Position. Used
-// by checks that locate a construct in the source (e.g. an `implements` clause) and
-// report there rather than at a go/types node.
-func goalPosition(f project.File, off int) token.Position {
-	line, col := offsetLineCol(f.Src, off)
-	return token.Position{Filename: f.Path, Line: line, Column: col}
-}
-
-// offsetLineCol converts a byte offset into src to a 1-based line and column,
-// clamping an out-of-range offset to the nearest valid bound. It is the depth
-// checker's local replacement for the deleted check.OffsetToPosition; typecheck
-// imports go/token as "token", so it cannot also use goal/internal/token's helper.
-func offsetLineCol(src string, off int) (line, col int) {
-	if off < 0 {
-		off = 0
-	}
-	if off > len(src) {
-		off = len(src)
-	}
-	line = 1 + strings.Count(src[:off], "\n")
-	col = off - (strings.LastIndexByte(src[:off], '\n') + 1) + 1
-	return line, col
 }
 
 // GoalPos returns the .goal source position of an AST node, resolved through the //line
