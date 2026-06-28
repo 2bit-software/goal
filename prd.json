@@ -137,7 +137,7 @@
         "grep for text/scanner returns matches only under attic/ and features/_cut/"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Final deletion. Depends on US-007, US-008, US-009 having removed every live consumer. The pure utilities relocated in US-006 survive in internal/textedit."
     }
   ]

@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"goal/internal/analyze"
 	"goal/internal/project"
+	"goal/internal/sema"
 )
 
 const serverVersion = "0.1.0"
@@ -55,20 +55,20 @@ type Server struct {
 	// published from another file's run.
 	analysisMu sync.Mutex
 	files      dirReader
-	resolve    analyze.DirResolver
+	resolve    sema.DirResolver
 }
 
 // NewServer returns a server that publishes diagnostics to out (the client's
 // stdin) and resolves a file's package from the real filesystem. Only framed
 // protocol messages are ever written to out.
 func NewServer(out io.Writer) *Server {
-	return NewServerWithIO(out, osDirReader, analyze.DefaultResolver)
+	return NewServerWithIO(out, osDirReader, sema.DefaultResolver)
 }
 
 // NewServerWithIO is NewServer with the filesystem and import-resolution seams injected, so
 // tests can drive the server across a synthetic package without touching real disk or the
 // go toolchain.
-func NewServerWithIO(out io.Writer, files dirReader, resolve analyze.DirResolver) *Server {
+func NewServerWithIO(out io.Writer, files dirReader, resolve sema.DirResolver) *Server {
 	return &Server{
 		out:      out,
 		docs:     map[string]*doc{},

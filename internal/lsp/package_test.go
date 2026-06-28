@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"goal/internal/analyze"
 	"goal/internal/sema"
 )
 
@@ -25,7 +24,7 @@ func fakeFiles(byDir map[string][]fileSrc) dirReader {
 
 // fakeResolver maps known import paths to fixture directories; an unknown import errors so
 // the test never reaches the real go toolchain.
-func fakeResolver(m map[string]string) analyze.DirResolver {
+func fakeResolver(m map[string]string) sema.DirResolver {
 	return func(importPath, _ string) (string, error) {
 		if d, ok := m[importPath]; ok {
 			return d, nil
@@ -36,7 +35,7 @@ func fakeResolver(m map[string]string) analyze.DirResolver {
 
 // testServer is a synchronous server (no debounce) wired to in-memory IO, so a compile's
 // published diagnostics are in out before the call returns.
-func testServer(out *bytes.Buffer, files dirReader, resolve analyze.DirResolver) *Server {
+func testServer(out *bytes.Buffer, files dirReader, resolve sema.DirResolver) *Server {
 	s := NewServerWithIO(out, files, resolve)
 	s.debounce = 0
 	return s

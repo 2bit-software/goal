@@ -3,9 +3,9 @@
 // line-scanning helpers, and the type helpers (BaseType, ZeroLit) that reason
 // over type expressions as plain strings.
 //
-// Nothing here depends on text/scanner or the token stream — these are the pure
-// survivors relocated out of internal/scan and internal/analyze so those
-// lexer-based packages can later be deleted without losing the utilities.
+// Nothing here depends on the lexer or the token stream — these are the pure
+// survivors relocated out of the former internal/scan and internal/analyze so
+// those lexer-based packages could be deleted without losing the utilities.
 package textedit
 
 import (

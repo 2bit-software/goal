@@ -1,4 +1,4 @@
-// Package extpkg is a fixture foreign Go package: analyze's foreign-type tests read its
+// Package extpkg is a fixture foreign Go package: sema's foreign-type tests read its
 // exported struct field sets the way EnrichForeign reads an imported package. It is under
 // testdata so the go tool never builds it as part of the project.
 package extpkg

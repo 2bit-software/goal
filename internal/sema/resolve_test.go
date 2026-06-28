@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"goal/internal/analyze"
 	"goal/internal/parser"
 )
 
@@ -39,8 +38,8 @@ func (p Point) Dist() float64 { return 0 }
 func (p *Point) Move(dx int) {}
 `
 
-// nospace strips whitespace so a type string is compared semantically (the token
-// scanner captures verbatim source; the AST printer canonicalizes spacing).
+// nospace strips whitespace so a type string is compared semantically (the AST
+// printer canonicalizes spacing).
 func nospace(s string) string { return strings.ReplaceAll(strings.Join(strings.Fields(s), ""), " ", "") }
 
 func mustResolve(t *testing.T, src string) *Info {
@@ -52,71 +51,55 @@ func mustResolve(t *testing.T, src string) *Info {
 	return Resolve(f)
 }
 
-// TestResolveMatchesAnalyze asserts sema (AST walk) resolves the same name-keyed
-// symbols as analyze.Build (token scan) for the representative source.
-func TestResolveMatchesAnalyze(t *testing.T) {
-	a := analyze.Build(repr)
+// TestResolveRepresentativeSource asserts sema's AST walk resolves the full set of
+// name-keyed facts the transpiler depends on: enum variants and payloads, struct fields,
+// sealed interfaces, function Result/Option signatures, the from/derive conversion
+// registry, and per-receiver methods.
+func TestResolveRepresentativeSource(t *testing.T) {
 	s := mustResolve(t, repr)
 
-	// Enums: variant names and payload fields agree.
-	ae, se := a.Enums["Status"], s.Enums["Status"]
-	if ae == nil || se == nil {
-		t.Fatalf("Status enum missing: analyze=%v sema=%v", ae, se)
+	// Enums: variant names, ordering, and payload fields.
+	se := s.Enums["Status"]
+	if se == nil {
+		t.Fatalf("Status enum missing")
 	}
-	if len(ae.Variants) != len(se.Variants) {
-		t.Fatalf("Status variant count: analyze=%d sema=%d", len(ae.Variants), len(se.Variants))
+	if len(se.Variants) != 2 {
+		t.Fatalf("Status variant count = %d, want 2", len(se.Variants))
 	}
-	for i := range ae.Variants {
-		av, sv := ae.Variants[i], se.Variants[i]
-		if av.Name != sv.Name {
-			t.Errorf("variant %d name: analyze=%q sema=%q", i, av.Name, sv.Name)
-		}
-		if len(av.Fields) != len(sv.Fields) {
-			t.Fatalf("variant %s field count: analyze=%d sema=%d", av.Name, len(av.Fields), len(sv.Fields))
-		}
-		for j := range av.Fields {
-			if av.Fields[j].Name != sv.Fields[j].Name || nospace(av.Fields[j].Type) != nospace(sv.Fields[j].Type) {
-				t.Errorf("variant %s field %d: analyze=%+v sema=%+v", av.Name, j, av.Fields[j], sv.Fields[j])
-			}
-		}
+	if se.Variants[0].Name != "Active" || se.Variants[1].Name != "Pending" {
+		t.Errorf("Status variants = %q/%q, want Active/Pending", se.Variants[0].Name, se.Variants[1].Name)
+	}
+	if len(se.Variants[0].Fields) != 1 || se.Variants[0].Fields[0].Name != "since" || nospace(se.Variants[0].Fields[0].Type) != "int" {
+		t.Errorf("Active payload = %+v, want [{since int}]", se.Variants[0].Fields)
+	}
+	if len(se.Variants[1].Fields) != 0 {
+		t.Errorf("Pending payload = %+v, want none", se.Variants[1].Fields)
 	}
 	if !se.VSet["Active"] || !se.VSet["Pending"] {
-		t.Errorf("sema VSet incomplete: %v", se.VSet)
+		t.Errorf("VSet incomplete: %v", se.VSet)
 	}
 	if !se.FieldSet["Active"]["since"] {
-		t.Errorf("sema FieldSet missing Active.since: %v", se.FieldSet)
+		t.Errorf("FieldSet missing Active.since: %v", se.FieldSet)
 	}
 
-	// Structs: ordered fields agree.
-	as, ss := a.Structs["Point"], s.Structs["Point"]
-	if len(as) != len(ss) {
-		t.Fatalf("Point field count: analyze=%d sema=%d", len(as), len(ss))
+	// Structs: ordered fields.
+	ss := s.Structs["Point"]
+	if len(ss) != 2 || ss[0].Name != "x" || ss[1].Name != "y" {
+		t.Fatalf("Point fields = %+v, want [{x int} {y int}]", ss)
 	}
-	for i := range as {
-		if as[i].Name != ss[i].Name || nospace(as[i].Type) != nospace(ss[i].Type) {
-			t.Errorf("Point field %d: analyze=%+v sema=%+v", i, as[i], ss[i])
-		}
+	if nospace(ss[0].Type) != "int" || nospace(ss[1].Type) != "int" {
+		t.Errorf("Point field types = %q/%q, want int/int", ss[0].Type, ss[1].Type)
 	}
 
 	// Sealed interface.
-	if !a.Sealed["Shape"] || !s.Sealed["Shape"] {
-		t.Errorf("Shape sealed: analyze=%v sema=%v", a.Sealed["Shape"], s.Sealed["Shape"])
+	if !s.Sealed["Shape"] {
+		t.Errorf("Shape not recorded as sealed")
 	}
 
 	// Function signatures: mode, success/error types, arity, ends-in-error.
-	for _, name := range []string{"area", "find", "lookup", "closed"} {
-		af, sf := a.FuncSignatures[name], s.FuncSignatures[name]
-		if int(af.Mode) != int(sf.Mode) {
-			t.Errorf("%s mode: analyze=%d sema=%d", name, af.Mode, sf.Mode)
-		}
-		if nospace(af.T) != nospace(sf.T) || nospace(af.E) != nospace(sf.E) {
-			t.Errorf("%s T/E: analyze=(%q,%q) sema=(%q,%q)", name, af.T, af.E, sf.T, sf.E)
-		}
-		if af.Arity != sf.Arity || af.EndsInError != sf.EndsInError {
-			t.Errorf("%s arity/endsErr: analyze=(%d,%v) sema=(%d,%v)", name, af.Arity, af.EndsInError, sf.Arity, sf.EndsInError)
-		}
+	if got := s.FuncSignatures["area"]; got.Mode != ModeNone {
+		t.Errorf("area mode = %v, want ModeNone", got.Mode)
 	}
-	// Spot-check the resolved Result/Option facts directly.
 	if got := s.FuncSignatures["find"]; got.Mode != ModeResult || got.T != "int" || got.E != "error" || got.Arity != 2 || !got.EndsInError {
 		t.Errorf("find resolved wrong: %+v", got)
 	}
@@ -127,56 +110,33 @@ func TestResolveMatchesAnalyze(t *testing.T) {
 		t.Errorf("closed resolved wrong: %+v", got)
 	}
 
-	// From-registry: every analyze conversion entry is present in sema with the
-	// same name and fallibility (compared modulo whitespace in the key types).
-	for k, av := range a.FromRegistry {
-		found := false
-		for sk, sv := range s.FromRegistry {
-			if nospace(sk[0]) == nospace(k[0]) && nospace(sk[1]) == nospace(k[1]) {
-				found = true
-				if sv.Name != av.Name || sv.Fallible != av.Fallible {
-					t.Errorf("from-registry %v: analyze=%+v sema=%+v", k, av, sv)
-				}
-			}
-		}
-		if !found {
-			t.Errorf("sema from-registry missing analyze key %v (%+v)", k, av)
-		}
-	}
+	// From-registry: both the plain `from func` and the `derive func` are recorded under
+	// their (src,dst) type keys with the conversion function name.
 	if e, ok := s.FromRegistry[[2]string{"string", "int"}]; !ok || e.Name != "parseInt" {
-		t.Errorf("sema from-registry [string,int] = %+v, ok=%v", e, ok)
+		t.Errorf("from-registry [string,int] = %+v, ok=%v", e, ok)
 	}
 	if e, ok := s.FromRegistry[[2]string{"Pair", "Point"}]; !ok || e.Name != "toPoint" {
-		t.Errorf("sema from-registry [Pair,Point] = %+v, ok=%v", e, ok)
+		t.Errorf("from-registry [Pair,Point] = %+v, ok=%v", e, ok)
 	}
 
-	// Methods: the per-receiver method-name set agrees.
+	// Methods: the per-receiver method-name set.
 	if names := methodNames(s.Methods["Point"]); !names["Dist"] || !names["Move"] {
-		t.Errorf("sema Point methods = %v, want Dist+Move", names)
-	}
-	if names := methodNames(a.Methods["Point"]); !names["Dist"] || !names["Move"] {
-		t.Errorf("analyze Point methods = %v, want Dist+Move (sanity)", names)
+		t.Errorf("Point methods = %v, want Dist+Move", names)
 	}
 }
 
-func methodNames[M any](ms []M) map[string]bool {
+func methodNames(ms []Method) map[string]bool {
 	out := map[string]bool{}
 	for _, m := range ms {
-		switch v := any(m).(type) {
-		case Method:
-			out[v.Name] = true
-		case analyze.Method:
-			out[v.Name] = true
-		}
+		out[m.Name] = true
 	}
 	return out
 }
 
-// TestResolveStructCommaFieldType is the analyze comma-split-bug case: a struct
-// field whose type contains an embedded (top-level) comma — here a generic
-// instance Result[int, error]. The token scanner splits the field text on
-// whitespace and mangles the comma-bearing type; the AST walk resolves it to a
-// single, correctly-typed field.
+// TestResolveStructCommaFieldType covers a struct field whose type contains an
+// embedded (top-level) comma — here a generic instance Result[int, error]. The AST
+// walk resolves it to a single, correctly-typed field (a whitespace/comma split would
+// mangle it).
 func TestResolveStructCommaFieldType(t *testing.T) {
 	const src = `package demo
 
@@ -195,14 +155,5 @@ type Box struct {
 	}
 	if fields[1].Name != "name" || fields[1].Type != "string" {
 		t.Errorf("field 1 = %+v, want {name string}", fields[1])
-	}
-
-	// Demonstrate the bug the AST walk fixes: the token scanner's whitespace split
-	// does NOT produce the same clean two-field result for the comma-bearing type.
-	a := analyze.Build(src)
-	if got := a.Structs["Box"]; len(got) == 2 &&
-		got[0].Name == "items" && nospace(got[0].Type) == "Result[int,error]" &&
-		got[1].Name == "name" && got[1].Type == "string" {
-		t.Errorf("expected analyze to mishandle the comma-bearing field, but it resolved cleanly: %+v", got)
 	}
 }

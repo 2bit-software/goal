@@ -76,7 +76,7 @@ derive func make(o *ext.Outer) Target
 `
 	srcs := []string{targetFile, deriveFile}
 
-	dir, err := filepath.Abs(filepath.Join("..", "analyze", "testdata", "extpkg"))
+	dir, err := filepath.Abs(filepath.Join("testdata", "extpkg"))
 	if err != nil {
 		t.Fatal(err)
 	}

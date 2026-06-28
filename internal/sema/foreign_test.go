@@ -5,25 +5,23 @@ import (
 	"reflect"
 	"testing"
 
-	"goal/internal/analyze"
 	"goal/internal/parser"
 )
 
-// TestEnrichForeignMatchesAnalyze is the US-001 parity gate: for the same multi-file
-// input (a goal file importing a package with an exported struct AND an exported method),
-// sema.EnrichForeign must produce ForeignMethods + Structs entries identical, field for
-// field, to what analyze.EnrichForeign produces. The foreign package fixture is shared
-// with analyze's own foreign tests (../analyze/testdata/extpkg), which declares both an
-// exported struct (Outer/Inner, with package-local pointer/slice/map fields) and an
-// exported method (Inner.Close), so the comparison exercises both maps.
-func TestEnrichForeignMatchesAnalyze(t *testing.T) {
-	dir, err := filepath.Abs(filepath.Join("..", "analyze", "testdata", "extpkg"))
+// TestEnrichForeignResolvesImportedStructAndMethod is the foreign-enrichment gate: for a
+// goal file importing a package with an exported struct AND an exported method,
+// sema.EnrichForeign must populate ForeignMethods + Structs from the imported package read
+// via the resolver. The fixture (testdata/extpkg) declares an exported struct (Outer/Inner,
+// with package-local pointer/slice/map fields) and an exported method (Inner.Close), so the
+// assertions exercise both maps. Package-local type references are qualified by the import
+// alias (Inner -> ext.Inner).
+func TestEnrichForeignResolvesImportedStructAndMethod(t *testing.T) {
+	dir, err := filepath.Abs(filepath.Join("testdata", "extpkg"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A `derive func` references ext.Outer, so analyze's needed-alias filter loads ext;
-	// the goal AST's import list loads the same package for sema. Both then read the whole
-	// foreign package, so the struct AND method sets must coincide.
+	// A `derive func` references ext.Outer, so the AST's import list loads ext; sema then
+	// reads the whole foreign package, so the struct AND method sets are both populated.
 	src := `package consumer
 
 import ext "example.com/ext"
@@ -39,7 +37,6 @@ derive func make(o *ext.Outer) Local
 		return dir, nil
 	}
 
-	// Native (AST-driven) enrichment.
 	file, perr := parser.ParseFile(src)
 	if perr != nil {
 		t.Fatalf("parse goal source: %v", perr)
@@ -49,47 +46,40 @@ derive func make(o *ext.Outer) Local
 		t.Fatalf("sema.EnrichForeign errors: %v", errs)
 	}
 
-	// Legacy (token-scanning) enrichment, same input.
-	tb := analyze.Build(src)
-	if errs := analyze.EnrichForeign(tb, []string{src}, ".", resolve); len(errs) != 0 {
-		t.Fatalf("analyze.EnrichForeign errors: %v", errs)
-	}
-
-	// Structs parity: every foreign struct analyze recorded must match sema's, field for
-	// field (compared by Name+Type, since the two packages' Field types are distinct).
-	for name, aFields := range tb.Structs {
-		sFields, ok := info.Structs[name]
-		if !ok {
-			t.Errorf("sema.Structs missing %q (analyze has it)", name)
-			continue
-		}
-		if !sameFields(sFields, aFields) {
-			t.Errorf("Structs[%q] mismatch\n sema:    %+v\n analyze: %+v", name, sFields, aFields)
-		}
-	}
-	if _, ok := info.Structs["ext.Outer"]; !ok {
+	// Structs: the imported Outer is enriched with exactly its exported fields (the
+	// unexported `hidden` is skipped), and the package-local Inner references are qualified
+	// by the import alias.
+	outer, ok := info.Structs["ext.Outer"]
+	if !ok {
 		t.Fatalf("expected ext.Outer to be enriched; have %v", structKeys(info.Structs))
 	}
-	if _, ok := info.Structs["ext.Inner"]; !ok {
-		t.Error("expected sibling ext.Inner to be enriched")
+	wantOuter := []Field{
+		{Name: "ID", Type: "string"},
+		{Name: "Count", Type: "int"},
+		{Name: "Inner", Type: "*ext.Inner"},
+		{Name: "Tags", Type: "[]string"},
+		{Name: "Items", Type: "[]*ext.Inner"},
+		{Name: "ByName", Type: "map[string]*ext.Inner"},
+	}
+	if len(outer) != len(wantOuter) {
+		t.Fatalf("ext.Outer fields = %d (%+v), want %d", len(outer), outer, len(wantOuter))
+	}
+	for i, w := range wantOuter {
+		if outer[i].Name != w.Name || nospace(outer[i].Type) != nospace(w.Type) {
+			t.Errorf("ext.Outer field %d = {%s %s}, want {%s %s}", i, outer[i].Name, outer[i].Type, w.Name, w.Type)
+		}
 	}
 
-	// ForeignMethods parity: every foreign method analyze recorded must match sema's by
-	// the `?`-relevant facts (Arity, EndsInError); both leave Mode at ModeNone.
-	for name, aSig := range tb.ForeignMethods {
-		sSig, ok := info.ForeignMethods[name]
-		if !ok {
-			t.Errorf("sema.ForeignMethods missing %q (analyze has it)", name)
-			continue
-		}
-		if sSig.Arity != aSig.Arity || sSig.EndsInError != aSig.EndsInError {
-			t.Errorf("ForeignMethods[%q] mismatch\n sema:    {Arity:%d EndsInError:%t}\n analyze: {Arity:%d EndsInError:%t}",
-				name, sSig.Arity, sSig.EndsInError, aSig.Arity, aSig.EndsInError)
-		}
-		if sSig.Mode != ModeNone {
-			t.Errorf("ForeignMethods[%q].Mode = %v, want ModeNone", name, sSig.Mode)
-		}
+	inner, ok := info.Structs["ext.Inner"]
+	if !ok {
+		t.Fatalf("expected sibling ext.Inner to be enriched; have %v", structKeys(info.Structs))
 	}
+	if len(inner) != 1 || inner[0].Name != "Label" || inner[0].Type != "string" {
+		t.Errorf("ext.Inner fields = %+v, want [{Label string}]", inner)
+	}
+
+	// ForeignMethods: the receiver method is recorded by qualified key with the `?`-relevant
+	// facts (Arity, EndsInError) and Mode left at ModeNone.
 	closeSig, ok := info.ForeignMethods["ext.Inner.Close"]
 	if !ok {
 		t.Fatalf("expected ext.Inner.Close in ForeignMethods; have %v", methodKeys(info.ForeignMethods))
@@ -97,11 +87,14 @@ derive func make(o *ext.Outer) Local
 	if closeSig.Arity != 1 || !closeSig.EndsInError {
 		t.Errorf("ext.Inner.Close = {Arity:%d EndsInError:%t}, want {1 true}", closeSig.Arity, closeSig.EndsInError)
 	}
+	if closeSig.Mode != ModeNone {
+		t.Errorf("ext.Inner.Close.Mode = %v, want ModeNone", closeSig.Mode)
+	}
 }
 
 // TestEnrichForeignResolveErrorIsNonFatal proves the error path: a resolver failure is
 // collected and returned, never panics, and adds no foreign types (the import is simply
-// left unknown, matching analyze).
+// left unknown).
 func TestEnrichForeignResolveErrorIsNonFatal(t *testing.T) {
 	src := `package p
 
@@ -139,18 +132,6 @@ func TestEnrichForeignNilResolverNoImportsIsSafe(t *testing.T) {
 	if errs := EnrichForeign(info, nil, ".", nil); errs != nil {
 		t.Fatalf("expected no errors enriching an importless file, got %v", errs)
 	}
-}
-
-func sameFields(s []Field, a []analyze.Field) bool {
-	if len(s) != len(a) {
-		return false
-	}
-	for i := range s {
-		if s[i].Name != a[i].Name || s[i].Type != a[i].Type {
-			return false
-		}
-	}
-	return true
 }
 
 func structKeys(m map[string][]Field) []string {
