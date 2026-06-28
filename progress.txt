@@ -1,5 +1,34 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T18:20:00Z] - US-002
+- Proved US-002 "Lower value-position match over Result and Option": a `match`
+  over a Result or Option used as a VALUE — returned directly (`return match …`)
+  or bound as an assignment RHS (`x := match …` / `var x T = match …`) — now
+  lowers. Previously only enum value-position match lowered; a value-position
+  Result/Option match reached the generic expr path and failed with
+  `unsupported expression *ast.MatchExpr`.
+- Mechanism: generalized the existing statement-position lowering
+  (resultMatch/closedResultMatch/optionMatch) to take `(m, pos matchPos, name
+  string)` and emit each arm body through armWrap (the same wrapper enumMatch
+  already uses): bare in posStmt, `return <body>` in posReturn, `name = <body>`
+  in posVar. Renamed arms (Ok/Err payload bindings) flow through a new
+  armBodyRenamedWrap. Value-position dispatch wired into the SAME three seams the
+  enum path uses: returnStmt (posReturn), tryVarMatch (posVar, explicit `var name
+  T`), tryAssignMatch (posVar, type via inferMatchType — non-inferable arms keep
+  the located deferral). matchStmt calls the emitters with posStmt, so the
+  statement path (features/03-result, features/04-option) is byte-for-byte
+  unchanged.
+- Files: internal/backend/emit.go (matchStmt, resultMatch, closedResultMatch,
+  optionMatch signatures + armWrap calls; new armBodyRenamedWrap; returnStmt,
+  tryVarMatch, tryAssignMatch dispatch; new matchValue dispatch helper),
+  internal/backend/backend_test.go (TestASTEngineValueMatchBehavioralTier +
+  TestASTEngineValueMatchEncoding), internal/backend/testdata/
+  match_value_result.goal + match_value_option.goal (Result/Option × return/assign
+  fixtures). All verifyCommands green (build, vet, full test suite).
+- Learnings: see the new Codebase Patterns entry (one position-parameterized set
+  of match emitters + three dispatch seams; no separate value path).
+---
+
 ## [2026-06-28T18:05:00Z] - US-001
 - Proved US-001 "Lower Option construction in value positions": Option.Some/None
   now lowers to its *T pointer encoding wherever an Option value is PRODUCED — a
@@ -594,6 +623,19 @@
 ---
 
 ## Codebase Patterns
+- Value-position match lowering (enum AND Result/Option) reuses ONE set of
+  position-parameterized emitters keyed by matchPos: enumMatch(m,pos,name),
+  resultMatch/closedResultMatch/optionMatch(m,pos,name). Each wraps its arm bodies
+  through armWrap (posStmt=bare, posReturn=`return <body>`, posVar=`name = <body>`)
+  — renamed arms via armBodyRenamedWrap. The value-position DISPATCH lives in
+  exactly three seams: returnStmt (posReturn), tryVarMatch (posVar, explicit `var
+  name T`), tryAssignMatch (posVar, type via inferMatchType). A statement match
+  goes through matchStmt with posStmt. To add value-position support for any new
+  match subject kind, generalize its statement-position emitter to (m,pos,name) +
+  armWrap and add a qualifier branch in those three dispatch sites — do NOT add a
+  separate value-path. inferMatchType only resolves string/bool/enum arm bodies, so
+  a `:=` (untyped) assignment whose arms aren't inferable keeps a located deferral;
+  richer arm bodies need `var x T = match` or `return match`.
 - AST-backend value-position lowering of Option construction rides on a SINGLE
   seam: the top of emitter.expr (emit.go). Every value position — a var/assign
   RHS, a call argument, a struct-literal field, and slice/map-literal elements —

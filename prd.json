@@ -35,7 +35,7 @@
         "A backend test covering value-position match over both Result and Option, in both return and assignment positions, exists and passes"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Enum value-position match already lowers (enumMatch via returnStmt, plus tryVarMatch/tryAssignMatch); statement-position Result/Option match already lowers (matchStmt). The gap is value-position match whose subject is a Result/Option — currently it reaches the generic expr path and fails with `unsupported expression *ast.MatchExpr`. Wire the Result/Option value-match into the same return- and assignment-position dispatch the enum path uses."
     },
     {
