@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -267,5 +268,72 @@ func TestRunInterpNoMain(t *testing.T) {
 	var out, errOut bytes.Buffer
 	if err := run([]string{"run", "--engine=interp", file}, &out, &errOut); err == nil {
 		t.Error("interp run of a program with no func main should fail")
+	}
+}
+
+// argEchoGoal prints the two program arguments it receives, so a run that passes
+// arguments through can be observed end to end. It indexes os.Args directly
+// rather than slicing, since the goal parser does not yet support slice
+// expressions.
+const argEchoGoal = `package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	fmt.Println(os.Args[1] + " " + os.Args[2])
+}
+`
+
+// TestParseRunFlagsCollectsProgramArgs pins the run grammar: goal's own flags
+// precede the path, the first positional is the path, and every token after it —
+// flags included — is collected verbatim as a program argument rather than
+// interpreted by goal.
+func TestParseRunFlagsCollectsProgramArgs(t *testing.T) {
+	engine, _, _, root, progArgs, err := parseRunFlags([]string{"--engine=ast", "./cmd/hob", "connect", "--dev"})
+	if err != nil {
+		t.Fatalf("parseRunFlags returned error: %v", err)
+	}
+	if engine != "ast" {
+		t.Errorf("engine = %q, want ast", engine)
+	}
+	if root != "./cmd/hob" {
+		t.Errorf("root = %q, want ./cmd/hob", root)
+	}
+	if want := []string{"connect", "--dev"}; !slices.Equal(progArgs, want) {
+		t.Errorf("progArgs = %v, want %v", progArgs, want)
+	}
+}
+
+// TestRunPassesProgramArgs drives `goal run <path> <args...>` through the real
+// command path and confirms the running program receives the trailing arguments,
+// mirroring `go run <pkg> [args...]`.
+func TestRunPassesProgramArgs(t *testing.T) {
+	dir := goalModule(t, map[string]string{"main.goal": argEchoGoal})
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"run", dir, "connect", "--dev"}, &out, &errOut); err != nil {
+		t.Fatalf("run failed: %v\n%s", err, errOut.String())
+	}
+	if got := strings.TrimSpace(out.String()); got != "connect --dev" {
+		t.Errorf("program saw args %q, want %q\nstderr: %s", got, "connect --dev", errOut.String())
+	}
+}
+
+// TestRunInterpRejectsProgramArgs asserts the interpreter engine refuses program
+// arguments by name rather than silently dropping them, since it has no os.Args
+// bridge yet.
+func TestRunInterpRejectsProgramArgs(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "main.goal")
+	if err := os.WriteFile(file, []byte(interpMainGoal), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"run", "--engine=interp", file, "connect"}, &out, &errOut); err == nil {
+		t.Error("interp run with program arguments should be rejected")
 	}
 }
