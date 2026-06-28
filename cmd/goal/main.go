@@ -22,12 +22,17 @@ import (
 	"sort"
 	"strings"
 
+	"goal/internal/backend"
 	"goal/internal/check"
 	"goal/internal/fix"
+	"goal/internal/goalfmt"
 	"goal/internal/guide"
+	"goal/internal/interp"
 	"goal/internal/lsp"
+	"goal/internal/parser"
 	"goal/internal/pipeline"
 	"goal/internal/project"
+	"goal/internal/sema"
 	"goal/internal/typecheck"
 )
 
@@ -39,13 +44,18 @@ var guideCommands = []guide.Command{
 		Name:    "build",
 		Summary: "transpile and `go build` the package(s)",
 		Usage:   "goal build [--emit[=dir]] [path]",
-		Flags:   []guide.Flag{{Name: "--emit[=dir]", Summary: "also write generated .go beside each .goal (or under dir)"}},
+		Flags: []guide.Flag{
+			{Name: "--emit[=dir]", Summary: "also write generated .go beside each .goal (or under dir)"},
+		},
 	},
 	{
 		Name:    "run",
 		Summary: "transpile and `go run` the sole main package",
-		Usage:   "goal run [--emit[=dir]] [path]",
-		Flags:   []guide.Flag{{Name: "--emit[=dir]", Summary: "also write generated .go beside each .goal (or under dir)"}},
+		Usage:   "goal run [--engine=ast|interp] [--emit[=dir]] [path]",
+		Flags: []guide.Flag{
+			{Name: "--engine=ast|interp", Summary: "ast (default) transpiles and `go run`s; interp runs a single .goal file under the goscript tree-walking interpreter"},
+			{Name: "--emit[=dir]", Summary: "also write generated .go beside each .goal (or under dir)"},
+		},
 	},
 	{
 		Name:    "check",
@@ -57,6 +67,12 @@ var guideCommands = []guide.Command{
 		Summary: "rewrite plain-Go patterns into idiomatic goal (Result + `?`)",
 		Usage:   "goal fix [-inplace] [path]",
 		Flags:   []guide.Flag{{Name: "-inplace", Summary: "write changes back to each file instead of printing to stdout"}},
+	},
+	{
+		Name:    "fmt",
+		Summary: "format .goal source into the canonical, comment-preserving layout",
+		Usage:   "goal fmt [-w] [path]",
+		Flags:   []guide.Flag{{Name: "-w", Summary: "write the formatted result back to each file instead of printing to stdout"}},
 	},
 	{
 		Name:    "ai",
@@ -105,19 +121,30 @@ func run(args []string, out, errOut io.Writer) error {
 			return err
 		}
 		return cmdFix(path, inplace, out, errOut)
-	case "build", "run", "check":
+	case "fmt":
+		path, write, err := parseFmtFlags(rest)
+		if err != nil {
+			return err
+		}
+		return cmdFmt(path, write, out, errOut)
+	case "run":
+		engine, emit, emitDir, root, err := parseRunFlags(rest)
+		if err != nil {
+			return err
+		}
+		if engine == engineInterp {
+			return cmdRunInterp(root, out, errOut)
+		}
+		return cmdRun(root, emit, emitDir, out, errOut)
+	case "build", "check":
 		emit, emitDir, root, err := parseFlags(rest)
 		if err != nil {
 			return err
 		}
-		switch cmd {
-		case "build":
+		if cmd == "build" {
 			return cmdBuild(root, emit, emitDir, out, errOut)
-		case "run":
-			return cmdRun(root, emit, emitDir, out, errOut)
-		default: // check
-			return cmdCheck(root, out, errOut)
 		}
+		return cmdCheck(root, out, errOut)
 	default:
 		return fmt.Errorf("unknown command %q (%s)", cmd, topUsage())
 	}
@@ -137,9 +164,9 @@ func cmdAI(args []string, out io.Writer) error {
 	return guide.Render(out, section, guideCommands)
 }
 
-// parseFlags pulls --emit[=dir] and a single optional path argument out of args. The
-// path defaults to "." and a trailing "/..." (or bare "...") is stripped, since
-// discovery is already recursive.
+// parseFlags pulls --emit[=dir] and a single optional path argument out of args.
+// The path defaults to "." and a trailing "/..." (or bare "...") is stripped,
+// since discovery is already recursive.
 func parseFlags(args []string) (emit bool, emitDir, root string, err error) {
 	root = "."
 	gotPath := false
@@ -163,6 +190,90 @@ func parseFlags(args []string) (emit bool, emitDir, root string, err error) {
 		root = "."
 	}
 	return emit, emitDir, root, nil
+}
+
+// Engine names select which back-end `goal run` uses. ast (the default)
+// transpiles to Go and drives the Go toolchain; interp runs a single .goal file
+// directly under the goscript tree-walking interpreter (internal/interp).
+const (
+	engineAST    = "ast"
+	engineInterp = "interp"
+)
+
+// parseRunFlags parses the `run` subcommand's flags: --engine=ast|interp
+// (default ast), --emit[=dir], and a single optional path. It mirrors parseFlags
+// for emit/path handling and adds the engine selector; an unknown engine value
+// is a descriptive error so a typo never silently falls back to a different
+// back-end.
+func parseRunFlags(args []string) (engine string, emit bool, emitDir, root string, err error) {
+	engine, root = engineAST, "."
+	gotPath := false
+	for _, a := range args {
+		switch {
+		case a == "--engine" || a == "-engine":
+			return "", false, "", "", fmt.Errorf("flag %q requires a value (--engine=ast|interp)", a)
+		case strings.HasPrefix(a, "--engine="):
+			engine = strings.TrimPrefix(a, "--engine=")
+		case strings.HasPrefix(a, "-engine="):
+			engine = strings.TrimPrefix(a, "-engine=")
+		case a == "--emit":
+			emit = true
+		case strings.HasPrefix(a, "--emit="):
+			emit, emitDir = true, strings.TrimPrefix(a, "--emit=")
+		case strings.HasPrefix(a, "-"):
+			return "", false, "", "", fmt.Errorf("unknown flag %q", a)
+		default:
+			if gotPath {
+				return "", false, "", "", fmt.Errorf("expected a single path, got extra %q", a)
+			}
+			root, gotPath = a, true
+		}
+	}
+	if engine != engineAST && engine != engineInterp {
+		return "", false, "", "", fmt.Errorf("unknown engine %q (want ast or interp)", engine)
+	}
+	root = strings.TrimSuffix(strings.TrimSuffix(root, "..."), "/")
+	if root == "" {
+		root = "."
+	}
+	return engine, emit, emitDir, root, nil
+}
+
+// cmdRunInterp runs a single .goal file under the goscript tree-walking
+// interpreter: it parses the source through the shared front-end
+// (internal/parser + internal/sema) and executes func main via internal/interp,
+// with the program's standard-output effect routed to out and full host
+// authority (the interpreter's GrantAll default). The interpreter consumes the
+// shared AST + sema front-end directly — no Go transpilation, no Go toolchain —
+// so it runs in a host with no Go installed. A missing/non-.goal path, a parse
+// failure, a refused static guarantee (the native sema gate), a missing func
+// main, or a runtime failure is a located, descriptive error (the command exits
+// non-zero), never a silent success.
+func cmdRunInterp(path string, out, errOut io.Writer) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("--engine=interp runs a single .goal file, not a directory: %s", path)
+	}
+	if !strings.HasSuffix(path, project.Ext) {
+		return fmt.Errorf("not a .goal file: %s", path)
+	}
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	file, err := parser.ParseFile(string(src))
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	semaInfo := sema.Resolve(file)
+	ip := interp.New(file, semaInfo, interp.WithStdout(out))
+	if err := ip.Run(); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	return nil
 }
 
 // parseFixFlags pulls the -inplace flag and a single optional path (a .goal file or a
@@ -247,13 +358,96 @@ func cmdFix(path string, inplace bool, out, errOut io.Writer) error {
 	return nil
 }
 
+// parseFmtFlags pulls the -w (write-in-place) flag and a single optional path (a .goal
+// file or a directory, default ".") out of args.
+func parseFmtFlags(args []string) (path string, write bool, err error) {
+	path = "."
+	gotPath := false
+	for _, a := range args {
+		switch {
+		case a == "-w" || a == "--write":
+			write = true
+		case strings.HasPrefix(a, "-"):
+			return "", false, fmt.Errorf("unknown flag %q", a)
+		default:
+			if gotPath {
+				return "", false, fmt.Errorf("expected a single path, got extra %q", a)
+			}
+			path, gotPath = a, true
+		}
+	}
+	path = strings.TrimSuffix(strings.TrimSuffix(path, "..."), "/")
+	if path == "" {
+		path = "."
+	}
+	return path, write, nil
+}
+
+// cmdFmt formats a .goal file or every .goal file under a directory into the canonical,
+// comment-preserving layout. By default it prints each formatted file to stdout; with -w
+// it writes changed files back in place and lists them. A file that does not parse is a
+// failure — goalfmt never reformats malformed source.
+func cmdFmt(path string, write bool, out, errOut io.Writer) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	type fileRef struct{ path, src string }
+	var files []fileRef
+	if info.IsDir() {
+		pkgs, err := project.Discover(path)
+		if err != nil {
+			return err
+		}
+		if len(pkgs) == 0 {
+			return fmt.Errorf("no .goal packages found under %s", path)
+		}
+		for _, pkg := range pkgs {
+			for _, f := range pkg.Files {
+				files = append(files, fileRef{f.Path, f.Src})
+			}
+		}
+	} else {
+		if !strings.HasSuffix(path, project.Ext) {
+			return fmt.Errorf("not a .goal file: %s", path)
+		}
+		src, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		files = append(files, fileRef{path, string(src)})
+	}
+
+	for _, fr := range files {
+		formatted, err := goalfmt.Source(fr.src)
+		if err != nil {
+			return fmt.Errorf("%s: %w", fr.path, err)
+		}
+		if write {
+			if formatted != fr.src {
+				if err := os.WriteFile(fr.path, []byte(formatted), 0o644); err != nil {
+					return err
+				}
+				fmt.Fprintln(out, "formatted", fr.path)
+			}
+			continue
+		}
+		if _, err := io.WriteString(out, formatted); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // transpiled pairs a package's directory with its in-memory Go output.
 type transpiled struct {
 	pkg *project.Package
 	out pipeline.PackageOutput
 }
 
-// transpileAll discovers and transpiles every package under root.
+// transpileAll discovers and transpiles every package under root through the AST
+// backend: backend.TranspilePackage performs the cross-file fact merge plus a
+// single shared prelude per package.
 func transpileAll(root string) ([]transpiled, error) {
 	pkgs, err := project.Discover(root)
 	if err != nil {
@@ -264,7 +458,7 @@ func transpileAll(root string) ([]transpiled, error) {
 	}
 	var ts []transpiled
 	for _, pkg := range pkgs {
-		out, err := pipeline.TranspilePackage(pkg)
+		out, err := backend.TranspilePackage(pkg)
 		if err != nil {
 			return nil, err
 		}
@@ -402,15 +596,10 @@ func briefDepthErr(err error) string {
 // It returns an error only when the package fails to transpile or parse (a goal-compiler
 // problem); user type errors are tolerated inside Load.
 func runDepthChecks(pkg *project.Package) ([]typecheck.Diagnostic, error) {
-	p, err := typecheck.Load(pkg)
-	if err != nil {
-		return nil, err
-	}
-	var diags []typecheck.Diagnostic
-	diags = append(diags, typecheck.CheckImplements(p)...)
-	diags = append(diags, typecheck.CheckMustUse(p)...)
-	diags = append(diags, typecheck.CheckNoZeroValue(p)...)
-	return diags, nil
+	// Resolve depth diagnostics through the TypeChecker seam so the go/types crutch can be
+	// swapped for a native goal checker later without changing this caller (US-028).
+	var tc typecheck.TypeChecker = typecheck.GoTypesChecker{}
+	return tc.Check(pkg)
 }
 
 // checkDiag is a stage-agnostic rendered finding, so the two stages' diagnostics order

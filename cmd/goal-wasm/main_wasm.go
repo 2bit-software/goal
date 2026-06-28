@@ -9,14 +9,14 @@ package main
 import (
 	"syscall/js"
 
-	"goal/internal/pipeline"
+	"goal/internal/backend"
 )
 
 // transpile is the JS-callable bridge. It takes one string argument (the .goal
 // source) and returns an object { go, test, error }:
 //
 //   - go    — the transpiled Go (also carries the partial generated source when
-//             lowering succeeded but the result failed to gofmt-parse).
+//     lowering succeeded but the result failed to gofmt-parse).
 //   - test  — the doctest sidecar (_test.go), empty when the source has none.
 //   - error — a non-empty diagnostic string when transpilation failed.
 func transpile(this js.Value, args []js.Value) any {
@@ -25,7 +25,7 @@ func transpile(this js.Value, args []js.Value) any {
 		res["error"] = "goalTranspile: expected a single source string argument"
 		return res
 	}
-	out, err := pipeline.Transpile(args[0].String())
+	out, err := backend.Transpile(args[0].String())
 	res["go"] = out.Go
 	res["test"] = out.Test
 	if err != nil {

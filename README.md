@@ -197,7 +197,7 @@ module — and that runtime-preserved output (assert, doctests, derive) actually
 - `goal-design-spec.md` — the language design spec (read-only; covers features 01–11).
 - `DECISIONS.md` — the choice / assumption / refusal ledger, §01–§12.
 - `TODO.md` — per-feature status and artifact pointers.
-- `NEXT-SESSION.md` — current handoff: front-end architecture as built + the checker plan.
+- `REWRITE-ARCHITECTURE.md` — the AST front-end architecture as built (lexer → parser → AST → sema → backend).
 - `FEATURE-AUDIT-PROMPT.md` — the per-feature audit loop, for adding any future feature.
 - `features/NN-*/` — the 12 standalone reference transpilers (each with its own examples
   and `DECISIONS.md`); the unified front-end reuses their logic, re-keyed by name.

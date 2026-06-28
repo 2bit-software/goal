@@ -1,0 +1,37 @@
+(File
+  .Name (Ident
+    .Name "account")
+  .Decls [
+    (FuncDecl
+      .Name (Ident
+        .Name "setAge")
+      .Type (FuncType
+        .Params (FieldList
+          .List [
+            (Field
+              .Names [
+                (Ident
+                  .Name "age")
+              ]
+              .Type (Ident
+                .Name "int"))
+          ]))
+      .Body (BlockStmt
+        .List [
+          (AssertStmt
+            .Cond (BinaryExpr
+              .X (Ident
+                .Name "age")
+              .Op >=
+              .Y (BasicLit
+                .Kind INT
+                .Value "0"))
+            .Msg (BasicLit
+              .Kind STRING
+              .Value "\"age must be non-negative, got %d\"")
+            .Args [
+              (Ident
+                .Name "age")
+            ])
+        ]))
+  ])

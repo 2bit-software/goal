@@ -1,0 +1,87 @@
+(File
+  .Name (Ident
+    .Name "shapes")
+  .Decls [
+    (GenDecl
+      .Tok type
+      .Specs [
+        (TypeSpec
+          .Name (Ident
+            .Name "Stringer")
+          .Type (InterfaceType
+            .Methods (FieldList
+              .List [
+                (Field
+                  .Names [
+                    (Ident
+                      .Name "String")
+                  ]
+                  .Type (FuncType
+                    .Params (FieldList)
+                    .Results (FieldList
+                      .List [
+                        (Field
+                          .Type (Ident
+                            .Name "string"))
+                      ])))
+              ])))
+      ])
+    (GenDecl
+      .Tok type
+      .Specs [
+        (TypeSpec
+          .Name (Ident
+            .Name "Point")
+          .Type (StructType
+            .Implements (ImplementsClause
+              .Type (Ident
+                .Name "Stringer"))
+            .Fields (FieldList
+              .List [
+                (Field
+                  .Names [
+                    (Ident
+                      .Name "X")
+                  ]
+                  .Type (Ident
+                    .Name "int"))
+                (Field
+                  .Names [
+                    (Ident
+                      .Name "Y")
+                  ]
+                  .Type (Ident
+                    .Name "int"))
+              ])))
+      ])
+    (FuncDecl
+      .Recv (FieldList
+        .List [
+          (Field
+            .Names [
+              (Ident
+                .Name "p")
+            ]
+            .Type (Ident
+              .Name "Point"))
+        ])
+      .Name (Ident
+        .Name "String")
+      .Type (FuncType
+        .Params (FieldList)
+        .Results (FieldList
+          .List [
+            (Field
+              .Type (Ident
+                .Name "string"))
+          ]))
+      .Body (BlockStmt
+        .List [
+          (ReturnStmt
+            .Results [
+              (BasicLit
+                .Kind STRING
+                .Value "\"point\"")
+            ])
+        ]))
+  ])

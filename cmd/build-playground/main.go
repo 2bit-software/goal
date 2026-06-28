@@ -19,8 +19,8 @@ import (
 	"regexp"
 	"strings"
 
+	"goal/internal/backend"
 	"goal/internal/byexample"
-	"goal/internal/pipeline"
 )
 
 func main() {
@@ -162,7 +162,7 @@ func expectedLabel(kind string) string {
 // so the manifest cannot drift from the transpiler. For an error feature it asserts
 // the transpile fails with exactly the locked message.
 func verify(source, expected, kind string) error {
-	res, err := pipeline.Transpile(source)
+	res, err := backend.Transpile(source)
 	if kind == "error" {
 		if err == nil {
 			return fmt.Errorf("expected transpile to be rejected, but it succeeded:\n%s", res.Go)

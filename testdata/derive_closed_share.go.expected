@@ -41,13 +41,17 @@ type Typed struct {
 
 var errBad = newErr("bad id")
 
-func newErr(m string) error { return &convErr{m} }
+func newErr(m string) error {
+	return &convErr{m}
+}
 
 type convErr struct {
 	m string
 }
 
-func (x *convErr) Error() string { return x.m }
+func (x *convErr) Error() string {
+	return x.m
+}
 
 func toApp(e ParseError) AppError {
 	return AppError(AppError_Wrapped{Cause: e})
@@ -66,11 +70,11 @@ func parse(s string) Result[Config, ParseError] {
 
 func load(s string) Result[Config, AppError] {
 	var cfg Config
-	switch __goal_e := parse(s).(type) {
+	switch r1 := parse(s).(type) {
 	case Ok[Config, ParseError]:
-		cfg = __goal_e.Value
+		cfg = r1.Value
 	case Err[Config, ParseError]:
-		return Err[Config, AppError]{Value: toApp(__goal_e.Value)}
+		return Err[Config, AppError]{Value: toApp(r1.Value)}
 	default:
 		panic("unreachable: non-exhaustive Result[Config, ParseError] (compiler invariant violated)")
 	}
@@ -80,10 +84,10 @@ func load(s string) Result[Config, AppError] {
 func toTyped(r Raw) (Typed, error) {
 	var out Typed
 	out.Name = r.Name
-	__goal_v0, err := parseID(r.Key)
+	v, err := parseID(r.Key)
 	if err != nil {
 		return out, err
 	}
-	out.Key = __goal_v0
+	out.Key = v
 	return out, nil
 }

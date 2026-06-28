@@ -1,0 +1,15 @@
+package demo
+
+func area(sh Shape) float64 {
+    return match sh {
+        Shape.Circle(c) => 3.14159 * c.r * c.r
+        Shape.Square(q) => q.s * q.s
+    }
+}
+
+func half(x float64) Result[float64, MathErr] {
+    if x == 0.0 {
+        return Result.Err(MathErr.DivZero)
+    }
+    return Result.Ok(x / 2.0)
+}

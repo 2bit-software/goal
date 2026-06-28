@@ -1,10 +1,11 @@
 package fix
 
 import (
-	"strings"
-
 	"goal/internal/analyze"
+	"goal/internal/ast"
 	"goal/internal/scan"
+	"goal/internal/sema"
+	"goal/internal/token"
 )
 
 // fixResultSig converts a function written as a Go `(T, error)` tuple into one returning
@@ -19,170 +20,179 @@ import (
 // signature would be worse than none. Only the single-non-error-value shape `(T, error)` is
 // mapped; `(A, B, error)` and bare `error` are reported as out of scope. An exported
 // function additionally gets a Warn, since callers outside the scanned path may break.
-func fixResultSig(src string, toks []scan.Token, t *analyze.Tables, changes *[]Change, reports *[]Report) []scan.Replacement {
-	funcs := scan.ScanFuncs(toks)
+func fixResultSig(src string, file *ast.File, info *sema.Info, decls map[string]string, changes *[]Change, reports *[]Report) []scan.Replacement {
 	var reps []scan.Replacement
-	for _, f := range funcs {
-		if f.Name == "" {
+	for _, d := range file.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Name == nil || fn.Body == nil || fn.Type == nil {
 			continue
 		}
-		if sig, ok := t.FuncSignatures[f.Name]; !ok || sig.Mode != analyze.ModeNone {
+		if sig, ok := info.FuncSignatures[fn.Name.Name]; !ok || sig.Mode != sema.ModeNone {
 			continue // only plain functions; Result/Option are already idiomatic
 		}
-		// scan.ParamsClose skips a bracketed return type (Result[T, error]) but not a
-		// parenthesized one ((T, error)) — exactly the shape fix targets — so locate the
-		// parameter list's close paren directly from the name.
-		pc := paramsClose(toks, f)
-		if pc < 0 {
-			continue
+		nameLine := lineOf(src, fn.Name.Pos().Offset)
+		res := fn.Type.Results
+		if res == nil || len(res.List) == 0 {
+			continue // no results — not a tuple
 		}
-		// The return must be a `(T, error)` tuple with exactly one non-error value.
-		if pc+1 >= len(toks) || toks[pc+1].Text != "(" {
-			if returnsBareError(toks, pc, f.BodyOpen) {
-				*reports = append(*reports, Report{lineOf(src, toks[f.NameTok].Start), Skip, "result-sig",
-					"`" + f.Name + "` returns a bare `error`; not auto-converted to Result"})
+		// An unparenthesized single result has no Opening paren: the only shape worth a
+		// note is a bare `error` return, which fix cannot auto-convert to Result.
+		if res.Opening == (token.Pos{}) {
+			if len(res.List) == 1 && len(res.List[0].Names) == 0 && identName(res.List[0].Type) == "error" {
+				*reports = append(*reports, Report{nameLine, Skip, "result-sig",
+					"`" + fn.Name.Name + "` returns a bare `error`; not auto-converted to Result"})
 			}
 			continue
 		}
-		rc := scan.MatchParen(toks, pc+1)
-		comma := scan.TopLevelComma(toks, pc+1, rc)
-		if comma < 0 {
+		// A parenthesized result list: convert only the all-unnamed `(T, error)` tuple.
+		types := flattenResultTypes(res)
+		if types == nil {
+			continue // named results — out of the conservative scope
+		}
+		if len(types) < 2 {
 			continue // single parenthesized return type, not a tuple
 		}
-		if scan.TopLevelComma(toks, comma, rc) >= 0 {
-			*reports = append(*reports, Report{lineOf(src, toks[f.NameTok].Start), Skip, "result-sig",
-				"`" + f.Name + "` returns multiple non-error values; not auto-converted to Result"})
+		if identName(types[len(types)-1]) != "error" {
+			continue // not error-terminated — not the shape fix targets
+		}
+		if len(types) > 2 {
+			*reports = append(*reports, Report{nameLine, Skip, "result-sig",
+				"`" + fn.Name.Name + "` returns multiple non-error values; not auto-converted to Result"})
 			continue
 		}
-		if strings.TrimSpace(src[toks[comma+1].Start:toks[rc].Start]) != "error" {
-			continue
-		}
-		successT := strings.TrimSpace(src[toks[pc+2].Start:toks[comma].Start])
+		successT := nodeText(src, types[0])
 
 		// Every return in the body (excluding nested function literals) must be a
 		// recognized success or bare propagation, or we abandon the whole function.
-		nested := nestedFuncRanges(toks, funcs, f)
-		successReps, conforms, badLine := classifyReturns(src, toks, f, nested, successT, t)
+		successReps, conforms, badLine := classifyReturns(src, fn, successT, decls)
 		if !conforms {
 			*reports = append(*reports, Report{badLine, Skip, "result-sig",
-				"`" + f.Name + "` has a non-propagating return; not auto-converted to Result"})
+				"`" + fn.Name.Name + "` has a non-propagating return; not auto-converted to Result"})
 			continue
 		}
 
 		reps = append(reps, scan.Replacement{
-			Start: toks[pc+1].Start, End: toks[rc].End,
+			Start: res.Opening.Offset, End: res.Closing.Offset + 1,
 			Text: "Result[" + successT + ", error]",
 		})
 		reps = append(reps, successReps...)
-		*changes = append(*changes, Change{lineOf(src, toks[f.NameTok].Start), "result-sig"})
-		if isExported(f.Name) {
-			*reports = append(*reports, Report{lineOf(src, toks[f.NameTok].Start), Warn, "result-sig",
-				"exported `" + f.Name + "` changed to Result[" + successT + ", error]; callers outside the scanned path may need manual updates"})
+		*changes = append(*changes, Change{nameLine, "result-sig"})
+		if isExported(fn.Name.Name) {
+			*reports = append(*reports, Report{nameLine, Warn, "result-sig",
+				"exported `" + fn.Name.Name + "` changed to Result[" + successT + ", error]; callers outside the scanned path may need manual updates"})
 		}
 	}
 	return reps
 }
 
-// classifyReturns inspects every top-level return of f (skipping nested function literals)
+// flattenResultTypes returns the result types of an all-unnamed parenthesized result list,
+// or nil if any field carries a name (a named-result shape fix does not convert).
+func flattenResultTypes(fl *ast.FieldList) []ast.Expr {
+	out := make([]ast.Expr, 0, len(fl.List))
+	for _, f := range fl.List {
+		if len(f.Names) > 0 || f.Type == nil {
+			return nil
+		}
+		out = append(out, f.Type)
+	}
+	return out
+}
+
+// classifyReturns inspects every top-level return of fn (skipping nested function literals)
 // and returns the replacements that rewrite each `return v, nil` success into
 // `return Result.Ok(v)`. conforms is false (with the offending line) if any return is
 // neither a recognized success nor a bare propagation that fixPropagate will collapse.
-func classifyReturns(src string, toks []scan.Token, f scan.Func, nested [][2]int, successT string, t *analyze.Tables) (reps []scan.Replacement, conforms bool, badLine int) {
-	for k := f.BodyOpen + 1; k < f.BodyClose; k++ {
-		if toks[k].Text != "return" || !scan.IsLineStart(src, toks[k].Start) {
-			continue
+func classifyReturns(src string, fn *ast.FuncDecl, successT string, decls map[string]string) (reps []scan.Replacement, conforms bool, badLine int) {
+	conforms = true
+	walkReturns(fn.Body, func(ret *ast.ReturnStmt) {
+		if !conforms {
+			return
 		}
-		if inAnyByteRange(toks[k].Start, nested) {
-			continue // belongs to a nested closure, not f
-		}
-		ops, opEnd := returnOperands(src, toks, k, f.BodyClose)
+		line := lineOf(src, ret.Return.Offset)
+		ops := ret.Results
 		if len(ops) == 0 {
-			return nil, false, lineOf(src, toks[k].Start) // bare `return` in a (T,error) fn
+			conforms, badLine = false, line // bare `return` in a (T, error) fn
+			return
 		}
 		// Already-idiomatic Result.Err(...) — leave untouched, still conforming.
-		if len(ops) >= 4 && ops[0].Text == "Result" && ops[1].Text == "." && ops[2].Text == "Err" {
-			continue
+		if len(ops) == 1 {
+			if call, ok := ops[0].(*ast.CallExpr); ok && isSelector(call.Fun, "Result", "Err") {
+				return
+			}
+			conforms, badLine = false, line
+			return
 		}
-		comma := topLevelComma(ops)
-		if comma < 0 || comma != len(ops)-2 {
-			return nil, false, lineOf(src, toks[k].Start)
+		if len(ops) != 2 { // exactly one value before the trailing err
+			conforms, badLine = false, line
+			return
 		}
-		last := ops[len(ops)-1]
-		value := strings.TrimSpace(src[ops[0].Start:ops[comma].Start])
+		last := ops[1]
+		value := nodeText(src, ops[0])
 		switch {
-		case last.Text == "nil": // success: return v, nil -> return Result.Ok(v)
+		case identName(last) == "nil": // success: return v, nil -> return Result.Ok(v)
 			reps = append(reps, scan.Replacement{
-				Start: ops[0].Start, End: opEnd,
+				Start: ops[0].Pos().Offset, End: ops[1].End().Offset,
 				Text: "Result.Ok(" + value + ")",
 			})
-		case scan.IsIdent(last.Text) && value == analyze.ZeroLit(successT, t.TypeDecls, 0):
+		case isIdentExpr(last) && value == analyze.ZeroLit(successT, decls, 0):
 			// bare propagation: return zero, err — left for fixPropagate.
 		default:
-			return nil, false, lineOf(src, toks[k].Start)
+			conforms, badLine = false, line
+		}
+	})
+	return reps, conforms, badLine
+}
+
+// isIdentExpr reports whether e is a bare identifier (the error variable of a propagation).
+func isIdentExpr(e ast.Expr) bool {
+	_, ok := e.(*ast.Ident)
+	return ok
+}
+
+// walkReturns calls f for every return statement in block that is not nested inside a
+// function literal — descent stops at expression boundaries, so a closure's returns (which
+// belong to that closure, not the enclosing function) are never visited.
+func walkReturns(block *ast.BlockStmt, f func(*ast.ReturnStmt)) {
+	if block == nil {
+		return
+	}
+	var visitStmt func(ast.Stmt)
+	visitList := func(ss []ast.Stmt) {
+		for _, s := range ss {
+			visitStmt(s)
 		}
 	}
-	return reps, true, 0
-}
-
-// returnOperands returns the tokens of the return statement starting at index k (the
-// operands after `return`, up to the end of its line) and the byte offset where they end.
-func returnOperands(src string, toks []scan.Token, k, bodyClose int) (ops []scan.Token, opEnd int) {
-	lineEnd := scan.NextNewline(src, toks[k].End)
-	for j := k + 1; j < bodyClose && toks[j].Start < lineEnd; j++ {
-		ops = append(ops, toks[j])
-	}
-	if len(ops) == 0 {
-		return nil, toks[k].End
-	}
-	return ops, ops[len(ops)-1].End
-}
-
-// nestedFuncRanges returns the byte ranges of function literals nested inside f, so returns
-// belonging to a closure are not mistaken for f's own.
-func nestedFuncRanges(toks []scan.Token, funcs []scan.Func, f scan.Func) [][2]int {
-	var ranges [][2]int
-	for _, g := range funcs {
-		if g.BodyOpen == f.BodyOpen {
-			continue // f itself (body brace index identifies it)
-		}
-		if g.BodyOpen > f.BodyOpen && g.BodyClose <= f.BodyClose {
-			ranges = append(ranges, [2]int{toks[g.BodyOpen].Start, toks[g.BodyClose].End})
-		}
-	}
-	return ranges
-}
-
-// inAnyByteRange reports whether byteOff falls inside any [lo, hi) byte range.
-func inAnyByteRange(byteOff int, ranges [][2]int) bool {
-	for _, r := range ranges {
-		if byteOff >= r[0] && byteOff < r[1] {
-			return true
+	visitStmt = func(s ast.Stmt) {
+		switch s := s.(type) {
+		case *ast.ReturnStmt:
+			f(s)
+		case *ast.BlockStmt:
+			visitList(s.List)
+		case *ast.IfStmt:
+			if s.Init != nil {
+				visitStmt(s.Init)
+			}
+			if s.Body != nil {
+				visitList(s.Body.List)
+			}
+			if s.Else != nil {
+				visitStmt(s.Else)
+			}
+		case *ast.ForStmt:
+			if s.Body != nil {
+				visitList(s.Body.List)
+			}
+		case *ast.RangeStmt:
+			if s.Body != nil {
+				visitList(s.Body.List)
+			}
+		case *ast.SwitchStmt:
+			if s.Body != nil {
+				visitList(s.Body.List)
+			}
+		case *ast.CaseClause:
+			visitList(s.Body)
 		}
 	}
-	return false
-}
-
-// paramsClose returns the token index of the `)` closing f's parameter list, located by
-// walking forward from the name past an optional type-parameter list `[...]` to the params
-// `(` and matching it. Unlike scan.ParamsClose this is correct when the return type is a
-// parenthesized tuple `(T, error)`, the shape `goal fix` converts.
-func paramsClose(toks []scan.Token, f scan.Func) int {
-	k := f.NameTok + 1
-	if k < len(toks) && toks[k].Text == "[" { // generic type parameters
-		k = scan.MatchBracket(toks, k) + 1
-	}
-	if k >= len(toks) || toks[k].Text != "(" {
-		return -1
-	}
-	return scan.MatchParen(toks, k)
-}
-
-// returnsBareError reports whether the function's single return type is `error`.
-func returnsBareError(toks []scan.Token, pc, bodyOpen int) bool {
-	return pc+1 < bodyOpen && pc+1 < len(toks) && toks[pc+1].Text == "error"
-}
-
-// isExported reports whether name begins with an uppercase letter (a Go exported symbol).
-func isExported(name string) bool {
-	return name != "" && name[0] >= 'A' && name[0] <= 'Z'
+	visitList(block.List)
 }

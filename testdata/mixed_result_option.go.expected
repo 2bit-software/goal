@@ -7,54 +7,59 @@ type User struct {
 	Name string
 }
 
-func lookup(id string) (__goal_ok User, __goal_err error) {
+func lookup(id string) (ok User, err error) {
 	if id == "" {
-		return __goal_ok, errors.New("empty id")
+		return ok, errors.New("empty id")
 	}
 	return User{ID: id, Name: "n"}, nil
 }
 
 func cache(id string) *User {
 	if id == "x" {
-		__goal_some := User{ID: id, Name: "cached"}
-		return &__goal_some
+		some := User{ID: id, Name: "cached"}
+		return &some
 	}
 	return nil
 }
 
-func describe(id string) (__goal_ok string, __goal_err error) {
-	u, __goal_err := lookup(id)
-	if __goal_err != nil {
-		return __goal_ok, __goal_err
+func describe(id string) (ok string, err error) {
+	u, err := lookup(id)
+	if err != nil {
+		return ok, err
 	}
 	return u.Name, nil
 }
 
 func firstName(id string) *string {
-	__goal_o1 := cache(id)
-	if __goal_o1 == nil {
+	o := cache(id)
+	if o == nil {
 		return nil
 	}
-	u := *__goal_o1
-	__goal_some := u.Name
-	return &__goal_some
+	u := *o
+	some := u.Name
+	return &some
 }
 
 func handle(id string) {
-	__goal_v, __goal_err := lookup(id)
-	if __goal_err != nil {
-		fail(__goal_err)
+	v, err := lookup(id)
+	if err != nil {
+		fail(err)
 	} else {
-		report(__goal_v.Name)
+		report(v.Name)
 	}
-	if __goal_o := cache(id); __goal_o != nil {
-		u := *__goal_o
+	if o := cache(id); o != nil {
+		u := *o
 		report(u.Name)
 	} else {
 		done()
 	}
 }
 
-func report(s string) {}
-func fail(e error)    {}
-func done()           {}
+func report(s string) {
+}
+
+func fail(e error) {
+}
+
+func done() {
+}

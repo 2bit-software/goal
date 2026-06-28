@@ -15,8 +15,6 @@ type User struct {
 	logins int
 }
 
-// newMember sets the no-default fields (name, role) explicitly and opts the rest
-// into their zero values with `...defaults`.
 func newMember(name string) User {
 	return User{name: name, role: RoleMember, email: "", active: false, logins: 0}
 }

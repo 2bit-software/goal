@@ -1,0 +1,348 @@
+{
+  "project": "goal",
+  "branchName": "ralph/goscript-runtime",
+  "description": "Build the goscript tree-walking interpreter (backend/interp) over the shared AST + sema front-end, with a capability model and a universal tagged-union value model, proven by the existing behavioral conformance tier run under interpretation.",
+  "verifyCommands": [
+    "go build ./...",
+    "go vet ./...",
+    "go test ./... -count=1"
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Define cap capability model",
+      "description": "As a runtime author, I need an explicit capability/authority model so goscript restricts power by what the host grants, not by a different grammar.",
+      "acceptanceCriteria": [
+        "internal/cap defines a Capability enumeration covering at least Stdout, Stdin, FileRead, FileWrite, Net, Concurrency, Time, and Env, plus a CapabilitySet with Has/Grant and GrantAll() and DenyAll() constructors",
+        "A unit test asserts GrantAll().Has(c) is true and DenyAll().Has(c) is false for every defined Capability, and docs/goscript/restriction-diff.md enumerates each capability and whether goscript grants it by default"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implements the REWRITE-ARCHITECTURE.md §4 / §6 open spec item: the goscript restriction diff is 'capabilities are authority, not language difference'. v1 may grant everything via GrantAll, but the seam must exist now."
+    },
+    {
+      "id": "US-002",
+      "title": "Define interp value model",
+      "description": "As a runtime author, I need a uniform runtime value representation so enums, Result, and Option share one tagged-union encoding distinct from the Go backend's optimizations.",
+      "acceptanceCriteria": [
+        "internal/interp defines a Value type covering int, float, string, bool, nil, struct, slice, map, and function, plus a universal tagged-union Variant{TypeID, Tag, Fields} used uniformly for enum/Result/Option",
+        "A unit test constructs a Variant and each primitive/composite Value, reads a Variant field back by name, and asserts Value equality and String() rendering"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "REWRITE-ARCHITECTURE.md §4: the interpreter IGNORES the Go-codegen optimizations (Result->(T,error), Option->*T) and uses the universal tagged-union. Do not reuse backend/go's lowering."
+    },
+    {
+      "id": "US-003",
+      "title": "Define environment and scopes",
+      "description": "As a runtime author, I need lexical scoping so variables resolve and shadow correctly during evaluation.",
+      "acceptanceCriteria": [
+        "internal/interp Env supports Define, Lookup, and NewChild with inner scopes shadowing outer scopes and lookups falling through to parents",
+        "A unit test asserts shadowing, parent fall-through, and that Lookup of an undefined name returns a not-found error"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Interpreter entry over AST and sema",
+      "description": "As a runtime author, I need the interpreter to consume the shared front-end so goscript is a back-end over the same AST, not a fork.",
+      "acceptanceCriteria": [
+        "internal/interp exposes a constructor taking a parsed *ast.File (or package) plus *sema.Info and a Run entry that executes func main",
+        "A unit test parses and resolves a trivial `package main\\nfunc main() {}` goal program through internal/parser + internal/sema and runs it through the interpreter with no error, demonstrating the interpreter consumes the shared AST+sema front-end rather than Go-lowered output"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "This is the load-bearing seam from REWRITE-ARCHITECTURE.md §3.1 (Backend interface): the interpreter reads typed AST + sema.Info, NOT the Go backend's lowered form."
+    },
+    {
+      "id": "US-005",
+      "title": "Eval literals and operators",
+      "description": "As a runtime author, I need expression evaluation so ordinary computation runs under interpretation.",
+      "acceptanceCriteria": [
+        "The interpreter evaluates int/float/string/bool literals and arithmetic (+ - * / %), comparison (== != < <= > >=), logical (&& ||), and unary (- !) operators with Go semantics including && / || short-circuiting",
+        "A table-driven unit test evaluates at least 12 expression programs and asserts each result value"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Eval variables and assignment",
+      "description": "As a runtime author, I need declaration and assignment so state evolves during evaluation.",
+      "acceptanceCriteria": [
+        "The interpreter evaluates var declarations, short-var :=, const, and plain plus compound (+=, -=, etc.) assignment, reading and writing through Env",
+        "A unit test asserts a program that declares, reassigns, and compound-assigns variables yields the expected final values"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Eval functions and calls",
+      "description": "As a runtime author, I need function values and calls so programs can be structured and recursive.",
+      "acceptanceCriteria": [
+        "The interpreter evaluates function declarations as values, binds parameters, supports multiple return values, and supports recursion",
+        "A unit test runs recursive factorial and fibonacci goal functions and asserts their returned values"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Eval control flow",
+      "description": "As a runtime author, I need control-flow statements so branching and looping run correctly.",
+      "acceptanceCriteria": [
+        "The interpreter evaluates if/else, three-clause and condition-only for loops, switch (with cases and default), nested block scoping, and break/continue",
+        "A unit test runs programs exercising each control-flow form (e.g. a summation loop and a switch dispatch) and asserts the observable results"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Eval composite types",
+      "description": "As a runtime author, I need structs, slices, and maps so real data structures evaluate.",
+      "acceptanceCriteria": [
+        "The interpreter evaluates struct composite literals + field access, slice literals + indexing, map literals + indexing + key assignment, and range-for over slices and maps",
+        "A unit test builds and reads structs, slices, and maps, ranges over a slice and a map, and asserts the collected results"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Eval builtins and methods",
+      "description": "As a runtime author, I need builtins and method dispatch so idiomatic Go-subset code runs.",
+      "acceptanceCriteria": [
+        "The interpreter implements the len, append, make, and panic builtins and dispatches both value-receiver and pointer-receiver methods declared on goal types",
+        "A unit test asserts append/len on a slice, make of a map, a recovered panic, and a method call mutating a pointer receiver"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Add host-function bridge for stdlib",
+      "description": "As a runtime author, I need a registry of native host functions so corpus programs that call the stdlib can run under interpretation.",
+      "acceptanceCriteria": [
+        "internal/interp provides a host-function registry resolving at least fmt.Sprintf, fmt.Sprint, fmt.Println, fmt.Errorf, and errors.New to native Go implementations; an unresolved imported call produces a located, named error rather than a silent nil",
+        "A unit test runs a goal program calling fmt.Sprintf and asserts the produced string, and asserts an unregistered imported call yields a descriptive error naming the missing symbol"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": "The behavioral gate (US-027) needs this for doctests/programs that call the stdlib. Unshimmed symbols are an explicit, named refusal, never a silent failure."
+    },
+    {
+      "id": "US-012",
+      "title": "Eval enum construction",
+      "description": "As a runtime author, I need enum values so goal's sum types exist at runtime as tagged unions.",
+      "acceptanceCriteria": [
+        "The interpreter constructs enum variant values (data-less and payload-carrying) via Enum.Variant(...) into tagged-union Values and reads their payload fields",
+        "A unit test over a 01-enums-shaped program constructs each variant kind and asserts the tag and field values"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Eval statement-position match",
+      "description": "As a runtime author, I need match dispatch so sum types are consumed by tag at runtime.",
+      "acceptanceCriteria": [
+        "The interpreter evaluates statement-position match: it dispatches on the variant tag, binds the matched payload into scope, runs the selected arm, and panics 'unreachable' on the defensive default of a proven-exhaustive match",
+        "A unit test over a 02-match-shaped program asserts the correct arm runs for each variant and that the default arm is unreachable"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": "Preserve the 'erase the guarantee, panic-not-silent' stance: the proven-exhaustive default arm is a loud panic."
+    },
+    {
+      "id": "US-014",
+      "title": "Eval value-position match",
+      "description": "As a runtime author, I need match as an expression so value-position match yields a value, one of the two non-Go runtime mechanics.",
+      "acceptanceCriteria": [
+        "The interpreter evaluates value-position match — `return match`, `x := match`, and `var x = match` — yielding the selected arm's value as an expression result",
+        "A unit test asserts a function returning `match` and a variable bound to `match` produce the expected values for each input variant"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": "REWRITE-ARCHITECTURE.md §4: value-position match is one of only two genuinely non-Go runtime mechanics."
+    },
+    {
+      "id": "US-015",
+      "title": "Eval Result as tagged union",
+      "description": "As a runtime author, I need Result represented uniformly so the interpreter need not encode it as (T,error).",
+      "acceptanceCriteria": [
+        "The interpreter represents Result.Ok/Result.Err as tagged-union Values, uniformly for both open-E and closed-E (no (T,error) optimization), and matches over them",
+        "A unit test over 03-result and 06-error-e shapes constructs Ok and Err and asserts match arms bind the payload and error correctly"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "Eval Option as tagged union",
+      "description": "As a runtime author, I need Option represented uniformly so the interpreter need not encode it as *T.",
+      "acceptanceCriteria": [
+        "The interpreter represents Option.Some/Option.None as tagged-union Values and matches over them",
+        "A unit test over a 04-option shape constructs Some and None and asserts the match arms behave correctly"
+      ],
+      "priority": 16,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "Eval question-mark unwinding",
+      "description": "As a runtime author, I need postfix ? as early-return unwinding, the second non-Go runtime mechanic, so error propagation works under interpretation.",
+      "acceptanceCriteria": [
+        "The interpreter evaluates postfix ? as non-local early return: on Err/None it unwinds to the enclosing function's error/none return; on Ok/Some it yields the unwrapped value; closed-E `from` conversions are applied during propagation",
+        "A unit test over 05-question-prop and 06-error-e shapes asserts ? returns early on Err/None, continues on Ok/Some, and applies the converted error for closed-E"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "REWRITE-ARCHITECTURE.md §4: ? early-return unwinding is the second non-Go mechanic; thread it through eval as non-local control flow (e.g. a sentinel panic/recover or an explicit signal)."
+    },
+    {
+      "id": "US-018",
+      "title": "Eval implements dispatch",
+      "description": "As a runtime author, I need interface satisfaction so sealed-interface method dispatch runs at runtime.",
+      "acceptanceCriteria": [
+        "The interpreter honors implements: a struct satisfying a sealed interface is dispatched through the interface, calling the correct concrete method at runtime",
+        "A unit test over a 07-implements shape calls an interface method on differently-typed values and asserts each concrete implementation runs"
+      ],
+      "priority": 18,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "Eval assert at runtime",
+      "description": "As a runtime author, I need assert so erased static guarantees still fail loudly at runtime.",
+      "acceptanceCriteria": [
+        "The interpreter evaluates assert: a false condition panics with the located assertion message; a true condition is a no-op",
+        "A unit test over a 10-assert shape asserts the panic on a false assertion and normal completion on a true one"
+      ],
+      "priority": 19,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "Eval defaults expansion",
+      "description": "As a runtime author, I need ...defaults so no-zero-value construction fills fields at runtime.",
+      "acceptanceCriteria": [
+        "The interpreter expands ...defaults at construction, filling unset struct fields with their safe zero values while preserving explicitly set fields",
+        "A unit test over an 08-no-zero-value/defaults shape asserts unset fields receive defaults and set fields are preserved"
+      ],
+      "priority": 20,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "Eval derive and from",
+      "description": "As a runtime author, I need derive/from conversions so generated conversions run under interpretation.",
+      "acceptanceCriteria": [
+        "The interpreter evaluates derive func conversions field-by-field using resolved sema types, applying from-registry conversions for bridged fields",
+        "A unit test over a 12-derive-convert shape asserts a derived conversion produces the expected target struct"
+      ],
+      "priority": 21,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-022",
+      "title": "Gate interp on native sema only",
+      "description": "As a runtime author, I need the interpreter to depend only on native checks so goscript runs in a host with no Go toolchain.",
+      "acceptanceCriteria": [
+        "The interpreter run path validates input solely through internal/sema (native AST checks) and refuses a program that fails a sema guarantee before evaluation",
+        "A unit test asserts a non-exhaustive-match program is refused with a located diagnostic, and a dependency test (via `go list -deps` or a source scan) asserts internal/interp does not depend on internal/typecheck or go/types"
+      ],
+      "priority": 22,
+      "passes": true,
+      "notes": "REWRITE-ARCHITECTURE.md §3.2: the go/types-over-lowered-Go crutch is fine for the Go-transpile path but NOT for the interpreter. Static checks must be native; types are checked statically and erased at runtime."
+    },
+    {
+      "id": "US-023",
+      "title": "Route runtime IO through cap",
+      "description": "As a runtime author, I need all host effects mediated by capabilities so authority is explicit and revocable.",
+      "acceptanceCriteria": [
+        "All interpreter host effects (stdout writes from print/fmt, time reads, env reads) are routed through a cap.CapabilitySet, and the default Run uses GrantAll()",
+        "A unit test runs a program that prints under GrantAll and captures the expected stdout through the capability sink"
+      ],
+      "priority": 23,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-024",
+      "title": "Enforce capability denial",
+      "description": "As a runtime author, I need denied capabilities to refuse effects so the sandbox is real.",
+      "acceptanceCriteria": [
+        "Running the interpreter with a CapabilitySet that denies a capability causes the corresponding effect to fail with a located, named capability error instead of performing it",
+        "A unit test runs a printing program under a set with Stdout denied and asserts a capability-denied error is raised and nothing is written"
+      ],
+      "priority": 24,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-025",
+      "title": "Add corpus interpreter runner",
+      "description": "As a runtime author, I need a corpus runner for the interpreter so the existing behavioral tier becomes the interpreter's acceptance suite.",
+      "acceptanceCriteria": [
+        "internal/corpus provides RunInterp: it loads a corpus case, runs it through the interpreter, and compares observable behavior (doctest output / asserted result) the same way the Go behavioral tier does",
+        "A unit test runs the doctest corpus cases through RunInterp and asserts they pass"
+      ],
+      "priority": 25,
+      "passes": true,
+      "notes": "REWRITE-ARCHITECTURE.md §6: the behavioral conformance tier was built to be implementation-independent — 'the conformance suite the self-hosted compiler and the interpreter both run'. Reuse it, do not invent a new oracle."
+    },
+    {
+      "id": "US-026",
+      "title": "Wire interpreter into the CLI",
+      "description": "As a goal user, I need to run a program under the interpreter so goscript is usable from the command line.",
+      "acceptanceCriteria": [
+        "cmd/goal executes a .goal program via the interpreter (e.g. `goal run --engine=interp <file>`), running func main and exiting 0 on success",
+        "A cmd/goal test runs a sample .goal program through the interpreter path and asserts exit code 0 and the expected stdout"
+      ],
+      "priority": 26,
+      "passes": true,
+      "notes": "Mirror the existing `--engine=splice|ast` flag convention; interp becomes a third engine value."
+    },
+    {
+      "id": "US-027",
+      "title": "Gate: behavioral parity under interp",
+      "description": "As a runtime author, I need the whole corpus to behave identically under interpretation so the interpreter is proven against the same yardstick as the Go backend.",
+      "acceptanceCriteria": [
+        "A gate test runs every applicable corpus case through the interpreter via RunInterp with zero behavioral failures; any excluded case is enumerated in an explicit, justified skip list in the test (e.g. uses an unshimmed stdlib symbol), never silently dropped",
+        "The gate test fails if a case fails behaviorally or if the skip list is missing a recorded reason for any entry"
+      ],
+      "priority": 27,
+      "passes": true,
+      "notes": "Gate corresponding to REWRITE-ARCHITECTURE.md §7 Phase 5: 'behavioral tier green under interpretation'. Honest deferral over false completion: a justified, enumerated skip list is allowed; silent drops are not."
+    },
+    {
+      "id": "US-028",
+      "title": "Gate: script-to-module no-op",
+      "description": "As a goal user, I need a goscript program to graduate to a Go+ module unchanged so the script-to-binary upgrade path is frictionless.",
+      "acceptanceCriteria": [
+        "A sample goscript program runs under the interpreter and, unchanged, transpiles and builds as a Go+ module via the existing AST backend, producing equivalent observable behavior",
+        "A test asserts the interpreter run and the transpiled-then-built binary of the same source produce the same output (the upgrade is a no-op)"
+      ],
+      "priority": 28,
+      "passes": true,
+      "notes": "Gate corresponding to REWRITE-ARCHITECTURE.md §7 Phase 5: 'a sample script graduates to a Go+ module as ~no-op'."
+    }
+  ]
+}

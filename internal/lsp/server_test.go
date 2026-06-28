@@ -82,4 +82,7 @@ func TestServerInitializeCapabilities(t *testing.T) {
 	if !bytes.Contains(out.Bytes(), []byte(`"source.fixAll.goal"`)) {
 		t.Fatalf("initialize did not advertise the fix-all code action; output:\n%s", out.String())
 	}
+	if !bytes.Contains(out.Bytes(), []byte(`"semanticTokensProvider"`)) {
+		t.Fatalf("initialize did not advertise semantic tokens; output:\n%s", out.String())
+	}
 }

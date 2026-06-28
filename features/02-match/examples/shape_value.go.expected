@@ -1,0 +1,37 @@
+package shape
+
+type Shape interface{ isShape() }
+
+type Shape_Circle struct {
+	Radius int
+}
+type Shape_Square struct {
+	Side int
+}
+
+func (Shape_Circle) isShape() {}
+func (Shape_Square) isShape() {}
+
+func area(s Shape) int {
+	switch v := s.(type) {
+	case Shape_Circle:
+		return v.Radius * v.Radius * 3
+	case Shape_Square:
+		return v.Side * v.Side
+	default:
+		panic("unreachable: non-exhaustive Shape (compiler invariant violated)")
+	}
+}
+
+func describe(s Shape) string {
+	var d string
+	switch s.(type) {
+	case Shape_Circle:
+		d = "circle"
+	case Shape_Square:
+		d = "square"
+	default:
+		panic("unreachable: non-exhaustive Shape (compiler invariant violated)")
+	}
+	return d
+}

@@ -1,0 +1,21 @@
+package shape
+
+enum Shape {
+    Circle { radius: int }
+    Square { side: int }
+}
+
+func area(s Shape) int {
+    return match s {
+        Shape.Circle(c) => c.radius * c.radius * 3
+        Shape.Square(q) => q.side * q.side
+    }
+}
+
+func describe(s Shape) string {
+    var d string = match s {
+        Shape.Circle(c) => "circle"
+        Shape.Square(q) => "square"
+    }
+    return d
+}

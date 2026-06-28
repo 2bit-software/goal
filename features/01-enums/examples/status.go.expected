@@ -2,7 +2,9 @@ package status
 
 type Time = int64
 
-func now() Time { return 0 }
+func now() Time {
+	return 0
+}
 
 type Status interface{ isStatus() }
 

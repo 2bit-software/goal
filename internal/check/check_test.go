@@ -1,105 +1,56 @@
-package check
+package check_test
 
 import (
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
 	"testing"
+
+	"goal/internal/check"
+	"goal/internal/corpus"
 )
 
-// wantRe matches an inline expectation marker on a source line:
-//
-//	// want "substring the diagnostic message must contain"
-//
-// The marker's own line is the line the diagnostic is expected on. Multiple markers
-// on one line are allowed. A `.goal` case with no markers asserts the program is
-// CLEAN — any Error-severity diagnostic fails it.
-var wantRe = regexp.MustCompile(`//\s*want\s+"([^"]*)"`)
+// manifestPath is the committed corpus manifest, and repoRoot the repo root,
+// both relative to this package directory (internal/check). They match the
+// depth the corpus package itself uses.
+const (
+	manifestPath = "../../corpus/manifest.json"
+	repoRoot     = "../.."
+)
 
-// TestCases is the whole checker test harness: it walks testdata/check/**/*.goal,
-// runs every registered check, and matches diagnostics against inline `// want`
-// markers. Adding a case is dropping a `.goal` file under testdata/check/<feature>/
-// — no edit to this file. The contract:
-//
-//   - Each `// want "sub"` marker must be satisfied by some diagnostic ON THAT LINE
-//     whose message contains "sub".
-//   - Every Error-severity diagnostic must be claimed by a marker on its line;
-//     an unclaimed Error is an unexpected rejection and fails the case. (Warnings —
-//     i.e. located deferrals — may go unclaimed, so negative cases stay easy to write.)
-func TestCases(t *testing.T) {
-	root := filepath.Join("..", "..", "testdata", "check")
-	var files []string
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() && strings.HasSuffix(path, ".goal") {
-			files = append(files, path)
-		}
-		return nil
-	})
-	if os.IsNotExist(err) {
-		t.Skip("no testdata/check yet — added per check by the loop in prompt.md")
-	}
+// TestCorpusCheck is the whole checker harness: it loads every check case from
+// the committed corpus manifest and runs each through the shared corpus check
+// runner, which matches diagnostics against the inline `// want` markers in the
+// source. Cases live in the manifest, not in a path walk hardcoded here —
+// adding one is regenerating the manifest, never editing this file. It fails
+// loudly if the manifest yields no check cases, so an empty or mis-generated
+// manifest cannot masquerade as green.
+func TestCorpusCheck(t *testing.T) {
+	m, err := corpus.Load(manifestPath)
 	if err != nil {
-		t.Fatalf("walk testdata/check: %v", err)
+		t.Fatalf("Load(%q): %v", manifestPath, err)
 	}
-	for _, f := range files {
-		t.Run(strings.TrimPrefix(f, root+string(filepath.Separator)), func(t *testing.T) {
-			runCase(t, f)
+
+	ck := corpus.CheckerFunc(check.Analyze)
+	ran := 0
+	for _, c := range m.Cases {
+		if c.Kind != corpus.KindCheck {
+			continue
+		}
+		ran++
+		c := c
+		t.Run(c.ID, func(t *testing.T) {
+			if err := corpus.RunCheck(repoRoot, c, ck); err != nil {
+				t.Error(err)
+			}
 		})
 	}
-}
 
-func runCase(t *testing.T, path string) {
-	src, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	wants := parseWants(string(src)) // line -> expected substrings
-	diags, err := Analyze(string(src))
-	if err != nil {
-		t.Fatalf("checker errored on %s: %v", path, err)
-	}
-
-	matched := map[int]map[int]bool{} // line -> index of want satisfied
-	for _, d := range diags {
-		line := OffsetToPosition(string(src), d.Pos).Line
-		for i, sub := range wants[line] {
-			if strings.Contains(d.Message, sub) {
-				if matched[line] == nil {
-					matched[line] = map[int]bool{}
-				}
-				matched[line][i] = true
-			}
-		}
-		// An Error with no marker on its line is an unexpected rejection.
-		if d.Severity == Error && len(wants[line]) == 0 {
-			t.Errorf("%s: unexpected error at line %d: [%s] %s", path, line, d.Code, d.Message)
-		}
-	}
-	for line, subs := range wants {
-		for i, sub := range subs {
-			if !matched[line][i] {
-				t.Errorf("%s:%d: expected a diagnostic containing %q, none matched", path, line, sub)
-			}
-		}
+	if ran == 0 {
+		t.Fatalf("manifest %q contains no check cases", manifestPath)
 	}
 }
 
-func parseWants(src string) map[int][]string {
-	wants := map[int][]string{}
-	for i, line := range strings.Split(src, "\n") {
-		for _, m := range wantRe.FindAllStringSubmatch(line, -1) {
-			wants[i+1] = append(wants[i+1], m[1])
-		}
-	}
-	return wants
-}
-
-// TestRegistryRuns is a spine smoke test: every registered check runs without error
-// on representative source, independent of whether any check is implemented yet.
+// TestRegistryRuns is a spine smoke test: every registered check runs without
+// error on representative source, independent of whether any check is
+// implemented yet.
 func TestRegistryRuns(t *testing.T) {
 	const src = `package p
 
@@ -108,7 +59,7 @@ enum Shape {
 	Rect   { w: float64, h: float64 }
 }
 `
-	if _, err := Analyze(src); err != nil {
+	if _, err := check.Analyze(src); err != nil {
 		t.Fatalf("checker spine errored on valid source: %v", err)
 	}
 }

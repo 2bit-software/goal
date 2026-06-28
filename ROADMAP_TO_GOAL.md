@@ -1,5 +1,12 @@
 # ROADMAP TO GOAL — making the transpiler language fully realized & usable
 
+> **Historical.** This roadmap and its per-phase loop files (`BUILD-MODEL-TODO.md`,
+> `DEPTH-TODO.md`, `CHECKER-TODO.md`, `LOWERING-TODO.md`, `NEXT-SESSION.md`, the loop
+> prompts) were written for the token-splice pipeline. That architecture was retired by
+> the AST front-end rewrite — see `REWRITE-ARCHITECTURE.md` for the current design. The
+> phase-file pointers below refer to documents that have since been removed; they are kept
+> here as the record of the original plan.
+
 This is the **master strategy document** for taking `goal` from "a complete front-end +
 static checker" to "a language I can actually build real, multi-file programs in, with
 editor feedback." It records the **thesis**, the **decisions that fix the plan's shape**,

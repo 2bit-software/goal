@@ -1,0 +1,38 @@
+package typecheck
+
+import "goal/internal/project"
+
+// TypeChecker is the depth-checking seam (REWRITE-ARCHITECTURE.md §3.2, decision 4):
+// given a goal package it runs the type-aware guarantees — implements, must-use, and
+// no-zero-value — and returns their diagnostics. The current implementation is the
+// go/types-over-lowered-Go crutch (GoTypesChecker); the interface exists so a native goal
+// checker can replace it when the runtime forces it (goscript has no Go toolchain at
+// runtime) WITHOUT changing any caller.
+//
+// The contract is the diagnostics, not the typed view: a native checker would not produce
+// a *types.Package, so the seam deliberately returns []Diagnostic rather than exposing
+// Load's go/types-specific *Package. Check returns an error only for a transpile/parse
+// failure (a goal-compiler bug); user-program type errors are folded into the typed view
+// and surfaced through the depth checks, exactly as Load does today.
+type TypeChecker interface {
+	Check(pkg *project.Package) ([]Diagnostic, error)
+}
+
+// GoTypesChecker is the default TypeChecker: it transpiles the goal package to Go, loads
+// the lowered Go into stdlib go/types (Load), and runs every depth check over the typed
+// view. It is the "transpile then ask the Go compiler" crutch behind the interface.
+type GoTypesChecker struct{}
+
+// Check implements TypeChecker. It loads the package's typed view and concatenates the
+// findings of every depth check in a stable order (implements, must-use, no-zero-value).
+func (GoTypesChecker) Check(pkg *project.Package) ([]Diagnostic, error) {
+	p, err := Load(pkg)
+	if err != nil {
+		return nil, err
+	}
+	var diags []Diagnostic
+	diags = append(diags, CheckImplements(p)...)
+	diags = append(diags, CheckMustUse(p)...)
+	diags = append(diags, CheckNoZeroValue(p)...)
+	return diags, nil
+}

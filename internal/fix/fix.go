@@ -4,18 +4,25 @@
 // propagation becomes a `Result[T, error]` returning function whose body propagates with
 // `?`; a `switch` over an in-file enum becomes a `match`.
 //
-// Like the lowering passes, fix is lexical: it lexes with scan, matches token patterns,
-// and splices minimal edits — it never reflows untouched code. Every rule is conservative,
-// when a candidate cannot be transformed safely the rule leaves it untouched and records a
-// Report instead, so `goal fix` never emits incorrect code (the transpiler's `goal check`
-// remains the correctness authority).
+// fix consumes the parsed goal AST: each pass parses the current source with
+// internal/parser and resolves its name-keyed facts with internal/sema, then locates
+// rewrite candidates structurally (a FuncDecl's result list, an AssignStmt/IfStmt pair,
+// a SwitchStmt's case labels) rather than by re-lexing a token stream. The edits it emits
+// are still minimal byte splices (scan.Replacement / scan.Splice) so untouched code —
+// formatting and comments alike — is preserved verbatim; printing the AST would reflow it.
+// Every rule is conservative: when a candidate cannot be transformed safely the rule leaves
+// it untouched and records a Report instead, so `goal fix` never emits incorrect code (the
+// transpiler's `goal check` remains the correctness authority).
 package fix
 
 import (
 	"strings"
 
-	"goal/internal/analyze"
+	"goal/internal/ast"
+	"goal/internal/parser"
 	"goal/internal/scan"
+	"goal/internal/sema"
+	"goal/internal/token"
 )
 
 // Level classifies a Report: a Suggest is an opportunity fix chose not to apply, a Warn is
@@ -80,16 +87,20 @@ func File(src string) (out string, changes []Change, reports []Report) {
 		}
 	}
 	for range maxIters {
-		t := analyze.Build(out)
-		toks := scan.Lex(out)
-		spans := analyze.FuncSpans(toks, t)
+		file, err := parser.ParseFile(out)
+		if err != nil || file == nil {
+			// Unparseable source: fix is conservative and never guesses, so leave it as-is.
+			break
+		}
+		info := sema.Resolve(file)
+		decls := typeDecls(out, file)
 
 		var reps []scan.Replacement
 		var iterReports []Report
-		reps = append(reps, fixPropagate(out, toks, spans, t, &changes, &iterReports)...)
-		reps = append(reps, fixPropagateInit(out, toks, spans, t, &changes, &iterReports)...)
-		reps = append(reps, fixResultSig(out, toks, t, &changes, &iterReports)...)
-		reps = append(reps, fixSwitchToMatch(out, toks, t, &changes, &iterReports)...)
+		reps = append(reps, fixPropagate(out, file, info, decls, &changes, &iterReports)...)
+		reps = append(reps, fixPropagateInit(out, file, info, decls, &changes, &iterReports)...)
+		reps = append(reps, fixResultSig(out, file, info, decls, &changes, &iterReports)...)
+		reps = append(reps, fixSwitchToMatch(out, file, info, &changes, &iterReports)...)
 		add(iterReports)
 
 		if len(reps) == 0 {
@@ -97,7 +108,7 @@ func File(src string) (out string, changes []Change, reports []Report) {
 			// returning, so the post-hoc call-site analysis sees only the genuinely
 			// manual sites; run it once here, against the final source.
 			var cs []Report
-			reportCallSites(out, toks, spans, &cs)
+			reportCallSites(out, file, info, &cs)
 			add(cs)
 			break
 		}
@@ -105,6 +116,141 @@ func File(src string) (out string, changes []Change, reports []Report) {
 	}
 	return out, changes, reports
 }
+
+// typeDecls maps each top-level type name to its underlying form — "struct", "interface",
+// or the rendered underlying type text — the AST-native replacement for analyze's
+// TypeDecls table, used by analyze.ZeroLit to compute a success type's zero value.
+func typeDecls(src string, file *ast.File) map[string]string {
+	m := map[string]string{}
+	for _, d := range file.Decls {
+		gd, ok := d.(*ast.GenDecl)
+		if !ok || gd.Tok != token.TYPE {
+			continue
+		}
+		for _, sp := range gd.Specs {
+			ts, ok := sp.(*ast.TypeSpec)
+			if !ok || ts.Name == nil || ts.Type == nil {
+				continue
+			}
+			switch ts.Type.(type) {
+			case *ast.StructType:
+				m[ts.Name.Name] = "struct"
+			case *ast.InterfaceType:
+				m[ts.Name.Name] = "interface"
+			default:
+				m[ts.Name.Name] = nodeText(src, ts.Type)
+			}
+		}
+	}
+	return m
+}
+
+// ----------------------------------------------------------------------------
+// AST helpers shared by the rules.
+
+// nodeText returns the source text spanned by node, sliced by its byte offsets.
+func nodeText(src string, node ast.Node) string {
+	lo, hi := node.Pos().Offset, node.End().Offset
+	if lo < 0 || hi > len(src) || lo > hi {
+		return ""
+	}
+	return strings.TrimSpace(src[lo:hi])
+}
+
+// identName returns the name of an *ast.Ident expression, or "" for any other node.
+func identName(e ast.Expr) string {
+	if id, ok := e.(*ast.Ident); ok {
+		return id.Name
+	}
+	return ""
+}
+
+// identNames returns the names of an all-*ast.Ident expression list (a `:=` left-hand
+// side), or nil if any element is not a bare identifier.
+func identNames(es []ast.Expr) []string {
+	names := make([]string, 0, len(es))
+	for _, e := range es {
+		id, ok := e.(*ast.Ident)
+		if !ok {
+			return nil
+		}
+		names = append(names, id.Name)
+	}
+	return names
+}
+
+// isSelector reports whether e is the selector `x.sel` (both bare identifiers).
+func isSelector(e ast.Expr, x, sel string) bool {
+	se, ok := e.(*ast.SelectorExpr)
+	return ok && identName(se.X) == x && se.Sel != nil && se.Sel.Name == sel
+}
+
+// isResultErrOf reports whether e is exactly `Result.Err(condVar)` — the idiomatic
+// closed propagation a `?` subsumes.
+func isResultErrOf(e ast.Expr, condVar string) bool {
+	call, ok := e.(*ast.CallExpr)
+	if !ok || len(call.Args) != 1 {
+		return false
+	}
+	return isSelector(call.Fun, "Result", "Err") && identName(call.Args[0]) == condVar
+}
+
+// forEachBlock invokes f with the statement list of b and of every block nested inside it
+// (if/for/range/switch bodies), so a rule can scan statement neighbourhoods at any depth.
+// It does not descend into function-literal bodies (those are expressions, not statements).
+func forEachBlock(b *ast.BlockStmt, f func([]ast.Stmt)) {
+	if b == nil {
+		return
+	}
+	f(b.List)
+	for _, s := range b.List {
+		descendStmt(s, f)
+	}
+}
+
+func descendStmt(s ast.Stmt, f func([]ast.Stmt)) {
+	switch s := s.(type) {
+	case *ast.BlockStmt:
+		forEachBlock(s, f)
+	case *ast.IfStmt:
+		forEachBlock(s.Body, f)
+		if s.Else != nil {
+			descendStmt(s.Else, f)
+		}
+	case *ast.ForStmt:
+		forEachBlock(s.Body, f)
+	case *ast.RangeStmt:
+		forEachBlock(s.Body, f)
+	case *ast.SwitchStmt:
+		if s.Body != nil {
+			for _, cc := range s.Body.List {
+				if c, ok := cc.(*ast.CaseClause); ok {
+					f(c.Body)
+					for _, cs := range c.Body {
+						descendStmt(cs, f)
+					}
+				}
+			}
+		}
+	}
+}
+
+// visitFn adapts a func to ast.Visitor: it visits node, and recurses into children while
+// the func returns true.
+type visitFn func(ast.Node) bool
+
+func (f visitFn) Visit(n ast.Node) ast.Visitor {
+	if n == nil {
+		return nil
+	}
+	if f(n) {
+		return f
+	}
+	return nil
+}
+
+// ----------------------------------------------------------------------------
+// Source-offset helpers.
 
 // lineOf returns the 1-based line number of byte offset off in src.
 func lineOf(src string, off int) int {
@@ -130,11 +276,16 @@ func lineStartBefore(src string, off int) int {
 
 // spanHasComment reports whether src[lo:hi] contains a // or /* comment marker, so a rule
 // removing a multi-statement region can refuse rather than silently drop the comment (the
-// lexer skips comments, so they are invisible in the token stream).
+// parser discards comments, so they are invisible in the AST).
 func spanHasComment(src string, lo, hi int) bool {
 	if lo < 0 || hi > len(src) || lo > hi {
 		return false
 	}
 	s := src[lo:hi]
 	return strings.Contains(s, "//") || strings.Contains(s, "/*")
+}
+
+// isExported reports whether name begins with an uppercase letter (a Go exported symbol).
+func isExported(name string) bool {
+	return name != "" && name[0] >= 'A' && name[0] <= 'Z'
 }

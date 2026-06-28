@@ -6,9 +6,9 @@ type Config struct {
 	Raw string
 }
 
-func parse(s string) (__goal_ok Config, __goal_err error) {
+func parse(s string) (ok Config, err error) {
 	if s == "" {
-		return __goal_ok, errors.New("empty input")
+		return ok, errors.New("empty input")
 	}
 	return Config{Raw: s}, nil
 }

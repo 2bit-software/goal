@@ -42,11 +42,43 @@ type InitializeResult struct {
 }
 
 // ServerCapabilities advertises what the server can do: full-document sync, an idiomatize
-// fix-all code action, and document-symbol (outline) support.
+// fix-all code action, document-symbol (outline) support, semantic tokens, go-to-definition,
+// hover, find-references, and rename.
 type ServerCapabilities struct {
-	TextDocumentSync       int                `json:"textDocumentSync"`
-	CodeActionProvider     *CodeActionOptions `json:"codeActionProvider,omitempty"`
-	DocumentSymbolProvider bool               `json:"documentSymbolProvider,omitempty"`
+	TextDocumentSync       int                    `json:"textDocumentSync"`
+	CodeActionProvider     *CodeActionOptions     `json:"codeActionProvider,omitempty"`
+	DocumentSymbolProvider bool                   `json:"documentSymbolProvider,omitempty"`
+	SemanticTokensProvider *SemanticTokensOptions `json:"semanticTokensProvider,omitempty"`
+	DefinitionProvider     bool                   `json:"definitionProvider,omitempty"`
+	HoverProvider          bool                   `json:"hoverProvider,omitempty"`
+	ReferencesProvider     bool                   `json:"referencesProvider,omitempty"`
+	RenameProvider         bool                   `json:"renameProvider,omitempty"`
+}
+
+// SemanticTokensOptions advertises the server's semantic-tokens support: the legend that
+// maps each token's type/modifier index back to a name, and that full-document requests are
+// served (range and delta requests are out of scope for this milestone).
+type SemanticTokensOptions struct {
+	Legend SemanticTokensLegend `json:"legend"`
+	Full   bool                 `json:"full"`
+}
+
+// SemanticTokensLegend is the ordered list of token-type and token-modifier names; a token's
+// numeric type/modifier in the data array indexes into these slices.
+type SemanticTokensLegend struct {
+	TokenTypes     []string `json:"tokenTypes"`
+	TokenModifiers []string `json:"tokenModifiers"`
+}
+
+// SemanticTokensParams is a textDocument/semanticTokens/full request for one document.
+type SemanticTokensParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+}
+
+// SemanticTokens is the full-document response: Data is the flat, delta-encoded 5-tuple
+// stream [deltaLine, deltaStartChar, length, tokenType, tokenModifiers] in document order.
+type SemanticTokens struct {
+	Data []uint `json:"data"`
 }
 
 // CodeActionOptions declares which code-action kinds the server offers.
@@ -99,6 +131,63 @@ type DocumentSymbolParams struct {
 	TextDocument textDocumentIdentifier `json:"textDocument"`
 }
 
+// DefinitionParams is a textDocument/definition request: the document and the 0-based cursor
+// position whose referenced symbol should be resolved to its declaration.
+type DefinitionParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+	Position     Position               `json:"position"`
+}
+
+// Location is a span within a document, the response to a go-to-definition request.
+type Location struct {
+	URI   string `json:"uri"`
+	Range Range  `json:"range"`
+}
+
+// HoverParams is a textDocument/hover request: the document and the 0-based cursor position
+// whose symbol should be described.
+type HoverParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+	Position     Position               `json:"position"`
+}
+
+// ReferenceParams is a textDocument/references request: the document, the 0-based cursor
+// position whose symbol's uses should be listed, and a context whose IncludeDeclaration flag
+// controls whether the declaration's own name is part of the result.
+type ReferenceParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+	Position     Position               `json:"position"`
+	Context      ReferenceContext       `json:"context"`
+}
+
+// ReferenceContext carries the find-references options; IncludeDeclaration asks the server to
+// include the symbol's declaration alongside its references.
+type ReferenceContext struct {
+	IncludeDeclaration bool `json:"includeDeclaration"`
+}
+
+// RenameParams is a textDocument/rename request: the document, the 0-based cursor position
+// whose symbol should be renamed, and the new name to apply at every occurrence.
+type RenameParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+	Position     Position               `json:"position"`
+	NewName      string                 `json:"newName"`
+}
+
+// Hover is the response to a hover request: the rendered description of the symbol under the
+// cursor. A nil *Hover marshals to JSON null, the best-effort contract shared with definition
+// and semantic tokens.
+type Hover struct {
+	Contents MarkupContent `json:"contents"`
+}
+
+// MarkupContent is formatted hover text. Kind is "markdown" (the widely-supported form); Value
+// is the rendered body.
+type MarkupContent struct {
+	Kind  string `json:"kind"`
+	Value string `json:"value"`
+}
+
 // DocumentSymbol is one outline entry: Range covers the whole declaration, SelectionRange the
 // name to reveal, and Children any nested symbols.
 type DocumentSymbol struct {
@@ -121,6 +210,62 @@ const (
 	symEnumMember = 22
 	symStruct     = 23
 )
+
+// Semantic token-type indices. Each is an index into semanticTokenTypes (their order MUST
+// match), which the legend exposes to the client so it can map the numeric type back to a
+// standard LSP token-type name and theme it.
+const (
+	semKeyword = iota
+	semType
+	semEnum
+	semInterface
+	semStruct
+	semParameter
+	semVariable
+	semProperty
+	semEnumMember
+	semFunction
+	semMethod
+	semString
+	semNumber
+	semComment
+	semOperator
+)
+
+// semanticTokenTypes is the legend's ordered token-type names; index i is the name of the
+// token type whose numeric value is i (semKeyword, semType, …). They are the standard LSP
+// semantic token-type names so a client maps them to its theme without configuration.
+var semanticTokenTypes = []string{
+	semKeyword:    "keyword",
+	semType:       "type",
+	semEnum:       "enum",
+	semInterface:  "interface",
+	semStruct:     "struct",
+	semParameter:  "parameter",
+	semVariable:   "variable",
+	semProperty:   "property",
+	semEnumMember: "enumMember",
+	semFunction:   "function",
+	semMethod:     "method",
+	semString:     "string",
+	semNumber:     "number",
+	semComment:    "comment",
+	semOperator:   "operator",
+}
+
+// semanticTokenModifiers is the legend's ordered modifier names. The server does not yet
+// emit modifiers (every token's modifier bitset is 0), but the legend must still declare a
+// non-nil list so the wire shape is complete.
+var semanticTokenModifiers = []string{"declaration"}
+
+// defaultSemanticLegend returns the legend advertised at initialize and used to encode the
+// token stream — the single source of truth for the type/modifier ordering.
+func defaultSemanticLegend() SemanticTokensLegend {
+	return SemanticTokensLegend{
+		TokenTypes:     semanticTokenTypes,
+		TokenModifiers: semanticTokenModifiers,
+	}
+}
 
 // ServerInfo identifies the server in client logs.
 type ServerInfo struct {

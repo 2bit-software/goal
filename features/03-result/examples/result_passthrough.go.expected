@@ -1,19 +1,18 @@
 package resx
 
-func mkRes() (__goal_ok int, __goal_err error) { return 7, nil }
+func mkRes() (ok int, err error) {
+	return 7, nil
+}
 
-// passthrough constructs a Result inside each match arm body — the constructor must
-// lower to the open-E (T, error) pair (§8.3), composing with the arm binding rename,
-// not be left as a bare `Result.Ok`/`Result.Err`.
-func passthrough() (__goal_ok int, __goal_err error) {
-	__goal_v, __goal_err := mkRes()
-	if __goal_err != nil {
+func passthrough() (ok int, err error) {
+	v, err1 := mkRes()
+	if err1 != nil {
 		{
-			return __goal_ok, __goal_err
+			return ok, err1
 		}
 	} else {
 		{
-			return __goal_v, nil
+			return v, nil
 		}
 	}
 }

@@ -1,0 +1,251 @@
+package sema
+
+// This file holds the semantic checks layered on the resolved Info — the AST
+// reimplementation of internal/check's token-scanning guarantees. US-029 lands the
+// first one: feature-02 match exhaustiveness. Later sema stories (US-030/031) add
+// field-completeness, must-use, implements, and the ?-checks to Check.
+//
+// A sema check reads structure off the parsed tree (never a flat token stream), so
+// it is correct by construction where the lexical checker must reconstruct shape
+// from tokens. Diagnostics carry a token.Pos (the front-end's real source position);
+// a consumer that needs a byte offset reads Pos.Offset.
+
+import (
+	"fmt"
+	"strings"
+
+	"goal/internal/ast"
+	"goal/internal/token"
+)
+
+// Severity is how strongly a Diagnostic is enforced. Error means the program is
+// rejected (a guarantee is violated); Warning is advisory — typically a located
+// deferral the checker surfaces rather than silently assuming. The constant order
+// mirrors check.Severity so the two map one-to-one.
+type Severity int
+
+const (
+	// Error marks a violated guarantee; the program is rejected.
+	Error Severity = iota
+	// Warning marks an advisory diagnostic, usually a located deferral.
+	Warning
+)
+
+// String returns the lowercase severity label used in rendered diagnostics.
+func (s Severity) String() string {
+	if s == Warning {
+		return "warning"
+	}
+	return "error"
+}
+
+// Diagnostic is one located semantic finding. Pos is the front-end source position
+// of the offending construct; Feature names the guarantee (e.g. "02-match"); Code is
+// a stable, greppable identifier; Message is the agent/human-facing explanation.
+type Diagnostic struct {
+	Pos      token.Pos
+	Severity Severity
+	Feature  string
+	Code     string
+	Message  string
+}
+
+// Check runs every sema check currently implemented against the resolved file and
+// returns the accumulated diagnostics. US-029 wires exhaustiveness (CheckExhaustive);
+// US-030 wires field-completeness (CheckFields); US-031 wires the remaining lexical
+// guarantees: must-use (03), implements (07), and the `?`-propagation checks
+// (CheckQuestion for open-E feature 05, CheckClosed for closed-E feature 06).
+func Check(file *ast.File, info *Info) []Diagnostic {
+	var diags []Diagnostic
+	diags = append(diags, CheckExhaustive(file, info)...)
+	diags = append(diags, CheckFields(file, info)...)
+	diags = append(diags, CheckMustUse(file, info)...)
+	diags = append(diags, CheckImplements(file, info)...)
+	diags = append(diags, CheckQuestion(file, info)...)
+	diags = append(diags, CheckClosed(file, info)...)
+	diags = append(diags, CheckAssert(file, info)...)
+	diags = append(diags, CheckConvert(file, info)...)
+	return diags
+}
+
+// CheckExhaustive enforces feature-02 (match): a `match` over a known enum must
+// cover every variant or supply an explicit `_` rest-arm, or it is rejected with an
+// Error — the very gap the lowering would otherwise turn into a silent
+// `panic("unreachable")` default (spec §8.2).
+//
+// Position-independence: the enum is resolved from the arm qualifiers
+// (`Status.Pending`), which are present in every match position — statement,
+// `return match`, `var x = match`, and the untyped `x := match` the lowering
+// defers — never from the scrutinee's declared type. So the check fires on all of
+// them.
+//
+// Defer-boundary: when the arms name an enum not declared in this file (its full
+// variant set is unknown), completeness is unprovable, so the check emits a located
+// Warning naming the unresolved enum rather than assume exhaustiveness. The builtin
+// sum types Result/Option are owned by their own features and are skipped silently;
+// a match with no enum-qualified arm is not this guarantee's concern.
+func CheckExhaustive(file *ast.File, info *Info) []Diagnostic {
+	var diags []Diagnostic
+	for _, m := range collectMatches(file) {
+		diags = append(diags, checkOneMatch(m, info)...)
+	}
+	return diags
+}
+
+// checkOneMatch checks a single MatchExpr. The enum is resolved from the arm
+// qualifiers, not the scrutinee, so the result is position-independent.
+func checkOneMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
+	enumName := "" // the enum named by the qualified arms
+	covered := map[string]bool{}
+	hasRest := false
+	for _, arm := range m.Arms {
+		switch p := arm.Pattern.(type) {
+		case *ast.RestPattern:
+			hasRest = true
+		case *ast.VariantPattern:
+			qual := patternEnumName(p)
+			if qual == "" || p.Variant == nil {
+				continue // a pattern this check cannot read — ignore the arm
+			}
+			if enumName == "" {
+				enumName = qual
+			}
+			if qual == enumName {
+				covered[p.Variant.Name] = true
+			}
+		}
+	}
+
+	// No enum-qualified arm: a value-position construct or something else — not ours.
+	if enumName == "" {
+		return nil
+	}
+
+	// Result/Option are builtin sum types, not user enums declared in any file; their
+	// match exhaustiveness is owned by their own features (06/04). Checking them here
+	// would only ever fire the unresolved-enum deferral on correct matches — noise.
+	if enumName == "Result" || enumName == "Option" {
+		return nil
+	}
+
+	enum := info.Enums[enumName]
+	if enum == nil {
+		// Arms name an enum not declared in this file: its full variant set is unknown,
+		// so completeness is unprovable. Defer with a located Warning rather than risk a
+		// false "exhaustive".
+		return []Diagnostic{{
+			Pos:      m.Match,
+			Severity: Warning,
+			Feature:  "02-match",
+			Code:     "unresolved-match-enum",
+			Message: fmt.Sprintf("cannot verify exhaustiveness of `match` on `%s`: enum `%s` is not declared in this file — exhaustiveness deferred",
+				enumName, enumName),
+		}}
+	}
+
+	// An explicit `_` rest-arm is a deliberate opt-out of exhaustiveness (spec §8.2).
+	if hasRest {
+		return nil
+	}
+
+	missing := missingVariants(enum, covered)
+	if len(missing) == 0 {
+		return nil
+	}
+	return []Diagnostic{{
+		Pos:      m.Match,
+		Severity: Error,
+		Feature:  "02-match",
+		Code:     "non-exhaustive-match",
+		Message: fmt.Sprintf("non-exhaustive `match` on enum `%s`: missing variant%s %s — handle %s, or add a `_` rest-arm to dismiss the rest",
+			enum.Name, plural(len(missing)), quoteVariants(enum.Name, missing), pronoun(len(missing))),
+	}}
+}
+
+// collectMatches returns every MatchExpr in the file in source order.
+func collectMatches(file *ast.File) []*ast.MatchExpr {
+	var matches []*ast.MatchExpr
+	ast.Walk(visitorFunc(func(n ast.Node) bool {
+		if m, ok := n.(*ast.MatchExpr); ok {
+			matches = append(matches, m)
+		}
+		return true
+	}), file)
+	return matches
+}
+
+// visitorFunc adapts a `func(ast.Node) bool` to ast.Visitor: the function is called
+// for each node; returning true descends into its children.
+type visitorFunc func(ast.Node) bool
+
+func (f visitorFunc) Visit(n ast.Node) ast.Visitor {
+	if n == nil {
+		return nil
+	}
+	if f(n) {
+		return f
+	}
+	return nil
+}
+
+// patternEnumName renders the enum qualifier of a variant pattern: `Status` from
+// `Status.Pending`, or a dotted path `pkg.Status` when further qualified. Returns ""
+// for a bare variant (no enum reference) or an unrecognized qualifier expression.
+func patternEnumName(p *ast.VariantPattern) string {
+	return exprName(p.Enum)
+}
+
+// exprName renders an *Ident / *SelectorExpr reference as a dotted name string;
+// anything else yields "".
+func exprName(e ast.Expr) string {
+	switch x := e.(type) {
+	case *ast.Ident:
+		return x.Name
+	case *ast.SelectorExpr:
+		base := exprName(x.X)
+		if base == "" || x.Sel == nil {
+			return ""
+		}
+		return base + "." + x.Sel.Name
+	default:
+		return ""
+	}
+}
+
+// missingVariants returns the enum's declared variants not in the covered set, in
+// declaration order (the order an agent reads them in the enum decl).
+func missingVariants(enum *Enum, covered map[string]bool) []string {
+	var missing []string
+	for _, v := range enum.Variants {
+		if !covered[v.Name] {
+			missing = append(missing, v.Name)
+		}
+	}
+	return missing
+}
+
+// quoteVariants renders missing variants as backtick-quoted `Enum.Variant`,
+// comma-separated, in declaration order — naming exactly the patterns to add.
+func quoteVariants(enumName string, variants []string) string {
+	qualified := make([]string, len(variants))
+	for i, v := range variants {
+		qualified[i] = "`" + enumName + "." + v + "`"
+	}
+	return strings.Join(qualified, ", ")
+}
+
+// plural returns "s" when n != 1, for "variant"/"variants" agreement.
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// pronoun returns "it"/"them" for the trailing "handle …" clause.
+func pronoun(n int) string {
+	if n == 1 {
+		return "it"
+	}
+	return "them"
+}

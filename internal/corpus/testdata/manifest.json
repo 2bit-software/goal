@@ -1,0 +1,28 @@
+{
+  "cases": [
+    {
+      "id": "transpile-enums",
+      "kind": "transpile",
+      "input": "features/01-enums/examples/basic.goal",
+      "expected": "features/01-enums/examples/basic.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "check-exhaustive",
+      "kind": "check",
+      "input": "testdata/check/exhaustive_missing.goal",
+      "expected": "match is not exhaustive",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "doctest-basic",
+      "kind": "doctest",
+      "input": "features/11-doctests/examples/basic.goal",
+      "expected": "features/11-doctests/examples/basic.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    }
+  ]
+}

@@ -2,8 +2,11 @@ package status
 
 type Time = int64
 
-func render(t Time)    {}
-func showPlaceholder() {}
+func render(t Time) {
+}
+
+func showPlaceholder() {
+}
 
 type Status interface{ isStatus() }
 
@@ -21,9 +24,9 @@ func (Status_Active) isStatus()    {}
 func (Status_Cancelled) isStatus() {}
 
 func handle2(s Status) {
-	switch __goal_v := s.(type) {
+	switch v := s.(type) {
 	case Status_Active:
-		render(__goal_v.Since)
+		render(v.Since)
 	default:
 		showPlaceholder()
 	}

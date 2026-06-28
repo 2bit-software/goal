@@ -2,9 +2,6 @@ package account
 
 import "fmt"
 
-// setAge uses the printf-style message form. The formatted explanation is
-// appended to the auto expr text, and the transpiler injects the fmt import the
-// lowering needs.
 func setAge(age int) {
 	if !(age >= 0) {
 		panic("assertion failed: age >= 0: " + fmt.Sprintf("age must be non-negative, got %d", age))

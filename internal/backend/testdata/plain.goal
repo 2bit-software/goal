@@ -1,0 +1,39 @@
+package mathx
+
+import "strings"
+
+// Add returns the sum of a and b.
+func Add(a int, b int) int {
+	return a + b
+}
+
+// Double returns n added to itself.
+func Double(n int) int {
+	return Add(n, n)
+}
+
+// SumTo returns the sum of the integers 1..n.
+func SumTo(n int) int {
+	total := 0
+	for i := 1; i <= n; i = i + 1 {
+		total = total + i
+	}
+	return total
+}
+
+// Greet builds a greeting for each name, joined by ", ".
+func Greet(names []string) string {
+	parts := make([]string, 0)
+	for _, name := range names {
+		parts = append(parts, "hello "+name)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// Max returns the larger of a and b.
+func Max(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}

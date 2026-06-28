@@ -1,15 +1,13 @@
 package optx
 
 func mkOpt() *int {
-	__goal_some := 1
-	return &__goal_some
+	some := 1
+	return &some
 }
 
-// passthrough constructs an Option inside each match arm body — the constructor must
-// lower the same way it does at top level (§8.4), not be left as a bare `Option.Some`.
 func passthrough() *int {
-	if __goal_o := mkOpt(); __goal_o != nil {
-		n := *__goal_o
+	if o := mkOpt(); o != nil {
+		n := *o
 		{
 			return &n
 		}

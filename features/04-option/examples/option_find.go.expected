@@ -18,12 +18,15 @@ func find(id ID) *User {
 	return &u
 }
 
-func greet(u User) {}
-func prompt()      {}
+func greet(u User) {
+}
+
+func prompt() {
+}
 
 func handle(id ID) {
-	if __goal_o := find(id); __goal_o != nil {
-		u := *__goal_o
+	if o := find(id); o != nil {
+		u := *o
 		greet(u)
 	} else {
 		prompt()

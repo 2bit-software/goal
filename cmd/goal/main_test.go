@@ -74,6 +74,20 @@ func TestRunExecutesMain(t *testing.T) {
 	}
 }
 
+// TestBuildWithASTEngine drives `goal build` over a plain-Go (no goal-specific
+// constructs) package through the real command path, proving the AST engine (the
+// sole, default front-end) is wired into the driver and produces buildable Go
+// (FR-5/FR-6).
+func TestBuildWithASTEngine(t *testing.T) {
+	const plain = "package main\n\nimport \"fmt\"\n\nfunc add(a int, b int) int {\n\treturn a + b\n}\n\nfunc main() {\n\tfmt.Println(add(2, 3))\n}\n"
+	dir := goalModule(t, map[string]string{"main.goal": plain})
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"build", dir}, &out, &errOut); err != nil {
+		t.Fatalf("build failed: %v\n%s", err, errOut.String())
+	}
+}
+
 func TestBuildErrorMapsToGoalSource(t *testing.T) {
 	// A plain Go type error in a passed-through body, on line 4 of the file.
 	const bad = "package main\n\nfunc f() int {\n\tvar x int = \"nope\"\n\treturn x\n}\n"
@@ -176,5 +190,82 @@ func TestParseFlags(t *testing.T) {
 	}
 	if !emit || emitDir != "out" || root != "./pkg" {
 		t.Errorf("parseFlags = (%v, %q, %q), want (true, out, ./pkg)", emit, emitDir, root)
+	}
+}
+
+func TestParseFlagsUnknownFlag(t *testing.T) {
+	// The legacy --engine flag was removed in US-043; it is now an unknown flag.
+	if _, _, _, err := parseFlags([]string{"--engine=splice"}); err == nil {
+		t.Error("--engine should be rejected as an unknown flag")
+	}
+}
+
+// interpMainGoal is a self-contained single-file goal program (it calls a goal
+// function over a sum type and prints the result) used to exercise the
+// interpreter run path end to end.
+const interpMainGoal = `package main
+
+import "fmt"
+
+enum Color {
+    Red
+    Green
+}
+
+func name(c Color) string {
+    return match c {
+        Color.Red => "red"
+        Color.Green => "green"
+    }
+}
+
+func main() {
+    fmt.Println(name(Color.Green))
+}
+`
+
+// TestRunInterpEngineExecutesMain drives `goal run --engine=interp <file>` through
+// the real command path: the program is parsed, sema-resolved, and interpreted
+// in-process (no Go toolchain), func main runs, and its stdout reaches the
+// command's out writer (FR-1/FR-2/FR-3).
+func TestRunInterpEngineExecutesMain(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "main.goal")
+	if err := os.WriteFile(file, []byte(interpMainGoal), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"run", "--engine=interp", file}, &out, &errOut); err != nil {
+		t.Fatalf("interp run failed: %v\n%s", err, errOut.String())
+	}
+	if got := strings.TrimSpace(out.String()); got != "green" {
+		t.Errorf("program output = %q, want green\nstderr: %s", got, errOut.String())
+	}
+}
+
+// TestRunInterpUnknownEngineRejected asserts an unrecognized --engine value is a
+// descriptive error rather than a silent fallback to a different back-end.
+func TestRunInterpUnknownEngineRejected(t *testing.T) {
+	var out, errOut bytes.Buffer
+	if err := run([]string{"run", "--engine=bogus", "."}, &out, &errOut); err == nil {
+		t.Error("unknown --engine value should be rejected")
+	}
+}
+
+// TestRunInterpNoMain asserts a program with no func main run under the
+// interpreter exits non-zero with an error (FR-5: loud failure, never a silent
+// success).
+func TestRunInterpNoMain(t *testing.T) {
+	const noMain = "package main\n\nfunc helper() int {\n\treturn 1\n}\n"
+	dir := t.TempDir()
+	file := filepath.Join(dir, "main.goal")
+	if err := os.WriteFile(file, []byte(noMain), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"run", "--engine=interp", file}, &out, &errOut); err == nil {
+		t.Error("interp run of a program with no func main should fail")
 	}
 }
