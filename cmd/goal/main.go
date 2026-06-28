@@ -51,10 +51,11 @@ var guideCommands = []guide.Command{
 	{
 		Name:    "run",
 		Summary: "transpile and `go run` the sole main package",
-		Usage:   "goal run [--engine=ast|interp] [--emit[=dir]] [path]",
+		Usage:   "goal run [--engine=ast|interp] [--emit[=dir]] [path] [args...]",
 		Flags: []guide.Flag{
 			{Name: "--engine=ast|interp", Summary: "ast (default) transpiles and `go run`s; interp runs a single .goal file under the goscript tree-walking interpreter"},
 			{Name: "--emit[=dir]", Summary: "also write generated .go beside each .goal (or under dir)"},
+			{Name: "[args...]", Summary: "arguments after the path are passed through to the running program (default engine), as with `go run <pkg> [args...]`"},
 		},
 	},
 	{
@@ -128,14 +129,14 @@ func run(args []string, out, errOut io.Writer) error {
 		}
 		return cmdFmt(path, write, out, errOut)
 	case "run":
-		engine, emit, emitDir, root, err := parseRunFlags(rest)
+		engine, emit, emitDir, root, progArgs, err := parseRunFlags(rest)
 		if err != nil {
 			return err
 		}
 		if engine == engineInterp {
-			return cmdRunInterp(root, out, errOut)
+			return cmdRunInterp(root, progArgs, out, errOut)
 		}
-		return cmdRun(root, emit, emitDir, out, errOut)
+		return cmdRun(root, emit, emitDir, progArgs, out, errOut)
 	case "build", "check":
 		emit, emitDir, root, err := parseFlags(rest)
 		if err != nil {
@@ -201,17 +202,24 @@ const (
 )
 
 // parseRunFlags parses the `run` subcommand's flags: --engine=ast|interp
-// (default ast), --emit[=dir], and a single optional path. It mirrors parseFlags
-// for emit/path handling and adds the engine selector; an unknown engine value
-// is a descriptive error so a typo never silently falls back to a different
-// back-end.
-func parseRunFlags(args []string) (engine string, emit bool, emitDir, root string, err error) {
+// (default ast), --emit[=dir], a single path, and any program arguments that
+// follow it. Like `go run <pkg> [args...]`, goal's own flags must precede the
+// path; the first positional is the path, and every token after it — flags
+// included — is collected verbatim as a program argument and handed to the
+// running program rather than interpreted by goal. An unknown engine value is a
+// descriptive error so a typo never silently falls back to a different back-end.
+func parseRunFlags(args []string) (engine string, emit bool, emitDir, root string, progArgs []string, err error) {
 	engine, root = engineAST, "."
 	gotPath := false
-	for _, a := range args {
+	for i, a := range args {
+		// Once the path is set, the rest of the line belongs to the program.
+		if gotPath {
+			progArgs = args[i:]
+			break
+		}
 		switch {
 		case a == "--engine" || a == "-engine":
-			return "", false, "", "", fmt.Errorf("flag %q requires a value (--engine=ast|interp)", a)
+			return "", false, "", "", nil, fmt.Errorf("flag %q requires a value (--engine=ast|interp)", a)
 		case strings.HasPrefix(a, "--engine="):
 			engine = strings.TrimPrefix(a, "--engine=")
 		case strings.HasPrefix(a, "-engine="):
@@ -221,22 +229,19 @@ func parseRunFlags(args []string) (engine string, emit bool, emitDir, root strin
 		case strings.HasPrefix(a, "--emit="):
 			emit, emitDir = true, strings.TrimPrefix(a, "--emit=")
 		case strings.HasPrefix(a, "-"):
-			return "", false, "", "", fmt.Errorf("unknown flag %q", a)
+			return "", false, "", "", nil, fmt.Errorf("unknown flag %q", a)
 		default:
-			if gotPath {
-				return "", false, "", "", fmt.Errorf("expected a single path, got extra %q", a)
-			}
 			root, gotPath = a, true
 		}
 	}
 	if engine != engineAST && engine != engineInterp {
-		return "", false, "", "", fmt.Errorf("unknown engine %q (want ast or interp)", engine)
+		return "", false, "", "", nil, fmt.Errorf("unknown engine %q (want ast or interp)", engine)
 	}
 	root = strings.TrimSuffix(strings.TrimSuffix(root, "..."), "/")
 	if root == "" {
 		root = "."
 	}
-	return engine, emit, emitDir, root, nil
+	return engine, emit, emitDir, root, progArgs, nil
 }
 
 // cmdRunInterp runs a single .goal file under the goscript tree-walking
@@ -249,7 +254,13 @@ func parseRunFlags(args []string) (engine string, emit bool, emitDir, root strin
 // failure, a refused static guarantee (the native sema gate), a missing func
 // main, or a runtime failure is a located, descriptive error (the command exits
 // non-zero), never a silent success.
-func cmdRunInterp(path string, out, errOut io.Writer) error {
+func cmdRunInterp(path string, progArgs []string, out, errOut io.Writer) error {
+	if len(progArgs) > 0 {
+		// The interpreter has no os.Args bridge yet, so it cannot deliver program
+		// arguments to the running program. Refuse loudly by name rather than
+		// silently dropping them and running as if none were given.
+		return fmt.Errorf("--engine=interp does not support program arguments yet (got %v); use the default engine to pass arguments", progArgs)
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return err
@@ -478,7 +489,7 @@ func cmdBuild(root string, emit bool, emitDir string, out, errOut io.Writer) err
 	return goToolchain(root, ts, out, errOut, "build", "./...")
 }
 
-func cmdRun(root string, emit bool, emitDir string, out, errOut io.Writer) error {
+func cmdRun(root string, emit bool, emitDir string, progArgs []string, out, errOut io.Writer) error {
 	ts, err := transpileAll(root)
 	if err != nil {
 		return err
@@ -497,9 +508,9 @@ func cmdRun(root string, emit bool, emitDir string, out, errOut io.Writer) error
 		target = "./" + rel
 	}
 	if emit {
-		return runGo(root, nil, out, errOut, "run", target)
+		return runGo(root, nil, out, errOut, "run", target, progArgs...)
 	}
-	return goToolchain(root, ts, out, errOut, "run", target)
+	return goToolchain(root, ts, out, errOut, "run", target, progArgs...)
 }
 
 func cmdCheck(root string, out, errOut io.Writer) error {
@@ -652,19 +663,23 @@ func depthFilePath(pkg *project.Package, name string) string {
 // goToolchain runs `go <verb> <target>` over the package with the generated Go supplied
 // as an overlay, so nothing is written to the source tree. Output (including any error,
 // already mapped to .goal positions by the //line directives) is relayed verbatim.
-func goToolchain(root string, ts []transpiled, out, errOut io.Writer, verb, target string) error {
+func goToolchain(root string, ts []transpiled, out, errOut io.Writer, verb, target string, progArgs ...string) error {
 	overlayPath, cleanup, err := writeOverlay(ts)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
-	return runGo(root, []string{"-overlay", overlayPath}, out, errOut, verb, target)
+	return runGo(root, []string{"-overlay", overlayPath}, out, errOut, verb, target, progArgs...)
 }
 
 // runGo invokes the go tool with the given verb, flags, and target from dir.
-func runGo(dir string, flags []string, out, errOut io.Writer, verb, target string) error {
+// Any progArgs are appended after the target, so the go tool grammar
+// `go <verb> [build flags] <target> [program args...]` is preserved and the
+// trailing tokens reach the running program rather than the go tool.
+func runGo(dir string, flags []string, out, errOut io.Writer, verb, target string, progArgs ...string) error {
 	args := append([]string{verb}, flags...)
 	args = append(args, target)
+	args = append(args, progArgs...)
 	cmd := exec.Command("go", args...)
 	cmd.Dir = dir
 	cmd.Stdout = out
