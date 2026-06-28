@@ -353,7 +353,7 @@ func (p *parser) parseFuncDecl() *ast.FuncDecl {
 	}
 	fd.Name = p.ident()
 	ft.Params = p.parseParamList()
-	ft.Results = p.parseResults()
+	ft.Results = p.parseResults(ft.Params.Closing)
 	fd.Type = ft
 	if p.at(token.LBRACE) {
 		fd.Body = p.parseBlock()
@@ -589,7 +589,7 @@ func (p *parser) parseMethodSpec() *ast.Field {
 func (p *parser) parseSignature() *ast.FuncType {
 	ft := &ast.FuncType{}
 	ft.Params = p.parseParamList()
-	ft.Results = p.parseResults()
+	ft.Results = p.parseResults(ft.Params.Closing)
 	return ft
 }
 
@@ -649,8 +649,16 @@ func (p *parser) parseTypeOrVariadic() ast.Expr {
 }
 
 // parseResults parses a function's results: a parenthesized list, a single
-// unnamed type, or nothing.
-func (p *parser) parseResults() *ast.FieldList {
+// unnamed type, or nothing. A result must begin on the same source line as
+// paramsEnd (the closing ')' of the parameter list): Go inserts a semicolon
+// after that ')' when a newline follows, ending the signature, so a type on a
+// later line is the next construct — e.g. the next interface method — not a
+// result. goal's lexer strips newlines, so we reconstruct that boundary from the
+// line directly.
+func (p *parser) parseResults(paramsEnd token.Pos) *ast.FieldList {
+	if p.cur().Pos.Line != paramsEnd.Line {
+		return nil
+	}
 	if p.at(token.LPAREN) {
 		return p.parseParamList()
 	}

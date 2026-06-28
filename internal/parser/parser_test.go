@@ -273,6 +273,62 @@ func TestParseFileCompositeInitializer(t *testing.T) {
 	}
 }
 
+// TestParseInterfaceMethodBoundaries pins the result-line boundary that lets a
+// void method coexist with later elements. Because the lexer strips newlines, a
+// method spec ends only because its result must sit on the same line as the
+// closing ')'; otherwise the next element's name is swallowed as a return type.
+func TestParseInterfaceMethodBoundaries(t *testing.T) {
+	const src = `package p
+
+type R interface {
+	Reset()
+	Area() float64
+	Reader
+}
+`
+	file, err := ParseFile(src)
+	if err != nil {
+		t.Fatalf("ParseFile returned error: %v", err)
+	}
+
+	it := file.Decls[0].(*ast.GenDecl).Specs[0].(*ast.TypeSpec).Type.(*ast.InterfaceType)
+	if len(it.Methods.List) != 3 {
+		t.Fatalf("interface has %d elements, want 3 (Reset, Area, Reader)", len(it.Methods.List))
+	}
+
+	// Reset: a void method — named, with an empty result set.
+	reset := it.Methods.List[0]
+	if len(reset.Names) != 1 || reset.Names[0].Name != "Reset" {
+		t.Fatalf("element 0 names = %v, want [Reset]", reset.Names)
+	}
+	if ft := reset.Type.(*ast.FuncType); ft.Results != nil && len(ft.Results.List) != 0 {
+		t.Errorf("Reset has results %v, want none", ft.Results)
+	}
+
+	// Area: a returning method — its result type must NOT have absorbed the
+	// embedded Reader on the following line.
+	area := it.Methods.List[1]
+	if len(area.Names) != 1 || area.Names[0].Name != "Area" {
+		t.Fatalf("element 1 names = %v, want [Area]", area.Names)
+	}
+	areaFt := area.Type.(*ast.FuncType)
+	if areaFt.Results == nil || len(areaFt.Results.List) != 1 {
+		t.Fatalf("Area results = %v, want one result", areaFt.Results)
+	}
+	if id, ok := areaFt.Results.List[0].Type.(*ast.Ident); !ok || id.Name != "float64" {
+		t.Errorf("Area result type = %v, want float64", areaFt.Results.List[0].Type)
+	}
+
+	// Reader: an embedded interface — unnamed, the type itself is the name.
+	reader := it.Methods.List[2]
+	if len(reader.Names) != 0 {
+		t.Fatalf("embedded element names = %v, want none", reader.Names)
+	}
+	if id, ok := reader.Type.(*ast.Ident); !ok || id.Name != "Reader" {
+		t.Errorf("embedded element type = %v, want Ident Reader", reader.Type)
+	}
+}
+
 func TestParseFileErrors(t *testing.T) {
 	cases := map[string]string{
 		"missing package name": "package",
