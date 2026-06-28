@@ -697,6 +697,11 @@ func (p *parser) parseBlock() *ast.BlockStmt {
 
 // parseStmt parses a single statement, dispatching on the leading token.
 func (p *parser) parseStmt() ast.Stmt {
+	// A "label:" prefix at statement position is a labeled statement (the target
+	// of goto/break/continue), distinct from an expression starting with an ident.
+	if p.at(token.IDENT) && p.peekKind() == token.COLON {
+		return p.parseLabeledStmt()
+	}
 	switch p.kind() {
 	case token.LBRACE:
 		return p.parseBlock()
@@ -706,6 +711,8 @@ func (p *parser) parseStmt() ast.Stmt {
 		return p.parseForStmt()
 	case token.SWITCH:
 		return p.parseSwitchStmt()
+	case token.SELECT:
+		return p.parseSelectStmt()
 	case token.RETURN:
 		return p.parseReturnStmt()
 	case token.DEFER:
@@ -747,6 +754,9 @@ func (p *parser) parseSimpleStmt(allowRange bool) ast.Stmt {
 		}
 		rhs := p.parseExprList()
 		return &ast.AssignStmt{Lhs: lhs, TokPos: tok.Pos, Tok: tok.Kind, Rhs: rhs}
+	case token.ARROW:
+		arrow := p.advance()
+		return &ast.SendStmt{Chan: lhs[0], Arrow: arrow.Pos, Value: p.parseExpr()}
 	case token.INC, token.DEC:
 		tok := p.advance()
 		return &ast.IncDecStmt{X: lhs[0], TokPos: tok.Pos, Tok: tok.Kind}
@@ -860,33 +870,111 @@ func (p *parser) parseForStmt() ast.Stmt {
 // parseSwitchStmt parses an expression switch with an optional init and tag.
 func (p *parser) parseSwitchStmt() ast.Stmt {
 	swPos := p.expect(token.SWITCH).Pos
-	sw := &ast.SwitchStmt{Switch: swPos}
 
+	// Parse an optional init statement and an optional tag/guard. With a
+	// semicolon, the first simple statement is the init and the second is the
+	// tag/guard; without one, the lone simple statement is the tag/guard.
 	prev := p.exprLev
 	p.exprLev = -1
-	if !p.at(token.LBRACE) {
-		s1 := p.parseSimpleStmt(false)
-		if p.at(token.SEMICOLON) {
-			p.advance()
-			sw.Init = s1
-			if !p.at(token.LBRACE) {
-				sw.Tag = p.parseExpr()
-			}
-		} else {
-			sw.Tag = stmtExpr(s1)
+	var init, guard ast.Stmt
+	if !p.at(token.LBRACE) && !p.at(token.SEMICOLON) {
+		guard = p.parseSimpleStmt(false)
+	}
+	if p.at(token.SEMICOLON) {
+		p.advance()
+		init = guard
+		guard = nil
+		if !p.at(token.LBRACE) {
+			guard = p.parseSimpleStmt(false)
 		}
 	}
 	p.exprLev = prev
 
+	// A guard of the form `x.(type)` or `v := x.(type)` makes this a type switch.
+	if isTypeSwitchGuard(guard) {
+		ts := &ast.TypeSwitchStmt{Switch: swPos, Init: init, Assign: guard}
+		ts.Body = p.parseCaseBody()
+		return ts
+	}
+	return &ast.SwitchStmt{Switch: swPos, Init: init, Tag: stmtExpr(guard), Body: p.parseCaseBody()}
+}
+
+// isTypeSwitchGuard reports whether s is a type-switch guard: a bare `x.(type)`
+// assertion or a `v := x.(type)` binding (a TypeAssertExpr with no asserted type).
+func isTypeSwitchGuard(s ast.Stmt) bool {
+	switch g := s.(type) {
+	case *ast.ExprStmt:
+		ta, ok := g.X.(*ast.TypeAssertExpr)
+		return ok && ta.Type == nil
+	case *ast.AssignStmt:
+		if g.Tok != token.DEFINE || len(g.Rhs) != 1 {
+			return false
+		}
+		ta, ok := g.Rhs[0].(*ast.TypeAssertExpr)
+		return ok && ta.Type == nil
+	}
+	return false
+}
+
+// parseCaseBody parses the braced "{ case … }" body shared by ordinary and type
+// switches, with the cursor on the opening brace.
+func (p *parser) parseCaseBody() *ast.BlockStmt {
 	lb := p.expect(token.LBRACE)
 	body := &ast.BlockStmt{Lbrace: lb.Pos}
 	for p.at(token.CASE) || p.at(token.DEFAULT) {
 		body.List = append(body.List, p.parseCaseClause())
 	}
-	rb := p.expect(token.RBRACE)
-	body.Rbrace = rb.Pos
-	sw.Body = body
-	return sw
+	body.Rbrace = p.expect(token.RBRACE).Pos
+	return body
+}
+
+// parseSelectStmt parses a select statement: "select { case <comm>: … }". Each
+// comm clause guards on a channel send or receive, or is the default clause.
+func (p *parser) parseSelectStmt() ast.Stmt {
+	pos := p.expect(token.SELECT).Pos
+	lb := p.expect(token.LBRACE)
+	body := &ast.BlockStmt{Lbrace: lb.Pos}
+	for p.at(token.CASE) || p.at(token.DEFAULT) {
+		body.List = append(body.List, p.parseCommClause())
+	}
+	body.Rbrace = p.expect(token.RBRACE).Pos
+	return &ast.SelectStmt{Select: pos, Body: body}
+}
+
+// parseCommClause parses one clause of a select. A "case" guard is a send or
+// receive simple statement (`ch <- v`, `v := <-ch`, `<-ch`); "default" has none.
+func (p *parser) parseCommClause() ast.Stmt {
+	cc := &ast.CommClause{Case: p.cur().Pos}
+	if p.at(token.CASE) {
+		p.advance()
+		cc.Comm = p.parseSimpleStmt(false)
+	} else {
+		p.expect(token.DEFAULT)
+	}
+	cc.Colon = p.expect(token.COLON).Pos
+	for !p.at(token.CASE) && !p.at(token.DEFAULT) && !p.at(token.RBRACE) && !p.at(token.EOF) {
+		if p.at(token.SEMICOLON) {
+			p.advance()
+			continue
+		}
+		cc.Body = append(cc.Body, p.parseStmt())
+	}
+	return cc
+}
+
+// parseLabeledStmt parses "label: stmt", with the cursor on the label ident. A
+// label that is the last thing in a block (no following statement) gets an empty
+// statement so a goto target can sit at a block's end.
+func (p *parser) parseLabeledStmt() ast.Stmt {
+	label := p.ident()
+	colon := p.expect(token.COLON)
+	ls := &ast.LabeledStmt{Label: label, Colon: colon.Pos}
+	if p.at(token.RBRACE) || p.at(token.EOF) {
+		ls.Stmt = &ast.EmptyStmt{Semicolon: colon.Pos}
+	} else {
+		ls.Stmt = p.parseStmt()
+	}
+	return ls
 }
 
 // parseCaseClause parses one case or default clause within a switch body.
@@ -1058,10 +1146,11 @@ func (p *parser) parseOperand() ast.Expr {
 		p.exprLev = prev
 		rp := p.expect(token.RPAREN)
 		return &ast.ParenExpr{Lparen: t.Pos, X: inner, Rparen: rp.Pos}
-	case token.LBRACK, token.MAP, token.STRUCT:
-		// A type literal in operand position: an array/slice, map, or struct type
-		// used as a conversion target (`[]byte(p)`) or as the type of a composite
-		// literal (`map[string]string{}`, `[]T{...}`). parsePostfix then takes a
+	case token.LBRACK, token.MAP, token.STRUCT, token.CHAN, token.INTERFACE:
+		// A type literal in operand position: an array/slice, map, struct, channel,
+		// or interface type used as a conversion target (`[]byte(p)`), a builtin
+		// argument (`make(chan int, 1)`), or the type of a composite literal
+		// (`map[string]string{}`, `[]T{...}`). parsePostfix then takes a
 		// trailing `(` as the conversion call and a trailing `{` as the composite
 		// body (compositeOK admits these type forms).
 		return p.parseType()
@@ -1094,6 +1183,21 @@ func (p *parser) parseFuncOperand() ast.Expr {
 	return &ast.FuncLit{Type: ft, Body: body}
 }
 
+// parseTypeAssert parses a type assertion suffix "(T)" applied to x, with the
+// cursor on "(" (the leading "." already consumed). The reserved form "x.(type)"
+// — valid only as a type-switch guard — yields a TypeAssertExpr with a nil Type.
+func (p *parser) parseTypeAssert(x ast.Expr) ast.Expr {
+	lp := p.expect(token.LPAREN)
+	ta := &ast.TypeAssertExpr{X: x, Lparen: lp.Pos}
+	if p.at(token.TYPE) {
+		p.advance() // "x.(type)" guard — Type stays nil
+	} else {
+		ta.Type = p.parseType()
+	}
+	ta.Rparen = p.expect(token.RPAREN).Pos
+	return ta
+}
+
 // parsePostfix applies any chain of selector, call, index, and composite-literal
 // suffixes to x.
 func (p *parser) parsePostfix(x ast.Expr) ast.Expr {
@@ -1101,7 +1205,11 @@ func (p *parser) parsePostfix(x ast.Expr) ast.Expr {
 		switch p.kind() {
 		case token.PERIOD:
 			p.advance()
-			x = &ast.SelectorExpr{X: x, Sel: p.ident()}
+			if p.at(token.LPAREN) {
+				x = p.parseTypeAssert(x)
+			} else {
+				x = &ast.SelectorExpr{X: x, Sel: p.ident()}
+			}
 		case token.LPAREN:
 			x = p.parseCallSuffix(x)
 		case token.LBRACK:
@@ -1142,6 +1250,7 @@ func (p *parser) parseCallSuffix(fun ast.Expr) ast.Expr {
 	prev := p.exprLev
 	p.exprLev++
 	var args []ast.Expr
+	var ellipsis token.Pos
 	labeled := false
 	for !p.at(token.RPAREN) && !p.at(token.EOF) {
 		arg := p.parseCallArg()
@@ -1149,6 +1258,13 @@ func (p *parser) parseCallSuffix(fun ast.Expr) ast.Expr {
 			labeled = true
 		}
 		args = append(args, arg)
+		if p.at(token.ELLIPSIS) { // variadic spread f(a, xs...) — must be the last arg
+			ellipsis = p.advance().Pos
+			if p.at(token.COMMA) { // tolerate a trailing comma after the spread
+				p.advance()
+			}
+			break
+		}
 		if p.at(token.COMMA) {
 			p.advance()
 		} else {
@@ -1160,7 +1276,7 @@ func (p *parser) parseCallSuffix(fun ast.Expr) ast.Expr {
 	if labeled {
 		return p.makeVariantLit(fun, lp.Pos, args, rp.Pos)
 	}
-	return &ast.CallExpr{Fun: fun, Lparen: lp.Pos, Args: args, Rparen: rp.Pos}
+	return &ast.CallExpr{Fun: fun, Lparen: lp.Pos, Args: args, Ellipsis: ellipsis, Rparen: rp.Pos}
 }
 
 // parseIndexSuffix parses a "[...]" suffix applied to x. A ':' makes it a slice

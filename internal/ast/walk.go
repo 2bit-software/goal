@@ -187,6 +187,9 @@ func Walk(v Visitor, node Node) {
 	case *CallExpr:
 		walkExpr(v, n.Fun)
 		walkExprList(v, n.Args)
+	case *TypeAssertExpr:
+		walkExpr(v, n.X)
+		walkExpr(v, n.Type)
 	case *StarExpr:
 		walkExpr(v, n.X)
 	case *KeyValueExpr:
@@ -285,6 +288,35 @@ func Walk(v Visitor, node Node) {
 	case *CaseClause:
 		walkExprList(v, n.List)
 		walkStmtList(v, n.Body)
+	case *TypeSwitchStmt:
+		if n.Init != nil {
+			Walk(v, n.Init)
+		}
+		if n.Assign != nil {
+			Walk(v, n.Assign)
+		}
+		if n.Body != nil {
+			Walk(v, n.Body)
+		}
+	case *SelectStmt:
+		if n.Body != nil {
+			Walk(v, n.Body)
+		}
+	case *CommClause:
+		if n.Comm != nil {
+			Walk(v, n.Comm)
+		}
+		walkStmtList(v, n.Body)
+	case *SendStmt:
+		walkExpr(v, n.Chan)
+		walkExpr(v, n.Value)
+	case *LabeledStmt:
+		if n.Label != nil {
+			Walk(v, n.Label)
+		}
+		if n.Stmt != nil {
+			Walk(v, n.Stmt)
+		}
 	case *DeferStmt:
 		if n.Call != nil {
 			Walk(v, n.Call)

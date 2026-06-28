@@ -569,6 +569,18 @@ func (e *emitter) stmt(s ast.Stmt) {
 		e.rangeStmt(s)
 	case *ast.SwitchStmt:
 		e.switchStmt(s)
+	case *ast.TypeSwitchStmt:
+		e.typeSwitchStmt(s)
+	case *ast.SelectStmt:
+		e.selectStmt(s)
+	case *ast.SendStmt:
+		e.expr(s.Chan)
+		e.p(" <- ")
+		e.expr(s.Value)
+	case *ast.LabeledStmt:
+		e.p(s.Label.Name)
+		e.p(":\n")
+		e.stmt(s.Stmt)
 	case *ast.DeclStmt:
 		// `var name T = match …` over an enum lowers to a `var name T` declaration
 		// followed by a value-position type-switch whose arms assign `name = <body>`.
@@ -709,6 +721,63 @@ func (e *emitter) caseClause(c *ast.CaseClause) {
 	}
 }
 
+// typeSwitchStmt emits a type switch: "switch [init;] [v :=] x.(type) { ... }".
+// The guard (Assign) is an ExprStmt holding the x.(type) assertion or an
+// AssignStmt "v := x.(type)"; the body reuses caseClause, whose case lists are
+// the asserted types.
+func (e *emitter) typeSwitchStmt(s *ast.TypeSwitchStmt) {
+	e.p("switch ")
+	if s.Init != nil {
+		e.stmt(s.Init)
+		e.p("; ")
+	}
+	e.stmt(s.Assign)
+	e.p(" {\n")
+	if s.Body != nil {
+		for _, c := range s.Body.List {
+			cc, ok := c.(*ast.CaseClause)
+			if !ok {
+				e.fail("unsupported type-switch body element %T (expected case clause)", c)
+				return
+			}
+			e.caseClause(cc)
+		}
+	}
+	e.p("}")
+}
+
+// selectStmt emits a select statement and its comm clauses.
+func (e *emitter) selectStmt(s *ast.SelectStmt) {
+	e.p("select {\n")
+	if s.Body != nil {
+		for _, c := range s.Body.List {
+			cc, ok := c.(*ast.CommClause)
+			if !ok {
+				e.fail("unsupported select body element %T (expected comm clause)", c)
+				return
+			}
+			e.commClause(cc)
+		}
+	}
+	e.p("}")
+}
+
+// commClause emits one clause of a select: "case <send-or-recv>:" or "default:",
+// followed by the clause's statement list.
+func (e *emitter) commClause(c *ast.CommClause) {
+	if c.Comm != nil {
+		e.p("case ")
+		e.stmt(c.Comm)
+		e.p(":\n")
+	} else {
+		e.p("default:\n")
+	}
+	for _, s := range c.Body {
+		e.stmt(s)
+		e.p("\n")
+	}
+}
+
 func (e *emitter) rangeStmt(s *ast.RangeStmt) {
 	e.p("for ")
 	if s.Key != nil {
@@ -772,6 +841,18 @@ func (e *emitter) expr(x ast.Expr) {
 		e.expr(x.Fun)
 		e.p("(")
 		e.exprList(x.Args)
+		if x.Ellipsis.IsValid() {
+			e.p("...")
+		}
+		e.p(")")
+	case *ast.TypeAssertExpr:
+		e.expr(x.X)
+		e.p(".(")
+		if x.Type == nil {
+			e.p("type")
+		} else {
+			e.expr(x.Type)
+		}
 		e.p(")")
 	case *ast.KeyValueExpr:
 		e.expr(x.Key)
