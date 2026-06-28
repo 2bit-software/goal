@@ -25,6 +25,41 @@
   CalleeKey, FirstBodyBrace, ParamsClose, TopLevelComma, IsBareQuestionStmt)
   stay in internal/scan, which now imports textedit for the pure bits.
 
+## [2026-06-28T23:25:00Z] - US-008 (checker-onto-ast PRD)
+- Migrated internal/project and internal/pipeline/sourcemap off the internal/scan
+  token lexer (and confirmed neither touches internal/analyze). Package-name
+  detection and the //line source map are now derived from the goal AST.
+- project.PackageClause: scan.Lex loop -> parser.ParseFile + file.Name.Name. The
+  goal parser's expect() synthesizes a name token even when `package` is absent
+  (so `func main(){}` would falsely yield "main"); guard by checking src at
+  file.Package.Offset literally begins with "package". Reading the name even on
+  later body parse errors preserves the old lexer's tolerance.
+- pipeline.sourcemap: declSites now parses with parser.ParseFile and walks
+  file.Decls, taking decl.Pos().Offset as the line-start keyword offset. declName
+  rewritten to switch on ast.Decl (FuncDecl/EnumDecl/SealedInterfaceDecl ->
+  Name.Name; GenDecl -> single-spec const/var/type name, "" for import/grouped).
+  Removed token-based declName + isDeclKeyword.
+- Files: internal/project/project.go, internal/pipeline/sourcemap.go, prd.json,
+  progress.txt. Initiative artifacts under
+  history/20260628-refactor-us-008-migrate-project-and-sourcemap-off-scan/.
+- Learnings for future iterations:
+  - The goal parser is a Go superset, so parser.ParseFile reads BOTH goal source
+    AND generated Go (internal/fix already relies on this) — no separate go/parser
+    needed for the source map's two sides.
+  - parser.ParseFile ALWAYS returns a non-nil *ast.File (partial on error) and
+    ALWAYS sets file.Name via expect(), so a missing package clause is detected by
+    inspecting src at file.Package.Offset, not by a nil name.
+  - FuncDecl.Pos() resolves to FuncType.Func, which the parser sets to the `func`
+    keyword even for methods (parser.go:350) — so it is the line-start offset a
+    //line directive must precede, methods included.
+  - Minor (documented) divergence from the legacy lexer: sealed interfaces and
+    from/derive funcs are now mapped to their source lines too (legacy skipped
+    them since their leading token isn't a decl keyword). Strictly more correct
+    for error reporting; no golden asserts //line text and conformance is
+    behavioral. Remaining live analyze/scan consumer after this story:
+    backend/package (US-009); then US-010 deletes analyze + the scanner.
+---
+
 ## [2026-06-28T24:00:00Z] - US-007 (checker-onto-ast PRD)
 - Migrated internal/typecheck (depth checker) off internal/analyze and the
   internal/scan token lexer. typecheck now builds its name-keyed facts from

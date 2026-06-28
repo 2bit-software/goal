@@ -19,8 +19,7 @@ import (
 	"sort"
 	"strings"
 
-	"goal/internal/scan"
-	"goal/internal/textedit"
+	"goal/internal/parser"
 )
 
 // Ext is the goal source-file extension.
@@ -113,16 +112,25 @@ func packageName(dir string, files []File) (string, error) {
 }
 
 // PackageClause returns the name in a file's leading `package <name>` clause, or "" if
-// the file has no package clause. It lexes (rather than regexping) so a `package`
+// the file has no package clause. It parses (rather than regexping) so a `package`
 // keyword inside a string or comment is never mistaken for the clause.
+//
+// The goal parser always synthesizes a name token for the clause even when the
+// `package` keyword is absent (its expect() advances on mismatch), so a file like
+// `func main() {}` would otherwise report a bogus name. We therefore confirm the
+// source at the recorded package position actually begins with the keyword. Reading
+// the name even when later body parsing failed keeps the old lexer's tolerance.
 func PackageClause(src string) string {
-	toks := scan.Lex(src)
-	for i := 0; i+1 < len(toks); i++ {
-		if toks[i].Text == "package" && textedit.IsIdent(toks[i+1].Text) {
-			return toks[i+1].Text
-		}
+	file, _ := parser.ParseFile(src)
+	if file == nil || file.Name == nil {
+		return ""
 	}
-	return ""
+	const kw = "package"
+	off := file.Package.Offset
+	if off < 0 || off+len(kw) > len(src) || src[off:off+len(kw)] != kw {
+		return ""
+	}
+	return file.Name.Name
 }
 
 // skipDir reports whether a directory should be pruned from discovery: hidden dirs

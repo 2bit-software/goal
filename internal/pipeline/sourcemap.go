@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"goal/internal/scan"
-	"goal/internal/textedit"
+	"goal/internal/ast"
+	"goal/internal/parser"
+	"goal/internal/token"
 )
 
 // AddLineDirectives inserts a Go `//line` directive before every top-level declaration
@@ -57,25 +58,19 @@ type declSite struct {
 	name string
 }
 
-// declSites returns every top-level declaration in src, in source order. Top-level
-// means a declaration keyword at brace/paren/bracket depth 0 that begins its line.
+// declSites returns every top-level declaration in src, in source order. It parses
+// src with the goal parser (a superset of Go, so it reads both the goal source and
+// the generated Go output) and reads each declaration's keyword offset from the AST.
+// In gofmt'd Go every top-level declaration starts its own line, so the keyword
+// offset is a line start — the position a `//line` directive must precede.
 func declSites(src string) []declSite {
-	toks := scan.Lex(src)
-	var sites []declSite
-	depth := 0
-	for i := range toks {
-		switch toks[i].Text {
-		case "{", "(", "[":
-			depth++
-			continue
-		case "}", ")", "]":
-			depth--
-			continue
-		}
-		if depth != 0 || !isDeclKeyword(toks[i].Text) || !textedit.IsLineStart(src, toks[i].Start) {
-			continue
-		}
-		sites = append(sites, declSite{off: toks[i].Start, name: declName(toks, i)})
+	file, _ := parser.ParseFile(src)
+	if file == nil {
+		return nil
+	}
+	sites := make([]declSite, 0, len(file.Decls))
+	for _, d := range file.Decls {
+		sites = append(sites, declSite{off: d.Pos().Offset, name: declName(d)})
 	}
 	return sites
 }
@@ -95,31 +90,38 @@ func declLines(src string) map[string]int {
 	return lines
 }
 
-// isDeclKeyword reports whether t begins a top-level declaration. `enum` is goal-only
-// (it never appears in generated Go); including it lets one scanner serve both sides.
-func isDeclKeyword(t string) bool {
-	switch t {
-	case "func", "type", "var", "const", "import", "enum":
-		return true
-	}
-	return false
-}
-
-// declName returns the name introduced by the declaration whose keyword is toks[i], or
-// "" when there is none. A method's receiver is skipped so the name is the method name.
-func declName(toks []scan.Token, i int) string {
-	switch toks[i].Text {
-	case "func":
-		j := i + 1
-		if j < len(toks) && toks[j].Text == "(" {
-			j = scan.MatchParen(toks, j) + 1 // skip receiver
+// declName returns the name a top-level declaration introduces, or "" when there is
+// none to map (an import, or a grouped/multi-name const/var). A method's receiver is
+// not its name, so a FuncDecl maps to its function/method name directly.
+func declName(d ast.Decl) string {
+	switch d := d.(type) {
+	case *ast.FuncDecl:
+		if d.Name != nil {
+			return d.Name.Name
 		}
-		if j < len(toks) && textedit.IsIdent(toks[j].Text) {
-			return toks[j].Text
+	case *ast.EnumDecl:
+		if d.Name != nil {
+			return d.Name.Name
 		}
-	case "type", "var", "const", "enum":
-		if i+1 < len(toks) && textedit.IsIdent(toks[i+1].Text) {
-			return toks[i+1].Text
+	case *ast.SealedInterfaceDecl:
+		if d.Name != nil {
+			return d.Name.Name
+		}
+	case *ast.GenDecl:
+		// Imports introduce no mappable name; a const/var/type maps only when it
+		// declares a single name (a grouped block has no single anchor).
+		if d.Tok == token.IMPORT || len(d.Specs) != 1 {
+			return ""
+		}
+		switch s := d.Specs[0].(type) {
+		case *ast.TypeSpec:
+			if s.Name != nil {
+				return s.Name.Name
+			}
+		case *ast.ValueSpec:
+			if len(s.Names) == 1 && s.Names[0] != nil {
+				return s.Names[0].Name
+			}
 		}
 	}
 	return ""

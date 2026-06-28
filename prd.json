@@ -111,7 +111,7 @@
         "Existing project and source-map tests pass"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-006 for any retained pure helpers. The sourcemap can key declaration spans off AST node offsets the way internal/fix already does."
     },
     {
