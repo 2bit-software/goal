@@ -1,5 +1,44 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T21:10:00Z] - US-002 (checker-onto-ast PRD)
+- Proved US-002 "Add sema package-check driver": internal/sema now has a
+  package-level entry point that checks a whole multi-file goal package and
+  returns per-file diagnostics from merged, foreign-enriched facts — the AST
+  analogue of internal/check.AnalyzePackageInDir, so US-004 (rewire cmd/goal) is
+  a near drop-in swap. New `sema.AnalyzePackageInDir(srcs []string, dir string)
+  ([][]Diagnostic, error)` + `AnalyzePackageInDirWith(srcs, dir, resolve
+  DirResolver) ([][]Diagnostic, []error, error)`: parse each src
+  (parser.ParseFile), ResolvePackage over all files, aggregate every file's
+  ast.File.Imports, EnrichForeign once over the shared Info (US-001), then Check
+  per file in input order. Parse error is fatal; foreign-resolution errors are
+  non-fatal (the plain entry point discards them).
+- Files: internal/sema/package.go (new driver),
+  internal/sema/package_test.go (new): cross-file exhaustiveness (enum in file A,
+  non-exhaustive match in file B -> Error only in file B; proves merge + input
+  order), foreign-enriched derive finding (a `derive func make(o *ext.Outer)
+  Target` where Target.Extra is unsourced -> unsourced-field Error ONLY when the
+  fake resolver loads the shared ../analyze/testdata/extpkg fixture; the control
+  run with a failing resolver defers to the unresolved-derive-type Warning,
+  proving the Error depends on US-001 enrichment), and a parse-error test. All
+  verifyCommands green (task check, task build).
+- Learnings for future iterations:
+  - sema may import internal/parser with no cycle (parser deps = token/ast/lexer
+    only); the package driver is the first production sema->parser edge (corpus
+    and backend already do parser.ParseFile + sema.* externally).
+  - The foreign-enrichment-dependent finding is a CheckConvert derive whose
+    SOURCE is a foreign struct: without EnrichForeign loading the imported
+    package, info.Structs lacks `alias.Type` so CheckConvert defers
+    (unresolved-derive-type Warning); with it, an unsourced target field becomes
+    a real unsourced-field Error. Contrast Warning-vs-Error across two driver
+    runs (good resolver vs failing resolver) to PROVE a finding depends on
+    enrichment rather than just asserting the enriched outcome.
+  - Imports are aggregated across ALL package files before one EnrichForeign call
+    (it dedupes by import path); the merged Info is shared by every per-file
+    Check — mirrors check.AnalyzePackageInDirWith threading one analyze.Tables.
+  - sema.Diagnostic.Pos is a token.Pos carrying Line/Col, so the driver returns
+    diagnostics ready to render with no OffsetToPosition mapping (US-004 note).
+---
+
 ## [2026-06-28T20:30:00Z] - US-001 (checker-onto-ast PRD)
 - Proved US-001 "Add foreign enrichment to sema.Info": sema can now resolve
   out-of-package struct fields and method signatures into sema.Info WITHOUT

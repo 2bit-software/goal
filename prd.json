@@ -32,7 +32,7 @@
         "A test over a multi-file package fixture returns the expected diagnostics, including at least one finding that depends on foreign enrichment from US-001"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Mirrors the shape of the legacy check.AnalyzePackageInDir so US-004 is a near drop-in swap. sema.Diagnostic.Pos is a token.Pos already carrying Line/Col, so no OffsetToPosition mapping is needed downstream."
     },
     {
