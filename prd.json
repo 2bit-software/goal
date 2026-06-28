@@ -45,7 +45,7 @@
         "Any divergence where the AST checker fires and the legacy checker deferred is recorded in DECISIONS.md as a documented improvement, and the corresponding // want markers are updated to the sema behavior"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Decision: accept-and-document AST/legacy divergences rather than forcing byte-for-byte legacy match, since internal/check is being deleted. The corpus already has both adapters (corpus/check_runner.go and corpus/sema_checker.go) to build this on."
     },
     {

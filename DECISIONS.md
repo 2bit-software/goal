@@ -1783,3 +1783,65 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
   injected-type-not-flagged; the four elided cases still pass under the new guard. 11 nozero tests total.
 - **No CLI change needed:** the lexical stage emits nothing for generic literals, so there is no dedup
   conflict — the depth finding stands alone through the already-wired `goal check`.
+
+---
+
+## US-003 — differential checker parity gate (sema vs legacy internal/check)
+
+### Parity is judged by (file, line, feature, code, severity), not message text
+- **Kind:** decision
+- **Chose:** the differential parity gate (`internal/corpus/parity_test.go`,
+  `TestSemaLegacyParity`) compares the AST `sema` checker against the legacy
+  `internal/check` checker over every `testdata/check/**` case by the tuple
+  (file, line, feature, code, severity), excluding the message string.
+- **Over:** comparing rendered messages byte-for-byte.
+- **Why:** the two front-ends word their messages differently by design (the
+  lexical checker quotes raw source spans; the AST checker reports resolved
+  type/field names), so message equality would be noise. Parity is about *which
+  guarantee fires where, at what severity* — that is what makes deleting
+  `internal/check` (US-005) safe. The gate subtracts an explicit, DECISIONS.md-
+  backed allowlist of known divergences and requires the remainder to be
+  identical; it also fails on a *stale* allowlist entry (a documented divergence
+  that no longer reproduces), so the allowlist cannot rot silently as sema evolves.
+
+### Divergence 1–3 (improvement): AST resolves in-file derive targets the lexical checker defers
+- **Kind:** decision (accept-and-document, per US-003 note in prd.json)
+- **Divergence:** for three bodyless `derive func` cases the AST checker fires a
+  real Error where the legacy checker defers with a Warning
+  (`12-derive-convert/unresolved-derive-type`):
+  - `testdata/check/12-derive-convert/fallible_in_total.goal:24` —
+    sema `fallible-in-total-derive` (Error) vs legacy deferral (Warning).
+  - `testdata/check/12-derive-convert/unbridged_field.goal:19` —
+    sema `unbridged-field` (Error) vs legacy deferral (Warning).
+  - `testdata/check/12-derive-convert/unsourced_field.goal:18` —
+    sema `unsourced-field` (Error) vs legacy deferral (Warning).
+- **Why it diverges:** the legacy checker reads the derive's target type *name*
+  lexically and (in these fixtures) swallows the trailing `// want "…"` comment
+  into the name, so it never resolves the in-file struct and defers. The AST
+  checker resolves the struct from the parsed file and proves the incompleteness,
+  firing the Error the fixture was written to expect.
+- **Chosen resolution:** accept the AST behavior as the correct one — this is the
+  documented improvement US-003 anticipates, and the reason `internal/check` is
+  being deleted rather than matched byte-for-byte. The `// want` markers already
+  contain the sema Error message substrings (they reflect the sema behavior), so
+  no fixture edit was required; the three entries are recorded in the gate's
+  allowlist as sema-side Errors paired with legacy-side deferral Warnings.
+- **Over:** weakening the AST checker back to a deferral to match legacy (would
+  discard a real, provable guarantee), or treating it as a gate failure (would
+  block the very deletion US-003 enables).
+
+### Divergence 4 (extra deferral): AST surfaces a located `unresolved-err-value` Warning legacy omits
+- **Kind:** decision (accept-and-document)
+- **Divergence:** `testdata/check/06-error-e/defer_err_value.goal:16` — the AST
+  checker emits a located `06-error-e/unresolved-err-value` Warning (the
+  `Result.Err(e)` returns a bound variable whose concrete error type is not
+  lexically resolvable, so closedness is deferred); the legacy checker emits
+  nothing there.
+- **Why accepted:** both are non-rejecting deferrals (the case has no `// want`
+  marker and warnings may go unclaimed by the corpus check runner), so neither
+  checker rejects the program and no fixture changes. The AST checker simply
+  surfaces the deferral honestly; recorded as a sema-side Warning in the gate's
+  allowlist.
+- **Over:** silencing the sema deferral to match legacy's silence — the located
+  deferral is the more honest behavior and aligns with the "defer, never guess"
+  discipline used throughout the checker.

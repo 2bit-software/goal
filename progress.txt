@@ -1,5 +1,47 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T22:01:00Z] - US-003 (checker-onto-ast PRD)
+- Proved US-003 "Add differential checker parity gate": a new test runs BOTH the
+  AST checker (corpus.SemaCheck) and the legacy lexical checker (check.Analyze)
+  over every KindCheck case under testdata/check/** and compares findings by
+  (file, line, feature, code, severity) — the safety proof that deleting
+  internal/check (US-005) loses no guarantee the AST checker doesn't already
+  provide. The gate subtracts a DECISIONS.md-backed allowlist of 4 known
+  divergences and fails on (a) an empty check corpus, (b) any undocumented
+  divergence, and (c) any stale allowlist entry that no longer reproduces.
+- The 4 divergences (the COMPLETE set over the corpus, discovered empirically):
+  - 3x 12-derive-convert (fallible_in_total:24, unbridged_field:19,
+    unsourced_field:18): AST fires a real Error (fallible-in-total-derive /
+    unbridged-field / unsourced-field) where legacy defers with
+    unresolved-derive-type (Warning). Legacy reads the derive target type NAME
+    lexically and swallows the trailing `// want` comment into the name, so it
+    never resolves the in-file struct; the AST checker resolves it and proves the
+    incompleteness. Documented as improvements; the existing `// want` markers
+    already contain the sema Error substrings (no fixture edit needed).
+  - 1x 06-error-e/defer_err_value:16: AST surfaces a located
+    unresolved-err-value Warning (closedness deferred for Result.Err on a bound
+    var); legacy is silent. Both non-rejecting; documented.
+- Files: internal/corpus/parity_test.go (new gate + knownDivergences allowlist),
+  DECISIONS.md (new "US-003 — differential checker parity gate" section). prd.json
+  US-003 -> passes:true. Initiative artifacts under
+  history/20260628-feature-us-003-differential-checker-parity-gate/.
+- Learnings for future iterations:
+  - Parity is judged by (file, line, feature, code, severity), NOT message text:
+    the lexical checker quotes raw source spans while the AST checker reports
+    resolved type/field names, so message equality would be pure noise. Compare
+    WHICH guarantee fires WHERE at WHAT severity.
+  - Both check.Analyze and corpus.SemaCheck return []check.Diagnostic with Pos as
+    a byte offset; line = check.OffsetToPosition(src, d.Pos).Line for both, so the
+    two streams are directly comparable with no sema/check severity translation
+    (SemaCheck already maps sema.Severity -> check.Severity).
+  - The gate is self-policing against allowlist rot: a documented divergence that
+    stops reproducing FAILS the gate (stale entry), forcing the allowlist +
+    DECISIONS.md to stay honest as the AST checker evolves.
+  - To discover divergences over the whole corpus, drop a throwaway _test.go in
+    internal/corpus that diffs the two checkers' finding sets per manifest
+    KindCheck case — fast and exhaustive; delete it once the real gate is written.
+---
+
 ## [2026-06-28T21:10:00Z] - US-002 (checker-onto-ast PRD)
 - Proved US-002 "Add sema package-check driver": internal/sema now has a
   package-level entry point that checks a whole multi-file goal package and
