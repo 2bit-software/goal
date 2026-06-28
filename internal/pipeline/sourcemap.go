@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"goal/internal/scan"
+	"goal/internal/textedit"
 )
 
 // AddLineDirectives inserts a Go `//line` directive before every top-level declaration
@@ -71,7 +72,7 @@ func declSites(src string) []declSite {
 			depth--
 			continue
 		}
-		if depth != 0 || !isDeclKeyword(toks[i].Text) || !scan.IsLineStart(src, toks[i].Start) {
+		if depth != 0 || !isDeclKeyword(toks[i].Text) || !textedit.IsLineStart(src, toks[i].Start) {
 			continue
 		}
 		sites = append(sites, declSite{off: toks[i].Start, name: declName(toks, i)})
@@ -113,11 +114,11 @@ func declName(toks []scan.Token, i int) string {
 		if j < len(toks) && toks[j].Text == "(" {
 			j = scan.MatchParen(toks, j) + 1 // skip receiver
 		}
-		if j < len(toks) && scan.IsIdent(toks[j].Text) {
+		if j < len(toks) && textedit.IsIdent(toks[j].Text) {
 			return toks[j].Text
 		}
 	case "type", "var", "const", "enum":
-		if i+1 < len(toks) && scan.IsIdent(toks[i+1].Text) {
+		if i+1 < len(toks) && textedit.IsIdent(toks[i+1].Text) {
 			return toks[i+1].Text
 		}
 	}

@@ -3,10 +3,9 @@ package fix
 import (
 	"strings"
 
-	"goal/internal/analyze"
 	"goal/internal/ast"
-	"goal/internal/scan"
 	"goal/internal/sema"
+	"goal/internal/textedit"
 	"goal/internal/token"
 )
 
@@ -32,8 +31,8 @@ import (
 //
 // The candidate is a binding statement immediately followed by the guarding `if`, found as
 // consecutive statements in a block of the AST.
-func fixPropagate(src string, file *ast.File, info *sema.Info, decls map[string]string, changes *[]Change, reports *[]Report) []scan.Replacement {
-	var reps []scan.Replacement
+func fixPropagate(src string, file *ast.File, info *sema.Info, decls map[string]string, changes *[]Change, reports *[]Report) []textedit.Replacement {
+	var reps []textedit.Replacement
 	for _, fn := range resultOptionFuncs(file, info) {
 		isResult := info.FuncSignatures[fn.Name.Name].Mode == sema.ModeResult
 		sigT := info.FuncSignatures[fn.Name.Name].T
@@ -58,7 +57,7 @@ func fixPropagate(src string, file *ast.File, info *sema.Info, decls map[string]
 // tryCollapseBinding attempts the value-binding propagation collapse for the AssignStmt /
 // IfStmt pair (as, ifs). It returns the replacements to apply, or nil when the shape does
 // not match (recording a Skip when a near-match is refused for safety).
-func tryCollapseBinding(src string, fn *ast.FuncDecl, as *ast.AssignStmt, ifs *ast.IfStmt, isResult bool, sigT string, decls map[string]string, changes *[]Change, reports *[]Report) []scan.Replacement {
+func tryCollapseBinding(src string, fn *ast.FuncDecl, as *ast.AssignStmt, ifs *ast.IfStmt, isResult bool, sigT string, decls map[string]string, changes *[]Change, reports *[]Report) []textedit.Replacement {
 	// The if must be a bare `condVar != nil` (Result) / `condVar == nil` (Option) guard
 	// with no init clause and no else.
 	if ifs.Init != nil || ifs.Else != nil {
@@ -104,7 +103,7 @@ func tryCollapseBinding(src string, fn *ast.FuncDecl, as *ast.AssignStmt, ifs *a
 
 	rhs := strings.TrimSpace(src[as.Rhs[0].Pos().Offset:as.Rhs[len(as.Rhs)-1].End().Offset])
 	indent := indentOf(src, bindLineStart)
-	reps := []scan.Replacement{{
+	reps := []textedit.Replacement{{
 		Start: bindLineStart,
 		End:   ifs.End().Offset,
 		Text:  indent + value + " := " + rhs + "?",
@@ -137,8 +136,8 @@ func tryCollapseBinding(src string, fn *ast.FuncDecl, as *ast.AssignStmt, ifs *a
 // bound on the line above the `if`. Like that rule it is conservative: a decorated or non-zero
 // return, an `else`, a comment in the block, or a value bound alongside the error leaves the
 // guard untouched — `?` is only applied where the rewrite is provably equivalent.
-func fixPropagateInit(src string, file *ast.File, info *sema.Info, decls map[string]string, changes *[]Change, reports *[]Report) []scan.Replacement {
-	var reps []scan.Replacement
+func fixPropagateInit(src string, file *ast.File, info *sema.Info, decls map[string]string, changes *[]Change, reports *[]Report) []textedit.Replacement {
+	var reps []textedit.Replacement
 	for _, fn := range resultOptionFuncs(file, info) {
 		if info.FuncSignatures[fn.Name.Name].Mode != sema.ModeResult {
 			continue // `?` only propagates the error of an open-E Result function
@@ -178,7 +177,7 @@ func fixPropagateInit(src string, file *ast.File, info *sema.Info, decls map[str
 				}
 				rhs := strings.TrimSpace(src[init.Rhs[0].Pos().Offset:init.Rhs[len(init.Rhs)-1].End().Offset])
 				lineStart := lineStartBefore(src, ifs.If.Offset)
-				reps = append(reps, scan.Replacement{
+				reps = append(reps, textedit.Replacement{
 					Start: lineStart,
 					End:   ifs.End().Offset,
 					Text:  indentOf(src, lineStart) + rhs + "?",
@@ -256,7 +255,7 @@ func validPropagationReturn(src string, ret *ast.ReturnStmt, isResult bool, cond
 			return false
 		}
 		zeroActual := nodeText(src, ops[0])
-		return zeroActual == analyze.ZeroLit(successT, decls, 0)
+		return zeroActual == textedit.ZeroLit(successT, decls, 0)
 	}
 	// Option: return Option.None | return nil
 	if len(ops) != 1 {
@@ -289,7 +288,7 @@ func propagationLHS(as *ast.AssignStmt, condVar string, isResult bool) (value st
 // `o`, now that `o` holds the unwrapped value. ok is false if `o` is referenced in any other
 // shape (a bare `o`, `o.field`), which means the pointer escapes and the collapse must be
 // abandoned.
-func optionDerefRewrites(fn *ast.FuncDecl, optVar string, from int) (reps []scan.Replacement, ok bool) {
+func optionDerefRewrites(fn *ast.FuncDecl, optVar string, from int) (reps []textedit.Replacement, ok bool) {
 	derefAt := map[int]*ast.StarExpr{} // inner-ident offset -> enclosing `*o`
 	var uses []*ast.Ident
 	ast.Walk(visitFn(func(n ast.Node) bool {
@@ -311,7 +310,7 @@ func optionDerefRewrites(fn *ast.FuncDecl, optVar string, from int) (reps []scan
 		if !isDeref {
 			return nil, false // bare use of the pointer — escapes
 		}
-		reps = append(reps, scan.Replacement{Start: st.Star.Offset, End: id.End().Offset, Text: optVar})
+		reps = append(reps, textedit.Replacement{Start: st.Star.Offset, End: id.End().Offset, Text: optVar})
 	}
 	return reps, true
 }

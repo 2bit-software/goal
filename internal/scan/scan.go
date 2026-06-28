@@ -1,7 +1,8 @@
-// Package scan holds the shared low-level machinery every transpiler pass needs:
-// the lexer (text/scanner with byte-offset recovery), the splice model
-// (Replacement + Splice), balanced-delimiter matching, and the structural helpers
-// (function scanning, parameter/brace location) that the references each duplicated.
+// Package scan holds the shared low-level lexer machinery every transpiler pass
+// needs: the lexer (text/scanner with byte-offset recovery), balanced-delimiter
+// matching, and the structural helpers (function scanning, parameter/brace
+// location) that the references each duplicated. The lexer-independent text and
+// type utilities live in package textedit.
 //
 // Passes splice bytes, so byte offsets shift between passes. Nothing in this package
 // caches offsets across edits: each pass re-lexes the current source and rebuilds the
@@ -10,10 +11,10 @@
 package scan
 
 import (
-	"sort"
 	"strings"
 	"text/scanner"
-	"unicode"
+
+	"goal/internal/textedit"
 )
 
 // Token is a lexical token with its byte span [Start, End) in the source it was
@@ -41,31 +42,6 @@ func Lex(src string) []Token {
 		toks = append(toks, Token{Text: txt, Start: start, End: start + len(txt)})
 	}
 	return toks
-}
-
-// Replacement is a byte span [Start, End) of the source to splice over with Text.
-type Replacement struct {
-	Start, End int
-	Text       string
-}
-
-// Splice rebuilds src[lo:hi] with each replacement span swapped for its text.
-// Replacements are sorted by start; any that overlaps an earlier one is skipped
-// defensively rather than producing corrupt output.
-func Splice(src string, lo, hi int, reps []Replacement) string {
-	sort.Slice(reps, func(a, b int) bool { return reps[a].Start < reps[b].Start })
-	var b strings.Builder
-	prev := lo
-	for _, r := range reps {
-		if r.Start < prev {
-			continue
-		}
-		b.WriteString(src[prev:r.Start])
-		b.WriteString(r.Text)
-		prev = r.End
-	}
-	b.WriteString(src[prev:hi])
-	return b.String()
 }
 
 // MatchPair returns the index of the close delimiter matching the open delimiter
@@ -184,56 +160,6 @@ func TopLevelComma(toks []Token, openIdx, closeIdx int) int {
 	return -1
 }
 
-// BaseType strips a leading "*" and any "pkg." qualifier, yielding the bare type
-// name (used to look up a local type or receiver type).
-func BaseType(t string) string {
-	t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
-	if i := strings.LastIndexByte(t, '.'); i >= 0 {
-		t = t[i+1:]
-	}
-	return t
-}
-
-// IsLineStart reports whether everything between the previous newline and byte
-// offset p is whitespace — i.e. the token at p begins a statement (so a keyword like
-// `assert` is the statement keyword, not an identifier used mid-expression).
-func IsLineStart(src string, p int) bool {
-	for k := p - 1; k >= 0; k-- {
-		switch src[k] {
-		case '\n':
-			return true
-		case ' ', '\t':
-			continue
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-// NextNewline returns the offset of the next '\n' at or after p, or len(src).
-func NextNewline(src string, p int) int {
-	if nl := strings.IndexByte(src[p:], '\n'); nl >= 0 {
-		return p + nl
-	}
-	return len(src)
-}
-
-// LeadIdent returns the leading identifier of s (letters, digits, underscore from
-// the start), e.g. the callee name of a call expression `parse(x)` -> "parse".
-func LeadIdent(s string) string {
-	end := 0
-	for end < len(s) {
-		r := rune(s[end])
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
-			end++
-			continue
-		}
-		break
-	}
-	return s[:end]
-}
-
 // CalleeKey returns the analyze-table lookup key for the function expr calls: a
 // package-qualified call "os.MkdirAll(p)" yields "os.MkdirAll", a plain call "doThing(x)"
 // yields "doThing", and a generic instantiation "f[T](x)" yields the base "f". It returns ""
@@ -244,12 +170,12 @@ func LeadIdent(s string) string {
 // parens of a string argument never miscount) keeps this robust for real call expressions.
 func CalleeKey(expr string) string {
 	toks := Lex(expr)
-	if len(toks) == 0 || !IsIdent(toks[0].Text) {
+	if len(toks) == 0 || !textedit.IsIdent(toks[0].Text) {
 		return ""
 	}
 	key := toks[0].Text
 	i := 1
-	if i+1 < len(toks) && toks[i].Text == "." && IsIdent(toks[i+1].Text) {
+	if i+1 < len(toks) && toks[i].Text == "." && textedit.IsIdent(toks[i+1].Text) {
 		key += "." + toks[i+1].Text // package-qualified callee pkg.Func
 		i += 2
 	}
@@ -265,24 +191,6 @@ func CalleeKey(expr string) string {
 	return key
 }
 
-// IsIdent reports whether s begins like a Go identifier (letter or underscore).
-func IsIdent(s string) bool {
-	if s == "" {
-		return false
-	}
-	r := []rune(s)[0]
-	return unicode.IsLetter(r) || r == '_'
-}
-
-// SplitAssign parses `lhs := rhs` into its trimmed halves. ok is false when there is
-// no `:=`, in which case rhs is the whole trimmed string and name is empty.
-func SplitAssign(s string) (name, rhs string, ok bool) {
-	if lhs, after, found := strings.Cut(s, ":="); found {
-		return strings.TrimSpace(lhs), strings.TrimSpace(after), true
-	}
-	return "", strings.TrimSpace(s), false
-}
-
 // IsBareQuestionStmt reports whether the `?` token at index qIdx is the whole of a
 // standalone expression statement `expr?` — the binding-free discard form, where the call's
 // only output is the error and there is no `name :=` / `_ :=` to its left. It requires the
@@ -294,7 +202,7 @@ func IsBareQuestionStmt(src string, toks []Token, qIdx, lineStart int) bool {
 		return false
 	}
 	// `?` must terminate the statement: nothing follows it on the same line.
-	if qIdx+1 < len(toks) && toks[qIdx+1].Start < NextNewline(src, toks[qIdx].End) {
+	if qIdx+1 < len(toks) && toks[qIdx+1].Start < textedit.NextNewline(src, toks[qIdx].End) {
 		return false
 	}
 	// Walk back to the first token of the line and reject a leading statement keyword.
@@ -302,19 +210,7 @@ func IsBareQuestionStmt(src string, toks []Token, qIdx, lineStart int) bool {
 	for first > 0 && toks[first-1].Start >= lineStart {
 		first--
 	}
-	return !IsStmtKeyword(toks[first].Text)
-}
-
-// IsStmtKeyword reports whether s is a Go/goal keyword that can lead a statement, so a line
-// beginning with it is not a bare expression statement.
-func IsStmtKeyword(s string) bool {
-	switch s {
-	case "return", "go", "defer", "if", "else", "for", "switch", "select", "case",
-		"default", "var", "const", "type", "func", "range", "break", "continue",
-		"goto", "fallthrough", "match", "assert", "enum", "import", "package":
-		return true
-	}
-	return false
+	return !textedit.IsStmtKeyword(toks[first].Text)
 }
 
 // Func is the structural skeleton of one top-level function or method, located by
@@ -350,7 +246,7 @@ func ScanFuncs(toks []Token) []Func {
 			BodyOpen:    bo,
 			BodyClose:   MatchBrace(toks, bo),
 		}
-		if nameTok < len(toks) && IsIdent(toks[nameTok].Text) {
+		if nameTok < len(toks) && textedit.IsIdent(toks[nameTok].Text) {
 			f.Name = toks[nameTok].Text
 		}
 		funcs = append(funcs, f)

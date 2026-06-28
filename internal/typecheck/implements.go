@@ -8,6 +8,7 @@ import (
 
 	"goal/internal/scan"
 	"goal/internal/sema"
+	"goal/internal/textedit"
 )
 
 // CheckImplements verifies, with real go/types identity, that every
@@ -110,7 +111,7 @@ func implementsClauses(src string) []implClause {
 	toks := scan.Lex(src)
 	var out []implClause
 	for i := 0; i+2 < len(toks); i++ {
-		if toks[i].Text != "type" || !scan.IsIdent(toks[i+1].Text) || toks[i+2].Text != "struct" {
+		if toks[i].Text != "type" || !textedit.IsIdent(toks[i+1].Text) || toks[i+2].Text != "struct" {
 			continue
 		}
 		open := -1

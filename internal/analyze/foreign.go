@@ -41,6 +41,7 @@ import (
 	"strings"
 
 	"goal/internal/scan"
+	"goal/internal/textedit"
 )
 
 // ImportSpec is one entry of a `.goal` file's import block: the qualifier the source
@@ -131,7 +132,7 @@ func questionCalleeAliases(srcs []string) map[string]bool {
 				continue
 			}
 			lineStart := strings.LastIndexByte(src[:toks[q].Start], '\n') + 1
-			_, rhs, _ := scan.SplitAssign(src[lineStart:toks[q].Start])
+			_, rhs, _ := textedit.SplitAssign(src[lineStart:toks[q].Start])
 			if alias, _, ok := strings.Cut(scan.CalleeKey(rhs), "."); ok {
 				out[alias] = true
 			}
@@ -178,7 +179,7 @@ func parseOneImport(toks []scan.Token, j, limit int, specs *[]ImportSpec) int {
 		return j + 1
 	}
 	alias := toks[j].Text
-	if !(scan.IsIdent(alias) || alias == "_" || alias == ".") {
+	if !(textedit.IsIdent(alias) || alias == "_" || alias == ".") {
 		return j + 1 // not the start of an import entry; step over it
 	}
 	if j+1 < limit {
@@ -229,7 +230,7 @@ func neededAliases(srcs []string) map[string]bool {
 				end = len(toks)
 			}
 			for k := open + 1; k < end && k+1 < len(toks); k++ {
-				if scan.IsIdent(toks[k].Text) && toks[k+1].Text == "." {
+				if textedit.IsIdent(toks[k].Text) && toks[k+1].Text == "." {
 					out[toks[k].Text] = true
 				}
 			}

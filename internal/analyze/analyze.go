@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"goal/internal/scan"
+	"goal/internal/textedit"
 )
 
 // Mode is a function's error-propagation shape, read from its return type.
@@ -243,7 +244,7 @@ func (t *Tables) Merge(o *Tables) {
 // fields of every `type X struct {…}`) and TypeDecls (name -> underlying form).
 func analyzeTypeDecls(src string, toks []scan.Token, t *Tables) {
 	for i := 0; i+2 < len(toks); i++ {
-		if toks[i].Text != "type" || !scan.IsIdent(toks[i+1].Text) {
+		if toks[i].Text != "type" || !textedit.IsIdent(toks[i+1].Text) {
 			continue
 		}
 		name := toks[i+1].Text
@@ -478,7 +479,7 @@ func parseFields(src string, toks []scan.Token, k int) ([]Field, int) {
 // "(". A bare type name on its own (no following "(") is an embedded interface.
 func parseInterfaceBody(src string, toks []scan.Token, open, close int) (methods []Method, embedded []string) {
 	for k := open + 1; k < close; k++ {
-		if !scan.IsIdent(toks[k].Text) {
+		if !textedit.IsIdent(toks[k].Text) {
 			continue
 		}
 		if k+1 < close && toks[k+1].Text == "(" {
@@ -493,7 +494,7 @@ func parseInterfaceBody(src string, toks []scan.Token, open, close int) (methods
 		// interface. Capture the dotted name and skip to the line's end.
 		var name strings.Builder
 		name.WriteString(toks[k].Text)
-		for k+2 < close && toks[k+1].Text == "." && scan.IsIdent(toks[k+2].Text) {
+		for k+2 < close && toks[k+1].Text == "." && textedit.IsIdent(toks[k+2].Text) {
 			name.WriteString(".")
 			name.WriteString(toks[k+2].Text)
 			k += 2
@@ -519,7 +520,7 @@ func analyzeMethods(src string, toks []scan.Token, t *Tables) {
 		}
 		// The method name is the identifier just after the receiver's ")".
 		ni := rc + 1
-		if ni >= len(toks) || !scan.IsIdent(toks[ni].Text) {
+		if ni >= len(toks) || !textedit.IsIdent(toks[ni].Text) {
 			continue
 		}
 		po := ni + 1
@@ -543,7 +544,7 @@ func analyzeMethods(src string, toks []scan.Token, t *Tables) {
 func receiverType(toks []scan.Token, open, close int) string {
 	name := ""
 	for k := open + 1; k < close; k++ {
-		if scan.IsIdent(toks[k].Text) {
+		if textedit.IsIdent(toks[k].Text) {
 			name = toks[k].Text // last identifier in the receiver = the type
 		}
 	}
@@ -613,7 +614,7 @@ func endOfSignature(toks []scan.Token, pc, limit int) int {
 		return scan.MatchParen(toks, k)
 	case toks[k].Text == "{" || toks[k].Text == "}":
 		return pc
-	case scan.IsIdent(toks[k].Text) || toks[k].Text == "*" || toks[k].Text == "[":
+	case textedit.IsIdent(toks[k].Text) || toks[k].Text == "*" || toks[k].Text == "[":
 		// A single bare result type, possibly `*T`, `[]T`, `pkg.T`. Walk the balanced
 		// type expression to its end.
 		end := k
@@ -630,7 +631,7 @@ func endOfSignature(toks []scan.Token, pc, limit int) int {
 			}
 			end = k
 			// A bare type ends at the next ident that starts a new method: ident "(".
-			if depth == 0 && k+1 < limit && scan.IsIdent(toks[k+1].Text) &&
+			if depth == 0 && k+1 < limit && textedit.IsIdent(toks[k+1].Text) &&
 				k+2 < limit && toks[k+2].Text == "(" {
 				break
 			}

@@ -85,7 +85,7 @@
         "No behavior change: existing fix and typecheck tests pass against the relocated helpers"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Decision: survivors move to a new internal/textedit package (honest name) rather than a slimmed internal/scan that no longer scans. ZeroLit can live in internal/textedit or alongside sema; keep it with the other type helpers."
     },
     {

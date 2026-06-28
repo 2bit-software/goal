@@ -287,8 +287,8 @@ func exported(name string) string {
 }
 
 // baseType strips a leading "*" and any "pkg." qualifier, yielding the bare type
-// name (used to look up a local type). Mirrors scan.BaseType so lower.go need not
-// import internal/scan.
+// name (used to look up a local type). Mirrors textedit.BaseType so lower.go need
+// not import internal/textedit.
 func baseType(t string) string {
 	t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
 	if i := strings.LastIndexByte(t, '.'); i >= 0 {
@@ -298,7 +298,7 @@ func baseType(t string) string {
 }
 
 // zeroLit returns the explicit Go zero literal for a declared type (§8.5). Mirrors
-// analyze.ZeroLit: an untyped constant (`0`, `""`, `false`, `nil`) assignable to the
+// textedit.ZeroLit: an untyped constant (`0`, `""`, `false`, `nil`) assignable to the
 // field's defined type. decls maps a named type to its underlying form ("struct",
 // "interface", or a type expression) so the zero is recoverable through alias
 // chains; depth guards those chains. The `...defaults` expansion uses it.

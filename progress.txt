@@ -18,6 +18,12 @@
   (internal/guide/catalog.go, asserted against scanned source by guide_test
   TestDiagnosticCatalogMatchesSource) and AI-KNOWLEDGE-BOOTSTRAP.md (regenerate
   with `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`).
+- internal/textedit is the home for lexer-independent text/type utilities
+  (Replacement, Splice, BaseType, IsIdent, IsLineStart, NextNewline, LeadIdent,
+  SplitAssign, IsStmtKeyword, ZeroLit). It imports only sort/strings/unicode —
+  never text/scanner. The lexer-based helpers (Lex, Token, Match*, ScanFuncs,
+  CalleeKey, FirstBodyBrace, ParamsClose, TopLevelComma, IsBareQuestionStmt)
+  stay in internal/scan, which now imports textedit for the pure bits.
 
 ## [2026-06-28T23:55:00Z] - US-005 (checker-onto-ast PRD)
 - Deleted the legacy lexical checker internal/check and migrated every remaining
@@ -3952,4 +3958,33 @@
     descend into expressions (FuncLit is an expr) — closure returns become unreachable.
   - analyze.ZeroLit is a pure type->zero-literal helper (no lexing); reuse it with a
     typeDecls map built by walking File.Decls TypeSpecs instead of analyze.Build.
+---
+
+## [2026-06-28T24:30:00Z] - US-006 (checker-onto-ast PRD)
+- Relocated the lexer-independent survivors out of internal/scan and
+  internal/analyze into a new internal/textedit package so scan and analyze can
+  later be deleted without losing pure utilities.
+- New package internal/textedit (textedit.go + types.go): Replacement, Splice,
+  IsLineStart, NextNewline, LeadIdent, IsIdent, SplitAssign, IsStmtKeyword,
+  BaseType, ZeroLit. ZeroLit now calls the package-local BaseType. Imports only
+  sort/strings/unicode — no text/scanner (verified via `go list`).
+- Removed the old copies from internal/scan/scan.go (and analyze.ZeroLit from
+  internal/analyze/spans.go). scan.go now imports textedit for the pure helpers
+  its lexer-based functions still need (CalleeKey/ScanFuncs -> textedit.IsIdent,
+  IsBareQuestionStmt -> textedit.NextNewline/IsStmtKeyword); dropped its now-unused
+  sort and unicode imports.
+- Repointed callers: fix/{match,fix,resultsig,propagate}.go (scan.Replacement/
+  Splice -> textedit.*, analyze.ZeroLit -> textedit.ZeroLit; fix no longer imports
+  scan or analyze); analyze/{analyze,methods,foreign}.go and project/project.go,
+  pipeline/sourcemap.go, typecheck/implements.go (scan.IsIdent/IsLineStart/
+  SplitAssign -> textedit.*). Updated stale doc comments in backend/lower.go and
+  interp/eval.go (they keep their own local helpers; comments now name textedit).
+- Verify: `task check` (go vet + full `go test ./...`) and `task build` both green.
+- Learnings for future iterations:
+  - interp/eval.go and backend/lower.go reference these helpers ONLY in comments;
+    they own private lowercase copies (baseType/zeroLit/baseTypeName) and import
+    neither scan nor textedit. grep -l for a symbol name catches those comments —
+    confirm with a paren'd grep (scan.IsIdent() etc.) before editing.
+  - LeadIdent had zero callers (dead) but was relocated anyway per the story's
+    explicit utility list; harmless to keep in textedit.
 ---

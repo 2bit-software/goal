@@ -2,8 +2,8 @@ package fix
 
 import (
 	"goal/internal/ast"
-	"goal/internal/scan"
 	"goal/internal/sema"
+	"goal/internal/textedit"
 )
 
 // fixSwitchToMatch reports a `switch` whose case labels name variants of an in-file enum as
@@ -12,7 +12,7 @@ import (
 // statement bodies, so a faithful mechanical rewrite is not expressible for the general
 // case. Surfacing the opportunity (so the author converts the arms and gains the
 // missing-variant check) is the safe, useful step. Returns no replacements.
-func fixSwitchToMatch(src string, file *ast.File, info *sema.Info, changes *[]Change, reports *[]Report) []scan.Replacement {
+func fixSwitchToMatch(src string, file *ast.File, info *sema.Info, changes *[]Change, reports *[]Report) []textedit.Replacement {
 	ast.Walk(visitFn(func(n ast.Node) bool {
 		sw, ok := n.(*ast.SwitchStmt)
 		if !ok {

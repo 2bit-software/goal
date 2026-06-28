@@ -397,7 +397,7 @@ func (ip *Interp) zeroValue(typ string, depth int) Value {
 
 // baseTypeName strips a leading "*" and any "pkg." qualifier from a sema type
 // string, yielding the bare type name used to key sema.Info.Structs. It mirrors
-// scan.BaseType so internal/interp need not import internal/scan or
+// textedit.BaseType so internal/interp need not import internal/textedit or
 // internal/backend.
 func baseTypeName(t string) string {
 	t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))

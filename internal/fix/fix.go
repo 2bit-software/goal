@@ -8,7 +8,7 @@
 // internal/parser and resolves its name-keyed facts with internal/sema, then locates
 // rewrite candidates structurally (a FuncDecl's result list, an AssignStmt/IfStmt pair,
 // a SwitchStmt's case labels) rather than by re-lexing a token stream. The edits it emits
-// are still minimal byte splices (scan.Replacement / scan.Splice) so untouched code —
+// are still minimal byte splices (textedit.Replacement / textedit.Splice) so untouched code —
 // formatting and comments alike — is preserved verbatim; printing the AST would reflow it.
 // Every rule is conservative: when a candidate cannot be transformed safely the rule leaves
 // it untouched and records a Report instead, so `goal fix` never emits incorrect code (the
@@ -20,8 +20,8 @@ import (
 
 	"goal/internal/ast"
 	"goal/internal/parser"
-	"goal/internal/scan"
 	"goal/internal/sema"
+	"goal/internal/textedit"
 	"goal/internal/token"
 )
 
@@ -95,7 +95,7 @@ func File(src string) (out string, changes []Change, reports []Report) {
 		info := sema.Resolve(file)
 		decls := typeDecls(out, file)
 
-		var reps []scan.Replacement
+		var reps []textedit.Replacement
 		var iterReports []Report
 		reps = append(reps, fixPropagate(out, file, info, decls, &changes, &iterReports)...)
 		reps = append(reps, fixPropagateInit(out, file, info, decls, &changes, &iterReports)...)
@@ -112,14 +112,14 @@ func File(src string) (out string, changes []Change, reports []Report) {
 			add(cs)
 			break
 		}
-		out = scan.Splice(out, 0, len(out), reps)
+		out = textedit.Splice(out, 0, len(out), reps)
 	}
 	return out, changes, reports
 }
 
 // typeDecls maps each top-level type name to its underlying form — "struct", "interface",
 // or the rendered underlying type text — the AST-native replacement for analyze's
-// TypeDecls table, used by analyze.ZeroLit to compute a success type's zero value.
+// TypeDecls table, used by textedit.ZeroLit to compute a success type's zero value.
 func typeDecls(src string, file *ast.File) map[string]string {
 	m := map[string]string{}
 	for _, d := range file.Decls {

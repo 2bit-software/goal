@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"goal/internal/scan"
+	"goal/internal/textedit"
 )
 
 // Ext is the goal source-file extension.
@@ -117,7 +118,7 @@ func packageName(dir string, files []File) (string, error) {
 func PackageClause(src string) string {
 	toks := scan.Lex(src)
 	for i := 0; i+1 < len(toks); i++ {
-		if toks[i].Text == "package" && scan.IsIdent(toks[i+1].Text) {
+		if toks[i].Text == "package" && textedit.IsIdent(toks[i+1].Text) {
 			return toks[i+1].Text
 		}
 	}

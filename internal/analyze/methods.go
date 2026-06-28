@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"goal/internal/scan"
+	"goal/internal/textedit"
 )
 
 // Receiver-type resolution for `?` callees. A `recv.Method()?` site cannot be resolved by name
@@ -68,7 +69,7 @@ func QuestionMethodReceiverPkgs(src string) map[string]bool {
 		}
 		p := toks[q].Start
 		lineStart := strings.LastIndexByte(src[:p], '\n') + 1
-		_, rhs, _ := scan.SplitAssign(src[lineStart:p])
+		_, rhs, _ := textedit.SplitAssign(src[lineStart:p])
 		recv, _, isMethod := strings.Cut(scan.CalleeKey(rhs), ".")
 		if !isMethod {
 			continue
@@ -120,7 +121,7 @@ func receiverNameType(toks []scan.Token, f scan.Func) (name, typ string, isMetho
 		return "", "", false
 	}
 	lo, hi := open+1, f.NameTok-1
-	if hi-lo >= 2 && scan.IsIdent(toks[lo].Text) {
+	if hi-lo >= 2 && textedit.IsIdent(toks[lo].Text) {
 		return toks[lo].Text, concatTokens(toks, lo+1, hi), true
 	}
 	return "", concatTokens(toks, lo, hi), true // unnamed receiver — no name to match
@@ -157,7 +158,7 @@ func paramType(toks []scan.Token, f scan.Func, name string) (string, bool) {
 			if toks[lo].Text == name {
 				return cur, true
 			}
-		case hi-lo == 1 && scan.IsIdent(toks[lo].Text): // grouped bare name, inherits cur
+		case hi-lo == 1 && textedit.IsIdent(toks[lo].Text): // grouped bare name, inherits cur
 			if toks[lo].Text == name {
 				return cur, true
 			}
@@ -169,7 +170,7 @@ func paramType(toks []scan.Token, f scan.Func, name string) (string, bool) {
 // isNameTypeSeg reports whether tokens [lo, hi) are a clear `name type` parameter — a leading
 // identifier followed by a type — as opposed to a bare grouped name or an unnamed `pkg.Type`.
 func isNameTypeSeg(toks []scan.Token, lo, hi int) bool {
-	return hi-lo >= 2 && scan.IsIdent(toks[lo].Text) && toks[lo+1].Text != "."
+	return hi-lo >= 2 && textedit.IsIdent(toks[lo].Text) && toks[lo+1].Text != "."
 }
 
 // paramOpen returns the index of the "(" opening f's parameter list (after the name and an
