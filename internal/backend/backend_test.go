@@ -182,6 +182,44 @@ Outer:
 	}
 }
 
+// TestASTEngineLowersClosedResultMethod pins closed-E Result lowering for a
+// method: a method returning Result[T, Enum] must lower its body's Result.Ok/Err
+// to the Ok[T, Enum]/Err[T, Enum] sum carriers, just like a plain function. The
+// closed-E context was previously set up only via a name lookup that missed
+// methods (sema keys them by receiver), leaving `Result.Ok(…)` unlowered.
+func TestASTEngineLowersClosedResultMethod(t *testing.T) {
+	const src = `package p
+
+enum ProvisionError {
+	Denied
+	Timeout
+}
+
+type Env struct {
+	id string
+}
+
+type Backend struct{}
+
+func (b Backend) Provision(name string) Result[Env, ProvisionError] {
+	return Result.Ok(Env{id: name})
+}
+`
+	out, err := backend.Transpile(src)
+	if err != nil {
+		t.Fatalf("Transpile: %v", err)
+	}
+	if _, err := format.Source([]byte(out.Go)); err != nil {
+		t.Fatalf("engine output is not valid Go: %v\n--- output ---\n%s", err, out.Go)
+	}
+	if !strings.Contains(out.Go, "Ok[Env, ProvisionError]{") {
+		t.Errorf("method body did not lower Result.Ok to the closed-E carrier, got:\n%s", out.Go)
+	}
+	if strings.Contains(out.Go, "Result.Ok(") {
+		t.Errorf("method body left Result.Ok unlowered (Result used without instantiation):\n%s", out.Go)
+	}
+}
+
 // TestASTEngineUnwrapsErrorOnlyStdlibCall pins the arity of `?` on an error-only
 // standard-library call: os.MkdirAll / os.WriteFile / json.Unmarshal return only
 // error, so a bare `?` must lower to `if err := …`, never the two-value

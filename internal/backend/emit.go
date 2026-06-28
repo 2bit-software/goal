@@ -359,10 +359,8 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 	// kind or names outward).
 	kind, _ := resultOptionKind(d.Type)
 	var closedT, closedE string
-	if d.Name != nil && e.info != nil && e.info.FuncSignatures != nil {
-		if sig, ok := e.info.FuncSignatures[d.Name.Name]; ok && sig.Mode == sema.ModeResultClosed {
-			kind, closedT, closedE = roResultClosed, sig.T, sig.E
-		}
+	if t, eType, ok := e.closedResultTE(d); ok {
+		kind, closedT, closedE = roResultClosed, t, eType
 	}
 	prevKind, prevOk, prevErr, prevTaken := e.fnKind, e.okName, e.errName, e.taken
 	prevClosedT, prevClosedE := e.closedT, e.closedE
@@ -390,6 +388,24 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 		e.p(" ")
 		e.block(d.Body)
 	}
+}
+
+// closedResultTE reports the T and E type texts of a closed-E Result[T, E] return
+// (E a named type, not error). It prefers the resolved signature for a plain
+// function and falls back to the declaration's own result-type AST for a method —
+// sema keys methods by receiver, not in FuncSignatures, so the name lookup alone
+// would miss them and leave the body's Result.Ok/Err constructors unlowered.
+func (e *emitter) closedResultTE(d *ast.FuncDecl) (t, eType string, ok bool) {
+	if d.Name != nil && e.info != nil && e.info.FuncSignatures != nil {
+		if sig, found := e.info.FuncSignatures[d.Name.Name]; found && sig.Mode == sema.ModeResultClosed {
+			return sig.T, sig.E, true
+		}
+	}
+	il, isList := closedResultType(d.Type)
+	if !isList {
+		return "", "", false
+	}
+	return e.exprText(il.Indices[0]), e.exprText(il.Indices[1]), true
 }
 
 // funcSig emits the parameter and result lists of a signature.

@@ -111,6 +111,29 @@ func isErrorIdent(x ast.Expr) bool {
 	return ok && id.Name == "error"
 }
 
+// closedResultType returns the Result[T, E] index expression of a closed-E Result
+// return (a single unnamed `Result[T, E]` result whose E is a named type, not
+// error), or ok=false otherwise. resultOptionKind maps this case to roNone (the
+// closed-E sum is a separate lowering), so funcDecl reads T/E through here.
+func closedResultType(t *ast.FuncType) (*ast.IndexListExpr, bool) {
+	if t == nil || t.Results == nil || len(t.Results.List) != 1 {
+		return nil, false
+	}
+	f := t.Results.List[0]
+	if len(f.Names) != 0 {
+		return nil, false
+	}
+	il, ok := f.Type.(*ast.IndexListExpr)
+	if !ok {
+		return nil, false
+	}
+	id, ok := il.X.(*ast.Ident)
+	if !ok || id.Name != "Result" || len(il.Indices) != 2 || isErrorIdent(il.Indices[1]) {
+		return nil, false
+	}
+	return il, true
+}
+
 // matchQualifier returns the enum/type qualifier of a match's first
 // variant-pattern arm (`Result`, `Option`, or an enum name), or "" when the first
 // arm is not a qualified variant pattern. It picks the lowering strategy for a
