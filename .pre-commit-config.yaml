@@ -1,0 +1,16 @@
+# Pre-commit gate for the goal toolchain. Enable once with `prek install`
+# (or `pre-commit install`); thereafter every commit runs the hooks below.
+#
+# The gate mirrors `task check` (go vet + the full test suite, cache disabled),
+# so a build break, vet failure, or test regression can never land in a commit.
+# It runs the whole suite regardless of which files changed — the point is to
+# never regress. To bypass in a genuine emergency: `git commit --no-verify`.
+repos:
+  - repo: local
+    hooks:
+      - id: task-check
+        name: task check (go vet + full test suite)
+        entry: task check
+        language: system
+        pass_filenames: false
+        always_run: true
