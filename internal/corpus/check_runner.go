@@ -7,24 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	"goal/internal/check"
+	"goal/internal/sema"
 )
-
-// Checker analyzes goal source and returns the located diagnostics produced for
-// it. It is the checker counterpart of [Transpiler]: the seam that lets the
-// corpus judge any checker front-end — the current lexical checker, the future
-// AST-based sema — against the same inline // want markers. check.Analyze
-// satisfies it via [CheckerFunc].
-type Checker interface {
-	Check(src string) ([]check.Diagnostic, error)
-}
-
-// CheckerFunc adapts a plain check function to the [Checker] interface, so a
-// free function such as check.Analyze can be passed where a Checker is expected.
-type CheckerFunc func(src string) ([]check.Diagnostic, error)
-
-// Check calls the wrapped function.
-func (f CheckerFunc) Check(src string) ([]check.Diagnostic, error) { return f(src) }
 
 // wantMarkerRe matches an inline expectation marker on a source line:
 //
@@ -36,9 +20,11 @@ func (f CheckerFunc) Check(src string) ([]check.Diagnostic, error) { return f(sr
 // whether driven by that harness or by this runner.
 var wantMarkerRe = regexp.MustCompile(`//\s*want\s+"([^"]*)"`)
 
-// RunCheck executes one [KindCheck] Case against ck. It reads the case's Input
-// (a .goal file relative to root), runs the checker, and matches the produced
-// diagnostics against the inline // want markers in the source. The contract:
+// RunCheck executes one [KindCheck] Case against the checker function ck. It reads
+// the case's Input (a .goal file relative to root), runs the checker, and matches
+// the produced diagnostics against the inline // want markers in the source. ck is
+// passed directly (e.g. [SemaCheck]) — there is one checker front-end now that the
+// legacy lexical checker is deleted, so no adapter interface is needed. The contract:
 //
 //   - Each `// want "sub"` marker must be satisfied by some diagnostic ON THAT
 //     LINE whose message contains "sub"; an unsatisfied marker fails the case.
@@ -50,7 +36,7 @@ var wantMarkerRe = regexp.MustCompile(`//\s*want\s+"([^"]*)"`)
 // It returns a descriptive, case-identified error on a read failure, a checker
 // internal error, an unsatisfied marker, or an unclaimed Error; it returns nil
 // when the case passes.
-func RunCheck(root string, c Case, ck Checker) error {
+func RunCheck(root string, c Case, ck func(src string) ([]sema.Diagnostic, error)) error {
 	if c.Kind != KindCheck {
 		return fmt.Errorf("corpus: RunCheck: case %q is kind %q, not %q", c.ID, c.Kind, KindCheck)
 	}
@@ -62,7 +48,7 @@ func RunCheck(root string, c Case, ck Checker) error {
 	}
 	src := string(srcBytes)
 
-	diags, err := ck.Check(src)
+	diags, err := ck(src)
 	if err != nil {
 		return fmt.Errorf("corpus: case %q: check: %w", c.ID, err)
 	}
@@ -71,7 +57,7 @@ func RunCheck(root string, c Case, ck Checker) error {
 
 	matched := map[int]map[int]bool{} // line -> set of satisfied want indices
 	for _, d := range diags {
-		line := check.OffsetToPosition(src, d.Pos).Line
+		line := d.Pos.Line
 		for i, sub := range wants[line] {
 			if strings.Contains(d.Message, sub) {
 				if matched[line] == nil {
@@ -81,7 +67,7 @@ func RunCheck(root string, c Case, ck Checker) error {
 			}
 		}
 		// An Error with no marker on its line is an unexpected rejection.
-		if d.Severity == check.Error && len(wants[line]) == 0 {
+		if d.Severity == sema.Error && len(wants[line]) == 0 {
 			return fmt.Errorf("corpus: case %q: unexpected error at line %d: [%s] %s",
 				c.ID, line, d.Code, d.Message)
 		}

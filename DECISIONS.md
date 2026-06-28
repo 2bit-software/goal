@@ -1845,3 +1845,39 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
 - **Over:** silencing the sema deferral to match legacy's silence — the located
   deferral is the more honest behavior and aligns with the "defer, never guess"
   discipline used throughout the checker.
+
+## US-005 — delete internal/check (legacy lexical checker)
+
+### The US-003 parity gate is retired together with internal/check
+- **Kind:** decision
+- **Chose:** delete `internal/corpus/parity_test.go` (`TestSemaLegacyParity`) and
+  its `knownDivergences` allowlist as part of US-005, along with
+  `internal/corpus/check_runner_test.go` (which drove the now-deleted
+  `check.Analyze`).
+- **Why:** the parity gate exists to compare the AST `sema` checker against the
+  legacy `internal/check` checker. US-005 deletes `internal/check`, so the gate
+  has nothing to compare against and cannot compile — its purpose (prove the
+  deletion loses no guarantee) is discharged the moment the deletion lands. The
+  four divergences it documented (above) remain recorded here as the historical
+  rationale. Ongoing coverage of the AST checker over the corpus is provided by
+  the SemaCheck-driven runners (`sema_checker_test.go`, `sema_fields_test.go`,
+  `sema_question_test.go`, `ast_gate_test.go`).
+- **Over:** keeping a one-sided "gate" that only runs sema (redundant with the
+  SemaCheck runners) or freezing a copy of the legacy checker just to keep the
+  comparison alive (defeats the deletion).
+
+### check.OffsetToPosition's survivors land in internal/token; severity unifies on sema
+- **Kind:** decision
+- **Chose:** the pure `OffsetToPosition` helper moves to `internal/token`
+  (`token.OffsetToPosition`, a leaf with no imports); consumers that held a
+  `check.Diagnostic` now read `sema.Diagnostic` (Line/Col carried on `Pos`);
+  `typecheck.Diagnostic.Severity` and the depth checks unify on `sema.Severity`
+  (`sema.Error`/`sema.Warning`). `typecheck` keeps a tiny local `offsetLineCol`
+  helper because it imports `go/token` as `token` and cannot also alias
+  `goal/internal/token`. The corpus checker seam drops the `Checker` interface and
+  `CheckerFunc` adapter; `RunCheck` takes the checker func (`SemaCheck`) directly.
+- **Why:** positions are a `token` concern, so that package is the honest home for
+  the offset→line/col helper; sema is the one surviving checker, so its severity
+  and diagnostic types are the canonical ones. `lsp` keeps `analyze.DirResolver`
+  as its resolver type (converted to `sema.DirResolver` at the call site), so it
+  remains the lone `analyze` resolver-type consumer the later stories address.

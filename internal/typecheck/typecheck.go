@@ -19,11 +19,12 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"strings"
 
 	"goal/internal/analyze"
 	"goal/internal/backend"
-	"goal/internal/check"
 	"goal/internal/project"
+	"goal/internal/sema"
 )
 
 // Package is the type-checked view of one goal package's lowered Go: the go/types
@@ -93,7 +94,7 @@ func Load(pkg *project.Package) (*Package, error) {
 // string. Severity reuses the lexical checker's type so both stages render uniformly.
 type Diagnostic struct {
 	Pos      token.Position
-	Severity check.Severity
+	Severity sema.Severity
 	Feature  string
 	Code     string
 	Message  string
@@ -108,8 +109,24 @@ func (d Diagnostic) String() string {
 // by checks that locate a construct in the source (e.g. an `implements` clause) and
 // report there rather than at a go/types node.
 func goalPosition(f project.File, off int) token.Position {
-	p := check.OffsetToPosition(f.Src, off)
-	return token.Position{Filename: f.Path, Line: p.Line, Column: p.Col}
+	line, col := offsetLineCol(f.Src, off)
+	return token.Position{Filename: f.Path, Line: line, Column: col}
+}
+
+// offsetLineCol converts a byte offset into src to a 1-based line and column,
+// clamping an out-of-range offset to the nearest valid bound. It is the depth
+// checker's local replacement for the deleted check.OffsetToPosition; typecheck
+// imports go/token as "token", so it cannot also use goal/internal/token's helper.
+func offsetLineCol(src string, off int) (line, col int) {
+	if off < 0 {
+		off = 0
+	}
+	if off > len(src) {
+		off = len(src)
+	}
+	line = 1 + strings.Count(src[:off], "\n")
+	col = off - (strings.LastIndexByte(src[:off], '\n') + 1) + 1
+	return line, col
 }
 
 // GoalPos returns the .goal source position of an AST node, resolved through the //line

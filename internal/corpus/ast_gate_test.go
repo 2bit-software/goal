@@ -43,7 +43,7 @@ func TestASTEngineWholeCorpusBehavioralGate(t *testing.T) {
 
 	tp := TranspilerFunc(backend.Transpile)
 	pt := PackageTranspilerFunc(backend.TranspilePackage)
-	ck := CheckerFunc(SemaCheck)
+	ck := SemaCheck
 
 	var ran, transpile, pkg, check, doctest int
 	for _, c := range m.Cases {
@@ -118,7 +118,7 @@ func runSemaCheckDir(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatalf("Load(%q): %v", manifestPath, err)
 	}
-	ck := CheckerFunc(SemaCheck)
+	ck := SemaCheck
 	ran := 0
 	for _, c := range m.Cases {
 		if c.Kind != KindCheck || !strings.HasPrefix(c.Input, dir) {

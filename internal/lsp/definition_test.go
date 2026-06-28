@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"goal/internal/check"
+	"goal/internal/token"
 )
 
 // defSrc declares an enum, a function called before its own declaration, and an Enum.Variant
@@ -54,7 +54,7 @@ func offsetOfNth(t *testing.T, src, sub string, n int) int {
 
 // cursorAt converts a byte offset into the 0-based line/char the definition handler is keyed by.
 func cursorAt(src string, off int) (line, char int) {
-	p := check.OffsetToPosition(src, off)
+	p := token.OffsetToPosition(src, off)
 	return p.Line - 1, p.Col - 1
 }
 

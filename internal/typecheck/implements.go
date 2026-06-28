@@ -6,8 +6,8 @@ import (
 	"go/types"
 	"strings"
 
-	"goal/internal/check"
 	"goal/internal/scan"
+	"goal/internal/sema"
 )
 
 // CheckImplements verifies, with real go/types identity, that every
@@ -63,7 +63,7 @@ func verifyImplements(p *Package, T types.Type, typeName, iface string, pos toke
 	}
 	return &Diagnostic{
 		Pos:      pos,
-		Severity: check.Error,
+		Severity: sema.Error,
 		Feature:  "07-implements",
 		Code:     code,
 		Message: fmt.Sprintf("type `%s` does not implement `%s`: %s `%s`",

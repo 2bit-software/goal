@@ -1115,14 +1115,12 @@ The full set of stable codes the checker can emit:
 - `[dropped-stored-result]` (error) — a `Result` is stored as a plain value, defeating must-use handling.
 - `[unresolved-dropped-field]` (warning) — a possibly-dropped stored `Result` field can't be resolved lexically; deferred.
 - `[unresolved-result-discard]` (warning) — a possible `Result` discard can't be resolved lexically; deferred.
-- `[unresolved-result-use]` (warning) — a `Result` use can't be resolved lexically; deferred to the typed stage.
 
 **05-question-prop**
 
 - `[question-binds-nonvalue]` (error) — `name := expr?` binds a value but the callee doesn't return exactly `(value, error)`.
 - `[question-callee-no-error]` (error) — in a `Result[_, error]` function, a `?` callee yields no `error` to propagate — it returns nothing, a non-error type, an `Option`, or a closed-E `Result`.
 - `[question-callee-unresolved]` (warning) — a discarding `?` callee's arity can't be resolved lexically; the two-value form is assumed.
-- `[question-not-statement]` (error) — `?` is neither the RHS of an assignment nor a standalone `expr?` statement.
 
 **06-error-e**
 

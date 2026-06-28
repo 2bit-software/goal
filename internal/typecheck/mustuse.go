@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"goal/internal/analyze"
-	"goal/internal/check"
+	"goal/internal/sema"
 )
 
 // CheckMustUse is the depth version of feature 03's must-use guarantee. The lexical
@@ -87,7 +87,7 @@ func discardedResultError(p *Package, as *ast.AssignStmt) *Diagnostic {
 	}
 	return &Diagnostic{
 		Pos:      p.Fset.Position(as.Lhs[1].Pos()),
-		Severity: check.Error,
+		Severity: sema.Error,
 		Feature:  "03-result",
 		Code:     "discarded-result-error",
 		Message: fmt.Sprintf(
@@ -181,7 +181,7 @@ func droppedFieldDiag(p *Package, sname, fname, kind string, v *types.Var) Diagn
 	pos := p.Fset.Position(v.Pos())
 	if v.Exported() {
 		return Diagnostic{
-			Pos: pos, Severity: check.Warning, Feature: "03-result",
+			Pos: pos, Severity: sema.Warning, Feature: "03-result",
 			Code: "unresolved-dropped-field",
 			Message: fmt.Sprintf(
 				"exported field `%s.%s` holds a %s but is never read in this package; cannot prove it is consulted elsewhere",
@@ -189,7 +189,7 @@ func droppedFieldDiag(p *Package, sname, fname, kind string, v *types.Var) Diagn
 		}
 	}
 	return Diagnostic{
-		Pos: pos, Severity: check.Error, Feature: "03-result",
+		Pos: pos, Severity: sema.Error, Feature: "03-result",
 		Code: "dropped-stored-result",
 		Message: fmt.Sprintf(
 			"field `%s.%s` stores a %s that is never consulted; match it, propagate it, or read it",

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"goal/internal/check"
 	"goal/internal/fix"
+	"goal/internal/token"
 )
 
 // fixAllKind is the code-action kind for the whole-file idiomatize rewrite. It sits under the
@@ -35,7 +35,7 @@ func (s *Server) codeActions(raw json.RawMessage) []CodeAction {
 	if out == text {
 		return none
 	}
-	end := check.OffsetToPosition(text, len(text))
+	end := token.OffsetToPosition(text, len(text))
 	return []CodeAction{{
 		Title: "Idiomatize file (goal fix)",
 		Kind:  fixAllKind,

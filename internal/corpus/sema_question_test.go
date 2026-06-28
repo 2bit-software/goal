@@ -27,7 +27,7 @@ func TestSemaQuestionImplementsRunner(t *testing.T) {
 		t.Fatalf("Load(%q): %v", manifestPath, err)
 	}
 
-	ck := CheckerFunc(SemaCheck)
+	ck := SemaCheck
 	ran := 0
 	for _, c := range m.Cases {
 		if c.Kind != KindCheck || !hasAnyPrefix(c.Input, us031Dirs) {

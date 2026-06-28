@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"goal/internal/backend"
-	"goal/internal/check"
+	"goal/internal/sema"
 )
 
 func main() {
@@ -45,14 +45,14 @@ func run(args []string, stdin io.Reader, out, errOut io.Writer) error {
 		return fmt.Errorf("read input: %w", err)
 	}
 	if !noCheck {
-		diags, err := check.Analyze(string(src))
+		diags, err := sema.Analyze(string(src))
 		if err != nil {
 			return fmt.Errorf("check: %w", err)
 		}
 		for _, d := range diags {
-			fmt.Fprintln(errOut, d.Render(string(src), files[0]))
+			fmt.Fprintln(errOut, d.Render(files[0]))
 		}
-		if check.HasErrors(diags) {
+		if sema.HasErrors(diags) {
 			return fmt.Errorf("%s rejected: %d checker error(s)", files[0], countErrors(diags))
 		}
 	}
@@ -72,10 +72,10 @@ func run(args []string, stdin io.Reader, out, errOut io.Writer) error {
 }
 
 // countErrors returns how many diagnostics are Error severity.
-func countErrors(diags []check.Diagnostic) int {
+func countErrors(diags []sema.Diagnostic) int {
 	n := 0
 	for _, d := range diags {
-		if d.Severity == check.Error {
+		if d.Severity == sema.Error {
 			n++
 		}
 	}

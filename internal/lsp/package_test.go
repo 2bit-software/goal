@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"goal/internal/analyze"
-	"goal/internal/check"
+	"goal/internal/sema"
 )
 
 // fakeFiles is an in-memory dirReader: dir → its .goal files.
@@ -163,7 +163,7 @@ derive func mk(s Src) Spec
 // A derive whose source is an imported Go struct resolves through the injected resolver —
 // the non-goal reference no longer defers.
 func TestForeignDeriveResolves(t *testing.T) {
-	extDir, err := filepath.Abs("../check/testdata/extpkg")
+	extDir, err := filepath.Abs("testdata/extpkg")
 	if err != nil {
 		t.Fatalf("abs: %v", err)
 	}
@@ -393,7 +393,7 @@ derive func mk(s Src) Spec
 	editor := latestDiagnostics(t, &out)
 
 	// CLI path over the same sources, path-sorted (a before b).
-	perFile, err := check.AnalyzePackageInDir([]string{aSrc, bSrc}, "/pkg")
+	perFile, err := sema.AnalyzePackageInDir([]string{aSrc, bSrc}, "/pkg")
 	if err != nil {
 		t.Fatalf("AnalyzePackageInDir: %v", err)
 	}

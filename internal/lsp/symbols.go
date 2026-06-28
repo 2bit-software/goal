@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	"goal/internal/ast"
-	"goal/internal/check"
 	"goal/internal/parser"
 	"goal/internal/token"
 )
@@ -121,8 +120,8 @@ func single(src string, name *ast.Ident, kind int, detail string, start, end tok
 
 // rangeOf converts a byte span into a 0-based protocol range.
 func rangeOf(srcText string, startOff, endOff int) Range {
-	s := check.OffsetToPosition(srcText, startOff)
-	e := check.OffsetToPosition(srcText, endOff)
+	s := token.OffsetToPosition(srcText, startOff)
+	e := token.OffsetToPosition(srcText, endOff)
 	return Range{
 		Start: Position{Line: s.Line - 1, Character: s.Col - 1},
 		End:   Position{Line: e.Line - 1, Character: e.Col - 1},

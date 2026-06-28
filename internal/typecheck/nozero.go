@@ -6,7 +6,7 @@ import (
 	"go/types"
 	"strings"
 
-	"goal/internal/check"
+	"goal/internal/sema"
 )
 
 // CheckNoZeroValue is the depth version of feature 08 (no-zero-value) for the two struct
@@ -97,7 +97,7 @@ func litDiag(p *Package, cl *ast.CompositeLit, kind litClass) *Diagnostic {
 	code, message := litMessage(kind, named, p.Info.Types[cl].Type, missing)
 	return &Diagnostic{
 		Pos:      p.Fset.Position(cl.Pos()),
-		Severity: check.Error,
+		Severity: sema.Error,
 		Feature:  "08-no-zero-value",
 		Code:     code,
 		Message:  message,

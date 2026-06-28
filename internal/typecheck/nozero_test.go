@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"goal/internal/check"
+	"goal/internal/sema"
 )
 
 func diagsNoZero(t *testing.T, src string) []Diagnostic {
@@ -220,7 +220,7 @@ func f() Outer {
 	}
 	// ... and the depth check emits no feature-08 Error of its own for it.
 	for _, d := range CheckNoZeroValue(p) {
-		if d.Severity == check.Error {
+		if d.Severity == sema.Error {
 			t.Errorf("must not emit an Error on an unresolved elided literal: %v", d)
 		}
 	}

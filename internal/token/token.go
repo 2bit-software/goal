@@ -329,6 +329,29 @@ func (p Pos) IsValid() bool { return p.Line > 0 }
 // String renders the position as "line:col" for diagnostics.
 func (p Pos) String() string { return itoa(p.Line) + ":" + itoa(p.Col) }
 
+// OffsetToPosition converts a 0-based byte offset into src to a Pos carrying that
+// offset together with its 1-based Line and Col. An out-of-range offset is clamped
+// to the nearest valid bound. It is the position helper for consumers that hold a
+// raw byte offset rather than a lexer-emitted token (e.g. an LSP range endpoint or
+// a depth-checker source span); it is the new home for the deleted
+// check.OffsetToPosition.
+func OffsetToPosition(src string, off int) Pos {
+	if off < 0 {
+		off = 0
+	}
+	if off > len(src) {
+		off = len(src)
+	}
+	line, lineStart := 1, 0
+	for i := 0; i < off; i++ {
+		if src[i] == '\n' {
+			line++
+			lineStart = i + 1
+		}
+	}
+	return Pos{Offset: off, Line: line, Col: off - lineStart + 1}
+}
+
 // Token is a single lexeme: its Kind, its source text (Lit, for identifiers,
 // literals, and comments), and its starting Pos. The lexer emits these.
 type Token struct {

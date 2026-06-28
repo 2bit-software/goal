@@ -1,5 +1,66 @@
 # Progress Log — goal AST front-end rewrite
 
+## Codebase Patterns
+- Zero-dependency project: tests use stdlib `testing` only (no testify).
+- Verify with `task check` (go vet + full `go test ./...`) and `task build`.
+  A PostToolUse hook runs `task check` after every Edit, so a multi-file refactor
+  reports transient "undefined: X" / "imported and not used" failures until the
+  LAST edit lands — expected; only the final green state matters.
+- sema is the one live checker. sema.Diagnostic.Pos is a token.Pos carrying
+  Line/Col, so there is no OffsetToPosition step for diagnostics — read
+  d.Pos.Line / d.Pos.Col directly. For a raw byte offset (not a diagnostic) use
+  token.OffsetToPosition(src, off). Single-file check: sema.Analyze(src); package:
+  sema.AnalyzePackageInDir(srcs, dir) / ...InDirWith(srcs, dir, resolve).
+- Diagnostic severity unifies on sema.Severity (sema.Error / sema.Warning).
+  A package that already imports `go/token` as `token` cannot also alias
+  goal/internal/token — keep a tiny local offset->line/col helper instead.
+- When the diagnostic-code set changes, two goldens must follow: the guide catalog
+  (internal/guide/catalog.go, asserted against scanned source by guide_test
+  TestDiagnosticCatalogMatchesSource) and AI-KNOWLEDGE-BOOTSTRAP.md (regenerate
+  with `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`).
+
+## [2026-06-28T23:55:00Z] - US-005 (checker-onto-ast PRD)
+- Deleted the legacy lexical checker internal/check and migrated every remaining
+  live consumer onto sema / token. internal/check is gone; no live import of it
+  remains outside attic/ and features/_cut/.
+- New helpers: sema.Analyze / sema.HasErrors / sema.Diagnostic.Render
+  (internal/sema/analyze.go); token.OffsetToPosition (internal/token/token.go, the
+  surviving home for the deleted check.OffsetToPosition; token stays a zero-import
+  leaf via a manual loop).
+- Consumers repointed: cmd/goalc (Analyze/HasErrors/Render), internal/guide
+  (AnalyzePackageInDir + d.Pos.Line/Col), internal/lsp (diagnostics/codeaction/
+  symbols/semantictokens + tests; toLSP now takes sema.Diagnostic and uses
+  d.Pos.Offset for tokEnd; lsp keeps analyze.DirResolver and converts
+  sema.DirResolver(s.resolve) at the call site), internal/typecheck (Diagnostic
+  .Severity -> sema.Severity, sema.Error/Warning, local offsetLineCol helper).
+- Corpus: SemaCheck now returns []sema.Diagnostic directly (delegates to
+  sema.Analyze); Checker interface + CheckerFunc adapter removed — RunCheck takes
+  the checker func (SemaCheck) directly. Deleted check_runner_test.go (drove the
+  removed check.Analyze) and parity_test.go (US-003 legacy-vs-sema gate, moot once
+  legacy gone; retirement documented in DECISIONS.md). The SemaCheck-driven
+  runners still cover the whole check corpus.
+- Deletion fixups: new self-contained internal/lsp/testdata/extpkg/types.go (the
+  foreign-derive fixture, replacing the deleted internal/check one); guide_test
+  scanLiveCodes scans ../sema; catalog.go dropped two legacy-only codes the AST
+  checker never emits (question-not-statement — now structural in the parser;
+  unresolved-result-use — superseded by unresolved-result-discard); regenerated
+  AI-KNOWLEDGE-BOOTSTRAP.md.
+- Files: internal/sema/analyze.go (new), internal/token/token.go, cmd/goalc/main.go,
+  internal/guide/{guide,catalog,guide_test}.go, internal/lsp/{diagnostics,codeaction,
+  symbols,semantictokens,diagnostics_test,package_test,semantictokens_test,
+  definition_test}.go + testdata/extpkg/types.go (new), internal/typecheck/{typecheck,
+  implements,mustuse,nozero,mustuse_test,nozero_test}.go, internal/corpus/{check_runner,
+  sema_checker}.go (+ ast_gate/sema_checker/sema_question/sema_fields tests; deleted
+  check_runner_test, parity_test), DECISIONS.md, AI-KNOWLEDGE-BOOTSTRAP.md,
+  prd.json. Initiative artifacts under
+  history/20260628-refactor-us-005-delete-internal-check/.
+- Learnings for future iterations:
+  - The check->sema migration shrank the diagnostic-code set; remember to reconcile
+    BOTH guide catalog and the regenerated bootstrap golden, not just code.
+  - sema.DirResolver and analyze.DirResolver are identical func types
+    (func(importPath, fromDir string) (string, error)), so a value of one converts
+    to the other directly — lets lsp keep analyze.DirResolver while calling sema.
+
 ## [2026-06-28T23:10:00Z] - US-004 (checker-onto-ast PRD)
 - Rewired `goal check` onto the AST/sema checker: `cmd/goal/main.go`
   `checkPackage` now calls `sema.AnalyzePackageInDir` (US-002 driver) instead of

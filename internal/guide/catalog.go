@@ -25,11 +25,9 @@ var diagnosticCatalog = []diagDoc{
 	{"dropped-result", "03-result", "error", "a `Result`-returning call's value is discarded instead of handled or propagated."},
 	{"discarded-result-error", "03-result", "error", "the error arm of a `Result` is dropped (typed stage)."},
 	{"dropped-stored-result", "03-result", "error", "a `Result` is stored as a plain value, defeating must-use handling."},
-	{"unresolved-result-use", "03-result", "warning", "a `Result` use can't be resolved lexically; deferred to the typed stage."},
 	{"unresolved-result-discard", "03-result", "warning", "a possible `Result` discard can't be resolved lexically; deferred."},
 	{"unresolved-dropped-field", "03-result", "warning", "a possibly-dropped stored `Result` field can't be resolved lexically; deferred."},
 	// 05-question-prop
-	{"question-not-statement", "05-question-prop", "error", "`?` is neither the RHS of an assignment nor a standalone `expr?` statement."},
 	{"question-callee-no-error", "05-question-prop", "error", "in a `Result[_, error]` function, a `?` callee yields no `error` to propagate — it returns nothing, a non-error type, an `Option`, or a closed-E `Result`."},
 	{"question-binds-nonvalue", "05-question-prop", "error", "`name := expr?` binds a value but the callee doesn't return exactly `(value, error)`."},
 	{"question-callee-unresolved", "05-question-prop", "warning", "a discarding `?` callee's arity can't be resolved lexically; the two-value form is assumed."},

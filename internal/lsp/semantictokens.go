@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	"goal/internal/ast"
-	"goal/internal/check"
 	"goal/internal/lexer"
 	"goal/internal/parser"
 	"goal/internal/token"
@@ -45,7 +44,7 @@ func computeSemanticTokens(src string) []uint {
 		if !ok {
 			continue
 		}
-		pos := check.OffsetToPosition(src, t.Pos.Offset)
+		pos := token.OffsetToPosition(src, t.Pos.Offset)
 		line0 := pos.Line - 1
 		char0 := pos.Col - 1
 		dl := line0 - prevLine

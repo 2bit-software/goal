@@ -18,7 +18,7 @@ import (
 	"goal"
 	"goal/internal/backend"
 	"goal/internal/byexample"
-	"goal/internal/check"
+	"goal/internal/sema"
 )
 
 //go:embed feedback_sample.goal
@@ -242,16 +242,15 @@ func writeCatalog(b *strings.Builder) {
 func writeFeedbackSample(b *strings.Builder) error {
 	b.WriteString("**What the feedback looks like.** Running the checker on this program:\n\n")
 	fmt.Fprintf(b, "```goal\n%s\n```\n\n", strings.TrimRight(feedbackSample, "\n"))
-	perFile, err := check.AnalyzePackage([]string{feedbackSample})
+	perFile, err := sema.AnalyzePackageInDir([]string{feedbackSample}, ".")
 	if err != nil {
 		return fmt.Errorf("analyze feedback sample: %w", err)
 	}
 	var lines []string
 	for _, diags := range perFile {
 		for _, d := range diags {
-			p := check.OffsetToPosition(feedbackSample, d.Pos)
 			lines = append(lines, fmt.Sprintf("sample.goal:%d:%d: %s: [%s] %s",
-				p.Line, p.Col, d.Severity, d.Code, d.Message))
+				d.Pos.Line, d.Pos.Col, d.Severity, d.Code, d.Message))
 		}
 	}
 	sort.Strings(lines)

@@ -3,7 +3,8 @@ package lsp
 import (
 	"testing"
 
-	"goal/internal/check"
+	"goal/internal/sema"
+	"goal/internal/token"
 )
 
 // A non-exhaustive match is the invalid program used across the LSP tests.
@@ -27,7 +28,7 @@ func f(l Light) string {
 func TestToLSPMapping(t *testing.T) {
 	src := "line one\nsecond line here\n"
 	// Offset 9 is the first byte of the second line.
-	d := check.Diagnostic{Pos: 9, Severity: check.Error, Code: "demo", Message: "boom"}
+	d := sema.Diagnostic{Pos: token.Pos{Offset: 9, Line: 2, Col: 1}, Severity: sema.Error, Code: "demo", Message: "boom"}
 
 	got := toLSP(src, nil, d)
 	if got.Range.Start.Line != 1 || got.Range.Start.Character != 0 {
@@ -48,7 +49,7 @@ func TestToLSPMapping(t *testing.T) {
 // no token-end known it falls back to the end of the line.
 func TestToLSPRangeUsesTokenEnd(t *testing.T) {
 	src := "alpha beta\n"
-	d := check.Diagnostic{Pos: 0, Severity: check.Error, Code: "x"}
+	d := sema.Diagnostic{Pos: token.Pos{Offset: 0, Line: 1, Col: 1}, Severity: sema.Error, Code: "x"}
 
 	got := toLSP(src, map[int]int{0: 5}, d) // "alpha" spans [0,5)
 	if got.Range.End.Line != 0 || got.Range.End.Character != 5 {
@@ -62,7 +63,7 @@ func TestToLSPRangeUsesTokenEnd(t *testing.T) {
 
 // Warning-severity findings map to the protocol's Warning level.
 func TestToLSPWarningSeverity(t *testing.T) {
-	got := toLSP("abc\n", nil, check.Diagnostic{Pos: 0, Severity: check.Warning})
+	got := toLSP("abc\n", nil, sema.Diagnostic{Pos: token.Pos{Offset: 0, Line: 1, Col: 1}, Severity: sema.Warning})
 	if got.Severity != 2 {
 		t.Fatalf("severity = %d, want 2 (Warning)", got.Severity)
 	}
@@ -71,7 +72,7 @@ func TestToLSPWarningSeverity(t *testing.T) {
 // The reused check surface rejects an invalid program, which is what the server
 // turns into editor diagnostics.
 func TestAnalyzeProducesDiagnostic(t *testing.T) {
-	diags, err := check.Analyze(nonExhaustiveSrc)
+	diags, err := sema.Analyze(nonExhaustiveSrc)
 	if err != nil {
 		t.Fatalf("Analyze: %v", err)
 	}

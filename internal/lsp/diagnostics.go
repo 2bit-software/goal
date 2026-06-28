@@ -5,9 +5,10 @@ import (
 	"sort"
 	"strings"
 
-	"goal/internal/check"
 	"goal/internal/lexer"
 	"goal/internal/project"
+	"goal/internal/sema"
+	"goal/internal/token"
 )
 
 // compile runs goal's static checks for the open document uri and publishes the findings,
@@ -53,7 +54,7 @@ func (s *Server) compile(uri, text string, version int) {
 		return
 	}
 
-	perFile, ferrs, err := check.AnalyzePackageInDirWith(srcs, dir, s.resolve)
+	perFile, ferrs, err := sema.AnalyzePackageInDirWith(srcs, dir, sema.DirResolver(s.resolve))
 	if err != nil {
 		// An error here is an internal checker bug, not a rejected program.
 		s.logf("analyze package %s: %v", dir, err)
@@ -86,7 +87,7 @@ func (s *Server) compile(uri, text string, version int) {
 // when no package directory resolves (a non-file URI, an unreadable directory, or a package
 // whose files disagree on their package name).
 func (s *Server) compileSingle(uri, text string, version int) {
-	diags, err := check.Analyze(text)
+	diags, err := sema.Analyze(text)
 	if err != nil {
 		s.logf("analyze %s: %v", uri, err)
 		return
@@ -202,14 +203,14 @@ func (s *Server) publish(uri string, version int, diags []Diagnostic) {
 // diagnostic (0-based range). The range covers the offending token when its end offset is
 // known (tokEnd maps a token's start offset to its end); otherwise — or when the resolved end
 // would not lie after the start — it falls back to spanning the finding to the end of its line.
-func toLSP(text string, tokEnd map[int]int, d check.Diagnostic) Diagnostic {
-	start := check.OffsetToPosition(text, d.Pos)
+func toLSP(text string, tokEnd map[int]int, d sema.Diagnostic) Diagnostic {
+	start := d.Pos
 	rng := Range{
 		Start: Position{Line: start.Line - 1, Character: start.Col - 1},
 		End:   Position{Line: start.Line - 1, Character: lineLength(text, start.Line)},
 	}
-	if end, ok := tokEnd[d.Pos]; ok && end > d.Pos {
-		e := check.OffsetToPosition(text, end)
+	if end, ok := tokEnd[d.Pos.Offset]; ok && end > d.Pos.Offset {
+		e := token.OffsetToPosition(text, end)
 		rng.End = Position{Line: e.Line - 1, Character: e.Col - 1}
 	}
 	if rng.End.Line == rng.Start.Line && rng.End.Character <= rng.Start.Character {
@@ -217,7 +218,7 @@ func toLSP(text string, tokEnd map[int]int, d check.Diagnostic) Diagnostic {
 	}
 
 	severity := 1 // Error
-	if d.Severity == check.Warning {
+	if d.Severity == sema.Warning {
 		severity = 2 // Warning
 	}
 	return Diagnostic{

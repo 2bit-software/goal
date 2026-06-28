@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"goal/internal/check"
+	"goal/internal/token"
 )
 
 // semTokSrc exercises the three goal constructs the acceptance criterion calls out — an enum
@@ -72,7 +72,7 @@ func typeOfFirst(t *testing.T, src string, toks []absTok, sub string) int {
 	if off < 0 {
 		t.Fatalf("substring %q not found in source", sub)
 	}
-	p := check.OffsetToPosition(src, off)
+	p := token.OffsetToPosition(src, off)
 	l, c := p.Line-1, p.Col-1
 	for _, tk := range toks {
 		if tk.line == l && tk.char == c {

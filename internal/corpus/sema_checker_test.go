@@ -20,7 +20,7 @@ func TestSemaExhaustiveRunner(t *testing.T) {
 		t.Fatalf("Load(%q): %v", manifestPath, err)
 	}
 
-	ck := CheckerFunc(SemaCheck)
+	ck := SemaCheck
 	ran := 0
 	for _, c := range m.Cases {
 		if c.Kind != KindCheck || !strings.HasPrefix(c.Input, exhaustivenessDir) {

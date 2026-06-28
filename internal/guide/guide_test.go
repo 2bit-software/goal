@@ -38,7 +38,7 @@ func TestLiveLowerings(t *testing.T) {
 	}
 }
 
-// codeLiteralRe matches a kebab-case diagnostic-code string literal. In internal/check
+// codeLiteralRe matches a kebab-case diagnostic-code string literal. In internal/sema
 // and internal/typecheck the only hyphenated lowercase string literals are diagnostic
 // codes, so scanning for these yields exactly the set of codes the checker can emit.
 var codeLiteralRe = regexp.MustCompile(`"([a-z]+(?:-[a-z]+)+)"`)
@@ -64,11 +64,11 @@ func TestDiagnosticCatalogMatchesSource(t *testing.T) {
 }
 
 // scanLiveCodes returns the diagnostic codes found in the non-test source of
-// internal/check and internal/typecheck.
+// internal/sema and internal/typecheck.
 func scanLiveCodes(t *testing.T) map[string]bool {
 	t.Helper()
 	codes := map[string]bool{}
-	for _, pkg := range []string{"../check", "../typecheck"} {
+	for _, pkg := range []string{"../sema", "../typecheck"} {
 		entries, err := os.ReadDir(pkg)
 		if err != nil {
 			t.Fatalf("read %s: %v", pkg, err)

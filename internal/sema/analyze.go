@@ -1,0 +1,47 @@
+package sema
+
+// analyze.go holds the single-file entry points to the AST checker, plus the small
+// diagnostic conveniences (HasErrors, Diagnostic.Render) that consumers of the
+// deleted internal/check checker relied on. The package-level driver lives in
+// package.go; this file is the analogue of the legacy check.Analyze / HasErrors /
+// Diagnostic.Render surface, ported onto sema's token.Pos-carrying Diagnostic.
+
+import (
+	"fmt"
+
+	"goal/internal/parser"
+)
+
+// Analyze runs the AST checker over a single goal source string and returns its
+// diagnostics. It is the single-file analogue of AnalyzePackageInDir: it parses
+// src, resolves the file's own facts, and runs every sema check. Cross-file and
+// foreign facts are not resolved (use AnalyzePackageInDir for a whole package). A
+// parse error is returned; a rejected program surfaces as Error-severity
+// diagnostics, not as a returned error.
+func Analyze(src string) ([]Diagnostic, error) {
+	file, err := parser.ParseFile(src)
+	if err != nil {
+		return nil, err
+	}
+	info := Resolve(file)
+	return Check(file, info), nil
+}
+
+// HasErrors reports whether any diagnostic in diags is Error severity (a rejected
+// program). Warnings (located deferrals) do not count.
+func HasErrors(diags []Diagnostic) bool {
+	for _, d := range diags {
+		if d.Severity == Error {
+			return true
+		}
+	}
+	return false
+}
+
+// Render formats a Diagnostic as `file:line:col: severity: [code] message`. Unlike
+// the legacy check.Diagnostic.Render it needs no source string, because the
+// position's Line and Col are already carried on Pos.
+func (d Diagnostic) Render(filename string) string {
+	return fmt.Sprintf("%s:%d:%d: %s: [%s] %s",
+		filename, d.Pos.Line, d.Pos.Col, d.Severity, d.Code, d.Message)
+}

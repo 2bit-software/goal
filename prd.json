@@ -71,7 +71,7 @@
         "corpus/check_runner.go and its tests are repointed to the sema checker and the legacy CheckerFunc adapter is removed"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "After this story the only remaining analyze/scan consumers are typecheck, fix (survivor utils only), project, pipeline/sourcemap, backend/package, and lsp (resolver type)."
     },
     {
