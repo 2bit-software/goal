@@ -1237,3 +1237,90 @@ func TestASTEnginePackageBehavioralTier(t *testing.T) {
 		})
 	}
 }
+
+// valueMatchCases are the US-002 fixtures: a value-position `match` over a Result
+// and over an Option, each used both as a `return` result and as a `:=`
+// assignment RHS. Before US-002 these reached the generic expr path and failed
+// with `unsupported expression *ast.MatchExpr`.
+var valueMatchCases = []string{
+	"testdata/match_value_result.goal",
+	"testdata/match_value_option.goal",
+}
+
+// TestASTEngineValueMatchBehavioralTier is US-002 AC: each value-position
+// Result/Option match fixture transpiles through the AST engine and the generated
+// Go builds + vets cleanly (temp-module behavioral tier).
+func TestASTEngineValueMatchBehavioralTier(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns the go toolchain; skipped under -short")
+	}
+	for _, input := range valueMatchCases {
+		t.Run(input, func(t *testing.T) {
+			c := corpus.Case{
+				ID:    input,
+				Kind:  corpus.KindTranspile,
+				Mode:  corpus.ModeFile,
+				Input: "internal/backend/" + input,
+			}
+			if err := corpus.RunCompile(repoRoot, c, corpus.TranspilerFunc(backend.Transpile)); err != nil {
+				t.Fatalf("behavioral tier failed for value-position match: %v", err)
+			}
+		})
+	}
+}
+
+// TestASTEngineValueMatchEncoding pins the US-002 lowering: a value-position match
+// over a Result/Option lowers to the same split as the statement-position form,
+// with each arm body wrapped for its position — `return <body>` in return
+// position and `name = <body>` in `:=` assignment position — and BOTH arm bodies
+// (Ok/Some payload arm and Err/None arm) are emitted. The output parses under
+// go/format (valid Go), with no surviving `match` keyword.
+func TestASTEngineValueMatchEncoding(t *testing.T) {
+	cases := []struct {
+		file  string
+		wants []string
+	}{
+		{"testdata/match_value_result.goal", []string{
+			// return-position Result match: destructure + each arm `return <body>`,
+			// payload bindings (cfg->v, e->err) reachable.
+			"v, err := parse(input)",
+			"return v.Raw",
+			"return err.Error()",
+			// assignment-position Result match: `var tag T` + each arm `tag = <body>`.
+			"var tag string",
+			"tag = \"ok\"",
+			"tag = \"err\"",
+		}},
+		{"testdata/match_value_option.goal", []string{
+			// return-position Option match: nil-check + Some payload binding + each
+			// arm `return <body>`.
+			"if o := find(id); o != nil {",
+			"u := *o",
+			"return u.Name",
+			"return \"none\"",
+			// assignment-position Option match: `var tag T` + each arm `tag = <body>`.
+			"var tag string",
+			"tag = \"found\"",
+			"tag = \"missing\"",
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.file, func(t *testing.T) {
+			out, err := backend.Transpile(mustRead(t, c.file))
+			if err != nil {
+				t.Fatalf("Transpile: %v", err)
+			}
+			if _, ferr := format.Source([]byte(out.Go)); ferr != nil {
+				t.Fatalf("emitted Go does not parse under go/format: %v\n%s", ferr, out.Go)
+			}
+			if strings.Contains(out.Go, "match ") || strings.Contains(out.Go, "unsupported expression") {
+				t.Errorf("value-position match did not lower (residual match/unsupported) in:\n%s", out.Go)
+			}
+			for _, want := range c.wants {
+				if !strings.Contains(out.Go, want) {
+					t.Errorf("value-match encoding missing %q in:\n%s", want, out.Go)
+				}
+			}
+		})
+	}
+}

@@ -1,0 +1,32 @@
+package valres
+
+import "errors"
+
+type Config struct {
+	Raw string
+}
+
+func parse(s string) Result[Config, error] {
+	if s == "" {
+		return Result.Err(errors.New("empty input"))
+	}
+	return Result.Ok(Config{Raw: s})
+}
+
+// describeR returns the outcome of a Result match directly (return position),
+// using each arm's payload binding.
+func describeR(input string) string {
+	return match parse(input) {
+		Result.Ok(cfg) => cfg.Raw
+		Result.Err(e) => e.Error()
+	}
+}
+
+// tagR binds the outcome of a Result match to a variable (assignment position).
+func tagR(input string) string {
+	tag := match parse(input) {
+		Result.Ok(cfg) => "ok"
+		Result.Err(e) => "err"
+	}
+	return tag
+}

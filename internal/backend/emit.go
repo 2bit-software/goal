@@ -1422,11 +1422,21 @@ func (e *emitter) indexExpr(x *ast.IndexExpr) {
 // enclosing function (§8.3/§8.4) to the native (T, error) pair / pointer form.
 func (e *emitter) returnStmt(s *ast.ReturnStmt) {
 	if len(s.Results) == 1 {
-		// `return match …` over an enum lowers to a value-position type-switch
-		// whose arms each `return <body>`.
-		if m, ok := s.Results[0].(*ast.MatchExpr); ok && enumOf(e.info, matchQualifier(m)) != nil {
-			e.enumMatch(m, posReturn, "")
-			return
+		// `return match …` lowers to a value-position split whose arms each
+		// `return <body>`: a type-switch for an enum, the Result (T, error) /
+		// closed-E sum fork for a Result, and the Option *T nil-check for an Option.
+		if m, ok := s.Results[0].(*ast.MatchExpr); ok {
+			switch q := matchQualifier(m); {
+			case q == "Result":
+				e.resultMatch(m, posReturn, "")
+				return
+			case q == "Option":
+				e.optionMatch(m, posReturn, "")
+				return
+			case enumOf(e.info, q) != nil:
+				e.enumMatch(m, posReturn, "")
+				return
+			}
 		}
 		switch e.fnKind {
 		case roResultOpen:
@@ -1465,14 +1475,33 @@ func (e *emitter) tryVarMatch(d ast.Decl) bool {
 		return false
 	}
 	m, ok := vs.Values[0].(*ast.MatchExpr)
-	if !ok || enumOf(e.info, matchQualifier(m)) == nil {
+	if !ok {
 		return false
 	}
-	e.p("var " + vs.Names[0].Name + " ")
+	q := matchQualifier(m)
+	if q != "Result" && q != "Option" && enumOf(e.info, q) == nil {
+		return false
+	}
+	name := vs.Names[0].Name
+	e.p("var " + name + " ")
 	e.expr(vs.Type)
 	e.p("\n")
-	e.enumMatch(m, posVar, vs.Names[0].Name)
+	e.matchValue(m, q, posVar, name)
 	return true
+}
+
+// matchValue lowers a value-position (return/var) match over a Result, Option, or
+// enum, dispatching on the already-computed qualifier q. The caller has emitted any
+// surrounding `var name T` declaration; here each arm body is wrapped per pos.
+func (e *emitter) matchValue(m *ast.MatchExpr, q string, pos matchPos, name string) {
+	switch {
+	case q == "Result":
+		e.resultMatch(m, pos, name)
+	case q == "Option":
+		e.optionMatch(m, pos, name)
+	default:
+		e.enumMatch(m, pos, name)
+	}
 }
 
 // tryAssignMatch lowers a short-var/assignment `name := match …` (or `name =
@@ -1493,7 +1522,11 @@ func (e *emitter) tryAssignMatch(s *ast.AssignStmt) bool {
 		return false
 	}
 	m, ok := s.Rhs[0].(*ast.MatchExpr)
-	if !ok || enumOf(e.info, matchQualifier(m)) == nil {
+	if !ok {
+		return false
+	}
+	q := matchQualifier(m)
+	if q != "Result" && q != "Option" && enumOf(e.info, q) == nil {
 		return false
 	}
 	typ, ok := e.inferMatchType(m)
@@ -1502,7 +1535,7 @@ func (e *emitter) tryAssignMatch(s *ast.AssignStmt) bool {
 		return true
 	}
 	e.p("var " + id.Name + " " + typ + "\n")
-	e.enumMatch(m, posVar, id.Name)
+	e.matchValue(m, q, posVar, id.Name)
 	return true
 }
 
@@ -1868,9 +1901,9 @@ func (e *emitter) calleeSig(x ast.Expr) (sema.FuncSig, bool) {
 func (e *emitter) matchStmt(m *ast.MatchExpr) {
 	switch q := matchQualifier(m); q {
 	case "Result":
-		e.resultMatch(m)
+		e.resultMatch(m, posStmt, "")
 	case "Option":
-		e.optionMatch(m)
+		e.optionMatch(m, posStmt, "")
 	default:
 		if enumOf(e.info, q) != nil {
 			e.enumMatch(m, posStmt, "")
@@ -1999,9 +2032,9 @@ func (e *emitter) armWrap(body ast.Node, pos matchPos, name string) {
 // value gensym (discarded with `_` when unused) and the Err binding to the error
 // gensym, so an arm body that constructs another Result composes through the
 // rename in emitResultReturn.
-func (e *emitter) resultMatch(m *ast.MatchExpr) {
+func (e *emitter) resultMatch(m *ast.MatchExpr, pos matchPos, name string) {
 	if e.calleeMode(m.Subject) == sema.ModeResultClosed {
-		e.closedResultMatch(m)
+		e.closedResultMatch(m, pos, name)
 		return
 	}
 	okArm, errArm := armByVariant(m, "Ok"), armByVariant(m, "Err")
@@ -2018,9 +2051,9 @@ func (e *emitter) resultMatch(m *ast.MatchExpr) {
 	e.p(okLHS + ", " + errVar + " := ")
 	e.expr(m.Subject)
 	e.p("\nif " + errVar + " != nil {\n")
-	e.armBodyRenamed(errArm.Body, bindingName(errArm.Pattern), errVar)
+	e.armBodyRenamedWrap(errArm.Body, bindingName(errArm.Pattern), errVar, pos, name)
 	e.p("\n} else {\n")
-	e.armBodyRenamed(okArm.Body, okBinding, val)
+	e.armBodyRenamedWrap(okArm.Body, okBinding, val, pos, name)
 	e.p("\n}")
 }
 
@@ -2030,7 +2063,7 @@ func (e *emitter) resultMatch(m *ast.MatchExpr) {
 // each arm that uses it; a guard variable is introduced only when some arm uses
 // its binding (an unused guard would not compile). T/E come from the scrutinee
 // callee's signature, and the impossible third case panics (§8.2 wording).
-func (e *emitter) closedResultMatch(m *ast.MatchExpr) {
+func (e *emitter) closedResultMatch(m *ast.MatchExpr, pos matchPos, name string) {
 	sig, _ := e.calleeSig(m.Subject)
 	okArm, errArm := armByVariant(m, "Ok"), armByVariant(m, "Err")
 	if okArm == nil || errArm == nil {
@@ -2054,19 +2087,19 @@ func (e *emitter) closedResultMatch(m *ast.MatchExpr) {
 	if okUse {
 		e.p(okBinding + " := " + guard + ".Value\n")
 	}
-	e.armBody(okArm.Body)
+	e.armWrap(okArm.Body, pos, name)
 	e.p(fmt.Sprintf("\ncase Err[%s, %s]:\n", sig.T, sig.E))
 	if errUse {
 		e.p(errBinding + " := " + guard + ".Value\n")
 	}
-	e.armBody(errArm.Body)
+	e.armWrap(errArm.Body, pos, name)
 	e.p(fmt.Sprintf("\ndefault:\npanic(%q)\n}", fmt.Sprintf("unreachable: non-exhaustive Result[%s, %s] (compiler invariant violated)", sig.T, sig.E)))
 }
 
 // optionMatch lowers `match opt { Option.Some(b) => …; Option.None => … }` to
 // `if o := opt; o != nil { b := *o; someBody } else { noneBody }`, where `o` is a
 // fresh local gensym. The Some binding keeps its name (declared only when used).
-func (e *emitter) optionMatch(m *ast.MatchExpr) {
+func (e *emitter) optionMatch(m *ast.MatchExpr, pos matchPos, name string) {
 	someArm, noneArm := armByVariant(m, "Some"), armByVariant(m, "None")
 	if someArm == nil || noneArm == nil {
 		e.fail("Option match must have both Option.Some and Option.None arms")
@@ -2079,9 +2112,9 @@ func (e *emitter) optionMatch(m *ast.MatchExpr) {
 	if b := bindingName(someArm.Pattern); b != "" && usesIdent(someArm.Body, b) {
 		e.p(b + " := *" + o + "\n")
 	}
-	e.armBody(someArm.Body)
+	e.armWrap(someArm.Body, pos, name)
 	e.p("\n} else {\n")
-	e.armBody(noneArm.Body)
+	e.armWrap(noneArm.Body, pos, name)
 	e.p("\n}")
 }
 
@@ -2129,6 +2162,21 @@ func (e *emitter) armBodyRenamed(body ast.Node, binding, target string) {
 		defer delete(e.renames, binding)
 	}
 	e.armBody(body)
+}
+
+// armBodyRenamedWrap emits a match arm body with binding renamed to target for the
+// duration of the body (scoped to this body alone), wrapped for its match position
+// (bare in statement position, `return <body>` / `name = <body>` in value
+// position). It is the value-position-aware sibling of armBodyRenamed.
+func (e *emitter) armBodyRenamedWrap(body ast.Node, binding, target string, pos matchPos, name string) {
+	if binding != "" {
+		if e.renames == nil {
+			e.renames = map[string]string{}
+		}
+		e.renames[binding] = target
+		defer delete(e.renames, binding)
+	}
+	e.armWrap(body, pos, name)
 }
 
 // armBody emits a match arm body: a statement/block as a statement, or an
