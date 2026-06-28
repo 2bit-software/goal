@@ -71,6 +71,9 @@ func Resolve(f *ast.File) *Info {
 		case *ast.SealedInterfaceDecl:
 			if d.Name != nil {
 				info.Sealed[d.Name.Name] = true
+				// A sealed interface's methods are a real method set too, so a
+				// `recv.Method()?` on a sealed-interface-typed receiver resolves.
+				info.resolveInterfaceMethods(d.Name.Name, d.Methods)
 			}
 		case *ast.GenDecl:
 			if d.Tok == token.TYPE {
@@ -142,15 +145,23 @@ func (info *Info) resolveTypeDecl(d *ast.GenDecl) {
 // Sig is normalized with the same helpers as a concrete method (resolveMethod), so
 // the implements check compares interface and concrete signatures apples-to-apples.
 func (info *Info) resolveInterface(name string, it *ast.InterfaceType) {
+	info.resolveInterfaceMethods(name, it.Methods)
+}
+
+// resolveInterfaceMethods records the method set `methods` under interface `name`,
+// shared by an ordinary `type X interface {…}` and a `sealed interface X {…}` (both
+// carry a *FieldList of method specs), so a `recv.Method()?` on either resolves the
+// callee through the interface's declared methods.
+func (info *Info) resolveInterfaceMethods(name string, methods *ast.FieldList) {
 	// Register the interface even when empty, so a declared-but-method-less
 	// interface resolves (resolved=true) instead of looking out-of-file.
 	if _, seen := info.Interfaces[name]; !seen {
 		info.Interfaces[name] = nil
 	}
-	if it.Methods == nil {
+	if methods == nil {
 		return
 	}
-	for _, f := range it.Methods.List {
+	for _, f := range methods.List {
 		if f == nil {
 			continue
 		}
@@ -168,11 +179,13 @@ func (info *Info) resolveInterface(name string, it *ast.InterfaceType) {
 		params := paramTypeListFL(ft.Params)
 		results := paramTypeListFL(ft.Results)
 		for _, n := range f.Names {
+			ret := funcSig(n.Name, ft)
 			info.Interfaces[name] = append(info.Interfaces[name], Method{
 				Name:        n.Name,
 				Sig:         joinTypes(params) + "|" + joinTypes(results),
-				Arity:       resultArity(ft.Results),
-				EndsInError: resultEndsInError(ft.Results),
+				Arity:       ret.Arity,
+				EndsInError: ret.EndsInError,
+				Return:      ret,
 			})
 		}
 	}
@@ -239,12 +252,14 @@ func (info *Info) resolveMethod(d *ast.FuncDecl) {
 	params := paramTypeListFL(d.Type.Params)
 	results := paramTypeList(resultFields(d.Type.Results))
 	raw := strings.TrimSpace(joinTypes(params) + " " + joinTypes(results))
+	ret := funcSig(d.Name.Name, d.Type)
 	info.Methods[recv] = append(info.Methods[recv], Method{
 		Name:        d.Name.Name,
 		Sig:         joinTypes(params) + "|" + joinTypes(results),
 		Raw:         raw,
-		Arity:       resultArity(d.Type.Results),
-		EndsInError: resultEndsInError(d.Type.Results),
+		Arity:       ret.Arity,
+		EndsInError: ret.EndsInError,
+		Return:      ret,
 	})
 }
 

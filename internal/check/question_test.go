@@ -203,3 +203,70 @@ func f(id string) Result[string, error] {
 		}
 	}
 }
+
+// US-003: a `?` on a method call whose method returns Result[T, error] is accepted —
+// the receiver's type method set resolves the callee to its real (T, error) shape, so
+// no question-callee-no-error fires. Covers a concrete-struct receiver, an
+// interface-typed receiver (the motivating environment-manager case), and the bare
+// error-only method form. Guards against the regression where a Result-returning
+// method resolved with no error tail.
+func TestQuestionMethodCalleeResultAccepted(t *testing.T) {
+	const src = `package x
+
+type Store struct{ n int }
+
+func (s Store) Load() Result[int, error] { return Result.Ok(s.n) }
+
+func (s Store) Save() error { return nil }
+
+sealed interface Backend {
+	Fetch() Result[int, error]
+	Flush() error
+}
+
+func viaStruct(s Store) Result[int, error] {
+	v := s.Load()?
+	s.Save()?
+	return Result.Ok(v)
+}
+
+func viaIface(b Backend) Result[int, error] {
+	v := b.Fetch()?
+	b.Flush()?
+	return Result.Ok(v)
+}
+`
+	diags, err := Analyze(src)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	for _, d := range diags {
+		if d.Feature == "05-question-prop" {
+			t.Fatalf("unexpected question diagnostic on a Result-returning method `?`: [%s] %s", d.Code, d.Message)
+		}
+	}
+}
+
+// US-003: a `?` on a method whose return does not end in an error is still rejected
+// with a descriptive diagnostic — resolving the receiver's method set must not make
+// `?` permissive of a non-error method callee.
+func TestQuestionMethodCalleeNonErrorRejected(t *testing.T) {
+	const src = `package x
+
+type Store struct{ n int }
+
+func (s Store) Plain() int { return s.n }
+
+func f(s Store) Result[int, error] {
+	v := s.Plain()?
+	return Result.Ok(v)
+}
+`
+	diags, err := Analyze(src)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if !hasCode(diags, "question-callee-no-error") {
+		t.Fatalf("expected question-callee-no-error for `?` on a non-error method, got %+v", diags)
+	}
+}

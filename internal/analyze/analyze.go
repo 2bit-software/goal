@@ -145,6 +145,11 @@ type Method struct {
 	// plain call is resolved through FuncSignatures.
 	Arity       int
 	EndsInError bool
+	// Return is the method's full `?`-relevant signature, including the
+	// Result/Option mode (and success/error types). A `recv.Method()?` callee
+	// resolves to this so the `?` check and lowering see the real Result/error
+	// shape — not just the raw arity. Arity/EndsInError above mirror Return's.
+	Return FuncSig
 }
 
 // Build analyzes the original source and returns the populated tables.
@@ -182,7 +187,19 @@ func Build(src string) *Tables {
 			e := analyzeEnum(src, toks, i)
 			t.Enums[e.Name] = e
 		case toks[i].Text == "sealed" && toks[i+1].Text == "interface" && i+2 < len(toks):
-			t.Sealed[toks[i+2].Text] = true
+			name := toks[i+2].Text
+			t.Sealed[name] = true
+			// A sealed interface's methods are a real method set, so a
+			// `recv.Method()?` on a sealed-interface-typed receiver resolves through
+			// Tables.Interfaces just like an ordinary `type X interface {…}`.
+			if open := indexOf(toks, i+2, "{"); open >= 0 {
+				closeIdx := scan.MatchBrace(toks, open)
+				methods, embedded := parseInterfaceBody(src, toks, open, closeIdx)
+				t.Interfaces[name] = methods
+				if len(embedded) > 0 {
+					t.EmbeddedIfaces[name] = embedded
+				}
+			}
 		}
 	}
 	analyzeTypeDecls(src, toks, t)
@@ -544,8 +561,42 @@ func methodFrom(src string, toks []scan.Token, name string, po, pc, limit int) M
 		results = strings.TrimSpace(src[toks[pc].End:toks[resEnd].End])
 	}
 	raw := strings.TrimSpace(params + " " + results)
+	ret := methodResultSig(name, results)
 	return Method{Name: name, Sig: normalizeSig(params, results), Raw: raw,
-		Arity: countReturns(results), EndsInError: endsInError(results)}
+		Arity: ret.Arity, EndsInError: ret.EndsInError, Return: ret}
+}
+
+// methodResultSig reads the `?`-relevant return signature (mode, success/error
+// types, lowered arity, ends-in-error) from a method's textual result clause,
+// applying the same Result/Option normalization analyzeSig applies to a plain
+// function: a `Result[T, error]` is the open-E native `(T, error)` (arity 2,
+// ends in error); a closed-E `Result[T, E]` and an `Option[T]` lower to a single
+// value; anything else falls back to the raw return count / error tail. So a
+// `recv.Method()?` resolves to the real shape, not a syntactic over-count.
+func methodResultSig(name, results string) FuncSig {
+	sig := FuncSig{Name: name, Mode: ModeNone, Arity: countReturns(results), EndsInError: endsInError(results)}
+	r := strings.TrimSpace(results)
+	switch {
+	case strings.HasPrefix(r, "Result[") && strings.HasSuffix(r, "]"):
+		if parts := splitTopLevel(r[len("Result[") : len(r)-1]); len(parts) == 2 {
+			sig.T, sig.E = strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+			if sig.E == "error" {
+				sig.Mode = ModeResult // open-E: native (T, error)
+			} else {
+				sig.Mode = ModeResultClosed // closed-E: Ok[T,E]/Err[T,E] sum
+			}
+		}
+	case strings.HasPrefix(r, "Option[") && strings.HasSuffix(r, "]"):
+		sig.Mode = ModeOption
+		sig.T = strings.TrimSpace(r[len("Option[") : len(r)-1])
+	}
+	switch sig.Mode {
+	case ModeResult:
+		sig.Arity, sig.EndsInError = 2, true
+	case ModeOption, ModeResultClosed:
+		sig.Arity, sig.EndsInError = 1, false
+	}
+	return sig
 }
 
 // endOfSignature returns the index of the last token of a method signature whose

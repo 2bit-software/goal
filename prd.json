@@ -50,7 +50,7 @@
         "A checker/sema test and a backend test covering `?` on a method-call callee returning a Result exist and pass"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Today the checker rejects `recv.M()?` with `question-callee-no-error` even when M returns Result[T, error]; sema's resolveQuestionCallee returns known=false for a SelectorExpr and the method's signature is keyed by receiver (resolveMethod), not in FuncSignatures. environment-manager works around this by wrapping interface calls in plain helper funcs (see secrets.goal resolveVia). Resolve the method callee's signature from the receiver's method set so the `?` arity/error check (and the backend unwrap arity) see the real Result/error shape."
     }
   ]

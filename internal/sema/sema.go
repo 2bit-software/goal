@@ -78,6 +78,11 @@ type Method struct {
 	Raw         string
 	Arity       int
 	EndsInError bool
+	// Return is the method's full analyzed return signature, including the
+	// Result/Option mode (and success/error types). A `recv.Method()?` callee
+	// resolves to this so the `?` lowering sees the real Result/error shape, not
+	// just the raw arity. Arity/EndsInError above mirror Return's facts.
+	Return FuncSig
 }
 
 // Info is the resolved semantic information for one goal file: the name-keyed

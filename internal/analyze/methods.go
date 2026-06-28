@@ -40,9 +40,17 @@ func ResolveCallee(t *Tables, toks []scan.Token, off int, rhs string) (FuncSig, 
 		sig, ok := t.ForeignMethods[base+"."+method]
 		return sig, ok
 	}
+	// An in-file concrete type's method, or — for an interface-typed receiver — a
+	// declared interface method. Both carry the full Result/Option signature, so a
+	// `recv.Method()?` whose method returns a Result resolves to its real shape.
 	for _, m := range t.Methods[base] {
 		if m.Name == method {
-			return FuncSig{Arity: m.Arity, EndsInError: m.EndsInError}, true
+			return m.Return, true
+		}
+	}
+	for _, m := range t.Interfaces[base] {
+		if m.Name == method {
+			return m.Return, true
 		}
 	}
 	return FuncSig{}, false

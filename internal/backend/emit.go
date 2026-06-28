@@ -77,6 +77,11 @@ type emitter struct {
 	// was lowered to a goalSome(...) call, so the boxing helper (optionPrelude) is
 	// appended to the file. Set by tryOptionValue; read by file()/the package driver.
 	usedOptionHelper bool
+	// recvTypes maps each receiver/parameter identifier of the current function to
+	// its base type name (star- and qualifier-stripped), so a `recv.M()?` callee can
+	// be resolved through the receiver's method set (info.Methods / info.Interfaces).
+	// Reset per funcDecl; nil outside a function body.
+	recvTypes map[string]string
 }
 
 // emitFile renders a whole *ast.File to Go source text, lowering goal-specific
@@ -383,8 +388,10 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 	}
 	prevKind, prevOk, prevErr, prevTaken := e.fnKind, e.okName, e.errName, e.taken
 	prevClosedT, prevClosedE := e.closedT, e.closedE
+	prevRecvTypes := e.recvTypes
 	e.fnKind, e.taken, e.okName, e.errName = kind, e.newScope(), "", ""
 	e.closedT, e.closedE = closedT, closedE
+	e.recvTypes = e.buildRecvTypes(d)
 	if kind == roResultOpen {
 		e.okName = e.gensym("ok")
 		e.errName = e.gensym("err")
@@ -392,6 +399,7 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 	defer func() {
 		e.fnKind, e.okName, e.errName, e.taken = prevKind, prevOk, prevErr, prevTaken
 		e.closedT, e.closedE = prevClosedT, prevClosedE
+		e.recvTypes = prevRecvTypes
 	}()
 
 	e.p("func ")
@@ -1882,6 +1890,13 @@ func (e *emitter) calleeSig(x ast.Expr) (sema.FuncSig, bool) {
 		if !ok || fn.Sel == nil {
 			return sema.FuncSig{}, false
 		}
+		// A `recv.M(...)` whose `recv` is a receiver/parameter resolves through the
+		// receiver's type method set — so a `?` on a method returning a Result (or a
+		// trailing error) sees the real lowered arity. This takes precedence over the
+		// package-qualifier path: a value binding shadows an import of the same name.
+		if sig, ok := e.methodCalleeSig(pkg.Name, fn.Sel.Name); ok {
+			return sig, true
+		}
 		// Prefer a real signature resolved through the file's imports; fall back to
 		// the curated table when the package cannot be loaded here.
 		if a := e.arity.lookup(pkg.Name, fn.Sel.Name); a.resolved && a.endsErr {
@@ -1893,6 +1908,86 @@ func (e *emitter) calleeSig(x ast.Expr) (sema.FuncSig, bool) {
 		return sema.FuncSig{}, false
 	}
 	return sema.FuncSig{}, false
+}
+
+// methodCalleeSig resolves the `?`-relevant signature of method `method` called on
+// a receiver identifier `recv` bound in the current function's receiver/parameter
+// list. It consults the receiver type's concrete method set (info.Methods) and, for
+// an interface-typed receiver, its interface method set (info.Interfaces). It
+// reports false when recv is not a known receiver/parameter, or its type declares no
+// such method here (an imported type's method stays unresolved — and harmlessly
+// keeps the two-value default).
+func (e *emitter) methodCalleeSig(recv, method string) (sema.FuncSig, bool) {
+	if e.info == nil || e.recvTypes == nil {
+		return sema.FuncSig{}, false
+	}
+	typ, ok := e.recvTypes[recv]
+	if !ok || typ == "" {
+		return sema.FuncSig{}, false
+	}
+	for _, m := range e.info.Methods[typ] {
+		if m.Name == method {
+			return m.Return, true
+		}
+	}
+	for _, m := range e.info.Interfaces[typ] {
+		if m.Name == method {
+			return m.Return, true
+		}
+	}
+	return sema.FuncSig{}, false
+}
+
+// buildRecvTypes maps each receiver/parameter identifier of d to its base type name
+// (leading `*` and a generic `[...]` instantiation stripped, e.g. `*Tree[T]` ->
+// `Tree`), so a `recv.M()?` callee can be resolved through the receiver's method
+// set. A package-qualified parameter type (`pkg.Type`) is skipped — its methods are
+// out of file. Returns nil when d has no resolvable receiver/parameter idents.
+func (e *emitter) buildRecvTypes(d *ast.FuncDecl) map[string]string {
+	out := map[string]string{}
+	add := func(fl *ast.FieldList) {
+		if fl == nil {
+			return
+		}
+		for _, f := range fl.List {
+			base := recvBaseType(f.Type)
+			if base == "" {
+				continue
+			}
+			for _, n := range f.Names {
+				if n != nil && n.Name != "" && n.Name != "_" {
+					out[n.Name] = base
+				}
+			}
+		}
+	}
+	add(d.Recv)
+	if d.Type != nil {
+		add(d.Type.Params)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// recvBaseType renders a receiver/parameter type expression to the bare named type a
+// method set is keyed by: a leading `*` is stripped, a generic instantiation reduces
+// to its head name (`Tree[T]` -> `Tree`). A package-qualified type (`pkg.Type`) and
+// any non-named type (slice, map, func, …) yield "" — their methods are not in-file.
+func recvBaseType(x ast.Expr) string {
+	switch t := x.(type) {
+	case *ast.StarExpr:
+		return recvBaseType(t.X)
+	case *ast.Ident:
+		return t.Name
+	case *ast.IndexExpr:
+		return recvBaseType(t.X)
+	case *ast.IndexListExpr:
+		return recvBaseType(t.X)
+	default:
+		return ""
+	}
 }
 
 // matchStmt lowers a statement-position match over a Result or Option to an

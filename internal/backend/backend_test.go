@@ -1324,3 +1324,59 @@ func TestASTEngineValueMatchEncoding(t *testing.T) {
 		})
 	}
 }
+
+// TestASTEngineUnwrapsMethodCallResult is the US-003 backend witness: a `?` on a
+// method call lowers through the receiver's resolved method signature. A
+// value-binding `?` on a Result[T, error] method binds the value and propagates the
+// trailing error; a bare `?` on an error-only method lowers to the single-variable
+// `if err := recv.M(); err != nil` form, never the two-value over-destructure. Both a
+// concrete-struct receiver and an interface-typed receiver are covered.
+func TestASTEngineUnwrapsMethodCallResult(t *testing.T) {
+	const src = `package p
+
+type Store struct{ n int }
+
+func (s Store) Load() Result[int, error] { return Result.Ok(s.n) }
+
+func (s Store) Save() error { return nil }
+
+sealed interface Backend {
+	Fetch() Result[int, error]
+	Flush() error
+}
+
+func viaStruct(s Store) Result[int, error] {
+	v := s.Load()?
+	s.Save()?
+	return Result.Ok(v)
+}
+
+func viaIface(b Backend) Result[int, error] {
+	w := b.Fetch()?
+	b.Flush()?
+	return Result.Ok(w)
+}
+`
+	out, err := backend.Transpile(src)
+	if err != nil {
+		t.Fatalf("Transpile: %v", err)
+	}
+	if _, err := format.Source([]byte(out.Go)); err != nil {
+		t.Fatalf("engine output is not valid Go: %v\n--- output ---\n%s", err, out.Go)
+	}
+	for _, want := range []string{
+		"v, err := s.Load()",         // Result method -> two-value bind
+		"if err := s.Save(); err != nil {", // error-only method -> single var
+		"w, err := b.Fetch()",        // interface Result method -> two-value bind
+		"if err := b.Flush(); err != nil {", // interface error-only method -> single var
+	} {
+		if !strings.Contains(out.Go, want) {
+			t.Errorf("emitted Go missing %q, got:\n%s", want, out.Go)
+		}
+	}
+	for _, bad := range []string{"_, err := s.Save()", "_, err := b.Flush()"} {
+		if strings.Contains(out.Go, bad) {
+			t.Errorf("emitted Go over-destructured an error-only method call %q:\n%s", bad, out.Go)
+		}
+	}
+}

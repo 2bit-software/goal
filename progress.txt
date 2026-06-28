@@ -1,5 +1,49 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T19:10:00Z] - US-003
+- Proved US-003 "Allow `?` on method calls returning Result": `?` now works on a
+  method call whose method returns a Result (or a trailing error), for both a
+  concrete-struct receiver and an interface- / sealed-interface-typed receiver —
+  no need to wrap interface calls in a plain helper func first (the
+  environment-manager workaround). `goal check` accepts `v := recv.M()?` (M
+  returns Result[T,error]) with no question-callee-no-error; transpiling binds the
+  value + propagates the error; a bare `recv.M()?` on an error-only method lowers
+  to the single-variable `if err := recv.M(); err != nil` form (not a 2-value
+  over-destructure); a `?` on a non-error-ending method is still rejected.
+- Mechanism: a `recv.M()?` callee was mis-resolved in all three `?` layers because
+  a method's resolved signature dropped its Result/Option MODE (it kept only a raw
+  syntactic arity/ends-in-error). Fix carries the method's full FuncSig through
+  each layer:
+  - internal/analyze: new `methodResultSig` applies the same Result/Option
+    normalization analyzeSig uses, stored as `analyze.Method.Return`;
+    `methodFrom` (shared by concrete `analyzeMethods` AND interface
+    `parseInterfaceBody`) fills it. `ResolveCallee` returns `m.Return` and now
+    also resolves interface-typed receivers via `Tables.Interfaces`. A
+    `sealed interface` body is parsed into `Tables.Interfaces` too (Build loop).
+  - internal/sema: added `sema.Method.Return` (the resolved FuncSig), populated in
+    `resolveMethod` and `resolveInterface` via the existing `funcSig` helper;
+    extracted `resolveInterfaceMethods(name, *ast.FieldList)` so a
+    `*ast.SealedInterfaceDecl`'s method set is resolved into `Info.Interfaces`,
+    not just flagged in `Info.Sealed`.
+  - internal/backend: emitter gained a per-function `recvTypes` map (receiver +
+    params -> base type), built in `funcDecl` (save/restore); `calleeSig`'s
+    selector case first tries `methodCalleeSig` (info.Methods then
+    info.Interfaces) before the package-qualifier path, so the `?` destructure
+    arity matches the method's real lowered shape.
+- Files: internal/analyze/analyze.go (Method.Return, methodResultSig, methodFrom,
+  sealed-interface body parse), internal/analyze/methods.go (ResolveCallee
+  concrete+interface), internal/sema/sema.go (Method.Return),
+  internal/sema/resolve.go (resolveMethod/resolveInterface/resolveInterfaceMethods,
+  SealedInterfaceDecl), internal/backend/emit.go (recvTypes, buildRecvTypes,
+  recvBaseType, methodCalleeSig, calleeSig), internal/check/question_test.go
+  (accept Result method `?`, reject non-error method `?`),
+  internal/backend/backend_test.go (TestASTEngineUnwrapsMethodCallResult). All
+  verifyCommands green (build, vet, full test suite).
+- Learnings: see the new Codebase Patterns entry (method-callee `?` resolution
+  threads the method's full FuncSig through analyze/sema/backend; sealed-interface
+  method sets must be resolved, not just flagged).
+---
+
 ## [2026-06-28T18:20:00Z] - US-002
 - Proved US-002 "Lower value-position match over Result and Option": a `match`
   over a Result or Option used as a VALUE — returned directly (`return match …`)
@@ -623,6 +667,24 @@
 ---
 
 ## Codebase Patterns
+- A `?` site is validated/lowered in THREE parallel layers that must agree:
+  internal/analyze (lexical, what `goal check` runs via internal/check),
+  internal/sema (the native check the interp gate runs), and internal/backend
+  (the `?` destructure lowering). A `recv.M()?` callee resolves through the
+  RECEIVER's type method set, not by name: analyze reads the receiver var's
+  declared type lexically (analyze/methods.go scopeVarType) and the backend reads
+  it from a per-function recvTypes map (built in funcDecl from d.Recv + params).
+  The method's resolved signature MUST carry its Result/Option MODE (stored as
+  `Method.Return FuncSig` in both analyze and sema), or a `Result[T,error]`
+  method `?` mis-resolves as a non-error callee. Both concrete (`Methods`) and
+  interface (`Interfaces`) method sets are consulted.
+- A `sealed interface X {…}` is a distinct decl node: `*ast.SealedInterfaceDecl`
+  in sema (NOT a `type X interface`), and a `sealed interface` token sequence in
+  analyze (NOT caught by the `type`-keyed analyzeTypeDecls). Its method set must
+  be resolved into Info.Interfaces / Tables.Interfaces explicitly — sema only
+  flagged it in Info.Sealed and analyze only set Tables.Sealed before US-003, so
+  anything keyed off the interface's METHODS (a `?` on a sealed-iface method, and
+  potentially implements/hover) needs the body parsed, not just the name flagged.
 - Value-position match lowering (enum AND Result/Option) reuses ONE set of
   position-parameterized emitters keyed by matchPos: enumMatch(m,pos,name),
   resultMatch/closedResultMatch/optionMatch(m,pos,name). Each wraps its arm bodies
