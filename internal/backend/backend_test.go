@@ -8,6 +8,7 @@ import (
 
 	"goal/internal/backend"
 	"goal/internal/corpus"
+	"goal/internal/project"
 )
 
 // repoRoot is the path from internal/backend (cwd during the test) to the repo
@@ -1121,6 +1122,63 @@ func TestASTEngineDoctestEnumLowering(t *testing.T) {
 	for _, w := range wants {
 		if !strings.Contains(out.Test, w) {
 			t.Errorf("missing %q in sidecar:\n%s", w, out.Test)
+		}
+	}
+}
+
+// TestPackageDoctestPreludeNotRedeclared pins the package-mode invariant the
+// single-file emitter already held: the closed-E Result prelude is defined
+// exactly once per package. A Result-returning function emits the shared
+// goal_prelude.go; a doctest in the same package emits a `_test.go` sidecar that
+// compiles into that same package. Before the fix the sidecar inlined a second
+// copy of the prelude, so `go vet` failed with `Result/Ok/Err redeclared in this
+// block`. The prelude must live only in goal_prelude.go, never in the sidecar.
+func TestPackageDoctestPreludeNotRedeclared(t *testing.T) {
+	src := `package domain
+
+enum ParseError {
+	Empty
+}
+
+/// Adds two ints.
+/// >>> add(2, 3)
+/// 5
+func add(a int, b int) int {
+	return a + b
+}
+
+func parse(s string) Result[int, ParseError] {
+	if s == "" {
+		return Result.Err(ParseError.Empty)
+	}
+	return Result.Ok(len(s))
+}
+`
+	pkg := &project.Package{
+		Dir:   "domain",
+		Name:  "domain",
+		Files: []project.File{{Path: "domain/domain.goal", Name: "domain.goal", Src: src}},
+	}
+	out, err := backend.TranspilePackage(pkg)
+	if err != nil {
+		t.Fatalf("TranspilePackage: %v", err)
+	}
+
+	var sharedPrelude int
+	for _, f := range out.Files {
+		if f.Name == "goal_prelude.go" {
+			sharedPrelude++
+		}
+	}
+	if sharedPrelude != 1 {
+		t.Fatalf("want exactly one shared goal_prelude.go, got %d", sharedPrelude)
+	}
+	if len(out.Tests) == 0 {
+		t.Fatal("expected a doctest sidecar, got none")
+	}
+	for _, ft := range out.Tests {
+		if strings.Contains(ft.Go, "type Result[") {
+			t.Errorf("doctest sidecar %s redeclares the prelude (`type Result[`); it must defer to goal_prelude.go:\n%s", ft.Name, ft.Go)
 		}
 	}
 }

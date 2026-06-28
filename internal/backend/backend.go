@@ -59,7 +59,9 @@ func (goBackend) Emit(file *ast.File, info *sema.Info) (pipeline.Output, error) 
 	if err != nil {
 		return pipeline.Output{}, err
 	}
-	test, err := emitDoctests(file, info)
+	// Single-file emit: the prelude lives inline in src (suppressPrelude=false),
+	// so the sidecar must omit its own copy to avoid redeclaration in the package.
+	test, _, err := emitDoctests(file, info, true)
 	if err != nil {
 		return pipeline.Output{}, fmt.Errorf("doctests: %w", err)
 	}

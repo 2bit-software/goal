@@ -23,16 +23,23 @@ import (
 // reads the structured Doctest nodes rather than re-lexing the source text, but
 // produces the same `TestDoctest_<fn>_<n>` shape so the doctest tier (and its
 // goldens) line up with the splice engine.
-func emitDoctests(f *ast.File, info *sema.Info) (string, error) {
+// suppressPrelude mirrors emitFileWith's knob: in package mode the closed-E
+// Result prelude and Option boxing helper already live in shared files
+// (goal_prelude.go / goal_options.go) emitted once for the package, so the
+// `_test.go` sidecar — which compiles into that same package — must NOT inline a
+// second copy or the package fails to build with Result/Ok/Err redeclared. It
+// reports usedOption (a goalSome call in a doctest body) so the package driver
+// folds it into the single shared Option-helper decision.
+func emitDoctests(f *ast.File, info *sema.Info, suppressPrelude bool) (src string, usedOption bool, err error) {
 	goalTest := renderDoctests(f)
 	if goalTest == "" {
-		return "", nil
+		return "", false, nil
 	}
 	testFile, err := parser.ParseFile(goalTest)
 	if err != nil {
-		return "", fmt.Errorf("doctest sidecar parse: %w\n--- rendered ---\n%s", err, goalTest)
+		return "", false, fmt.Errorf("doctest sidecar parse: %w\n--- rendered ---\n%s", err, goalTest)
 	}
-	return emitFile(testFile, info)
+	return emitFileWith(testFile, info, suppressPrelude)
 }
 
 // renderDoctests builds a goal-shaped `_test.go` source from the structured
