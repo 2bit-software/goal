@@ -182,6 +182,53 @@ Outer:
 	}
 }
 
+// TestASTEngineUnwrapsErrorOnlyStdlibCall pins the arity of `?` on an error-only
+// standard-library call: os.MkdirAll / os.WriteFile / json.Unmarshal return only
+// error, so a bare `?` must lower to `if err := …`, never the two-value
+// `if _, err := …` that fails to compile. A `(value, error)` call (os.ReadFile)
+// must still bind both.
+func TestASTEngineUnwrapsErrorOnlyStdlibCall(t *testing.T) {
+	const src = `package p
+
+import (
+	"encoding/json"
+	"os"
+)
+
+func setup(data []byte, dir string) Result[int, error] {
+	os.MkdirAll(dir, 0o755)?
+	os.WriteFile(dir+"/f", data, 0o644)?
+	raw := os.ReadFile(dir + "/f")?
+	var out int
+	json.Unmarshal(raw, &out)?
+	return Result.Ok(out)
+}
+`
+	out, err := backend.Transpile(src)
+	if err != nil {
+		t.Fatalf("Transpile: %v", err)
+	}
+	if _, err := format.Source([]byte(out.Go)); err != nil {
+		t.Fatalf("engine output is not valid Go: %v\n--- output ---\n%s", err, out.Go)
+	}
+	for _, want := range []string{
+		"if err := os.MkdirAll(",  // error-only -> single var
+		"if err := os.WriteFile(", // error-only -> single var
+		"if err := json.Unmarshal(",
+		"raw, err := os.ReadFile(", // (value, error) -> two vars
+	} {
+		if !strings.Contains(out.Go, want) {
+			t.Errorf("emitted Go missing %q, got:\n%s", want, out.Go)
+		}
+	}
+	// The over-destructured form for an error-only call must never appear.
+	for _, bad := range []string{"_, err := os.MkdirAll(", "_, err := os.WriteFile(", "_, err := json.Unmarshal("} {
+		if strings.Contains(out.Go, bad) {
+			t.Errorf("emitted Go has over-destructured error-only call %q:\n%s", bad, out.Go)
+		}
+	}
+}
+
 // TestASTEngineBehavioralTierFull is the AC-2 witness over the full ordinary-Go
 // subset: a goal file exercising switch, struct/map/slice composites, defer, a
 // multi-return func, and type/const/var declarations transpiles through the new
