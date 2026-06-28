@@ -1,0 +1,57 @@
+{
+  "project": "goal",
+  "branchName": "ralph/value-position-lowering-gaps",
+  "description": "Close three ordinary-use lowering gaps found auditing the AST front-end: Option construction outside return position, value-position match over Result/Option, and `?` on method calls.",
+  "verifyCommands": [
+    "go build ./...",
+    "go vet ./...",
+    "go test ./... -count=1"
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Lower Option construction in value positions",
+      "description": "As a goal author, I need Option.Some/None to lower wherever an Option value is produced, not only at a direct return or as a Result.Ok payload, so optional values compose anywhere.",
+      "acceptanceCriteria": [
+        "Transpiling `x := Option.Some(v)` (v a local identifier) yields valid Go in which x is bound to the *T pointer form, and the generated Go contains no literal `Option.` token",
+        "Transpiling Option.Some(x)/Option.None as a call argument, as a struct-literal field value, and as a slice- and map-literal element each yields valid Go (parses under go/format) with no literal `Option.` token",
+        "Option.None lowers to `nil` and Option.Some(x) lowers to the *T pointer encoding (`&x` for an addressable argument, otherwise a boxed temporary) in every position above",
+        "The existing direct-return and Result.Ok-payload Option lowering still passes its current tests unchanged",
+        "A backend test exercising Option construction in var-assignment, call-argument, struct-field, and slice/map-literal positions exists and passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Same mechanism as the already-landed nested-Option fix (optionValueExpr): None->nil, Some(addressable)->&x, Some(other)->boxed temp. Generalize it into the value-emission path; a non-addressable argument in a pure-expression position needs a boxing helper or a hoisted temp so it stays a valid Go expression. Today only emitOptionReturn and the Result.Ok payload call optionValueExpr."
+    },
+    {
+      "id": "US-002",
+      "title": "Lower value-position match over Result and Option",
+      "description": "As a goal author, I need a match over a Result or Option to lower when its result is used as a value (a return result or an assignment RHS), so I can bind or return the outcome of a match directly.",
+      "acceptanceCriteria": [
+        "Transpiling `return match r { Result.Ok(v) => A; Result.Err(e) => B }` where r is a Result yields valid Go and does not fail with `unsupported expression *ast.MatchExpr`",
+        "Transpiling `x := match o { Option.Some(v) => A; Option.None => B }` where o is an Option yields valid Go in which x is bound to the arm result",
+        "Both the Ok/Some payload binding and the Err/None arm are reachable in the generated Go (each arm's body is emitted)",
+        "Statement-position match over Result/Option and value-position match over enums continue to pass their existing tests unchanged",
+        "A backend test covering value-position match over both Result and Option, in both return and assignment positions, exists and passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Enum value-position match already lowers (enumMatch via returnStmt, plus tryVarMatch/tryAssignMatch); statement-position Result/Option match already lowers (matchStmt). The gap is value-position match whose subject is a Result/Option — currently it reaches the generic expr path and fails with `unsupported expression *ast.MatchExpr`. Wire the Result/Option value-match into the same return- and assignment-position dispatch the enum path uses."
+    },
+    {
+      "id": "US-003",
+      "title": "Allow `?` on method calls returning Result",
+      "description": "As a goal author, I need `?` to work on a method call whose method returns a Result, so I don't have to wrap every interface/method call in a plain helper function first.",
+      "acceptanceCriteria": [
+        "`goal check` accepts `v := recv.M()?` where M is a method returning `Result[T, error]`, with no `question-callee-no-error` diagnostic",
+        "Transpiling `v := recv.M()?` (M returning `Result[T, error]`) yields valid Go that binds the value and propagates the trailing error",
+        "A bare `recv.M()?` whose method returns only `error` (no value) lowers to the single-variable `if err := recv.M(); err != nil` form, not a two-value destructure",
+        "`?` on a method whose return does not end in an error is still rejected with a descriptive diagnostic",
+        "A checker/sema test and a backend test covering `?` on a method-call callee returning a Result exist and pass"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Today the checker rejects `recv.M()?` with `question-callee-no-error` even when M returns Result[T, error]; sema's resolveQuestionCallee returns known=false for a SelectorExpr and the method's signature is keyed by receiver (resolveMethod), not in FuncSignatures. environment-manager works around this by wrapping interface calls in plain helper funcs (see secrets.goal resolveVia). Resolve the method callee's signature from the receiver's method set so the `?` arity/error check (and the backend unwrap arity) see the real Result/error shape."
+    }
+  ]
+}
