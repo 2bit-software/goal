@@ -1065,11 +1065,33 @@ func (p *parser) parseOperand() ast.Expr {
 		// trailing `(` as the conversion call and a trailing `{` as the composite
 		// body (compositeOK admits these type forms).
 		return p.parseType()
+	case token.FUNC:
+		return p.parseFuncOperand()
 	default:
 		p.errorf(t.Pos, "expected expression, found %s", describe(t))
 		p.advance()
 		return &ast.Ident{NamePos: t.Pos, Name: t.Lit}
 	}
+}
+
+// parseFuncOperand parses a `func` in expression position: a function literal
+// `func(sig) { body }` (the common case), or — when no body follows — a bare
+// function type used as a conversion or type operand. The body is parsed with
+// the expression level reset to 0, so composite literals and statements inside
+// the body are not suppressed when the literal itself appears in a control-clause
+// header (exprLev < 0).
+func (p *parser) parseFuncOperand() ast.Expr {
+	kw := p.expect(token.FUNC)
+	ft := p.parseSignature()
+	ft.Func = kw.Pos
+	if !p.at(token.LBRACE) {
+		return ft
+	}
+	prev := p.exprLev
+	p.exprLev = 0
+	body := p.parseBlock()
+	p.exprLev = prev
+	return &ast.FuncLit{Type: ft, Body: body}
 }
 
 // parsePostfix applies any chain of selector, call, index, and composite-literal
