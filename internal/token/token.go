@@ -322,6 +322,10 @@ type Pos struct {
 // Less reports whether p precedes q in the source, ordered by byte Offset.
 func (p Pos) Less(q Pos) bool { return p.Offset < q.Offset }
 
+// IsValid reports whether p refers to a real source position. The zero Pos
+// (Line 0) marks an absent position, e.g. an optional token that was not present.
+func (p Pos) IsValid() bool { return p.Line > 0 }
+
 // String renders the position as "line:col" for diagnostics.
 func (p Pos) String() string { return itoa(p.Line) + ":" + itoa(p.Col) }
 

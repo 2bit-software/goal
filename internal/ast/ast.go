@@ -444,12 +444,33 @@ func (e *SliceExpr) End() token.Pos {
 }
 func (*SliceExpr) exprNode() {}
 
+// TypeAssertExpr is a type assertion x.(T). Type is nil for the x.(type) form,
+// which appears only as the guard of a type switch.
+type TypeAssertExpr struct {
+	X      Expr      // expression
+	Lparen token.Pos // position of "("
+	Type   Expr      // asserted type; nil for the x.(type) guard
+	Rparen token.Pos // position of ")"
+}
+
+func (e *TypeAssertExpr) Pos() token.Pos {
+	if e.X != nil {
+		return e.X.Pos()
+	}
+	return e.Lparen
+}
+func (e *TypeAssertExpr) End() token.Pos {
+	return token.Pos{Offset: e.Rparen.Offset + 1, Line: e.Rparen.Line, Col: e.Rparen.Col + 1}
+}
+func (*TypeAssertExpr) exprNode() {}
+
 // CallExpr is a function or method call (or a conversion).
 type CallExpr struct {
-	Fun    Expr      // function expression
-	Lparen token.Pos // position of "("
-	Args   []Expr    // function arguments
-	Rparen token.Pos // position of ")"
+	Fun      Expr      // function expression
+	Lparen   token.Pos // position of "("
+	Args     []Expr    // function arguments
+	Ellipsis token.Pos // position of "..." in f(a, xs...); invalid if absent
+	Rparen   token.Pos // position of ")"
 }
 
 func (e *CallExpr) Pos() token.Pos {
@@ -896,6 +917,101 @@ func (s *BranchStmt) End() token.Pos {
 	return token.Pos{Offset: s.TokPos.Offset + len(s.Tok.String()), Line: s.TokPos.Line, Col: s.TokPos.Col + len(s.Tok.String())}
 }
 func (*BranchStmt) stmtNode() {}
+
+// SendStmt is a channel send statement ch <- value.
+type SendStmt struct {
+	Chan  Expr      // the channel
+	Arrow token.Pos // position of "<-"
+	Value Expr      // the value sent
+}
+
+func (s *SendStmt) Pos() token.Pos {
+	if s.Chan != nil {
+		return s.Chan.Pos()
+	}
+	return s.Arrow
+}
+func (s *SendStmt) End() token.Pos {
+	if s.Value != nil {
+		return s.Value.End()
+	}
+	return s.Arrow
+}
+func (*SendStmt) stmtNode() {}
+
+// LabeledStmt is a labeled statement "Label: Stmt", the target of a goto, break,
+// or continue.
+type LabeledStmt struct {
+	Label *Ident    // the label
+	Colon token.Pos // position of ":"
+	Stmt  Stmt      // the labeled statement
+}
+
+func (s *LabeledStmt) Pos() token.Pos {
+	if s.Label != nil {
+		return s.Label.Pos()
+	}
+	return s.Colon
+}
+func (s *LabeledStmt) End() token.Pos {
+	if s.Stmt != nil {
+		return s.Stmt.End()
+	}
+	return token.Pos{Offset: s.Colon.Offset + 1, Line: s.Colon.Line, Col: s.Colon.Col + 1}
+}
+func (*LabeledStmt) stmtNode() {}
+
+// TypeSwitchStmt is a type switch "switch [Init;] Assign { ... }", where Assign
+// is the guard: an ExprStmt holding an x.(type) assertion, or an AssignStmt
+// "v := x.(type)". Its body holds CaseClauses whose case lists are types.
+type TypeSwitchStmt struct {
+	Switch token.Pos  // position of "switch"
+	Init   Stmt       // initialization statement; or nil
+	Assign Stmt       // the type-switch guard (ExprStmt or AssignStmt)
+	Body   *BlockStmt // CaseClauses wrapped in a block
+}
+
+func (s *TypeSwitchStmt) Pos() token.Pos { return s.Switch }
+func (s *TypeSwitchStmt) End() token.Pos {
+	if s.Body != nil {
+		return s.Body.End()
+	}
+	return s.Switch
+}
+func (*TypeSwitchStmt) stmtNode() {}
+
+// SelectStmt is a select statement whose body holds CommClauses.
+type SelectStmt struct {
+	Select token.Pos  // position of "select"
+	Body   *BlockStmt // CommClauses wrapped in a block
+}
+
+func (s *SelectStmt) Pos() token.Pos { return s.Select }
+func (s *SelectStmt) End() token.Pos {
+	if s.Body != nil {
+		return s.Body.End()
+	}
+	return s.Select
+}
+func (*SelectStmt) stmtNode() {}
+
+// CommClause is one "case Comm:" or "default:" clause of a select. Comm is a send
+// or receive statement; it is nil for the default clause.
+type CommClause struct {
+	Case  token.Pos // position of "case" or "default"
+	Comm  Stmt      // send or receive statement; nil for default
+	Colon token.Pos // position of ":"
+	Body  []Stmt    // clause statements
+}
+
+func (s *CommClause) Pos() token.Pos { return s.Case }
+func (s *CommClause) End() token.Pos {
+	if n := len(s.Body); n > 0 {
+		return s.Body[n-1].End()
+	}
+	return token.Pos{Offset: s.Colon.Offset + 1, Line: s.Colon.Line, Col: s.Colon.Col + 1}
+}
+func (*CommClause) stmtNode() {}
 
 // DeclStmt is a declaration (const/var/type GenDecl) used as a statement.
 type DeclStmt struct {

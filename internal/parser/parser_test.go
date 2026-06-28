@@ -435,6 +435,197 @@ func TestParseFuncTypeNotLit(t *testing.T) {
 	}
 }
 
+// firstStmt parses a single-function source and returns the first statement of
+// its body, the common shape for the statement-form tests below.
+func firstStmt(t *testing.T, src string) ast.Stmt {
+	t.Helper()
+	file, err := ParseFile(src)
+	if err != nil {
+		t.Fatalf("ParseFile(%q): %v", src, err)
+	}
+	return file.Decls[0].(*ast.FuncDecl).Body.List[0]
+}
+
+// TestParseTypeAssert covers type assertions x.(T): single-value, comma-ok, a
+// qualified type, and a type-literal type. The x.(type) guard form is covered by
+// TestParseTypeSwitch.
+func TestParseTypeAssert(t *testing.T) {
+	t.Run("single value", func(t *testing.T) {
+		s := firstStmt(t, "package p\nfunc f(x any) { _ = x.(int) }\n")
+		ta := s.(*ast.AssignStmt).Rhs[0].(*ast.TypeAssertExpr)
+		if id, ok := ta.Type.(*ast.Ident); !ok || id.Name != "int" {
+			t.Errorf("asserted type = %v, want int", ta.Type)
+		}
+	})
+	t.Run("comma ok", func(t *testing.T) {
+		s := firstStmt(t, "package p\nfunc f(x any) { v, ok := x.(string); _ = v; _ = ok }\n")
+		if _, ok := s.(*ast.AssignStmt).Rhs[0].(*ast.TypeAssertExpr); !ok {
+			t.Errorf("rhs is %T, want *ast.TypeAssertExpr", s.(*ast.AssignStmt).Rhs[0])
+		}
+	})
+	t.Run("qualified type", func(t *testing.T) {
+		s := firstStmt(t, "package p\nfunc f(x any) { _ = x.(io.Reader) }\n")
+		ta := s.(*ast.AssignStmt).Rhs[0].(*ast.TypeAssertExpr)
+		if _, ok := ta.Type.(*ast.SelectorExpr); !ok {
+			t.Errorf("asserted type is %T, want *ast.SelectorExpr (io.Reader)", ta.Type)
+		}
+	})
+	t.Run("type literal", func(t *testing.T) {
+		s := firstStmt(t, "package p\nfunc f(x any) { _ = x.([]byte) }\n")
+		ta := s.(*ast.AssignStmt).Rhs[0].(*ast.TypeAssertExpr)
+		if _, ok := ta.Type.(*ast.ArrayType); !ok {
+			t.Errorf("asserted type is %T, want *ast.ArrayType ([]byte)", ta.Type)
+		}
+	})
+}
+
+// TestParseTypeSwitch covers the three type-switch guard forms — binding,
+// no-binding, and with an init statement — and that the guard's assertion has a
+// nil Type (the .(type) marker).
+func TestParseTypeSwitch(t *testing.T) {
+	t.Run("binding", func(t *testing.T) {
+		s := firstStmt(t, "package p\nfunc f(x any) { switch v := x.(type) { case int: _ = v\ndefault: } }\n")
+		ts, ok := s.(*ast.TypeSwitchStmt)
+		if !ok {
+			t.Fatalf("stmt is %T, want *ast.TypeSwitchStmt", s)
+		}
+		as := ts.Assign.(*ast.AssignStmt)
+		if ta := as.Rhs[0].(*ast.TypeAssertExpr); ta.Type != nil {
+			t.Errorf("guard assertion Type = %v, want nil (.(type))", ta.Type)
+		}
+		if len(ts.Body.List) != 2 {
+			t.Errorf("clauses = %d, want 2", len(ts.Body.List))
+		}
+	})
+	t.Run("no binding", func(t *testing.T) {
+		s := firstStmt(t, "package p\nfunc f(x any) { switch x.(type) { case int: } }\n")
+		ts, ok := s.(*ast.TypeSwitchStmt)
+		if !ok {
+			t.Fatalf("stmt is %T, want *ast.TypeSwitchStmt", s)
+		}
+		if _, ok := ts.Assign.(*ast.ExprStmt); !ok {
+			t.Errorf("guard is %T, want *ast.ExprStmt", ts.Assign)
+		}
+	})
+	t.Run("with init", func(t *testing.T) {
+		s := firstStmt(t, "package p\nfunc f() { switch y := g(); y.(type) { case int: } }\n")
+		ts, ok := s.(*ast.TypeSwitchStmt)
+		if !ok {
+			t.Fatalf("stmt is %T, want *ast.TypeSwitchStmt", s)
+		}
+		if ts.Init == nil {
+			t.Error("Init = nil, want the y := g() statement")
+		}
+	})
+	t.Run("ordinary switch not type switch", func(t *testing.T) {
+		s := firstStmt(t, "package p\nfunc f(x int) { switch x { case 1: } }\n")
+		if _, ok := s.(*ast.SwitchStmt); !ok {
+			t.Errorf("stmt is %T, want *ast.SwitchStmt", s)
+		}
+	})
+}
+
+// TestParseVariadicCallSpread covers the trailing f(xs...) spread, including
+// mixed positional+spread, and that an ordinary call records no ellipsis.
+func TestParseVariadicCallSpread(t *testing.T) {
+	t.Run("spread only", func(t *testing.T) {
+		s := firstStmt(t, "package p\nfunc f(xs []int) { g(xs...) }\n")
+		call := s.(*ast.ExprStmt).X.(*ast.CallExpr)
+		if !call.Ellipsis.IsValid() {
+			t.Error("Ellipsis not set for g(xs...)")
+		}
+	})
+	t.Run("mixed args", func(t *testing.T) {
+		s := firstStmt(t, "package p\nfunc f(xs []int) { g(1, 2, xs...) }\n")
+		call := s.(*ast.ExprStmt).X.(*ast.CallExpr)
+		if !call.Ellipsis.IsValid() || len(call.Args) != 3 {
+			t.Errorf("args=%d ellipsis=%v, want 3 args + ellipsis", len(call.Args), call.Ellipsis.IsValid())
+		}
+	})
+	t.Run("ordinary call has no ellipsis", func(t *testing.T) {
+		s := firstStmt(t, "package p\nfunc f() { g(1, 2) }\n")
+		if s.(*ast.ExprStmt).X.(*ast.CallExpr).Ellipsis.IsValid() {
+			t.Error("ordinary call should not record an ellipsis")
+		}
+	})
+}
+
+// TestParseSendStmt guards that ch <- v is a single SendStmt, not the two stray
+// ExprStmts (`ch` and `<-v`) the parser previously produced.
+func TestParseSendStmt(t *testing.T) {
+	file, err := ParseFile("package p\nfunc f(ch chan int) { ch <- 1 }\n")
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	body := file.Decls[0].(*ast.FuncDecl).Body
+	if len(body.List) != 1 {
+		t.Fatalf("body has %d statements, want 1 (a single send)", len(body.List))
+	}
+	send, ok := body.List[0].(*ast.SendStmt)
+	if !ok {
+		t.Fatalf("stmt is %T, want *ast.SendStmt", body.List[0])
+	}
+	if id, ok := send.Chan.(*ast.Ident); !ok || id.Name != "ch" {
+		t.Errorf("send channel = %v, want ch", send.Chan)
+	}
+}
+
+// TestParseSelectStmt covers select with a receive case, a send case, a
+// receive-with-binding case, and the default clause.
+func TestParseSelectStmt(t *testing.T) {
+	s := firstStmt(t, "package p\nfunc f(ch chan int) { select {\ncase v := <-ch: _ = v\ncase ch <- 1:\ndefault:\n} }\n")
+	sel, ok := s.(*ast.SelectStmt)
+	if !ok {
+		t.Fatalf("stmt is %T, want *ast.SelectStmt", s)
+	}
+	if len(sel.Body.List) != 3 {
+		t.Fatalf("comm clauses = %d, want 3", len(sel.Body.List))
+	}
+	recv := sel.Body.List[0].(*ast.CommClause)
+	if _, ok := recv.Comm.(*ast.AssignStmt); !ok {
+		t.Errorf("recv clause comm is %T, want *ast.AssignStmt (v := <-ch)", recv.Comm)
+	}
+	send := sel.Body.List[1].(*ast.CommClause)
+	if _, ok := send.Comm.(*ast.SendStmt); !ok {
+		t.Errorf("send clause comm is %T, want *ast.SendStmt", send.Comm)
+	}
+	if def := sel.Body.List[2].(*ast.CommClause); def.Comm != nil {
+		t.Errorf("default clause Comm = %v, want nil", def.Comm)
+	}
+}
+
+// TestParseLabeledStmt covers a label wrapping a statement and labeled branch
+// targets (break/continue/goto carry the label on a BranchStmt).
+func TestParseLabeledStmt(t *testing.T) {
+	t.Run("label wraps statement", func(t *testing.T) {
+		s := firstStmt(t, "package p\nfunc f() { L:\n\tfor { break L } }\n")
+		ls, ok := s.(*ast.LabeledStmt)
+		if !ok {
+			t.Fatalf("stmt is %T, want *ast.LabeledStmt", s)
+		}
+		if ls.Label.Name != "L" {
+			t.Errorf("label = %q, want L", ls.Label.Name)
+		}
+		if _, ok := ls.Stmt.(*ast.ForStmt); !ok {
+			t.Errorf("labeled stmt is %T, want *ast.ForStmt", ls.Stmt)
+		}
+	})
+	t.Run("labeled break", func(t *testing.T) {
+		s := firstStmt(t, "package p\nfunc f() { L:\n\tfor { break L } }\n")
+		br := s.(*ast.LabeledStmt).Stmt.(*ast.ForStmt).Body.List[0].(*ast.BranchStmt)
+		if br.Label == nil || br.Label.Name != "L" {
+			t.Errorf("break label = %v, want L", br.Label)
+		}
+	})
+	t.Run("goto", func(t *testing.T) {
+		s := firstStmt(t, "package p\nfunc f() {\nL:\n\tgoto L\n}\n")
+		br := s.(*ast.LabeledStmt).Stmt.(*ast.BranchStmt)
+		if br.Tok != token.GOTO || br.Label == nil || br.Label.Name != "L" {
+			t.Errorf("goto = %v %v, want goto L", br.Tok, br.Label)
+		}
+	})
+}
+
 func TestParseFileErrors(t *testing.T) {
 	cases := map[string]string{
 		"missing package name": "package",

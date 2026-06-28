@@ -114,6 +114,74 @@ func classify(n int) string {
 	}
 }
 
+// TestASTEngineEmitsGoGrammarForms is the round-trip witness for the ordinary-Go
+// expression/statement forms the AST front-end gained: type assertion, type
+// switch, variadic call spread, channel send, select, and labeled statements.
+// Each must lower to valid, recognizable Go.
+func TestASTEngineEmitsGoGrammarForms(t *testing.T) {
+	const src = `package p
+
+func sum(xs ...int) int {
+	total := 0
+	for _, x := range xs {
+		total = total + x
+	}
+	return total
+}
+
+func describe(x any) string {
+	switch v := x.(type) {
+	case int:
+		return "int"
+	case string, []byte:
+		return "stringy"
+	default:
+		return "other"
+	}
+}
+
+func run(ch chan int) {
+	n := sum([]int{1, 2}...)
+	ch <- n
+	select {
+	case v := <-ch:
+		_ = v
+	default:
+	}
+	_ = any(n).(int)
+Outer:
+	for {
+		for {
+			break Outer
+		}
+	}
+}
+`
+	out, err := backend.Transpile(src)
+	if err != nil {
+		t.Fatalf("Transpile: %v", err)
+	}
+	if _, err := format.Source([]byte(out.Go)); err != nil {
+		t.Fatalf("engine output is not valid Go: %v\n--- output ---\n%s", err, out.Go)
+	}
+	for _, want := range []string{
+		"sum(xs ...int)",      // variadic param
+		"sum([]int{1, 2}...)", // variadic call spread
+		".(type)",             // type switch guard
+		"case int:",           // type-switch case
+		"ch <- n",             // channel send
+		"select {",            // select
+		"case v := <-ch:",     // comm clause (receive)
+		").(int)",             // type assertion
+		"Outer:",              // labeled statement
+		"break Outer",         // labeled branch
+	} {
+		if !strings.Contains(out.Go, want) {
+			t.Errorf("emitted Go missing %q, got:\n%s", want, out.Go)
+		}
+	}
+}
+
 // TestASTEngineBehavioralTierFull is the AC-2 witness over the full ordinary-Go
 // subset: a goal file exercising switch, struct/map/slice composites, defer, a
 // multi-return func, and type/const/var declarations transpiles through the new
