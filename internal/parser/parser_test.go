@@ -626,6 +626,38 @@ func TestParseLabeledStmt(t *testing.T) {
 	})
 }
 
+// TestParseReturnComposite covers `return` of a type-literal-headed expression —
+// a slice/map/struct composite or a func literal. startsExpr previously omitted
+// these operand starts, so the value was dropped (empty return) and left as an
+// orphan statement.
+func TestParseReturnComposite(t *testing.T) {
+	cases := map[string]string{
+		"slice composite":  "package p\nfunc f() []string { return []string{\"a\"} }\n",
+		"map composite":    "package p\nfunc f() map[string]int { return map[string]int{} }\n",
+		"struct composite": "package p\ntype T struct{ X int }\nfunc f() T { return T{X: 1} }\n",
+		"func literal":     "package p\nfunc f() func() int { return func() int { return 1 } }\n",
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			file, err := ParseFile(src)
+			if err != nil {
+				t.Fatalf("ParseFile: %v", err)
+			}
+			fn := file.Decls[len(file.Decls)-1].(*ast.FuncDecl)
+			ret, ok := fn.Body.List[0].(*ast.ReturnStmt)
+			if !ok {
+				t.Fatalf("first stmt is %T, want *ast.ReturnStmt", fn.Body.List[0])
+			}
+			if len(ret.Results) != 1 {
+				t.Fatalf("return has %d results, want 1 (the composite was dropped)", len(ret.Results))
+			}
+			if len(fn.Body.List) != 1 {
+				t.Errorf("body has %d statements, want 1 (no orphaned composite)", len(fn.Body.List))
+			}
+		})
+	}
+}
+
 func TestParseFileErrors(t *testing.T) {
 	cases := map[string]string{
 		"missing package name": "package",

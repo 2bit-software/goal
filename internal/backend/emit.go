@@ -69,6 +69,10 @@ type emitter struct {
 	// The package driver sets it so the shared prelude is emitted once for the whole
 	// package (in goal_prelude.go) rather than once per file. False for single-file.
 	suppressPrelude bool
+	// arity resolves the result count of package-qualified `?` callees (e.g.
+	// os.MkdirAll, toml.Unmarshal) through the file's imports, so an error-only
+	// call is not over-destructured. Nil-safe; falls back to stdlibErrorOnly.
+	arity *arityResolver
 }
 
 // emitFile renders a whole *ast.File to Go source text, lowering goal-specific
@@ -84,6 +88,7 @@ func emitFile(f *ast.File, info *sema.Info) (string, error) {
 // false.
 func emitFileWith(f *ast.File, info *sema.Info, suppressPrelude bool) (string, error) {
 	e := emitter{info: info, pointerRecv: pointerReceiverSet(f), fileIdents: fileIdentSet(f), suppressPrelude: suppressPrelude}
+	e.arity = newArityResolver(f)
 	e.typeDecls = e.buildTypeDecls(f)
 	e.file(f)
 	if e.err != nil {
@@ -359,10 +364,8 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 	// kind or names outward).
 	kind, _ := resultOptionKind(d.Type)
 	var closedT, closedE string
-	if d.Name != nil && e.info != nil && e.info.FuncSignatures != nil {
-		if sig, ok := e.info.FuncSignatures[d.Name.Name]; ok && sig.Mode == sema.ModeResultClosed {
-			kind, closedT, closedE = roResultClosed, sig.T, sig.E
-		}
+	if t, eType, ok := e.closedResultTE(d); ok {
+		kind, closedT, closedE = roResultClosed, t, eType
 	}
 	prevKind, prevOk, prevErr, prevTaken := e.fnKind, e.okName, e.errName, e.taken
 	prevClosedT, prevClosedE := e.closedT, e.closedE
@@ -390,6 +393,24 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 		e.p(" ")
 		e.block(d.Body)
 	}
+}
+
+// closedResultTE reports the T and E type texts of a closed-E Result[T, E] return
+// (E a named type, not error). It prefers the resolved signature for a plain
+// function and falls back to the declaration's own result-type AST for a method —
+// sema keys methods by receiver, not in FuncSignatures, so the name lookup alone
+// would miss them and leave the body's Result.Ok/Err constructors unlowered.
+func (e *emitter) closedResultTE(d *ast.FuncDecl) (t, eType string, ok bool) {
+	if d.Name != nil && e.info != nil && e.info.FuncSignatures != nil {
+		if sig, found := e.info.FuncSignatures[d.Name.Name]; found && sig.Mode == sema.ModeResultClosed {
+			return sig.T, sig.E, true
+		}
+	}
+	il, isList := closedResultType(d.Type)
+	if !isList {
+		return "", "", false
+	}
+	return e.exprText(il.Indices[0]), e.exprText(il.Indices[1]), true
 }
 
 // funcSig emits the parameter and result lists of a signature.
@@ -1535,6 +1556,14 @@ func (e *emitter) emitResultReturn(x ast.Expr) bool {
 	}
 	switch sel.Sel.Name {
 	case "Ok":
+		// A nested Option value (Result[Option[T], error]) must lower to its
+		// pointer form rather than emit `Option.Some/None` verbatim.
+		if len(call.Args) == 1 {
+			if expr, ok := e.optionValueExpr(call.Args[0]); ok {
+				e.p("return " + expr + ", nil")
+				return true
+			}
+		}
 		e.p("return ")
 		e.exprList(call.Args)
 		e.p(", nil")
@@ -1547,40 +1576,52 @@ func (e *emitter) emitResultReturn(x ast.Expr) bool {
 	return false
 }
 
-// emitOptionReturn lowers `return Option.None` -> `return nil` and
-// `return Option.Some(x)` -> `return &x` (addressable identifier) or a boxed
-// `some := x; return &some` (a gensym; §8.4). It reports whether it handled
-// the expression.
-func (e *emitter) emitOptionReturn(x ast.Expr) bool {
-	switch v := x.(type) {
-	case *ast.SelectorExpr:
-		if base, ok := v.X.(*ast.Ident); ok && base.Name == "Option" && v.Sel != nil && v.Sel.Name == "None" {
-			e.p("return nil")
-			return true
+// optionValueExpr lowers an Option construction to its `*T` pointer encoding
+// (§8.4) and returns the resulting Go expression text: `nil` for `Option.None`,
+// `&x` for an addressable `Option.Some(x)`, or a boxed `&<gensym>` after emitting
+// `<gensym> := x` for any other argument. It reports false when x is not an
+// Option construction. This is the single Option-construction lowering, used both
+// for a direct Option return and for an Option value nested in a `Result.Ok(…)`
+// payload — so the construction lowers identically wherever it is produced.
+func (e *emitter) optionValueExpr(x ast.Expr) (string, bool) {
+	if sel, ok := x.(*ast.SelectorExpr); ok {
+		if base, ok := sel.X.(*ast.Ident); ok && base.Name == "Option" && sel.Sel != nil && sel.Sel.Name == "None" {
+			return "nil", true
 		}
-	case *ast.CallExpr:
-		sel, ok := v.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel == nil || sel.Sel.Name != "Some" {
-			return false
-		}
-		if base, ok := sel.X.(*ast.Ident); !ok || base.Name != "Option" {
-			return false
-		}
-		if len(v.Args) != 1 {
-			return false
-		}
-		if _, ok := v.Args[0].(*ast.Ident); ok {
-			e.p("return &")
-			e.expr(v.Args[0])
-			return true
-		}
-		some := e.gensym("some")
-		e.p(some + " := ")
-		e.expr(v.Args[0])
-		e.p("\nreturn &" + some)
-		return true
 	}
-	return false
+	call, ok := x.(*ast.CallExpr)
+	if !ok {
+		return "", false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel == nil || sel.Sel.Name != "Some" {
+		return "", false
+	}
+	if base, ok := sel.X.(*ast.Ident); !ok || base.Name != "Option" {
+		return "", false
+	}
+	if len(call.Args) != 1 {
+		return "", false
+	}
+	if _, ok := call.Args[0].(*ast.Ident); ok {
+		return "&" + e.exprText(call.Args[0]), true
+	}
+	some := e.gensym("some")
+	e.p(some + " := ")
+	e.expr(call.Args[0])
+	e.p("\n")
+	return "&" + some, true
+}
+
+// emitOptionReturn lowers `return Option.None/Some(x)` to its pointer form. It
+// reports whether it handled the expression.
+func (e *emitter) emitOptionReturn(x ast.Expr) bool {
+	expr, ok := e.optionValueExpr(x)
+	if !ok {
+		return false
+	}
+	e.p("return " + expr)
+	return true
 }
 
 // emitClosedResultReturn lowers `return Result.Ok(X)` / `return Result.Err(X)` in
@@ -1708,13 +1749,12 @@ func (e *emitter) unwrapOption(name string, u *ast.UnwrapExpr, discard bool) {
 	e.p("\nif " + o + " == nil {\nreturn nil\n}\n" + name + " := *" + o)
 }
 
-// stdlibErrorOnly is the curated set of package-qualified standard-library
-// functions whose sole result is an `error` (lowered arity 1). The transpiler has
-// no type view of imported packages, so without this set a `?` on one of them
-// over-destructures to `_, err :=` and emits Go that does not compile.
-// `(value, error)` callees need no entry — the `?` lowering already defaults to
-// the two-value form. Keyed by the conventional unaliased qualifier; extend as
-// more error-only stdlib calls are used with `?`.
+// stdlibErrorOnly is the offline fallback for resolving error-only stdlib calls
+// when the import-based arityResolver cannot load a package (e.g. an isolated
+// single-file transpile with no module context). The resolver handles the general
+// case — any importable package, stdlib or third-party — so this set only needs
+// the common standard-library functions whose sole result is an `error`. Keyed by
+// the conventional unaliased qualifier.
 var stdlibErrorOnly = map[string]bool{
 	"os.Mkdir":       true,
 	"os.MkdirAll":    true,
@@ -1755,7 +1795,16 @@ func (e *emitter) calleeSig(x ast.Expr) (sema.FuncSig, bool) {
 		sig, ok := e.info.FuncSignatures[fn.Name]
 		return sig, ok
 	case *ast.SelectorExpr:
-		if pkg, ok := fn.X.(*ast.Ident); ok && fn.Sel != nil && stdlibErrorOnly[pkg.Name+"."+fn.Sel.Name] {
+		pkg, ok := fn.X.(*ast.Ident)
+		if !ok || fn.Sel == nil {
+			return sema.FuncSig{}, false
+		}
+		// Prefer a real signature resolved through the file's imports; fall back to
+		// the curated table when the package cannot be loaded here.
+		if a := e.arity.lookup(pkg.Name, fn.Sel.Name); a.resolved && a.endsErr {
+			return sema.FuncSig{Mode: sema.ModeResult, Arity: a.results, EndsInError: true}, true
+		}
+		if stdlibErrorOnly[pkg.Name+"."+fn.Sel.Name] {
 			return sema.FuncSig{Mode: sema.ModeResult, Arity: 1, EndsInError: true}, true
 		}
 		return sema.FuncSig{}, false

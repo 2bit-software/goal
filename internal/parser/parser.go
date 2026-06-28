@@ -1046,7 +1046,11 @@ func startsExpr(k token.Kind) bool {
 	switch k {
 	case token.IDENT, token.INT, token.FLOAT, token.IMAG, token.CHAR, token.STRING, token.LPAREN,
 		token.ADD, token.SUB, token.NOT, token.XOR, token.AND, token.ARROW, token.MUL,
-		token.MATCH:
+		token.MATCH,
+		// Type-literal operand starts that parseOperand accepts as the head of a
+		// composite literal, conversion, or func literal — e.g. `return []T{…}`,
+		// `return map[K]V{…}`, `return struct{…}{…}`, `return func() {…}`.
+		token.LBRACK, token.MAP, token.STRUCT, token.CHAN, token.INTERFACE, token.FUNC:
 		return true
 	}
 	return false
