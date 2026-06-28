@@ -1708,20 +1708,59 @@ func (e *emitter) unwrapOption(name string, u *ast.UnwrapExpr, discard bool) {
 	e.p("\nif " + o + " == nil {\nreturn nil\n}\n" + name + " := *" + o)
 }
 
+// stdlibErrorOnly is the curated set of package-qualified standard-library
+// functions whose sole result is an `error` (lowered arity 1). The transpiler has
+// no type view of imported packages, so without this set a `?` on one of them
+// over-destructures to `_, err :=` and emits Go that does not compile.
+// `(value, error)` callees need no entry — the `?` lowering already defaults to
+// the two-value form. Keyed by the conventional unaliased qualifier; extend as
+// more error-only stdlib calls are used with `?`.
+var stdlibErrorOnly = map[string]bool{
+	"os.Mkdir":       true,
+	"os.MkdirAll":    true,
+	"os.Remove":      true,
+	"os.RemoveAll":   true,
+	"os.Rename":      true,
+	"os.Chmod":       true,
+	"os.Chown":       true,
+	"os.Chdir":       true,
+	"os.Chtimes":     true,
+	"os.Symlink":     true,
+	"os.Link":        true,
+	"os.Truncate":    true,
+	"os.Setenv":      true,
+	"os.Unsetenv":    true,
+	"os.WriteFile":   true,
+	"json.Unmarshal": true,
+	"xml.Unmarshal":  true,
+	"binary.Read":    true,
+	"binary.Write":   true,
+}
+
 // calleeSig returns the resolved signature of the function a `?` scrutinee directly
-// calls (by name), so the destructure arity matches the callee's lowered shape. It
-// reports false for a non-call, a non-identifier callee, or an unresolved name.
+// calls, so the destructure arity matches the callee's lowered shape. An in-file
+// function resolves by name through sema; a package-qualified call resolves through
+// stdlibErrorOnly when it names a known error-only stdlib function. It reports
+// false for a non-call or an otherwise-unresolved callee.
 func (e *emitter) calleeSig(x ast.Expr) (sema.FuncSig, bool) {
 	call, ok := x.(*ast.CallExpr)
 	if !ok {
 		return sema.FuncSig{}, false
 	}
-	id, ok := call.Fun.(*ast.Ident)
-	if !ok || e.info == nil || e.info.FuncSignatures == nil {
+	switch fn := call.Fun.(type) {
+	case *ast.Ident:
+		if e.info == nil || e.info.FuncSignatures == nil {
+			return sema.FuncSig{}, false
+		}
+		sig, ok := e.info.FuncSignatures[fn.Name]
+		return sig, ok
+	case *ast.SelectorExpr:
+		if pkg, ok := fn.X.(*ast.Ident); ok && fn.Sel != nil && stdlibErrorOnly[pkg.Name+"."+fn.Sel.Name] {
+			return sema.FuncSig{Mode: sema.ModeResult, Arity: 1, EndsInError: true}, true
+		}
 		return sema.FuncSig{}, false
 	}
-	sig, ok := e.info.FuncSignatures[id.Name]
-	return sig, ok
+	return sema.FuncSig{}, false
 }
 
 // matchStmt lowers a statement-position match over a Result or Option to an
