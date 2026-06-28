@@ -182,6 +182,43 @@ Outer:
 	}
 }
 
+// TestASTEngineLowersNestedOptionInResult pins Option construction nested in a
+// Result.Ok payload (a Result[Option[T], error] return): Option.None must lower to
+// nil and Option.Some(x) to the pointer form, not be emitted verbatim (which left
+// `Option` undefined in the generated Go).
+func TestASTEngineLowersNestedOptionInResult(t *testing.T) {
+	const src = `package p
+
+import "os"
+
+func readIfExists(path string) Result[Option[[]byte], error] {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return Result.Ok(Option.None)
+	}
+	if err != nil {
+		return Result.Err(err)
+	}
+	return Result.Ok(Option.Some(data))
+}
+`
+	out, err := backend.Transpile(src)
+	if err != nil {
+		t.Fatalf("Transpile: %v", err)
+	}
+	if _, err := format.Source([]byte(out.Go)); err != nil {
+		t.Fatalf("engine output is not valid Go: %v\n--- output ---\n%s", err, out.Go)
+	}
+	if strings.Contains(out.Go, "Option.") {
+		t.Errorf("nested Option construction left unlowered (Option undefined):\n%s", out.Go)
+	}
+	for _, want := range []string{"return nil, nil", "return &data, nil"} {
+		if !strings.Contains(out.Go, want) {
+			t.Errorf("emitted Go missing %q, got:\n%s", want, out.Go)
+		}
+	}
+}
+
 // TestASTEngineResolvesErrorOnlyArityByImport proves the `?` arity is resolved
 // generally through the file's imports, not only from the curated table: os.Lchown
 // is an error-only stdlib function absent from stdlibErrorOnly, yet a bare `?` on

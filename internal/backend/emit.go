@@ -1556,6 +1556,14 @@ func (e *emitter) emitResultReturn(x ast.Expr) bool {
 	}
 	switch sel.Sel.Name {
 	case "Ok":
+		// A nested Option value (Result[Option[T], error]) must lower to its
+		// pointer form rather than emit `Option.Some/None` verbatim.
+		if len(call.Args) == 1 {
+			if expr, ok := e.optionValueExpr(call.Args[0]); ok {
+				e.p("return " + expr + ", nil")
+				return true
+			}
+		}
 		e.p("return ")
 		e.exprList(call.Args)
 		e.p(", nil")
@@ -1568,40 +1576,52 @@ func (e *emitter) emitResultReturn(x ast.Expr) bool {
 	return false
 }
 
-// emitOptionReturn lowers `return Option.None` -> `return nil` and
-// `return Option.Some(x)` -> `return &x` (addressable identifier) or a boxed
-// `some := x; return &some` (a gensym; §8.4). It reports whether it handled
-// the expression.
-func (e *emitter) emitOptionReturn(x ast.Expr) bool {
-	switch v := x.(type) {
-	case *ast.SelectorExpr:
-		if base, ok := v.X.(*ast.Ident); ok && base.Name == "Option" && v.Sel != nil && v.Sel.Name == "None" {
-			e.p("return nil")
-			return true
+// optionValueExpr lowers an Option construction to its `*T` pointer encoding
+// (§8.4) and returns the resulting Go expression text: `nil` for `Option.None`,
+// `&x` for an addressable `Option.Some(x)`, or a boxed `&<gensym>` after emitting
+// `<gensym> := x` for any other argument. It reports false when x is not an
+// Option construction. This is the single Option-construction lowering, used both
+// for a direct Option return and for an Option value nested in a `Result.Ok(…)`
+// payload — so the construction lowers identically wherever it is produced.
+func (e *emitter) optionValueExpr(x ast.Expr) (string, bool) {
+	if sel, ok := x.(*ast.SelectorExpr); ok {
+		if base, ok := sel.X.(*ast.Ident); ok && base.Name == "Option" && sel.Sel != nil && sel.Sel.Name == "None" {
+			return "nil", true
 		}
-	case *ast.CallExpr:
-		sel, ok := v.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel == nil || sel.Sel.Name != "Some" {
-			return false
-		}
-		if base, ok := sel.X.(*ast.Ident); !ok || base.Name != "Option" {
-			return false
-		}
-		if len(v.Args) != 1 {
-			return false
-		}
-		if _, ok := v.Args[0].(*ast.Ident); ok {
-			e.p("return &")
-			e.expr(v.Args[0])
-			return true
-		}
-		some := e.gensym("some")
-		e.p(some + " := ")
-		e.expr(v.Args[0])
-		e.p("\nreturn &" + some)
-		return true
 	}
-	return false
+	call, ok := x.(*ast.CallExpr)
+	if !ok {
+		return "", false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel == nil || sel.Sel.Name != "Some" {
+		return "", false
+	}
+	if base, ok := sel.X.(*ast.Ident); !ok || base.Name != "Option" {
+		return "", false
+	}
+	if len(call.Args) != 1 {
+		return "", false
+	}
+	if _, ok := call.Args[0].(*ast.Ident); ok {
+		return "&" + e.exprText(call.Args[0]), true
+	}
+	some := e.gensym("some")
+	e.p(some + " := ")
+	e.expr(call.Args[0])
+	e.p("\n")
+	return "&" + some, true
+}
+
+// emitOptionReturn lowers `return Option.None/Some(x)` to its pointer form. It
+// reports whether it handled the expression.
+func (e *emitter) emitOptionReturn(x ast.Expr) bool {
+	expr, ok := e.optionValueExpr(x)
+	if !ok {
+		return false
+	}
+	e.p("return " + expr)
+	return true
 }
 
 // emitClosedResultReturn lowers `return Result.Ok(X)` / `return Result.Err(X)` in
