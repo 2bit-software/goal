@@ -271,19 +271,18 @@ func TestRunInterpNoMain(t *testing.T) {
 	}
 }
 
-// argEchoGoal prints the two program arguments it receives, so a run that passes
-// arguments through can be observed end to end. It indexes os.Args directly
-// rather than slicing, since the goal parser does not yet support slice
-// expressions.
+// argEchoGoal prints every program argument it receives, so a run that passes
+// arguments through can be observed end to end.
 const argEchoGoal = `package main
 
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 func main() {
-	fmt.Println(os.Args[1] + " " + os.Args[2])
+	fmt.Println(strings.Join(os.Args[1:], " "))
 }
 `
 

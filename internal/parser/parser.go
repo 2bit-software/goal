@@ -1141,18 +1141,29 @@ func (p *parser) parseCallSuffix(fun ast.Expr) ast.Expr {
 	return &ast.CallExpr{Fun: fun, Lparen: lp.Pos, Args: args, Rparen: rp.Pos}
 }
 
-// parseIndexSuffix parses an index applied to x. A single index yields an
-// *ast.IndexExpr; a comma-separated list (a multi-element generic type-argument
-// list such as Result[int, error]) yields an *ast.IndexListExpr. This single
-// entry point serves both type position (typeNameFrom) and expression position
-// (parsePostfix), so both gain multi-element lists at once. Elements parse via
-// parseExpr, which — because parseOperand accepts type-literal starts — also
-// covers type arguments like []byte.
+// parseIndexSuffix parses a "[...]" suffix applied to x. A ':' makes it a slice
+// expression x[low?:high?] or x[low?:high:max] (any bound omittable), yielding an
+// *ast.SliceExpr; otherwise a single index yields an *ast.IndexExpr and a
+// comma-separated list (a multi-element generic type-argument list such as
+// Result[int, error]) yields an *ast.IndexListExpr. This single entry point
+// serves both type position (typeNameFrom) and expression position
+// (parsePostfix). Elements parse via parseExpr, which — because parseOperand
+// accepts type-literal starts — also covers type arguments like []byte.
 func (p *parser) parseIndexSuffix(x ast.Expr) ast.Expr {
 	lb := p.expect(token.LBRACK)
 	prev := p.exprLev
 	p.exprLev++
-	indices := []ast.Expr{p.parseExpr()}
+
+	// A leading ':' is a slice with an empty low bound (x[:high]).
+	if p.at(token.COLON) {
+		return p.finishSlice(x, lb.Pos, prev, nil)
+	}
+	first := p.parseExpr()
+	if p.at(token.COLON) {
+		return p.finishSlice(x, lb.Pos, prev, first)
+	}
+
+	indices := []ast.Expr{first}
 	for p.at(token.COMMA) {
 		p.advance()
 		if p.at(token.RBRACK) { // tolerate a trailing comma
@@ -1166,6 +1177,29 @@ func (p *parser) parseIndexSuffix(x ast.Expr) ast.Expr {
 		return &ast.IndexExpr{X: x, Lbrack: lb.Pos, Index: indices[0], Rbrack: rb.Pos}
 	}
 	return &ast.IndexListExpr{X: x, Lbrack: lb.Pos, Indices: indices, Rbrack: rb.Pos}
+}
+
+// finishSlice parses the colon-separated remainder of a slice expression after
+// its optional low bound (low is nil for x[:high]). The cursor is on the first
+// ':'. It accepts the two- and three-index forms x[low:high] and
+// x[low:high:max], with any bound omitted. prevLev restores the caller's
+// expression level once the bracket closes.
+func (p *parser) finishSlice(x ast.Expr, lbrack token.Pos, prevLev int, low ast.Expr) ast.Expr {
+	s := &ast.SliceExpr{X: x, Lbrack: lbrack, Low: low}
+	p.expect(token.COLON)
+	if !p.at(token.RBRACK) && !p.at(token.COLON) {
+		s.High = p.parseExpr()
+	}
+	if p.at(token.COLON) { // full slice: x[low:high:max]
+		p.advance()
+		if !p.at(token.RBRACK) {
+			s.Max = p.parseExpr()
+		}
+	}
+	p.exprLev = prevLev
+	rb := p.expect(token.RBRACK)
+	s.Rbrack = rb.Pos
+	return s
 }
 
 // parseCompositeLit parses a composite-literal body { ... } for the given (or
