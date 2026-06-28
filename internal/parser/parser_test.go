@@ -329,6 +329,61 @@ type R interface {
 	}
 }
 
+// TestParseSliceExpr covers Go slice syntax x[low:high:max] with every bound
+// optional, alongside the plain index it must not disturb. The parser previously
+// produced only IndexExpr and rejected the ':' outright.
+func TestParseSliceExpr(t *testing.T) {
+	cases := []struct {
+		name              string
+		expr              string
+		low, high, hasMax bool // whether each bound is present
+	}{
+		{"low only", "x[1:]", true, false, false},
+		{"high only", "x[:2]", false, true, false},
+		{"low and high", "x[1:2]", true, true, false},
+		{"empty", "x[:]", false, false, false},
+		{"full slice", "x[1:2:3]", true, true, true},
+		{"computed bounds", "x[a+1 : b-1]", true, true, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "package p\nfunc f() { _ = " + tc.expr + " }\n"
+			file, err := ParseFile(src)
+			if err != nil {
+				t.Fatalf("ParseFile(%q): %v", tc.expr, err)
+			}
+			fn := file.Decls[0].(*ast.FuncDecl)
+			assign := fn.Body.List[0].(*ast.AssignStmt)
+			s, ok := assign.Rhs[0].(*ast.SliceExpr)
+			if !ok {
+				t.Fatalf("rhs is %T, want *ast.SliceExpr", assign.Rhs[0])
+			}
+			if (s.Low != nil) != tc.low {
+				t.Errorf("Low present = %v, want %v", s.Low != nil, tc.low)
+			}
+			if (s.High != nil) != tc.high {
+				t.Errorf("High present = %v, want %v", s.High != nil, tc.high)
+			}
+			if (s.Max != nil) != tc.hasMax {
+				t.Errorf("Max present = %v, want %v", s.Max != nil, tc.hasMax)
+			}
+		})
+	}
+}
+
+// TestParseIndexNotSlice guards that a plain index x[i] still yields an IndexExpr
+// (not a SliceExpr) after slice support was added.
+func TestParseIndexNotSlice(t *testing.T) {
+	file, err := ParseFile("package p\nfunc f() { _ = x[i] }\n")
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	rhs := file.Decls[0].(*ast.FuncDecl).Body.List[0].(*ast.AssignStmt).Rhs[0]
+	if _, ok := rhs.(*ast.IndexExpr); !ok {
+		t.Errorf("x[i] parsed as %T, want *ast.IndexExpr", rhs)
+	}
+}
+
 func TestParseFileErrors(t *testing.T) {
 	cases := map[string]string{
 		"missing package name": "package",
