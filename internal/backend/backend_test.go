@@ -182,6 +182,37 @@ Outer:
 	}
 }
 
+// TestASTEngineResolvesErrorOnlyArityByImport proves the `?` arity is resolved
+// generally through the file's imports, not only from the curated table: os.Lchown
+// is an error-only stdlib function absent from stdlibErrorOnly, yet a bare `?` on
+// it must still lower to the single-variable `if err := …` form.
+func TestASTEngineResolvesErrorOnlyArityByImport(t *testing.T) {
+	// os.Lchown is error-only but deliberately not in the curated stdlibErrorOnly
+	// fallback, so a correct lowering here can only come from the import resolver.
+	const src = `package p
+
+import "os"
+
+func chown(path string) Result[int, error] {
+	os.Lchown(path, 0, 0)?
+	return Result.Ok(0)
+}
+`
+	out, err := backend.Transpile(src)
+	if err != nil {
+		t.Fatalf("Transpile: %v", err)
+	}
+	if _, err := format.Source([]byte(out.Go)); err != nil {
+		t.Fatalf("engine output is not valid Go: %v\n--- output ---\n%s", err, out.Go)
+	}
+	if !strings.Contains(out.Go, "if err := os.Lchown(") {
+		t.Errorf("import-resolved error-only `?` did not lower to a single var, got:\n%s", out.Go)
+	}
+	if strings.Contains(out.Go, "_, err := os.Lchown(") {
+		t.Errorf("over-destructured an import-resolved error-only call:\n%s", out.Go)
+	}
+}
+
 // TestASTEngineLowersClosedResultMethod pins closed-E Result lowering for a
 // method: a method returning Result[T, Enum] must lower its body's Result.Ok/Err
 // to the Ok[T, Enum]/Err[T, Enum] sum carriers, just like a plain function. The
