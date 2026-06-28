@@ -73,28 +73,35 @@ type emitter struct {
 	// os.MkdirAll, toml.Unmarshal) through the file's imports, so an error-only
 	// call is not over-destructured. Nil-safe; falls back to stdlibErrorOnly.
 	arity *arityResolver
+	// usedOptionHelper records that a non-addressable value-position `Option.Some(x)`
+	// was lowered to a goalSome(...) call, so the boxing helper (optionPrelude) is
+	// appended to the file. Set by tryOptionValue; read by file()/the package driver.
+	usedOptionHelper bool
 }
 
 // emitFile renders a whole *ast.File to Go source text, lowering goal-specific
 // constructs through info, or returns the first unsupported-node error
 // encountered.
 func emitFile(f *ast.File, info *sema.Info) (string, error) {
-	return emitFileWith(f, info, false)
+	src, _, err := emitFileWith(f, info, false)
+	return src, err
 }
 
 // emitFileWith is emitFile with the prelude-suppression knob the package driver
-// uses: when suppressPrelude is true, the closed-E Result prelude is NOT emitted
-// inline (the package emits one shared prelude instead). Single-file emit passes
-// false.
-func emitFileWith(f *ast.File, info *sema.Info, suppressPrelude bool) (string, error) {
+// uses: when suppressPrelude is true, the closed-E Result prelude and the Option
+// boxing helper are NOT emitted inline (the package emits shared copies instead).
+// Single-file emit passes false. It also reports usedOption — whether the file
+// produced a goalSome(...) call — so the package driver can emit the shared boxing
+// helper exactly once when any of its files needs it.
+func emitFileWith(f *ast.File, info *sema.Info, suppressPrelude bool) (src string, usedOption bool, err error) {
 	e := emitter{info: info, pointerRecv: pointerReceiverSet(f), fileIdents: fileIdentSet(f), suppressPrelude: suppressPrelude}
 	e.arity = newArityResolver(f)
 	e.typeDecls = e.buildTypeDecls(f)
 	e.file(f)
 	if e.err != nil {
-		return "", e.err
+		return "", false, e.err
 	}
-	return e.b.String(), nil
+	return e.b.String(), e.usedOptionHelper, nil
 }
 
 // gensym returns a fresh identifier built from want that collides with no name in
@@ -169,6 +176,13 @@ func (e *emitter) file(f *ast.File) {
 	if !preludeDone {
 		// The file is all imports (or empty); emit the prelude after them.
 		e.p(resultPrelude)
+		e.p("\n\n")
+	}
+	// The Option boxing helper is appended last (package-level decls are
+	// order-independent) and only when a goalSome call was actually emitted into a
+	// value position; suppressPrelude (package mode) defers it to a shared file.
+	if !e.suppressPrelude && e.usedOptionHelper {
+		e.p(optionPrelude)
 		e.p("\n\n")
 	}
 }
@@ -818,6 +832,13 @@ func (e *emitter) rangeStmt(s *ast.RangeStmt) {
 }
 
 func (e *emitter) expr(x ast.Expr) {
+	// An Option construction (`Option.None` / `Option.Some(x)`) produced in any
+	// value position — a var/assign RHS, a call argument, a struct field, or a
+	// slice/map element — lowers to its `*T` pointer encoding here, so optional
+	// values compose anywhere, not only at a direct return or Result.Ok payload.
+	if e.tryOptionValue(x) {
+		return
+	}
 	switch x := x.(type) {
 	case *ast.Ident:
 		// A match-arm binding rename (e.g. the Ok payload `cfg` -> a gensym `v`)
@@ -1611,6 +1632,35 @@ func (e *emitter) optionValueExpr(x ast.Expr) (string, bool) {
 	e.expr(call.Args[0])
 	e.p("\n")
 	return "&" + some, true
+}
+
+// tryOptionValue lowers an Option construction appearing in a value position to its
+// `*T` pointer encoding (§8.4) directly into the output, and reports whether it
+// handled x. `Option.None` -> `nil`; `Option.Some(ident)` -> `&ident` (addressable);
+// `Option.Some(other)` -> `goalSome(other)`, the boxing helper (optionPrelude),
+// since a non-addressable argument cannot be address-taken as a pure expression and
+// the single-pass emitter cannot hoist a temporary here. Unlike optionValueExpr
+// (which may emit a preceding `tmp :=` statement and is used at statement-position
+// returns / Result.Ok payloads), this stays a self-contained expression so it is
+// valid in any value position — a call argument, struct field, or slice/map element.
+func (e *emitter) tryOptionValue(x ast.Expr) bool {
+	kind, arg, ok := optionConstruction(x)
+	if !ok {
+		return false
+	}
+	switch kind {
+	case "none":
+		e.p("nil")
+	case "some-addr":
+		e.p("&")
+		e.expr(arg)
+	default: // "some-box"
+		e.usedOptionHelper = true
+		e.p("goalSome(")
+		e.expr(arg)
+		e.p(")")
+	}
+	return true
 }
 
 // emitOptionReturn lowers `return Option.None/Some(x)` to its pointer form. It

@@ -1,5 +1,33 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T18:05:00Z] - US-001
+- Proved US-001 "Lower Option construction in value positions": Option.Some/None
+  now lowers to its *T pointer encoding wherever an Option value is PRODUCED — a
+  var/assign RHS (`x := Option.Some(v)` -> `x := &v`), a call argument, a
+  struct-literal field, and slice/map-literal elements — not only at a direct
+  return or as a Result.Ok payload. Previously these reached the generic expr path
+  and emitted `Option.Some/None` verbatim, leaving `Option` undefined in the Go.
+- Mechanism: a single interception at the TOP of emitter.expr (the one
+  value-emission seam all value positions route through). optionConstruction
+  (lower.go) classifies an Option construction as "none" (-> nil), "some-addr"
+  (single Ident arg -> &arg), or "some-box" (any other single arg -> goalSome(arg)).
+  A non-addressable Some cannot be address-taken as a pure expression and the
+  single-pass emitter cannot hoist a temp there, so it boxes through a generic
+  helper `func goalSome[T any](v T) *T { return &v }` (optionPrelude), appended at
+  end-of-file (Go decls are order-independent) gated by the runtime
+  emitter.usedOptionHelper flag — emitted only when actually used. Package mode
+  surfaces the flag out of emitFileWith and emits one shared goal_options.go.
+- Files: internal/backend/lower.go (optionConstruction, optionPrelude),
+  internal/backend/emit.go (usedOptionHelper field, tryOptionValue, expr()
+  interception, file() end-append, emitFileWith returns usedOption),
+  internal/backend/package.go (shared goal_options.go), internal/backend/backend_test.go
+  (TestASTEngineLowersOptionInValuePositions). Existing
+  TestASTEngineLowersNestedOptionInResult + whole corpus/pipeline tier stay green
+  (the return/Result.Ok optionValueExpr path is untouched).
+- Learnings: see the new Codebase Patterns entries (single expr() seam, runtime-flag
+  end-of-file helper vs over-counting static scan, helper-comment Option. gotcha).
+---
+
 ## [2026-06-28T11:00:00Z] - US-028
 - Proved US-028 "Gate: script-to-module no-op" — the FINAL story of the
   goscript-runtime PRD. The headline promise (a goscript program "graduates"
@@ -566,6 +594,28 @@
 ---
 
 ## Codebase Patterns
+- AST-backend value-position lowering of Option construction rides on a SINGLE
+  seam: the top of emitter.expr (emit.go). Every value position — a var/assign
+  RHS, a call argument, a struct-literal field, and slice/map-literal elements —
+  routes through expr(), so intercepting there (e.tryOptionValue) lowers
+  Option.None->nil / Option.Some(ident)->&ident / Option.Some(other)->goalSome(other)
+  everywhere at once. optionConstruction (lower.go) is the SINGLE classifier
+  ("none"/"some-addr"/"some-box"); do not duplicate the Option-shape match. The
+  pre-existing return/Result.Ok path (optionValueExpr/emitOptionReturn) handles the
+  construction itself and never reaches expr(), so there is no double-lowering —
+  leave it untouched.
+- A backend helper func needed only in SOME outputs (e.g. the goalSome Option box)
+  is emitted at the END of the file gated by a RUNTIME flag set when it is actually
+  used (emitter.usedOptionHelper), NOT a static AST pre-scan. Go package-level
+  decls are order-independent, so end-of-file placement is valid, and a runtime
+  flag avoids the over-counting a static scan suffers (a scan cannot tell a
+  value-position Some that boxes via goalSome from a return-position Some that the
+  hoisted-temp path lowers, so it would inject an unused helper and break goldens).
+  For package mode, surface the flag out of emitFileWith and emit ONE shared
+  goal_options.go (mirrors the goal_prelude.go result-sum sharing).
+- When asserting "no `Option.` token survived" in a backend test, beware the
+  emitted helper's OWN doc comment: keep generated-helper comments free of the
+  literal `Option.<Ident>` sequence or the substring check false-positives.
 - The goscript interpreter validates input through the NATIVE sema aggregate
   only: Run()'s gate() runs sema.Check(file, info) before evaluating main and
   refuses on the FIRST sema.Error (Warnings are deferrals that do NOT block).

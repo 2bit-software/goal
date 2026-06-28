@@ -41,6 +41,52 @@ func fileIdentSet(f *ast.File) map[string]bool {
 	return set
 }
 
+// optionConstruction classifies x as a goal Option construction for value-position
+// lowering (§8.4). kind is "none" for `Option.None`, "some-addr" when the single
+// `Option.Some(arg)` argument is an addressable identifier (lowered to `&arg`), or
+// "some-box" for any other single argument (a literal, call, or selector — lowered
+// to a boxed temporary). arg is the `Some` argument (nil for "none"); ok reports
+// whether x is an Option construction at all. It is the single classifier shared by
+// the emit-time interception (emit.go tryOptionValue) and the boxing-helper scan
+// (needsOptionPrelude), so the two never disagree about what gets boxed.
+func optionConstruction(x ast.Expr) (kind string, arg ast.Expr, ok bool) {
+	if sel, isSel := x.(*ast.SelectorExpr); isSel {
+		if base, isID := sel.X.(*ast.Ident); isID && base.Name == "Option" &&
+			sel.Sel != nil && sel.Sel.Name == "None" {
+			return "none", nil, true
+		}
+	}
+	call, isCall := x.(*ast.CallExpr)
+	if !isCall {
+		return "", nil, false
+	}
+	sel, isSel := call.Fun.(*ast.SelectorExpr)
+	if !isSel || sel.Sel == nil || sel.Sel.Name != "Some" {
+		return "", nil, false
+	}
+	if base, isID := sel.X.(*ast.Ident); !isID || base.Name != "Option" {
+		return "", nil, false
+	}
+	if len(call.Args) != 1 {
+		return "", nil, false
+	}
+	if _, isID := call.Args[0].(*ast.Ident); isID {
+		return "some-addr", call.Args[0], true
+	}
+	return "some-box", call.Args[0], true
+}
+
+// optionPrelude is the boxing helper a non-addressable `Option.Some(x)` in a
+// pure-expression value position lowers through: the single-pass emitter cannot
+// hoist a `tmp := x; &tmp` statement there, so it boxes the value into a fresh `*T`
+// via this generic helper instead. Go package-level declarations are
+// order-independent, so the emitter appends it at the END of the file, gated by the
+// runtime usedOptionHelper flag — emitted only when a goalSome call was actually
+// produced, never for return/Result.Ok-position Some (which optionValueExpr lowers
+// via a hoisted temp, not this helper).
+const optionPrelude = `// goalSome boxes v into the pointer (*T) encoding of an Option Some value.
+func goalSome[T any](v T) *T { return &v }`
+
 // roKind classifies a function result type as one of goal's lowered core types.
 type roKind int
 

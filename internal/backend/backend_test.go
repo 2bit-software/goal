@@ -219,6 +219,66 @@ func readIfExists(path string) Result[Option[[]byte], error] {
 	}
 }
 
+// TestASTEngineLowersOptionInValuePositions proves Option construction lowers to
+// its *T pointer encoding wherever an Option value is produced — a var/assign RHS,
+// a call argument, a struct-literal field, and slice- and map-literal elements — not
+// only at a direct return or Result.Ok payload. Option.None -> nil; Option.Some(v)
+// -> &v for an addressable identifier; Option.Some(<non-ident>) -> the goalSome
+// boxing helper. No literal `Option.` token may survive (it would leave Option
+// undefined in the generated Go).
+func TestASTEngineLowersOptionInValuePositions(t *testing.T) {
+	const src = `package p
+
+type Box struct {
+	opt *int
+}
+
+func sink(o *int) {
+}
+
+func build(v int) {
+	x := Option.Some(v)
+	sink(x)
+	sink(Option.Some(v))
+	sink(Option.None)
+	b := Box{opt: Option.Some(v)}
+	sink(b.opt)
+	xs := []*int{Option.Some(v), Option.None}
+	sink(xs[0])
+	m := map[string]*int{"a": Option.Some(v), "b": Option.None}
+	sink(m["a"])
+	boxed := Option.Some(1)
+	sink(boxed)
+}
+`
+	out, err := backend.Transpile(src)
+	if err != nil {
+		t.Fatalf("Transpile: %v", err)
+	}
+	if _, err := format.Source([]byte(out.Go)); err != nil {
+		t.Fatalf("engine output is not valid Go: %v\n--- output ---\n%s", err, out.Go)
+	}
+	if strings.Contains(out.Go, "Option.") {
+		t.Errorf("Option construction left unlowered (Option undefined):\n%s", out.Go)
+	}
+	// FR-1: var-assignment binds x to the *T pointer form.
+	// FR-3: None -> nil, addressable Some -> &v, non-addressable Some -> goalSome box.
+	for _, want := range []string{
+		"x := &v",                            // var-assignment, addressable
+		"sink(&v)",                           // call argument, addressable
+		"sink(nil)",                          // call argument, None -> nil
+		"opt: &v",                            // struct-field value
+		"[]*int{&v, nil}",                    // slice-literal elements
+		`map[string]*int{"a": &v, "b": nil}`, // map-literal elements
+		"goalSome(1)",                        // non-addressable Some -> boxed temp
+		"func goalSome[T any](v T) *T",       // the boxing helper is emitted once
+	} {
+		if !strings.Contains(out.Go, want) {
+			t.Errorf("emitted Go missing %q, got:\n%s", want, out.Go)
+		}
+	}
+}
+
 // TestASTEngineResolvesErrorOnlyArityByImport proves the `?` arity is resolved
 // generally through the file's imports, not only from the curated table: os.Lchown
 // is an error-only stdlib function absent from stdlibErrorOnly, yet a bare `?` on

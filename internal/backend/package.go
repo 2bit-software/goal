@@ -51,11 +51,13 @@ func TranspilePackage(pkg *project.Package) (pipeline.PackageOutput, error) {
 	enrichForeign(info, srcs, pkg.Dir)
 
 	var out pipeline.PackageOutput
+	var usedOption bool
 	for i, f := range pkg.Files {
-		goSrc, err := emitFileWith(files[i], info, true)
+		goSrc, fileUsedOption, err := emitFileWith(files[i], info, true)
 		if err != nil {
 			return pipeline.PackageOutput{}, fmt.Errorf("%s: %w", f.Name, err)
 		}
+		usedOption = usedOption || fileUsedOption
 		formatted, err := GoFormatter{}.Format([]byte(goSrc))
 		if err != nil {
 			return pipeline.PackageOutput{}, fmt.Errorf("%s: generated Go did not parse: %w\n--- generated ---\n%s", f.Name, err, goSrc)
@@ -86,6 +88,15 @@ func TranspilePackage(pkg *project.Package) (pipeline.PackageOutput, error) {
 			return pipeline.PackageOutput{}, fmt.Errorf("prelude: %w", err)
 		}
 		out.Files = append(out.Files, pipeline.GoFile{Name: "goal_prelude.go", Go: string(preludeGo)})
+	}
+	// The Option boxing helper is shared package-wide (one definition), emitted only
+	// when some file produced a goalSome(...) call. Per-file emit suppresses it.
+	if usedOption {
+		optionGo, err := GoFormatter{}.Format([]byte("package " + pkg.Name + "\n\n" + optionPrelude + "\n"))
+		if err != nil {
+			return pipeline.PackageOutput{}, fmt.Errorf("option prelude: %w", err)
+		}
+		out.Files = append(out.Files, pipeline.GoFile{Name: "goal_options.go", Go: string(optionGo)})
 	}
 	return out, nil
 }
