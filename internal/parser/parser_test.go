@@ -384,6 +384,57 @@ func TestParseIndexNotSlice(t *testing.T) {
 	}
 }
 
+// TestParseFuncLit covers function literals in expression position — assigned to
+// a variable and passed as a callback argument. The parser previously had no
+// `func` case in operand position and rejected them with "expected expression,
+// found func".
+func TestParseFuncLit(t *testing.T) {
+	t.Run("assigned", func(t *testing.T) {
+		file, err := ParseFile("package p\nfunc f() { g := func(x int) error { return nil }; _ = g }\n")
+		if err != nil {
+			t.Fatalf("ParseFile: %v", err)
+		}
+		rhs := file.Decls[0].(*ast.FuncDecl).Body.List[0].(*ast.AssignStmt).Rhs[0]
+		lit, ok := rhs.(*ast.FuncLit)
+		if !ok {
+			t.Fatalf("rhs is %T, want *ast.FuncLit", rhs)
+		}
+		if lit.Body == nil || lit.Type == nil {
+			t.Fatalf("FuncLit missing Type/Body: %+v", lit)
+		}
+		if n := len(lit.Type.Params.List); n != 1 {
+			t.Errorf("params = %d, want 1", n)
+		}
+		if lit.Type.Results == nil || len(lit.Type.Results.List) != 1 {
+			t.Errorf("results = %v, want one (error)", lit.Type.Results)
+		}
+	})
+
+	t.Run("callback argument", func(t *testing.T) {
+		file, err := ParseFile("package p\nfunc f() { call(func() bool { return true }) }\n")
+		if err != nil {
+			t.Fatalf("ParseFile: %v", err)
+		}
+		call := file.Decls[0].(*ast.FuncDecl).Body.List[0].(*ast.ExprStmt).X.(*ast.CallExpr)
+		if _, ok := call.Args[0].(*ast.FuncLit); !ok {
+			t.Errorf("call argument is %T, want *ast.FuncLit", call.Args[0])
+		}
+	})
+}
+
+// TestParseFuncTypeNotLit guards that a `func` type with no body in a declaration
+// stays an *ast.FuncType, not a FuncLit, after func-literal support was added.
+func TestParseFuncTypeNotLit(t *testing.T) {
+	file, err := ParseFile("package p\nvar h func() int\n")
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	spec := file.Decls[0].(*ast.GenDecl).Specs[0].(*ast.ValueSpec)
+	if _, ok := spec.Type.(*ast.FuncType); !ok {
+		t.Errorf("var type is %T, want *ast.FuncType", spec.Type)
+	}
+}
+
 func TestParseFileErrors(t *testing.T) {
 	cases := map[string]string{
 		"missing package name": "package",
