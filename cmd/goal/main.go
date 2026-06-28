@@ -23,7 +23,6 @@ import (
 	"strings"
 
 	"goal/internal/backend"
-	"goal/internal/check"
 	"goal/internal/fix"
 	"goal/internal/goalfmt"
 	"goal/internal/guide"
@@ -530,7 +529,7 @@ func cmdCheck(root string, out, errOut io.Writer) error {
 		sortDiags(diags)
 		for _, d := range diags {
 			fmt.Fprintln(errOut, d.render())
-			if d.severity == check.Error {
+			if d.severity == sema.Error {
 				total++
 			}
 		}
@@ -543,20 +542,20 @@ func cmdCheck(root string, out, errOut io.Writer) error {
 }
 
 // checkPackage runs both checker stages over one package and returns their merged,
-// deduplicated findings. The lexical stage (internal/check) runs on the original source,
+// deduplicated findings. The AST stage (internal/sema) runs on the parsed source,
 // before lowering; the typed depth stage (internal/typecheck) runs on the lowered Go and
-// answers what the lexical stage had to defer. When both flag the same construct (same
+// answers what the AST stage had to defer. When both flag the same construct (same
 // file, line, and feature), the type-backed finding wins — it is grounded in real type
-// information, whereas the lexical one may be a conservative deferral or, for an elided
+// information, whereas the AST one may be a conservative deferral or, for an elided
 // composite literal, an outright misfire. A depth-stage load failure (the program does
-// not transpile) is reported as a note and the lexical findings still stand; goal build is
+// not transpile) is reported as a note and the AST findings still stand; goal build is
 // the gate that hard-fails on non-transpiling source.
 func checkPackage(pkg *project.Package, errOut io.Writer) ([]checkDiag, error) {
 	srcs := make([]string, len(pkg.Files))
 	for i, f := range pkg.Files {
 		srcs[i] = f.Src
 	}
-	perFile, err := check.AnalyzePackageInDir(srcs, pkg.Dir)
+	perFile, err := sema.AnalyzePackageInDir(srcs, pkg.Dir)
 	if err != nil {
 		return nil, err
 	}
@@ -578,17 +577,21 @@ func checkPackage(pkg *project.Package, errOut io.Writer) ([]checkDiag, error) {
 	for i, fileDiags := range perFile {
 		path := pkg.Files[i].Path
 		for _, d := range fileDiags {
-			p := check.OffsetToPosition(pkg.Files[i].Src, d.Pos)
-			if suppress[dedupKey(path, p.Line, d.Feature)] {
+			// sema diagnostics carry Line/Col directly on Pos, so no offset-to-position
+			// mapping is needed (unlike the legacy lexical checker's byte offsets).
+			if suppress[dedupKey(path, d.Pos.Line, d.Feature)] {
 				continue // type-backed finding owns this construct
 			}
-			diags = append(diags, checkDiag{path, p.Line, p.Col, d.Severity, d.Code, d.Message})
+			diags = append(diags, checkDiag{path, d.Pos.Line, d.Pos.Col, d.Severity, d.Code, d.Message})
 		}
 	}
 	for _, d := range depth {
+		// The depth stage reuses the legacy check.Severity type; convert it to the
+		// equivalent sema.Severity (same int ordering: Error=0, Warning=1) so both
+		// stages render uniformly without cmd/goal importing internal/check.
 		diags = append(diags, checkDiag{
 			depthFilePath(pkg, d.Pos.Filename), d.Pos.Line, d.Pos.Column,
-			d.Severity, d.Code, d.Message,
+			sema.Severity(d.Severity), d.Code, d.Message,
 		})
 	}
 	return diags, nil
@@ -618,7 +621,7 @@ func runDepthChecks(pkg *project.Package) ([]typecheck.Diagnostic, error) {
 type checkDiag struct {
 	file          string
 	line, col     int
-	severity      check.Severity
+	severity      sema.Severity
 	code, message string
 }
 

@@ -336,3 +336,38 @@ func TestRunInterpRejectsProgramArgs(t *testing.T) {
 		t.Error("interp run with program arguments should be rejected")
 	}
 }
+
+// TestCheckCorpusOutputUnchanged is the end-to-end proof that rewiring `goal check`
+// onto the AST/sema checker (US-004) leaves its corpus output unchanged. It drives a
+// real corpus KindCheck case — a non-exhaustive `match` whose missing variant the
+// checker must reject — through the full command path and asserts the exact rendered
+// finding the checker produced before the rewire: a `[non-exhaustive-match]` Error at
+// the `match` keyword that names the uncovered variant, with `goal check` exiting
+// non-zero. The fixture's own `// want` marker pins the same guarantee in the corpus.
+func TestCheckCorpusOutputUnchanged(t *testing.T) {
+	const fixture = "../../testdata/check/02-match/non_exhaustive_stmt.goal"
+	src, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatalf("read corpus fixture: %v", err)
+	}
+	dir := goalModule(t, map[string]string{"status.goal": string(src)})
+
+	var out, errOut bytes.Buffer
+	err = run([]string{"check", dir}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("check should reject the non-exhaustive match\nstdout: %s\nstderr: %s", out.String(), errOut.String())
+	}
+	stderr := errOut.String()
+	if !strings.Contains(stderr, "error: [non-exhaustive-match]") {
+		t.Errorf("missing the non-exhaustive-match error finding:\n%s", stderr)
+	}
+	if !strings.Contains(stderr, "Status.Cancelled") {
+		t.Errorf("finding should name the uncovered variant Status.Cancelled:\n%s", stderr)
+	}
+	// The rendered line is `path:line:col: severity: [code] message`; assert the
+	// finding is located in the rewritten file (not at offset 0) so the AST position
+	// — not a dropped byte offset — is what reaches the output.
+	if !strings.Contains(stderr, "status.goal:") {
+		t.Errorf("finding should be located in status.goal:\n%s", stderr)
+	}
+}

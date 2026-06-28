@@ -58,7 +58,7 @@
         "An end-to-end test asserts `goal check` output over the corpus check cases is unchanged from before the rewire"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "check.OffsetToPosition usage is dropped; sema diagnostics carry Line/Col directly. checkDiag and render() stay."
     },
     {

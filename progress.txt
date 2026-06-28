@@ -1,5 +1,38 @@
 # Progress Log — goal AST front-end rewrite
 
+## [2026-06-28T23:10:00Z] - US-004 (checker-onto-ast PRD)
+- Rewired `goal check` onto the AST/sema checker: `cmd/goal/main.go`
+  `checkPackage` now calls `sema.AnalyzePackageInDir` (US-002 driver) instead of
+  `check.AnalyzePackageInDir`, and the `goal/internal/check` import is gone. The
+  legacy lexical checker is off the live path (US-005 will delete the package).
+- Key mechanics:
+  - sema.Diagnostic.Pos is a token.Pos carrying Line/Col, so
+    `check.OffsetToPosition` is dropped entirely — positions come straight off
+    `d.Pos.Line` / `d.Pos.Col`.
+  - `checkDiag.severity` changed from `check.Severity` to `sema.Severity`; the
+    depth stage still returns `typecheck.Diagnostic` (severity is `check.Severity`),
+    converted via `sema.Severity(d.Severity)` — a numeric conversion that works
+    because both severities are int-based with Error=0/Warning=1, and crucially
+    does NOT name `check.Severity`, so cmd/goal no longer imports internal/check.
+  - The lexical/depth dedup (suppress map keyed by dedupKey(basename,line,feature))
+    is preserved unchanged.
+- Files: cmd/goal/main.go (rewire), cmd/goal/main_test.go (new
+  TestCheckCorpusOutputUnchanged: drives a real corpus KindCheck fixture
+  testdata/check/02-match/non_exhaustive_stmt.goal through `goal check` and
+  asserts the `[non-exhaustive-match]` Error naming Status.Cancelled). prd.json
+  US-004 -> passes:true. Initiative artifacts under
+  history/20260628-refactor-us-004-rewire-cmd-goal-check-onto-sema/.
+- Learnings for future iterations:
+  - To drop an internal/check import while still consuming a check.Severity-typed
+    value from another package (typecheck), use a numeric type conversion
+    `sema.Severity(x)` rather than naming the source type — both are `int` with
+    matching const order, so the conversion is total and import-free.
+  - cmd/goal tests run with cwd = cmd/goal; reach corpus fixtures via
+    `../../testdata/...`.
+  - The PostToolUse hook runs `task check` (full suite) after every Edit, so a
+    multi-edit refactor reports transient "undefined: check" failures until the
+    last edit lands — expected; the final state is what matters.
+
 ## [2026-06-28T22:01:00Z] - US-003 (checker-onto-ast PRD)
 - Proved US-003 "Add differential checker parity gate": a new test runs BOTH the
   AST checker (corpus.SemaCheck) and the legacy lexical checker (check.Analyze)
