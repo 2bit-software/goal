@@ -1,7 +1,0 @@
-{
-  "name": "US-004 rewire cmd-goal check onto sema",
-  "type": "refactor",
-  "dir": "history/20260628-refactor-us-004-rewire-cmd-goal-check-onto-sema",
-  "workflow": "feature",
-  "created_at": "2026-06-28T22:04:41Z"
-}
