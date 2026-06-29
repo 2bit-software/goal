@@ -19,7 +19,7 @@ import (
 	"sort"
 	"strings"
 
-	"goal/internal/parser"
+	"goal/selfhost/parser"
 )
 
 // Ext is the goal source-file extension.

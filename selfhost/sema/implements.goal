@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"strings"
 
-	"goal/internal/ast"
-	"goal/internal/token"
+	"goal/selfhost/ast"
+	"goal/selfhost/token"
 )
 
 // CheckImplements enforces feature-07: every `type T struct implements I` must satisfy

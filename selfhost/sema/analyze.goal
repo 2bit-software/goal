@@ -9,7 +9,7 @@ package sema
 import (
 	"fmt"
 
-	"goal/internal/parser"
+	"goal/selfhost/parser"
 )
 
 // Analyze runs the AST checker over a single goal source string and returns its

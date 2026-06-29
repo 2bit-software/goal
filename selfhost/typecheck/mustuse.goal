@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"goal/internal/sema"
+	"goal/selfhost/sema"
 )
 
 // CheckMustUse is the depth version of feature 03's must-use guarantee. The lexical

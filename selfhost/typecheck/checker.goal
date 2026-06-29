@@ -1,6 +1,6 @@
 package typecheck
 
-import "goal/internal/project"
+import "goal/selfhost/project"
 
 // TypeChecker is the depth-checking seam (REWRITE-ARCHITECTURE.md §3.2, decision 4):
 // given a goal package it runs the type-aware guarantees — implements, must-use, and

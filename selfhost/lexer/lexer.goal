@@ -19,7 +19,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"goal/internal/token"
+	"goal/selfhost/token"
 )
 
 // eof is the sentinel rune returned once the cursor passes the end of input.

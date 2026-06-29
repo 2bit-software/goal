@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"goal/internal/ast"
-	"goal/internal/parser"
-	"goal/internal/token"
+	"goal/selfhost/ast"
+	"goal/selfhost/parser"
+	"goal/selfhost/token"
 )
 
 // AddLineDirectives inserts a Go `//line` directive before every top-level declaration

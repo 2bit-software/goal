@@ -16,10 +16,10 @@ import (
 	"fmt"
 	"go/format"
 
-	"goal/internal/ast"
-	"goal/internal/parser"
-	"goal/internal/pipeline"
-	"goal/internal/sema"
+	"goal/selfhost/ast"
+	"goal/selfhost/parser"
+	"goal/selfhost/pipeline"
+	"goal/selfhost/sema"
 )
 
 // Backend turns a parsed goal file and its resolved semantic info into transpile

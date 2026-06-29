@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"goal/internal/ast"
-	"goal/internal/parser"
-	"goal/internal/sema"
+	"goal/selfhost/ast"
+	"goal/selfhost/parser"
+	"goal/selfhost/sema"
 )
 
 // emitDoctests extracts the `///` doctests the parser attached to each

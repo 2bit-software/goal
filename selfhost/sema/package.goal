@@ -15,8 +15,8 @@ package sema
 // per-file diagnostic lists are returned in input order.
 
 import (
-	"goal/internal/ast"
-	"goal/internal/parser"
+	"goal/selfhost/ast"
+	"goal/selfhost/parser"
 )
 
 // AnalyzePackageInDir runs the AST checker over a multi-file goal package and

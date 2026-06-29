@@ -12,7 +12,7 @@ package ast
 // Enum.Variant(x) (construct / destructure-bind / call) are split across
 // distinct expression nodes by a later story; this file is the declaration half.
 
-import "goal/internal/token"
+import "goal/selfhost/token"
 
 // FuncMod is the goal modifier on a FuncDecl. `from` and `derive` are contextual
 // keywords (lexed as identifiers); the parser records which, if any, prefixed a

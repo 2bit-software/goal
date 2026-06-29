@@ -44,7 +44,7 @@
         "task fixpoint passes (goal-c-1 and goal-c-2 emit byte-identical Go for the compiler's own source) and the goal-built compiler passes the corpus transpile + behavioral tiers"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Completes the verbatim self-host: a working goal-built compiler that compiles itself. This is the differential ORACLE for the idiomatic passes that follow — keep it green at every later step."
     },
     {

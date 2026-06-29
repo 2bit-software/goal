@@ -14,8 +14,8 @@ import (
 	"fmt"
 	"strings"
 
-	"goal/internal/ast"
-	"goal/internal/token"
+	"goal/selfhost/ast"
+	"goal/selfhost/token"
 )
 
 // Severity is how strongly a Diagnostic is enforced. Error means the program is

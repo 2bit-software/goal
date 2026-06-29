@@ -20,11 +20,11 @@ import (
 	"go/token"
 	"go/types"
 
-	goalast "goal/internal/ast"
-	"goal/internal/backend"
-	goalparser "goal/internal/parser"
-	"goal/internal/project"
-	"goal/internal/sema"
+	goalast "goal/selfhost/ast"
+	"goal/selfhost/backend"
+	goalparser "goal/selfhost/parser"
+	"goal/selfhost/project"
+	"goal/selfhost/sema"
 )
 
 // Package is the type-checked view of one goal package's lowered Go: the go/types

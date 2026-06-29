@@ -6,9 +6,9 @@ import (
 	"go/types"
 	"strings"
 
-	goalast "goal/internal/ast"
-	"goal/internal/sema"
-	goaltoken "goal/internal/token"
+	goalast "goal/selfhost/ast"
+	"goal/selfhost/sema"
+	goaltoken "goal/selfhost/token"
 )
 
 // CheckImplements verifies, with real go/types identity, that every

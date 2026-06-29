@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"goal/internal/ast"
-	"goal/internal/sema"
-	"goal/internal/token"
+	"goal/selfhost/ast"
+	"goal/selfhost/sema"
+	"goal/selfhost/token"
 )
 
 // emitter renders the plain-Go subset of the goal AST to Go source text. It is

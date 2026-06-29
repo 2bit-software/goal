@@ -17,8 +17,8 @@ package sema
 import (
 	"strconv"
 
-	"goal/internal/ast"
-	"goal/internal/token"
+	"goal/selfhost/ast"
+	"goal/selfhost/token"
 )
 
 // CheckAssert enforces the static-provable subset of feature 10: a constant-false

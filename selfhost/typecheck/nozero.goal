@@ -6,7 +6,7 @@ import (
 	"go/types"
 	"strings"
 
-	"goal/internal/sema"
+	"goal/selfhost/sema"
 )
 
 // CheckNoZeroValue is the depth version of feature 08 (no-zero-value) for the two struct

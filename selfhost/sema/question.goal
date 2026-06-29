@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"strings"
 
-	"goal/internal/ast"
-	"goal/internal/token"
+	"goal/selfhost/ast"
+	"goal/selfhost/token"
 )
 
 // qsite is one `?` propagation site: the unwrap node plus how its value is disposed —

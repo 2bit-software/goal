@@ -33,7 +33,7 @@ import (
 	"strconv"
 	"strings"
 
-	"goal/internal/ast"
+	"goal/selfhost/ast"
 )
 
 // DirResolver maps an import path to the directory holding that package's Go source,

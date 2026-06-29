@@ -71,6 +71,15 @@
   the new package and the diff stays byte-identical — no harness change per port.
   selfhost/ is .goal-only (invisible to the Go toolchain), so it never collides
   with the Go package internal/selfhost despite the shared name.
+- The selfhost tree is self-contained (US-003): every selfhost/*.goal imports
+  goal/selfhost/* (NOT goal/internal/*), so goal-c-1/goal-c-2 are built purely
+  from goal source and `task fixpoint` is a GENUINE differential self-host proof.
+  The bootstrap emits ./selfhost to _bootstrap/sN, writes a nested go.mod
+  (`module goal`) there, and builds with `go build -C _bootstrap/sN -o
+  ../../bin/goal-c-N ./selfhost`. The self-host port gate (internal/selfhost
+  port_test.go) keys packages at "selfhost/<pkg>" and BuildAndTest rewrites
+  goal/internal/ -> goal/selfhost/ in the copied internal test files. Keep the
+  fixpoint green at every later (idiomatic) step — it is the oracle.
 - The lexer strips newlines/implicit semicolons, so the parser reconstructs
   spec/decl boundaries structurally. Where Go relies on the newline=semicolon
   rule (e.g. a bare const continuation vs a Name+Type spec), use token line
@@ -4585,3 +4594,45 @@
     selfhost/main onto the selfhost packages), then US-004 (autofix) begins the
     idiomatic passes.
 ---
+
+## [2026-06-29T04:30:00Z] - US-003 (self-host idiomatic PRD)
+- Wired the goal-built compiler onto the ported selfhost packages: the whole
+  selfhost tree (main + token/lexer/ast/parser/sema/project/pipeline/backend +
+  typecheck) now imports goal/selfhost/* instead of goal/internal/*, so goal-c-1/
+  goal-c-2 are built from goal source and the byte-identical fixpoint is now a
+  GENUINE differential self-host proof (the oracle for US-004+).
+- Bulk rewrite goal/internal/ -> goal/selfhost/ across all selfhost/*.goal (every
+  occurrence was an import or a comment — no string literals — so a sed replace
+  was safe). main.goal's doc comment updated to match.
+- Taskfile bootstrap: the emitted selfhost/* now import goal/selfhost/*, which the
+  repo module cannot resolve (those dirs are .goal-only). Fix: write a nested
+  go.mod (`module goal`, `go 1.26`) into each emit dir (_bootstrap/s1, s2) and
+  build the stage from within it with `go build -C _bootstrap/sN -o
+  ../../bin/goal-c-N ./selfhost`. fixpoint task unchanged (still diffs fa vs fb).
+- Harness: internal/selfhost/port_test.go layout/deps/relDir keys flipped from
+  "internal/<pkg>" to "selfhost/<pkg>" (the selfhost sources now import
+  goal/selfhost/<pkg>); selfhost_test.go left as-is (it operates on the trusted
+  internal/* sources). BuildAndTest now rewrites goal/internal/ -> goal/selfhost/
+  in the copied white-box test files so their sibling imports match the relocated
+  package-under-test (else the test's token != the package's token -> type error).
+  BuildTranspiled untouched (no test files; writes sources verbatim).
+- Files: selfhost/**/*.goal (38), selfhost/main.goal, Taskfile.yml,
+  internal/selfhost/selfhost.go, internal/selfhost/port_test.go; prd.json
+  (US-003 passes:true); progress.txt. Initiative artifacts under
+  history/20260629-feature-us-003-wire-selfhost-main-onto-ported-packages/.
+- Verify: task check (incl. corpus transpile/behavioral/check tiers via the
+  trusted compiler + the self-host port gates), task build, task fixpoint
+  (FIXPOINT OK) all green.
+- Learnings for future iterations:
+  - The emitted selfhost tree is now a self-contained `module goal`; any future
+    bootstrap change must keep the nested go.mod (else goal/selfhost/* won't
+    resolve — those dirs hold only .goal in the repo module).
+  - `go build -C dir -o out` resolves -o RELATIVE to dir (so ../../bin/... from
+    _bootstrap/sN reaches repo/bin). Needed because the path crosses into the
+    nested module; the old `go build ./_bootstrap/sN/selfhost` would now fail.
+  - The behavioral port gate reuses the REAL internal/<pkg>/*_test.go files; since
+    those import goal/internal/* and the package-under-test now imports
+    goal/selfhost/*, BuildAndTest must normalize the test-file imports on copy.
+    Keep this rewrite if more behavioral suites are added.
+  - The fixpoint is now load-bearing as the verbatim ORACLE: any US-004+ change
+    that breaks goal-c self-reproduction shows up as a non-empty `diff -r`.

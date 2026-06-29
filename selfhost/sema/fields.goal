@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"strings"
 
-	"goal/internal/ast"
+	"goal/selfhost/ast"
 )
 
 // CheckFields enforces feature-08 (no-zero-value): a struct literal of a known

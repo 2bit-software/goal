@@ -28,13 +28,13 @@ func TestPortedTokenPackage(t *testing.T) {
 	}
 
 	// Criterion 2: transpiles via the US-002 smoke gate and the generated Go compiles.
-	if err := selfhost.BuildTranspiled(map[string]*project.Package{"internal/token": pkg}); err != nil {
+	if err := selfhost.BuildTranspiled(map[string]*project.Package{"selfhost/token": pkg}); err != nil {
 		t.Fatalf("ported token failed the transpile-and-build gate: %v", err)
 	}
 
 	// Criterion 3: the existing token tests pass against the transpiled package.
 	// token is the leaf of the DAG, so it has no in-module dependencies (nil deps).
-	if err := selfhost.BuildAndTest("internal/token", pkg, []string{"../token/token_test.go"}, nil); err != nil {
+	if err := selfhost.BuildAndTest("selfhost/token", pkg, []string{"../token/token_test.go"}, nil); err != nil {
 		t.Fatalf("existing token tests failed against the transpiled package: %v", err)
 	}
 }
@@ -76,8 +76,8 @@ func TestPortedLexerPackage(t *testing.T) {
 	// compiles. The layout carries both lexer and its token dependency so the
 	// in-module import resolves.
 	layout := map[string]*project.Package{
-		"internal/token": tokenPkg,
-		"internal/lexer": lexerPkg,
+		"selfhost/token": tokenPkg,
+		"selfhost/lexer": lexerPkg,
 	}
 	if err := selfhost.BuildTranspiled(layout); err != nil {
 		t.Fatalf("ported lexer failed the transpile-and-build gate: %v", err)
@@ -85,8 +85,8 @@ func TestPortedLexerPackage(t *testing.T) {
 
 	// Criterion 3: the existing lexer tests pass against the transpiled package,
 	// with the ported token package transpiled in as its in-module dependency.
-	deps := map[string]*project.Package{"internal/token": tokenPkg}
-	if err := selfhost.BuildAndTest("internal/lexer", lexerPkg, []string{"../lexer/lexer_test.go"}, deps); err != nil {
+	deps := map[string]*project.Package{"selfhost/token": tokenPkg}
+	if err := selfhost.BuildAndTest("selfhost/lexer", lexerPkg, []string{"../lexer/lexer_test.go"}, deps); err != nil {
 		t.Fatalf("existing lexer tests failed against the transpiled package: %v", err)
 	}
 }
@@ -129,8 +129,8 @@ func TestPortedAstPackage(t *testing.T) {
 	// compiles. The layout carries both ast and its token dependency so the
 	// in-module import resolves.
 	layout := map[string]*project.Package{
-		"internal/token": tokenPkg,
-		"internal/ast":   astPkg,
+		"selfhost/token": tokenPkg,
+		"selfhost/ast":   astPkg,
 	}
 	if err := selfhost.BuildTranspiled(layout); err != nil {
 		t.Fatalf("ported ast failed the transpile-and-build gate: %v", err)
@@ -138,8 +138,8 @@ func TestPortedAstPackage(t *testing.T) {
 
 	// Criterion 3: the existing ast tests pass against the transpiled package,
 	// with the ported token package transpiled in as its in-module dependency.
-	deps := map[string]*project.Package{"internal/token": tokenPkg}
-	if err := selfhost.BuildAndTest("internal/ast", astPkg, []string{"../ast/ast_test.go"}, deps); err != nil {
+	deps := map[string]*project.Package{"selfhost/token": tokenPkg}
+	if err := selfhost.BuildAndTest("selfhost/ast", astPkg, []string{"../ast/ast_test.go"}, deps); err != nil {
 		t.Fatalf("existing ast tests failed against the transpiled package: %v", err)
 	}
 }
@@ -212,10 +212,10 @@ func TestPortedParserPackage(t *testing.T) {
 	// compiles. The layout carries parser plus its token, lexer, and ast
 	// dependencies so the in-module imports resolve.
 	layout := map[string]*project.Package{
-		"internal/token":  tokenPkg,
-		"internal/lexer":  lexerPkg,
-		"internal/ast":    astPkg,
-		"internal/parser": parserPkg,
+		"selfhost/token":  tokenPkg,
+		"selfhost/lexer":  lexerPkg,
+		"selfhost/ast":    astPkg,
+		"selfhost/parser": parserPkg,
 	}
 	if err := selfhost.BuildTranspiled(layout); err != nil {
 		t.Fatalf("ported parser failed the transpile-and-build gate: %v", err)
@@ -225,11 +225,11 @@ func TestPortedParserPackage(t *testing.T) {
 	// with the ported token, lexer, and ast packages transpiled in as its
 	// in-module dependencies.
 	deps := map[string]*project.Package{
-		"internal/token": tokenPkg,
-		"internal/lexer": lexerPkg,
-		"internal/ast":   astPkg,
+		"selfhost/token": tokenPkg,
+		"selfhost/lexer": lexerPkg,
+		"selfhost/ast":   astPkg,
 	}
-	if err := selfhost.BuildAndTest("internal/parser", parserPkg, []string{"../parser/parser_test.go"}, deps); err != nil {
+	if err := selfhost.BuildAndTest("selfhost/parser", parserPkg, []string{"../parser/parser_test.go"}, deps); err != nil {
 		t.Fatalf("existing parser tests failed against the transpiled package: %v", err)
 	}
 }
@@ -316,11 +316,11 @@ func TestPortedSemaPackage(t *testing.T) {
 	// dependencies (and lexer, pulled in by the transpiled parser) so the
 	// in-module imports resolve; the go/* foreign imports pass through.
 	layout := map[string]*project.Package{
-		"internal/token":  tokenPkg,
-		"internal/lexer":  lexerPkg,
-		"internal/ast":    astPkg,
-		"internal/parser": parserPkg,
-		"internal/sema":   semaPkg,
+		"selfhost/token":  tokenPkg,
+		"selfhost/lexer":  lexerPkg,
+		"selfhost/ast":    astPkg,
+		"selfhost/parser": parserPkg,
+		"selfhost/sema":   semaPkg,
 	}
 	if err := selfhost.BuildTranspiled(layout); err != nil {
 		t.Fatalf("ported sema failed the transpile-and-build gate: %v", err)
@@ -331,10 +331,10 @@ func TestPortedSemaPackage(t *testing.T) {
 	// in-module dependencies. The self-contained suites are included;
 	// foreign_test.go and package_test.go are excluded (testdata/extpkg fixture).
 	deps := map[string]*project.Package{
-		"internal/token":  tokenPkg,
-		"internal/lexer":  lexerPkg,
-		"internal/ast":    astPkg,
-		"internal/parser": parserPkg,
+		"selfhost/token":  tokenPkg,
+		"selfhost/lexer":  lexerPkg,
+		"selfhost/ast":    astPkg,
+		"selfhost/parser": parserPkg,
 	}
 	testFiles := []string{
 		"../sema/sema_test.go",
@@ -346,7 +346,7 @@ func TestPortedSemaPackage(t *testing.T) {
 		"../sema/question_test.go",
 		"../sema/resolve_test.go",
 	}
-	if err := selfhost.BuildAndTest("internal/sema", semaPkg, testFiles, deps); err != nil {
+	if err := selfhost.BuildAndTest("selfhost/sema", semaPkg, testFiles, deps); err != nil {
 		t.Fatalf("existing sema tests failed against the transpiled package: %v", err)
 	}
 }
@@ -395,11 +395,11 @@ func TestPortedProjectPackage(t *testing.T) {
 	// compiles. The layout carries project plus its parser dependency (and
 	// parser's transitive lexer/ast/token) so the in-module imports resolve.
 	layout := map[string]*project.Package{
-		"internal/token":   tokenPkg,
-		"internal/lexer":   lexerPkg,
-		"internal/ast":     astPkg,
-		"internal/parser":  parserPkg,
-		"internal/project": projectPkg,
+		"selfhost/token":   tokenPkg,
+		"selfhost/lexer":   lexerPkg,
+		"selfhost/ast":     astPkg,
+		"selfhost/parser":  parserPkg,
+		"selfhost/project": projectPkg,
 	}
 	if err := selfhost.BuildTranspiled(layout); err != nil {
 		t.Fatalf("ported project failed the transpile-and-build gate: %v", err)
@@ -409,12 +409,12 @@ func TestPortedProjectPackage(t *testing.T) {
 	// package, with the ported token, lexer, ast, and parser packages transpiled
 	// in as its in-module dependencies.
 	deps := map[string]*project.Package{
-		"internal/token":  tokenPkg,
-		"internal/lexer":  lexerPkg,
-		"internal/ast":    astPkg,
-		"internal/parser": parserPkg,
+		"selfhost/token":  tokenPkg,
+		"selfhost/lexer":  lexerPkg,
+		"selfhost/ast":    astPkg,
+		"selfhost/parser": parserPkg,
 	}
-	if err := selfhost.BuildAndTest("internal/project", projectPkg, []string{"../project/project_test.go"}, deps); err != nil {
+	if err := selfhost.BuildAndTest("selfhost/project", projectPkg, []string{"../project/project_test.go"}, deps); err != nil {
 		t.Fatalf("existing project tests failed against the transpiled package: %v", err)
 	}
 }
@@ -445,11 +445,11 @@ func TestPortedPipelinePackage(t *testing.T) {
 	// compiles. The layout carries pipeline plus its ast, parser, token
 	// dependencies (and lexer, pulled in by the transpiled parser).
 	layout := map[string]*project.Package{
-		"internal/token":    tokenPkg,
-		"internal/lexer":    lexerPkg,
-		"internal/ast":      astPkg,
-		"internal/parser":   parserPkg,
-		"internal/pipeline": pipelinePkg,
+		"selfhost/token":    tokenPkg,
+		"selfhost/lexer":    lexerPkg,
+		"selfhost/ast":      astPkg,
+		"selfhost/parser":   parserPkg,
+		"selfhost/pipeline": pipelinePkg,
 	}
 	if err := selfhost.BuildTranspiled(layout); err != nil {
 		t.Fatalf("ported pipeline failed the transpile-and-build gate: %v", err)
@@ -458,12 +458,12 @@ func TestPortedPipelinePackage(t *testing.T) {
 	// Criterion 3: the existing self-contained pipeline tests pass against the
 	// transpiled package; pipeline_test.go is excluded (backend/corpus/manifest).
 	deps := map[string]*project.Package{
-		"internal/token":  tokenPkg,
-		"internal/lexer":  lexerPkg,
-		"internal/ast":    astPkg,
-		"internal/parser": parserPkg,
+		"selfhost/token":  tokenPkg,
+		"selfhost/lexer":  lexerPkg,
+		"selfhost/ast":    astPkg,
+		"selfhost/parser": parserPkg,
 	}
-	if err := selfhost.BuildAndTest("internal/pipeline", pipelinePkg, []string{"../pipeline/sourcemap_test.go"}, deps); err != nil {
+	if err := selfhost.BuildAndTest("selfhost/pipeline", pipelinePkg, []string{"../pipeline/sourcemap_test.go"}, deps); err != nil {
 		t.Fatalf("existing pipeline tests failed against the transpiled package: %v", err)
 	}
 }
@@ -501,14 +501,14 @@ func TestPortedBackendPackage(t *testing.T) {
 	// The layout carries backend plus its full in-module dependency closure so
 	// the in-module imports resolve; the go/* foreign imports pass through.
 	layout := map[string]*project.Package{
-		"internal/token":    tokenPkg,
-		"internal/lexer":    lexerPkg,
-		"internal/ast":      astPkg,
-		"internal/parser":   parserPkg,
-		"internal/sema":     semaPkg,
-		"internal/project":  projectPkg,
-		"internal/pipeline": pipelinePkg,
-		"internal/backend":  backendPkg,
+		"selfhost/token":    tokenPkg,
+		"selfhost/lexer":    lexerPkg,
+		"selfhost/ast":      astPkg,
+		"selfhost/parser":   parserPkg,
+		"selfhost/sema":     semaPkg,
+		"selfhost/project":  projectPkg,
+		"selfhost/pipeline": pipelinePkg,
+		"selfhost/backend":  backendPkg,
 	}
 	if err := selfhost.BuildTranspiled(layout); err != nil {
 		t.Fatalf("ported backend failed the transpile-and-build gate: %v", err)
@@ -519,15 +519,15 @@ func TestPortedBackendPackage(t *testing.T) {
 	// behavioral test file (package backend_test) imports goal/internal/backend
 	// and goal/internal/project, both present in the temp module.
 	deps := map[string]*project.Package{
-		"internal/token":    tokenPkg,
-		"internal/lexer":    lexerPkg,
-		"internal/ast":      astPkg,
-		"internal/parser":   parserPkg,
-		"internal/sema":     semaPkg,
-		"internal/project":  projectPkg,
-		"internal/pipeline": pipelinePkg,
+		"selfhost/token":    tokenPkg,
+		"selfhost/lexer":    lexerPkg,
+		"selfhost/ast":      astPkg,
+		"selfhost/parser":   parserPkg,
+		"selfhost/sema":     semaPkg,
+		"selfhost/project":  projectPkg,
+		"selfhost/pipeline": pipelinePkg,
 	}
-	if err := selfhost.BuildAndTest("internal/backend", backendPkg, []string{"../backend/backend_selfhost_test.go"}, deps); err != nil {
+	if err := selfhost.BuildAndTest("selfhost/backend", backendPkg, []string{"../backend/backend_selfhost_test.go"}, deps); err != nil {
 		t.Fatalf("existing backend tests failed against the transpiled package: %v", err)
 	}
 }
@@ -566,15 +566,15 @@ func TestPortedTypecheckPackage(t *testing.T) {
 	// The layout carries typecheck plus its full in-module dependency closure so
 	// the in-module imports resolve; the go/* foreign imports pass through.
 	layout := map[string]*project.Package{
-		"internal/token":     tokenPkg,
-		"internal/lexer":     lexerPkg,
-		"internal/ast":       astPkg,
-		"internal/parser":    parserPkg,
-		"internal/sema":      semaPkg,
-		"internal/project":   projectPkg,
-		"internal/pipeline":  pipelinePkg,
-		"internal/backend":   backendPkg,
-		"internal/typecheck": typecheckPkg,
+		"selfhost/token":     tokenPkg,
+		"selfhost/lexer":     lexerPkg,
+		"selfhost/ast":       astPkg,
+		"selfhost/parser":    parserPkg,
+		"selfhost/sema":      semaPkg,
+		"selfhost/project":   projectPkg,
+		"selfhost/pipeline":  pipelinePkg,
+		"selfhost/backend":   backendPkg,
+		"selfhost/typecheck": typecheckPkg,
 	}
 	if err := selfhost.BuildTranspiled(layout); err != nil {
 		t.Fatalf("ported typecheck failed the transpile-and-build gate: %v", err)
@@ -583,14 +583,14 @@ func TestPortedTypecheckPackage(t *testing.T) {
 	// Criterion 3: the existing typecheck depth tests pass against the transpiled
 	// package, with the ported dependency closure transpiled in.
 	deps := map[string]*project.Package{
-		"internal/token":    tokenPkg,
-		"internal/lexer":    lexerPkg,
-		"internal/ast":      astPkg,
-		"internal/parser":   parserPkg,
-		"internal/sema":     semaPkg,
-		"internal/project":  projectPkg,
-		"internal/pipeline": pipelinePkg,
-		"internal/backend":  backendPkg,
+		"selfhost/token":    tokenPkg,
+		"selfhost/lexer":    lexerPkg,
+		"selfhost/ast":      astPkg,
+		"selfhost/parser":   parserPkg,
+		"selfhost/sema":     semaPkg,
+		"selfhost/project":  projectPkg,
+		"selfhost/pipeline": pipelinePkg,
+		"selfhost/backend":  backendPkg,
 	}
 	testFiles := []string{
 		"../typecheck/checker_test.go",
@@ -599,7 +599,7 @@ func TestPortedTypecheckPackage(t *testing.T) {
 		"../typecheck/nozero_test.go",
 		"../typecheck/typecheck_test.go",
 	}
-	if err := selfhost.BuildAndTest("internal/typecheck", typecheckPkg, testFiles, deps); err != nil {
+	if err := selfhost.BuildAndTest("selfhost/typecheck", typecheckPkg, testFiles, deps); err != nil {
 		t.Fatalf("existing typecheck tests failed against the transpiled package: %v", err)
 	}
 }

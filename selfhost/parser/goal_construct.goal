@@ -15,8 +15,8 @@
 package parser
 
 import (
-	"goal/internal/ast"
-	"goal/internal/token"
+	"goal/selfhost/ast"
+	"goal/selfhost/token"
 )
 
 // parseCallArg parses one argument of a call. A `Label: Value` form (an

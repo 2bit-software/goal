@@ -13,7 +13,7 @@ package ast
 // refused outright by the splice approach today. Postfix `?` is its own
 // UnwrapExpr so it falls out of the expression precedence table in the parser.
 
-import "goal/internal/token"
+import "goal/selfhost/token"
 
 // MatchExpr is a goal `match Subject { Arms }`. It is an expression so it can
 // appear in value position (`var x = match s { … }`) as well as statement

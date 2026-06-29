@@ -6,8 +6,8 @@ import (
 	"strings"
 	"unicode"
 
-	"goal/internal/ast"
-	"goal/internal/sema"
+	"goal/selfhost/ast"
+	"goal/selfhost/sema"
 )
 
 // lower.go holds the goal-construct encoders the emitter (emit.go) splices into

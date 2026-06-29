@@ -20,11 +20,11 @@ import (
 	"fmt"
 	"strings"
 
-	"goal/internal/ast"
-	"goal/internal/parser"
-	"goal/internal/pipeline"
-	"goal/internal/project"
-	"goal/internal/sema"
+	"goal/selfhost/ast"
+	"goal/selfhost/parser"
+	"goal/selfhost/pipeline"
+	"goal/selfhost/project"
+	"goal/selfhost/sema"
 )
 
 // TranspilePackage lowers every file of a goal package through the AST engine

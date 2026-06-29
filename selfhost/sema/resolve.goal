@@ -13,8 +13,8 @@ import (
 	"maps"
 	"strings"
 
-	"goal/internal/ast"
-	"goal/internal/token"
+	"goal/selfhost/ast"
+	"goal/selfhost/token"
 )
 
 // ResolvePackage walks every file of a goal package and returns one merged Info,

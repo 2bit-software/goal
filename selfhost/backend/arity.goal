@@ -19,7 +19,7 @@ import (
 	"go/types"
 	"strings"
 
-	"goal/internal/ast"
+	"goal/selfhost/ast"
 )
 
 // funcArity is a resolved function signature's shape relevant to `?`: how many

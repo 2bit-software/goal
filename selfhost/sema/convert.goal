@@ -17,8 +17,8 @@ import (
 	"fmt"
 	"strings"
 
-	"goal/internal/ast"
-	"goal/internal/token"
+	"goal/selfhost/ast"
+	"goal/selfhost/token"
 )
 
 // CheckConvert enforces feature 12 (derive-convert) totality over the AST: an

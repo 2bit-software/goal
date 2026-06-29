@@ -16,8 +16,8 @@
 package parser
 
 import (
-	"goal/internal/ast"
-	"goal/internal/token"
+	"goal/selfhost/ast"
+	"goal/selfhost/token"
 )
 
 // isContextual reports whether the current token is the contextual keyword

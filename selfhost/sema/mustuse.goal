@@ -26,8 +26,8 @@ package sema
 import (
 	"fmt"
 
-	"goal/internal/ast"
-	"goal/internal/token"
+	"goal/selfhost/ast"
+	"goal/selfhost/token"
 )
 
 // CheckMustUse enforces feature-03 (must-use): a `Result`-returning call dropped as a

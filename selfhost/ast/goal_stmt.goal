@@ -11,7 +11,7 @@ package ast
 // dropped by the parser; doc comments are kept and attached to the following
 // declaration as a structured DocComment so doctests survive into the AST.
 
-import "goal/internal/token"
+import "goal/selfhost/token"
 
 // AssertStmt is a goal `assert` statement. The bare form is `assert <cond>`; the
 // printf-message form is `assert <cond>, <format>, <args...>` where only the

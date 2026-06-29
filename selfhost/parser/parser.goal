@@ -33,9 +33,9 @@ import (
 	"errors"
 	"fmt"
 
-	"goal/internal/ast"
-	"goal/internal/lexer"
-	"goal/internal/token"
+	"goal/selfhost/ast"
+	"goal/selfhost/lexer"
+	"goal/selfhost/token"
 )
 
 // parser holds the token stream and cursor for one source file.

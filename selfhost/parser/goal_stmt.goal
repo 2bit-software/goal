@@ -9,8 +9,8 @@ package parser
 import (
 	"strings"
 
-	"goal/internal/ast"
-	"goal/internal/token"
+	"goal/selfhost/ast"
+	"goal/selfhost/token"
 )
 
 // parseAssertStmt parses a goal `assert` statement in both forms:

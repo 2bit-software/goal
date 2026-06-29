@@ -12,7 +12,7 @@
 // them.
 package ast
 
-import "goal/internal/token"
+import "goal/selfhost/token"
 
 // Node is the interface implemented by every AST node. Pos returns the position
 // of the node's first token; End returns the position just past its last token.
