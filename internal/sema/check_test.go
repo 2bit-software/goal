@@ -52,7 +52,7 @@ func handle(s Status) {
 	if len(d) != 1 {
 		t.Fatalf("want 1 diagnostic, got %d: %+v", len(d), d)
 	}
-	if d[0].Severity != Error {
+	if SeverityLabel(d[0].Severity) != "error" {
 		t.Errorf("want Error severity, got %v", d[0].Severity)
 	}
 	if d[0].Code != "non-exhaustive-match" {
@@ -114,7 +114,7 @@ func route(c Color) string {
 	if len(d) != 1 {
 		t.Fatalf("want 1 diagnostic, got %d: %+v", len(d), d)
 	}
-	if d[0].Severity != Warning {
+	if SeverityLabel(d[0].Severity) != "warning" {
 		t.Errorf("deferral should be a Warning, got %v", d[0].Severity)
 	}
 	if !strings.Contains(d[0].Message, "exhaustiveness deferred") {

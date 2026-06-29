@@ -32,7 +32,7 @@ func run(input string) {
 	if len(d) != 1 {
 		t.Fatalf("want 1 diagnostic, got %d: %+v", len(d), d)
 	}
-	if d[0].Severity != Error || d[0].Code != "dropped-result" {
+	if SeverityLabel(d[0].Severity) != "error" || d[0].Code != "dropped-result" {
 		t.Errorf("want Error dropped-result, got %v %q", d[0].Severity, d[0].Code)
 	}
 	if !strings.Contains(d[0].Message, "the `Result` returned by `parse(…)` is dropped") {
@@ -85,7 +85,7 @@ func discard(input string) {
 	if len(d) != 1 {
 		t.Fatalf("want 1 diagnostic, got %d: %+v", len(d), d)
 	}
-	if d[0].Severity != Warning || d[0].Code != "unresolved-result-discard" {
+	if SeverityLabel(d[0].Severity) != "warning" || d[0].Code != "unresolved-result-discard" {
 		t.Errorf("want Warning unresolved-result-discard, got %v %q", d[0].Severity, d[0].Code)
 	}
 }

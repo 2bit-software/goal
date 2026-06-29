@@ -70,7 +70,7 @@ func checkOneConvert(d *ast.FuncDecl, info *Info) []Diagnostic {
 	if !ok {
 		return []Diagnostic{{
 			Pos:      pos,
-			Severity: Warning,
+			Severity: Severity.Warning,
 			Feature:  "12-derive-convert",
 			Code:     "unresolved-derive-type",
 			Message: fmt.Sprintf("cannot verify `derive func` is total: target type `%s` is not a struct declared in this file or a resolvable import — completeness deferred",
@@ -81,7 +81,7 @@ func checkOneConvert(d *ast.FuncDecl, info *Info) []Diagnostic {
 	if !srcKnown {
 		return []Diagnostic{{
 			Pos:      pos,
-			Severity: Warning,
+			Severity: Severity.Warning,
 			Feature:  "12-derive-convert",
 			Code:     "unresolved-derive-type",
 			Message: fmt.Sprintf("cannot verify `derive func` is total: source type `%s` is not a struct declared in this file or a resolvable import — completeness deferred",
@@ -98,7 +98,7 @@ func checkOneConvert(d *ast.FuncDecl, info *Info) []Diagnostic {
 		if !found {
 			diags = append(diags, Diagnostic{
 				Pos:      pos,
-				Severity: Error,
+				Severity: Severity.Error,
 				Feature:  "12-derive-convert",
 				Code:     "unsourced-field",
 				Message: fmt.Sprintf("`derive func` target field `%s.%s` has no same-named source field on `%s` and no explicit override — add `%s: …` or `%s: _`, or a same-named field on `%s`",
@@ -129,7 +129,7 @@ func resolvableConvField(pos token.Pos, tgtType, srcType string, f, sf Field, fa
 		if e.Fallible && !fallible {
 			return Diagnostic{
 				Pos:      pos,
-				Severity: Error,
+				Severity: Severity.Error,
 				Feature:  "12-derive-convert",
 				Code:     "fallible-in-total-derive",
 				Message: fmt.Sprintf("`derive func` target field `%s.%s` needs the fallible conversion `%s` (`%s`→`%s`), but this derive is total — declare it returning `(%s, error)`",
@@ -163,7 +163,7 @@ func resolvableConvField(pos token.Pos, tgtType, srcType string, f, sf Field, fa
 	// A concrete, named type pair with no registered conversion and no recursion rule.
 	return Diagnostic{
 		Pos:      pos,
-		Severity: Error,
+		Severity: Severity.Error,
 		Feature:  "12-derive-convert",
 		Code:     "unbridged-field",
 		Message: fmt.Sprintf("`derive func` target field `%s.%s` is `%s` but its source `%s.%s` is `%s`, and no `from func` converts `%s`→`%s` — register one or override the field explicitly",
@@ -195,7 +195,7 @@ func isDeferredConvShape(typ string) bool {
 func deferConvField(pos token.Pos, tgtType, srcType string, f Field, sfType string) Diagnostic {
 	return Diagnostic{
 		Pos:      pos,
-		Severity: Warning,
+		Severity: Severity.Warning,
 		Feature:  "12-derive-convert",
 		Code:     "unresolved-derive-field",
 		Message: fmt.Sprintf("cannot verify `derive func` field `%s.%s` (`%s`→`%s`): needs a map/Option/nested recursion the v1 checker keeps minimal — completeness deferred for this field",

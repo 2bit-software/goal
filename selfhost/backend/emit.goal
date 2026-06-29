@@ -423,8 +423,16 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 // would miss them and leave the body's Result.Ok/Err constructors unlowered.
 func (e *emitter) closedResultTE(d *ast.FuncDecl) (t, eType string, ok bool) {
 	if d.Name != nil && e.info != nil && e.info.FuncSignatures != nil {
-		if sig, found := e.info.FuncSignatures[d.Name.Name]; found && sig.Mode == sema.ModeResultClosed {
-			return sig.T, sig.E, true
+		if sig, found := e.info.FuncSignatures[d.Name.Name]; found {
+			isClosed := match sig.Mode {
+				sema.Mode.ModeResultClosed => true
+				sema.Mode.ModeResult => false
+				sema.Mode.ModeOption => false
+				sema.Mode.ModeNone => false
+			}
+			if isClosed {
+				return sig.T, sig.E, true
+			}
 		}
 	}
 	il, isList := closedResultType(d.Type)
@@ -1769,7 +1777,12 @@ func (e *emitter) unwrap(name string, u *ast.UnwrapExpr, discard bool) {
 // `from func` conversion (sema.FromRegistry) is applied to the propagated value.
 func (e *emitter) unwrapClosed(name string, u *ast.UnwrapExpr, discard bool) {
 	sig, ok := e.calleeSig(u.X)
-	if !ok || sig.Mode != sema.ModeResultClosed {
+	// sig is a zero FuncSig (nil Mode) when !ok, so use a nil-safe `_` rest-arm.
+	isClosed := match sig.Mode {
+		sema.Mode.ModeResultClosed => true
+		_ => false
+	}
+	if !ok || !isClosed {
 		e.fail("closed-E `?` needs a closed-E Result-returning callee")
 		return
 	}
@@ -1898,10 +1911,10 @@ func (e *emitter) calleeSig(x ast.Expr) (sema.FuncSig, bool) {
 		// Prefer a real signature resolved through the file's imports; fall back to
 		// the curated table when the package cannot be loaded here.
 		if a := e.arity.lookup(pkg.Name, fn.Sel.Name); a.resolved && a.endsErr {
-			return sema.FuncSig{Mode: sema.ModeResult, Arity: a.results, EndsInError: true}, true
+			return sema.FuncSig{Mode: sema.Mode.ModeResult, Arity: a.results, EndsInError: true}, true
 		}
 		if stdlibErrorOnly[pkg.Name+"."+fn.Sel.Name] {
-			return sema.FuncSig{Mode: sema.ModeResult, Arity: 1, EndsInError: true}, true
+			return sema.FuncSig{Mode: sema.Mode.ModeResult, Arity: 1, EndsInError: true}, true
 		}
 		return sema.FuncSig{}, false
 	}
@@ -2126,7 +2139,13 @@ func (e *emitter) armWrap(body ast.Node, pos matchPos, name string) {
 // gensym, so an arm body that constructs another Result composes through the
 // rename in emitResultReturn.
 func (e *emitter) resultMatch(m *ast.MatchExpr, pos matchPos, name string) {
-	if e.calleeMode(m.Subject) == sema.ModeResultClosed {
+	subjectIsClosed := match e.calleeMode(m.Subject) {
+		sema.Mode.ModeResultClosed => true
+		sema.Mode.ModeResult => false
+		sema.Mode.ModeOption => false
+		sema.Mode.ModeNone => false
+	}
+	if subjectIsClosed {
 		e.closedResultMatch(m, pos, name)
 		return
 	}
@@ -2235,13 +2254,19 @@ func bindingName(p ast.Expr) string {
 func (e *emitter) calleeMode(x ast.Expr) sema.Mode {
 	call, ok := x.(*ast.CallExpr)
 	if !ok {
-		return sema.ModeNone
+		return sema.Mode.ModeNone
 	}
 	id, ok := call.Fun.(*ast.Ident)
 	if !ok || e.info == nil || e.info.FuncSignatures == nil {
-		return sema.ModeNone
+		return sema.Mode.ModeNone
 	}
-	return e.info.FuncSignatures[id.Name].Mode
+	// A missing map key yields a zero FuncSig whose Mode is nil (the enum zero,
+	// SEAM-003); return ModeNone explicitly so callers can `match` the result safely.
+	sig, found := e.info.FuncSignatures[id.Name]
+	if !found {
+		return sema.Mode.ModeNone
+	}
+	return sig.Mode
 }
 
 // armBodyRenamed emits a match arm body with binding renamed to target for the

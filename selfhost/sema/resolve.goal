@@ -275,7 +275,7 @@ func (info *Info) resolveMethod(d *ast.FuncDecl) {
 // result is detected off the AST result type, and the Result/Option lowering
 // fixes the lowered arity and ends-in-error.
 func funcSig(name string, t *ast.FuncType) FuncSig {
-	sig := FuncSig{Name: name, Mode: ModeNone}
+	sig := FuncSig{Name: name, Mode: Mode.ModeNone}
 	if t == nil {
 		return sig
 	}
@@ -287,21 +287,30 @@ func funcSig(name string, t *ast.FuncType) FuncSig {
 		case head == "Result" && len(args) == 2:
 			sig.T, sig.E = args[0], args[1]
 			if sig.E == "error" {
-				sig.Mode = ModeResult
+				sig.Mode = Mode.ModeResult
 			} else {
-				sig.Mode = ModeResultClosed
+				sig.Mode = Mode.ModeResultClosed
 			}
 		case head == "Option" && len(args) == 1:
-			sig.Mode = ModeOption
+			sig.Mode = Mode.ModeOption
 			sig.T = args[0]
 		}
 	}
-	switch sig.Mode {
-	case ModeResult:
-		sig.Arity, sig.EndsInError = 2, true
-	case ModeOption, ModeResultClosed:
-		sig.Arity, sig.EndsInError = 1, false
+	// Result/Option fix the lowered arity and ends-in-error; ModeNone keeps the
+	// AST-derived values computed above.
+	var arity int = match sig.Mode {
+		Mode.ModeResult => 2
+		Mode.ModeResultClosed => 1
+		Mode.ModeOption => 1
+		Mode.ModeNone => sig.Arity
 	}
+	var endsInError bool = match sig.Mode {
+		Mode.ModeResult => true
+		Mode.ModeResultClosed => false
+		Mode.ModeOption => false
+		Mode.ModeNone => sig.EndsInError
+	}
+	sig.Arity, sig.EndsInError = arity, endsInError
 	return sig
 }
 

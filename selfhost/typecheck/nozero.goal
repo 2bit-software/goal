@@ -97,7 +97,7 @@ func litDiag(p *Package, cl *ast.CompositeLit, kind litClass) *Diagnostic {
 	code, message := litMessage(kind, named, p.Info.Types[cl].Type, missing)
 	return &Diagnostic{
 		Pos:      p.Fset.Position(cl.Pos()),
-		Severity: sema.Error,
+		Severity: sema.Severity.Error,
 		Feature:  "08-no-zero-value",
 		Code:     code,
 		Message:  message,

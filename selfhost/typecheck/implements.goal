@@ -63,7 +63,7 @@ func verifyImplements(p *Package, T types.Type, typeName, iface string, pos toke
 	}
 	return &Diagnostic{
 		Pos:      pos,
-		Severity: sema.Error,
+		Severity: sema.Severity.Error,
 		Feature:  "07-implements",
 		Code:     code,
 		Message: fmt.Sprintf("type `%s` does not implement `%s`: %s `%s`",

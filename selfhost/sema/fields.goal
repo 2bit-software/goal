@@ -76,7 +76,7 @@ func checkStructLit(lit *ast.CompositeLit, info *Info) []Diagnostic {
 		}
 		return []Diagnostic{{
 			Pos:      lit.Pos(),
-			Severity: Warning,
+			Severity: Severity.Warning,
 			Feature:  "08-no-zero-value",
 			Code:     "unresolved-literal-type",
 			Message: fmt.Sprintf("cannot verify field completeness of `%s{…}`: type `%s` is not declared in this file — field-completeness deferred",
@@ -89,7 +89,7 @@ func checkStructLit(lit *ast.CompositeLit, info *Info) []Diagnostic {
 	}
 	return []Diagnostic{{
 		Pos:      lit.Pos(),
-		Severity: Error,
+		Severity: Severity.Error,
 		Feature:  "08-no-zero-value",
 		Code:     "missing-field",
 		Message: fmt.Sprintf("struct literal `%s{…}` omits required field%s %s — set %s explicitly, or add `...defaults` to fill the rest with zero values",
@@ -119,7 +119,7 @@ func checkVariantLit(lit *ast.VariantLit, info *Info) []Diagnostic {
 	}
 	return []Diagnostic{{
 		Pos:      lit.Pos(),
-		Severity: Error,
+		Severity: Severity.Error,
 		Feature:  "08-no-zero-value",
 		Code:     "missing-field",
 		Message: fmt.Sprintf("variant construction `%s.%s(…)` omits required field%s %s — a variant has no `...defaults`; name every field",

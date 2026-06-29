@@ -46,7 +46,13 @@ func CheckQuestion(file *ast.File, info *Info) []Diagnostic {
 	imports := importAliases(file)
 	for _, d := range plainResultFuncs(file) {
 		caller := funcSig(d.fn.Name.Name, d.fn.Type)
-		if caller.Mode != ModeResult {
+		callerIsOpenResult := match caller.Mode {
+			Mode.ModeResult => true
+			Mode.ModeResultClosed => false
+			Mode.ModeOption => false
+			Mode.ModeNone => false
+		}
+		if !callerIsOpenResult {
 			continue
 		}
 		for _, site := range collectQuestionSites(d.fn.Body) {
@@ -61,7 +67,7 @@ func CheckQuestion(file *ast.File, info *Info) []Diagnostic {
 				if label == "" {
 					label = "the `?` callee"
 				}
-				diags = append(diags, Diagnostic{Pos: p, Severity: Warning, Feature: "05-question-prop",
+				diags = append(diags, Diagnostic{Pos: p, Severity: Severity.Warning, Feature: "05-question-prop",
 					Code: "question-callee-unresolved",
 					Message: fmt.Sprintf("cannot confirm the arity of `?` callee `%s` (its receiver type isn't inferred); `?` assumes a two-value `(T, error)` callee — if it returns only `error`, the generated Go will not compile until its arity is resolved", label)})
 			}
@@ -72,27 +78,45 @@ func CheckQuestion(file *ast.File, info *Info) []Diagnostic {
 
 // appendQuestionResolved appends the open-E diagnostic (if any) for a resolved `?` callee.
 func appendQuestionResolved(diags []Diagnostic, p token.Pos, key string, csig FuncSig, discard bool) []Diagnostic {
+	isOpenResult := match csig.Mode {
+		Mode.ModeResult => true
+		Mode.ModeResultClosed => false
+		Mode.ModeOption => false
+		Mode.ModeNone => false
+	}
+	isOption := match csig.Mode {
+		Mode.ModeOption => true
+		Mode.ModeResult => false
+		Mode.ModeResultClosed => false
+		Mode.ModeNone => false
+	}
+	isClosed := match csig.Mode {
+		Mode.ModeResultClosed => true
+		Mode.ModeResult => false
+		Mode.ModeOption => false
+		Mode.ModeNone => false
+	}
 	switch {
-	case csig.Mode == ModeResult:
+	case isOpenResult:
 		// ok: lowers to a trailing (T, error).
-	case csig.Mode == ModeOption:
-		diags = append(diags, Diagnostic{Pos: p, Severity: Error, Feature: "05-question-prop",
+	case isOption:
+		diags = append(diags, Diagnostic{Pos: p, Severity: Severity.Error, Feature: "05-question-prop",
 			Code:    "question-callee-no-error",
 			Message: fmt.Sprintf("`?` in a `Result[_, error]` function propagates an `error`, but `%s` returns an `Option`; map its `None` to an error first", key)})
-	case csig.Mode == ModeResultClosed:
-		diags = append(diags, Diagnostic{Pos: p, Severity: Error, Feature: "05-question-prop",
+	case isClosed:
+		diags = append(diags, Diagnostic{Pos: p, Severity: Severity.Error, Feature: "05-question-prop",
 			Code:    "question-callee-no-error",
 			Message: fmt.Sprintf("`?` in an open-E `Result[_, error]` function propagates `error`, but `%s` returns a closed-E `Result`; convert its error to `error` first", key)})
 	case csig.Arity == 0:
-		diags = append(diags, Diagnostic{Pos: p, Severity: Error, Feature: "05-question-prop",
+		diags = append(diags, Diagnostic{Pos: p, Severity: Severity.Error, Feature: "05-question-prop",
 			Code:    "question-callee-no-error",
 			Message: fmt.Sprintf("`?` callee `%s` returns nothing; `?` needs a callee that returns a trailing `error` (or a `Result`)", key)})
 	case !csig.EndsInError:
-		diags = append(diags, Diagnostic{Pos: p, Severity: Error, Feature: "05-question-prop",
+		diags = append(diags, Diagnostic{Pos: p, Severity: Severity.Error, Feature: "05-question-prop",
 			Code:    "question-callee-no-error",
 			Message: fmt.Sprintf("`?` callee `%s` does not return an `error` as its last result; `?` propagates an error", key)})
 	case !discard && csig.Arity != 2:
-		diags = append(diags, Diagnostic{Pos: p, Severity: Error, Feature: "05-question-prop",
+		diags = append(diags, Diagnostic{Pos: p, Severity: Severity.Error, Feature: "05-question-prop",
 			Code:    "question-binds-nonvalue",
 			Message: fmt.Sprintf("`?` binds a value but `%s` returns %d value(s); write a bare `…?` to propagate only the error", key, csig.Arity)})
 	}
@@ -110,7 +134,13 @@ func CheckClosed(file *ast.File, info *Info) []Diagnostic {
 	}
 	for _, d := range plainResultFuncs(file) {
 		caller := funcSig(d.fn.Name.Name, d.fn.Type)
-		if caller.Mode != ModeResultClosed {
+		callerIsClosed := match caller.Mode {
+			Mode.ModeResultClosed => true
+			Mode.ModeResult => false
+			Mode.ModeOption => false
+			Mode.ModeNone => false
+		}
+		if !callerIsClosed {
 			continue
 		}
 		diags = append(diags, closedQuestionDiags(d.fn.Body, caller, info)...)
@@ -127,12 +157,17 @@ func closedQuestionDiags(body *ast.BlockStmt, caller FuncSig, info *Info) []Diag
 	for _, site := range collectQuestionSites(body) {
 		csig, key, known := resolveQuestionCallee(site.unwrap, info)
 		p := site.unwrap.Question
-		if !known || csig.Mode != ModeResultClosed {
+		// csig is a zero FuncSig (nil Mode) when !known, so use a nil-safe `_` rest-arm.
+		calleeIsClosed := match csig.Mode {
+			Mode.ModeResultClosed => true
+			_ => false
+		}
+		if !known || !calleeIsClosed {
 			label := key
 			if label == "" {
 				label = "the `?` callee"
 			}
-			diags = append(diags, Diagnostic{Pos: p, Severity: Warning, Feature: "06-error-e",
+			diags = append(diags, Diagnostic{Pos: p, Severity: Severity.Warning, Feature: "06-error-e",
 				Code:    "unresolved-question-error",
 				Message: fmt.Sprintf("cannot verify the `?` error conversion: callee `%s` is not an in-file closed-E `Result`-returning function (its error type is unresolvable here) — From-totality deferred", label)})
 			continue
@@ -141,7 +176,7 @@ func closedQuestionDiags(body *ast.BlockStmt, caller FuncSig, info *Info) []Diag
 			continue // same error enum — passes through
 		}
 		if _, found := info.FromRegistry[[2]string{csig.E, caller.E}]; !found {
-			diags = append(diags, Diagnostic{Pos: p, Severity: Error, Feature: "06-error-e",
+			diags = append(diags, Diagnostic{Pos: p, Severity: Severity.Error, Feature: "06-error-e",
 				Code: "missing-from-conversion",
 				Message: fmt.Sprintf("`?` propagates `%s` into a `Result[_, %s]` function but no `from func` converts `%s` to `%s` — declare `from func name(e %s) %s { … }`",
 					csig.E, caller.E, csig.E, caller.E, csig.E, caller.E)})
@@ -168,7 +203,7 @@ func closedErrDiags(body *ast.BlockStmt, caller FuncSig, info *Info) []Diagnosti
 		pos := call.Pos()
 		enumDecl := info.Enums[caller.E]
 		if enumDecl == nil {
-			diags = append(diags, Diagnostic{Pos: pos, Severity: Warning, Feature: "06-error-e",
+			diags = append(diags, Diagnostic{Pos: pos, Severity: Severity.Warning, Feature: "06-error-e",
 				Code: "unresolved-error-enum",
 				Message: fmt.Sprintf("cannot verify closedness of `Result.Err` in a `Result[_, %s]` function: enum `%s` is not declared in this file — closedness deferred",
 					caller.E, caller.E)})
@@ -177,17 +212,17 @@ func closedErrDiags(body *ast.BlockStmt, caller FuncSig, info *Info) []Diagnosti
 		qual, variant, isVariant := errVariantArg(call.Args[0])
 		switch {
 		case !isVariant:
-			diags = append(diags, Diagnostic{Pos: pos, Severity: Warning, Feature: "06-error-e",
+			diags = append(diags, Diagnostic{Pos: pos, Severity: Severity.Warning, Feature: "06-error-e",
 				Code: "unresolved-err-value",
 				Message: fmt.Sprintf("cannot verify the `Result.Err` value is a variant of `%s`: its argument is not a lexically-resolvable `%s.Variant` construction — closedness deferred",
 					caller.E, caller.E)})
 		case qual != caller.E:
-			diags = append(diags, Diagnostic{Pos: pos, Severity: Error, Feature: "06-error-e",
+			diags = append(diags, Diagnostic{Pos: pos, Severity: Severity.Error, Feature: "06-error-e",
 				Code: "err-outside-closed-enum",
 				Message: fmt.Sprintf("`Result.Err(%s.%s)` escapes the closed error type: this function's error enum is `%s`, not `%s` — wrap or convert the value to a `%s` variant",
 					qual, variant, caller.E, qual, caller.E)})
 		case !enumDecl.VSet[variant]:
-			diags = append(diags, Diagnostic{Pos: pos, Severity: Error, Feature: "06-error-e",
+			diags = append(diags, Diagnostic{Pos: pos, Severity: Severity.Error, Feature: "06-error-e",
 				Code: "unknown-error-variant",
 				Message: fmt.Sprintf("`Result.Err(%s.%s)` names `%s`, which is not a variant of enum `%s` — its variants are %s",
 					qual, variant, variant, caller.E, semaVariantList(enumDecl))})

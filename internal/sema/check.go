@@ -39,6 +39,14 @@ func (s Severity) String() string {
 	return "error"
 }
 
+// SeverityLabel returns the lowercase severity label. It mirrors the free function
+// of the same name in the self-hosted sema package (selfhost/sema), where Severity
+// is a goal enum that lowers to a sealed interface and so cannot carry a String()
+// method. White-box tests shared with the self-host port gate call SeverityLabel so
+// they compile against BOTH this Go-iota package and the enum-transpiled selfhost
+// package (SEAM-003).
+func SeverityLabel(s Severity) string { return s.String() }
+
 // Diagnostic is one located semantic finding. Pos is the front-end source position
 // of the offending construct; Feature names the guarantee (e.g. "02-match"); Code is
 // a stable, greppable identifier; Message is the agent/human-facing explanation.

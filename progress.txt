@@ -211,6 +211,23 @@
   assertions to a NEW internal-only `_test.go` kept OUT of
   internal/selfhost/port_test.go's BuildAndTest slice (and re-create any
   function-local closure helpers — they are not package-level).
+- Enum gotchas refined in SEAM-003: (a) A goal `enum` CANNOT carry a method — it
+  lowers to a sealed interface and Go forbids a method on an interface type
+  (`invalid receiver type X`). Convert `(x X) String()` etc. to a FREE function
+  `XLabel(x X)` and update `%s`/Stringer call sites to call it. (b) Value-position
+  `match` lowers only as `:=` / `var name T = match` / `return match`, NEVER as a
+  bare `field = match` assignment (`unsupported expression *ast.MatchExpr`); and
+  `:=` type-inference fires only when EVERY arm is one enum/string/bool LITERAL, so
+  an arm returning a variable forces `var name T = match`. Bind to a temp, then
+  assign. (c) When a value may be the enum ZERO (nil) — a `csig`/`sig` paired with
+  `!ok`/`!known`, or a map miss — match with an explicit `_` rest-arm (lowers to a
+  real Go `default`, nil-safe) and keep the `!ok` short-circuit in the surrounding
+  `if`; full enumeration lowers to a panicking default and faults on nil. (d) The
+  shared-port-gate test conflict has TWO fixes by whether the type has a production
+  string form: a type WITH one (Severity→SeverityLabel) — mirror the free function
+  in BOTH internal and selfhost and rewrite shared comparisons to call it (no
+  relocation, full coverage); a type WITHOUT one (Mode) — relocate its assertions to
+  an internal-only `_test.go` out of the port-gate slice.
 
 ## [2026-06-29T12:30:00Z] - US-011 (self-host idiomatic PRD)
 - Step 3 of 3 (idiomatic audit), seventh and LARGEST package: selfhost/backend
@@ -5368,4 +5385,58 @@
     test the UNCHANGED internal/ Go compiler, not selfhost/. The selfhost tree is
     proven only by the port gates + fixpoint. (A SEAM that edits internal/ too would
     move goldens; a selfhost-only idiom conversion does not.)
+---
+
+## 2026-06-29T20:30:00Z - SEAM-003
+- Converted selfhost/sema Mode (ModeNone/ModeResult/ModeResultClosed/ModeOption) and
+  Severity (Error/Warning) from `type X int` + iota to goal `enum`s, and converted every
+  cross- and same-package consumer to `match` in one atomic change. Total conversion — no
+  member kept as iota (neither type has numeric identity; the US-011-claimed
+  `sema.Severity(x)` numeric conversions DID NOT actually exist in the tree).
+- Files: selfhost/sema/{sema,check}.goal (enum defs; Severity.String() method -> free
+  `SeverityLabel` func), selfhost/sema/{resolve,question,mustuse,analyze,foreign}.goal
+  (Mode match + Severity == match + zero-value fixes), selfhost/sema/{implements,convert,
+  fields,assert}.goal (Severity literal requalification), selfhost/backend/{lower,emit}.goal
+  (needsResultPrelude/closedResultTE/unwrapClosed/resultMatch guards + calleeMode + FuncSig
+  construction), selfhost/typecheck/{mustuse,implements,nozero}.goal. internal/sema/check.go
+  (mirrored SeverityLabel) + internal/sema/mode_test.go (new) + rewritten shared tests +
+  DECISIONS.md + prd.json + progress.txt.
+- Gates: task check green, task build clean, task fixpoint = FIXPOINT OK (stage1==stage2 on
+  the new enum/match source). No golden regen needed (goldens test internal/ Go compiler).
+- Learnings for future iterations (carry into SEAM-004/005):
+  - A goal enum cannot carry a METHOD: `enum X` lowers to a sealed interface `type X
+    interface{ isX() }`, and Go forbids declaring a method on an interface type
+    (`invalid receiver type X (pointer or interface type)`). Convert any `(x X) String()`
+    (or other method) to a FREE function `XLabel(x X)`; update `%s`/Stringer call sites to
+    call it explicitly. This bites Severity (rendered via %s in analyze.Render and
+    typecheck Diagnostic.String).
+  - Value-position `match` rules in the bootstrap backend: it lowers `:=`/`var x T = match`
+    and `return match`, but NOT a bare `field = match`/`x = match` assignment
+    (`unsupported expression *ast.MatchExpr`). And `:=` inference only fires when ALL arms
+    are one enum, string, or bool LITERAL; an arm whose value is a variable (e.g.
+    `=> sig.Arity`) forces `var name T = match ...`. So: assign matches to a NEW `:=` temp
+    (or annotate `var`), then assign the temp to the field.
+  - Empty match arms are still the anti-pattern: a control switch with a no-op variant arm
+    (ModeNone) can't be `=> {}`. Either precompute bools and keep a switch-true with an
+    empty `case` body (legal in Go), or split into per-output value matches where the no-op
+    variant maps to the already-computed value (`Mode.ModeNone => sig.Arity`).
+  - nil-safe matching: when a value may be the enum ZERO (nil) — a `csig`/`sig` returned
+    with `!known`/`!ok`, or a map miss — match with an explicit `_` rest-arm (lowers to a
+    real Go `default`, no panic) instead of full enumeration (lowers to a panicking
+    default). Keep the `!ok`/`!known` short-circuit in the surrounding `if`. For
+    always-set values use full enumeration (exhaustiveness).
+  - Enum zero is nil: audit EVERY constructor whose struct holds the enum field. The
+    silent killer here was sema/foreign.goal building foreign FuncSigs without Mode (they
+    land in info.FuncSignatures, which backend needsResultPrelude matches over) and
+    backend calleeMode returning a map-miss zero FuncSig's nil Mode. Set Mode.ModeNone
+    explicitly at both.
+  - Port-gate shared-test conflict (bigger than SEAM-002's): internal/{sema,typecheck}
+    white-box tests reference the bare iota constants AND are reused by the self-host port
+    gate against the enum-transpiled selfhost pkgs (no bare constants there). Two fixes by
+    whether the type has a production string form: (a) Severity — add a mirrored
+    `SeverityLabel` to internal/sema and rewrite shared `x.Severity != Error` to
+    `SeverityLabel(x.Severity) != "error"` (compiles against BOTH, full coverage, no
+    relocation); (b) Mode (no string form) — relocate the assertions to a new internal-only
+    `_test.go` kept OUT of port_test.go's BuildAndTest slice (reuse the same-package
+    `mustResolve`/`repr` helpers), leaving the shared file symbol-free.
 ---

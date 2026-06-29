@@ -117,7 +117,13 @@ func needsResultPrelude(info *sema.Info) bool {
 		return false
 	}
 	for _, sig := range info.FuncSignatures {
-		if sig.Mode == sema.ModeResultClosed {
+		isClosed := match sig.Mode {
+			sema.Mode.ModeResultClosed => true
+			sema.Mode.ModeResult => false
+			sema.Mode.ModeOption => false
+			sema.Mode.ModeNone => false
+		}
+		if isClosed {
 			return true
 		}
 	}

@@ -29,7 +29,7 @@ func boom() {
 	if len(d) != 1 {
 		t.Fatalf("want 1 diagnostic, got %d: %+v", len(d), d)
 	}
-	if d[0].Severity != Error || d[0].Code != "assert-always-false" {
+	if SeverityLabel(d[0].Severity) != "error" || d[0].Code != "assert-always-false" {
 		t.Errorf("want Error assert-always-false, got %v %q", d[0].Severity, d[0].Code)
 	}
 	if !strings.Contains(d[0].Message, "statically false") {
@@ -52,7 +52,7 @@ func bad() {
 		t.Fatalf("want 4 always-false diagnostics, got %d: %+v", len(d), d)
 	}
 	for _, x := range d {
-		if x.Severity != Error || x.Code != "assert-always-false" {
+		if SeverityLabel(x.Severity) != "error" || x.Code != "assert-always-false" {
 			t.Errorf("want Error assert-always-false, got %v %q", x.Severity, x.Code)
 		}
 	}
@@ -72,7 +72,7 @@ func taut() {
 		t.Fatalf("want 3 always-true diagnostics, got %d: %+v", len(d), d)
 	}
 	for _, x := range d {
-		if x.Severity != Warning || x.Code != "assert-always-true" {
+		if SeverityLabel(x.Severity) != "warning" || x.Code != "assert-always-true" {
 			t.Errorf("want Warning assert-always-true, got %v %q", x.Severity, x.Code)
 		}
 		if !strings.Contains(x.Message, "always true") {

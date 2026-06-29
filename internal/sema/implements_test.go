@@ -161,7 +161,7 @@ func (Discard) Write(p []byte) (int, error) {
 }
 `
 	d := analyzeImplements(t, src)
-	if len(d) != 1 || d[0].Severity != Warning || d[0].Code != "unresolved-interface" {
+	if len(d) != 1 || SeverityLabel(d[0].Severity) != "warning" || d[0].Code != "unresolved-interface" {
 		t.Fatalf("qualified interface should defer with a Warning, got: %+v", d)
 	}
 }
@@ -176,7 +176,7 @@ type Plugin struct implements Handler {
 func (p Plugin) Handle() {}
 `
 	d := analyzeImplements(t, src)
-	if len(d) != 1 || d[0].Severity != Warning || d[0].Code != "unresolved-interface" {
+	if len(d) != 1 || SeverityLabel(d[0].Severity) != "warning" || d[0].Code != "unresolved-interface" {
 		t.Fatalf("undeclared interface should defer with a Warning, got: %+v", d)
 	}
 }

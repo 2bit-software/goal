@@ -123,7 +123,7 @@ func load(s string) Result[Config, AppError] {
 }
 `
 	d := analyzeClosed(t, src)
-	if len(d) != 1 || d[0].Severity != Warning || d[0].Code != "unresolved-question-error" {
+	if len(d) != 1 || SeverityLabel(d[0].Severity) != "warning" || d[0].Code != "unresolved-question-error" {
 		t.Fatalf("unknown callee should defer with a Warning, got: %+v", d)
 	}
 }
@@ -184,7 +184,7 @@ func rewrap(e ParseError) Result[Config, ParseError] {
 }
 `
 	d := analyzeClosed(t, src)
-	if len(d) != 1 || d[0].Severity != Warning || d[0].Code != "unresolved-err-value" {
+	if len(d) != 1 || SeverityLabel(d[0].Severity) != "warning" || d[0].Code != "unresolved-err-value" {
 		t.Fatalf("a bound-variable Err arg should defer with a Warning, got: %+v", d)
 	}
 }

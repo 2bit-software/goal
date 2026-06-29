@@ -20,23 +20,25 @@ import (
 
 // Severity is how strongly a Diagnostic is enforced. Error means the program is
 // rejected (a guarantee is violated); Warning is advisory — typically a located
-// deferral the checker surfaces rather than silently assuming. The constant order
-// mirrors check.Severity so the two map one-to-one.
-type Severity int
-
-const (
+// deferral the checker surfaces rather than silently assuming. It is a goal enum
+// (SEAM-003): a closed sum matched with `match`, no iota int.
+enum Severity {
 	// Error marks a violated guarantee; the program is rejected.
-	Error Severity = iota
+	Error
 	// Warning marks an advisory diagnostic, usually a located deferral.
 	Warning
-)
+}
 
-// String returns the lowercase severity label used in rendered diagnostics.
-func (s Severity) String() string {
-	if s == Warning {
-		return "warning"
+// SeverityLabel returns the lowercase severity label used in rendered diagnostics.
+// It is a free function rather than a `(s Severity) String()` method because a
+// goal enum lowers to a sealed interface (§8.1), and Go forbids declaring a method
+// on an interface type. Callers that previously relied on the Stringer (via `%s`)
+// call SeverityLabel explicitly.
+func SeverityLabel(s Severity) string {
+	return match s {
+		Severity.Warning => "warning"
+		_ => "error"
 	}
-	return "error"
 }
 
 // Diagnostic is one located semantic finding. Pos is the front-end source position
@@ -135,7 +137,7 @@ func checkOneMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 		// false "exhaustive".
 		return []Diagnostic{{
 			Pos:      m.Match,
-			Severity: Warning,
+			Severity: Severity.Warning,
 			Feature:  "02-match",
 			Code:     "unresolved-match-enum",
 			Message: fmt.Sprintf("cannot verify exhaustiveness of `match` on `%s`: enum `%s` is not declared in this file — exhaustiveness deferred",
@@ -154,7 +156,7 @@ func checkOneMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 	}
 	return []Diagnostic{{
 		Pos:      m.Match,
-		Severity: Error,
+		Severity: Severity.Error,
 		Feature:  "02-match",
 		Code:     "non-exhaustive-match",
 		Message: fmt.Sprintf("non-exhaustive `match` on enum `%s`: missing variant%s %s — handle %s, or add a `_` rest-arm to dismiss the rest",

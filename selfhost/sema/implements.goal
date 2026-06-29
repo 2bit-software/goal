@@ -92,7 +92,7 @@ func checkOneImplements(info *Info, typeName, iface string, impPos token.Pos) []
 		case !ok:
 			diags = append(diags, Diagnostic{
 				Pos:      impPos,
-				Severity: Error,
+				Severity: Severity.Error,
 				Feature:  "07-implements",
 				Code:     "unimplemented-method",
 				Message: fmt.Sprintf("type `%s` does not implement `%s`: missing method `%s%s` — declare `func (%s) %s%s`",
@@ -101,7 +101,7 @@ func checkOneImplements(info *Info, typeName, iface string, impPos token.Pos) []
 		case got.Sig != want.Sig:
 			diags = append(diags, Diagnostic{
 				Pos:      impPos,
-				Severity: Error,
+				Severity: Severity.Error,
 				Feature:  "07-implements",
 				Code:     "method-signature-mismatch",
 				Message: fmt.Sprintf("type `%s` does not implement `%s`: method `%s` has signature `%s` but `%s` requires `%s`",
@@ -146,7 +146,7 @@ func requiredMethods(info *Info, iface string, seen map[string]bool) (methods []
 func deferImplements(typeName, iface string, impPos token.Pos, reason string) []Diagnostic {
 	return []Diagnostic{{
 		Pos:      impPos,
-		Severity: Warning,
+		Severity: Severity.Warning,
 		Feature:  "07-implements",
 		Code:     "unresolved-interface",
 		Message: fmt.Sprintf("cannot verify `%s implements %s`: %s — interface-satisfaction deferred",

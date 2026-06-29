@@ -77,8 +77,8 @@
         "DECISIONS.md records the conversion, superseding the US-011 'Mode and Severity stay iota' refusal with the seam rationale"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": "Reverses the US-011 refusal. Scoped, well-bounded (~11 consumer sites). Watch the numeric `sema.Severity(x)` conversions in typecheck/lsp -- those are the real work; if any genuinely needs an int (serialization), keep an explicit conversion method instead of iota identity."
+      "passes": true,
+      "notes": "Reverses the US-011 refusal. Scoped, well-bounded (~11 consumer sites). Watch the numeric `sema.Severity(x)` conversions in typecheck/lsp -- those are the real work; if any genuinely needs an int (serialization), keep an explicit conversion method instead of iota identity. DONE: both converted totally (no member kept iota; the claimed sema.Severity(x) conversions did not actually exist). Severity.String() method -> free SeverityLabel func (a goal enum lowers to a sealed interface; Go forbids a method on it). foreign.goal + calleeMode set Mode.ModeNone explicitly (enum zero is nil). Shared port-gate tests: Severity via mirrored SeverityLabel in both pkgs; Mode assertions relocated to internal-only mode_test.go. FIXPOINT OK; check+build green."
     },
     {
       "id": "SEAM-004",

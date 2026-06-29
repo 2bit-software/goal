@@ -232,7 +232,7 @@ func use() {
 	if !ok {
 		t.Fatalf("want unresolved-dropped-field warning, got %v", d)
 	}
-	if w.Severity != sema.Warning {
+	if sema.SeverityLabel(w.Severity) != "warning" {
 		t.Errorf("exported dropped field should be a Warning, got %v", w.Severity)
 	}
 	if _, isErr := hasCode(d, "dropped-stored-result"); isErr {

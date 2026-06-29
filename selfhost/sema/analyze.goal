@@ -28,7 +28,11 @@ func Analyze(src string) Result[[]Diagnostic, error] {
 // program). Warnings (located deferrals) do not count.
 func HasErrors(diags []Diagnostic) bool {
 	for _, d := range diags {
-		if d.Severity == Error {
+		isErr := match d.Severity {
+			Severity.Error => true
+			Severity.Warning => false
+		}
+		if isErr {
 			return true
 		}
 	}
@@ -40,5 +44,5 @@ func HasErrors(diags []Diagnostic) bool {
 // position's Line and Col are already carried on Pos.
 func (d Diagnostic) Render(filename string) string {
 	return fmt.Sprintf("%s:%d:%d: %s: [%s] %s",
-		filename, d.Pos.Line, d.Pos.Col, d.Severity, d.Code, d.Message)
+		filename, d.Pos.Line, d.Pos.Col, SeverityLabel(d.Severity), d.Code, d.Message)
 }

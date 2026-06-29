@@ -10,13 +10,12 @@
 // the later sema stories (US-029..US-031) add the checks layered on these facts.
 package sema
 
-// Mode is a function's error-propagation shape, read from its return type. The
-// constant order mirrors analyze.Mode so the two resolvers' modes line up.
-type Mode int
-
-const (
+// Mode is a function's error-propagation shape, read from its return type. As a
+// goal enum, it is a closed sum matched with `match` (no ordering/numeric identity:
+// SEAM-003 retired the iota int that mirrored analyze.Mode).
+enum Mode {
 	// ModeNone returns neither Result nor Option.
-	ModeNone Mode = iota
+	ModeNone
 	// ModeResult is the open-E Result[T, error], lowered to native (T, error).
 	ModeResult
 	// ModeResultClosed is a closed-E Result[T, E] (E is not error), lowered to the
@@ -24,7 +23,7 @@ const (
 	ModeResultClosed
 	// ModeOption is Option[T], lowered to *T.
 	ModeOption
-)
+}
 
 // FuncSig is the analyzed return signature of one function.
 type FuncSig struct {

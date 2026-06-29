@@ -217,9 +217,12 @@ func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs
 				if !d.Name.IsExported() {
 					continue
 				}
-				// Mode left at ModeNone: a foreign entry carries only the `?`-relevant
-				// facts (arity and whether it ends in error), matching analyze.
-				sig := FuncSig{Arity: goResultArity(d.Type), EndsInError: endsInErrorAST(d.Type)}
+				// Mode set explicitly to ModeNone: a foreign entry carries only the
+				// `?`-relevant facts (arity and whether it ends in error), matching analyze.
+				// The enum zero value is nil (not the first variant), and these sigs land
+				// in info.FuncSignatures, which needsResultPrelude matches over — so an
+				// implicit zero would fault at run time (SEAM-003).
+				sig := FuncSig{Mode: Mode.ModeNone, Arity: goResultArity(d.Type), EndsInError: endsInErrorAST(d.Type)}
 				if d.Recv == nil {
 					funcs[alias+"."+d.Name.Name] = sig
 				} else if base := foreignRecvBase(d.Recv); base != "" {

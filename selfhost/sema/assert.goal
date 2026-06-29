@@ -40,7 +40,7 @@ func CheckAssert(file *ast.File, info *Info) []Diagnostic {
 		if verdict {
 			diags = append(diags, Diagnostic{
 				Pos:      a.Assert,
-				Severity: Warning,
+				Severity: Severity.Warning,
 				Feature:  "10-assert",
 				Code:     "assert-always-true",
 				Message: "assert condition `" + condText + "` is always true (dead code: " +
@@ -49,7 +49,7 @@ func CheckAssert(file *ast.File, info *Info) []Diagnostic {
 		} else {
 			diags = append(diags, Diagnostic{
 				Pos:      a.Assert,
-				Severity: Error,
+				Severity: Severity.Error,
 				Feature:  "10-assert",
 				Code:     "assert-always-false",
 				Message: "assert condition `" + condText + "` is statically false: " +

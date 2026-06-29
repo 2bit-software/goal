@@ -96,17 +96,19 @@ func TestResolveRepresentativeSource(t *testing.T) {
 		t.Errorf("Shape not recorded as sealed")
 	}
 
-	// Function signatures: mode, success/error types, arity, ends-in-error.
-	if got := s.FuncSignatures["area"]; got.Mode != ModeNone {
-		t.Errorf("area mode = %v, want ModeNone", got.Mode)
-	}
-	if got := s.FuncSignatures["find"]; got.Mode != ModeResult || got.T != "int" || got.E != "error" || got.Arity != 2 || !got.EndsInError {
+	// Function signatures: success/error types, arity, ends-in-error. The per-function
+	// Mode assertions live in mode_test.go (an internal-only file kept OUT of the
+	// self-host port-gate slice), because they reference the Go-iota Mode constants
+	// directly; in the self-hosted tree (SEAM-003) Mode is a goal enum whose transpiled
+	// Go has no bare ModeNone/ModeResult/... constants, so this shared file stays free
+	// of them and compiles against both representations.
+	if got := s.FuncSignatures["find"]; got.T != "int" || got.E != "error" || got.Arity != 2 || !got.EndsInError {
 		t.Errorf("find resolved wrong: %+v", got)
 	}
-	if got := s.FuncSignatures["lookup"]; got.Mode != ModeOption || got.T != "int" || got.Arity != 1 || got.EndsInError {
+	if got := s.FuncSignatures["lookup"]; got.T != "int" || got.Arity != 1 || got.EndsInError {
 		t.Errorf("lookup resolved wrong: %+v", got)
 	}
-	if got := s.FuncSignatures["closed"]; got.Mode != ModeResultClosed || got.T != "int" || got.E != "MyErr" {
+	if got := s.FuncSignatures["closed"]; got.T != "int" || got.E != "MyErr" {
 		t.Errorf("closed resolved wrong: %+v", got)
 	}
 

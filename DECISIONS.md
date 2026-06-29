@@ -2291,6 +2291,14 @@ the transpiled `selfhost/parser` against `internal/parser/parser_test.go`, plus
   auto-convertible propagation sites") holds.
 
 ### `Mode` and `Severity` stay `type X int` + iota — NOT converted to `enum`
+- **SUPERSEDED by SEAM-003** (see "SEAM-003 — Mode & Severity iota → goal enum"
+  at the end of this file). The refusal below was a SCOPE refusal ("cross-package
+  consumers, out of scope for a single-package story"), not a semantic one: unlike
+  `token.Kind`, neither `Mode` nor `Severity` carries genuine numeric identity
+  (no array index, range predicate, or wire value — the claimed `sema.Severity(x)`
+  numeric conversions do not actually exist in the tree). Under the relaxed seam
+  gate SEAM-003 converts both to goal `enum`s with every cross-package consumer.
+  Retained for the audit trail.
 - **Kind:** refusal (with reason)
 - **Refused:** rewriting `Mode` (ModeNone/ModeResult/ModeResultClosed/ModeOption)
   and `Severity` (Error/Warning) as goal `enum`s.
@@ -2931,5 +2939,59 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
   type-switch); verified behavior-preserving (same control flow / values, only the idiom
   moved). No golden regeneration was needed — corpus/snapshot goldens test the unchanged
   internal/ Go compiler, not the selfhost tree.
+- **Capabilities relied on:** SEAM-CAP (cross-package enum-match lowering) and SEAM-CAP-2
+  (cross-`.goal`-package enum visibility + bare-construction lowering); both pre-landed.
+
+## SEAM-003 — Mode & Severity iota → goal enum (sema + backend + typecheck consumers)
+- **Kind:** decision (reverses the US-011 "Mode and Severity stay iota" SCOPE refusal)
+- **Chose:** express `sema.Mode` (ModeNone/ModeResult/ModeResultClosed/ModeOption) and
+  `sema.Severity` (Error/Warning) as goal `enum`s (§8.1 sealed-interface encoding), and
+  convert every cross- and same-package consumer to `match` in one atomic change.
+- **Total conversion (no member kept as iota).** Unlike `token.Kind` (SEAM-002), neither
+  type carries numeric identity: no array index, range predicate, contiguous-numbering, or
+  wire value. The US-011 refusal asserted `sema.Severity(x)` numeric conversions existed —
+  they do **not** (verified by grep across the tree). So both convert cleanly.
+- **Variant surface form.** Dataless variants are referenced `Enum.Variant`: same package
+  `Mode.ModeResult` / `Severity.Error`; cross-package `sema.Mode.ModeResultClosed` /
+  `sema.Severity.Warning`. Construction, comparison, and match all use this qualified form;
+  the bare `ModeResult`/`Error` symbols no longer exist after lowering.
+- **`==`/`!=`/`switch` → `match`.** Converted sites: `caller.Mode != ModeResult` and the
+  switch-true Mode cases in question.goal; the `sig.Mode` switch in resolve.goal (split into
+  two value-position `match`es for Arity/EndsInError, since a no-op `ModeNone` arm cannot be
+  an empty `{}`); `isResultFunc` in mustuse.goal; `needsResultPrelude` and the
+  `closedResultTE`/`unwrapClosed`/`resultMatch` guards plus `calleeMode` in backend; the
+  `mustuse` guard in typecheck. `==` would in fact still compile (interface comparison), but
+  the proven SEAM-002 idiom is `match` and the PRD mandates it.
+- **Enum zero is nil — set explicitly.** The enum zero value is `nil`, not the first
+  variant. `funcSig` and emit.goal construction already set Mode; the critical fix is
+  `foreign.goal` (foreign sigs land in `info.FuncSignatures`, which `needsResultPrelude`
+  matches over — an implicit zero would fault at run time) and `calleeMode` (a missing map
+  key yields a zero FuncSig; it now returns `sema.Mode.ModeNone` explicitly). Guards over a
+  possibly-zero `csig`/`sig` (when `!known`/`!ok`) use a nil-safe `_` rest-arm so the match
+  never faults on nil; guards over an always-set value use full variant enumeration.
+- **`Severity.String()` → free `SeverityLabel(s Severity)`.** A goal enum lowers to a
+  sealed interface, and Go forbids declaring a method on an interface type, so the
+  `(s Severity) String()` Stringer is replaced by a free `match`-based `SeverityLabel`
+  function. The two render sites that relied on the Stringer via `%s` (analyze.goal Render,
+  typecheck.goal Diagnostic.String) call `SeverityLabel`/`sema.SeverityLabel` explicitly.
+- **internal/ test handling (port-gate compatibility).** `internal/sema` and
+  `internal/typecheck` stay Go-iota (plain Go, not in the fixpoint diff), but their
+  white-box test files are reused by the self-host port gate against the enum-transpiled
+  selfhost packages. Resolution differs by type:
+  - **Severity (has a production label):** add a mirrored `SeverityLabel(Severity) string`
+    to `internal/sema`, and rewrite the shared tests' `x.Severity != Error` comparisons to
+    `SeverityLabel(x.Severity) != "error"` — a form that compiles against BOTH the iota
+    package and the enum-transpiled one, preserving full coverage with no relocation.
+  - **Mode (no production string form):** relocate the four `FuncSig.Mode` assertions from
+    the port-gated `resolve_test.go` into a new internal-only `internal/sema/mode_test.go`
+    (NOT in the port-gate slice), leaving `resolve_test.go` Mode-symbol-free (it still
+    checks T/E/Arity/EndsInError against selfhost). Mirrors the SEAM-002 funcmod_test.go
+    relocation.
+- **Equivalence proof (relaxed gate).** `task fixpoint` → FIXPOINT OK (goal-c-1/goal-c-2
+  byte-identical on `./selfhost`, both agreeing on the new enum/match form); `task check`
+  green (incl. the `internal/selfhost` behavioral port gates transpiling selfhost/{sema,
+  backend,typecheck} as enums and running the rewritten/relocated tests, plus the corpus
+  behavioral tier); `task build` green. No golden regeneration was needed — goldens test the
+  unchanged internal/ Go compiler, not the selfhost tree.
 - **Capabilities relied on:** SEAM-CAP (cross-package enum-match lowering) and SEAM-CAP-2
   (cross-`.goal`-package enum visibility + bare-construction lowering); both pre-landed.

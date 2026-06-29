@@ -78,7 +78,12 @@ func discardedResultError(p *Package, as *ast.AssignStmt) *Diagnostic {
 		return nil
 	}
 	sig, ok := p.Sema.FuncSignatures[callee.Name]
-	if !ok || sig.Mode != sema.ModeResult {
+	// sig is a zero FuncSig (nil Mode) when !ok, so use a nil-safe `_` rest-arm.
+	isOpenResult := match sig.Mode {
+		sema.Mode.ModeResult => true
+		_ => false
+	}
+	if !ok || !isOpenResult {
 		return nil
 	}
 	if !isBlank(as.Lhs[1]) {
@@ -86,7 +91,7 @@ func discardedResultError(p *Package, as *ast.AssignStmt) *Diagnostic {
 	}
 	return &Diagnostic{
 		Pos:      p.Fset.Position(as.Lhs[1].Pos()),
-		Severity: sema.Error,
+		Severity: sema.Severity.Error,
 		Feature:  "03-result",
 		Code:     "discarded-result-error",
 		Message: fmt.Sprintf(
@@ -180,7 +185,7 @@ func droppedFieldDiag(p *Package, sname, fname, kind string, v *types.Var) Diagn
 	pos := p.Fset.Position(v.Pos())
 	if v.Exported() {
 		return Diagnostic{
-			Pos: pos, Severity: sema.Warning, Feature: "03-result",
+			Pos: pos, Severity: sema.Severity.Warning, Feature: "03-result",
 			Code: "unresolved-dropped-field",
 			Message: fmt.Sprintf(
 				"exported field `%s.%s` holds a %s but is never read in this package; cannot prove it is consulted elsewhere",
@@ -188,7 +193,7 @@ func droppedFieldDiag(p *Package, sname, fname, kind string, v *types.Var) Diagn
 		}
 	}
 	return Diagnostic{
-		Pos: pos, Severity: sema.Error, Feature: "03-result",
+		Pos: pos, Severity: sema.Severity.Error, Feature: "03-result",
 		Code: "dropped-stored-result",
 		Message: fmt.Sprintf(
 			"field `%s.%s` stores a %s that is never consulted; match it, propagate it, or read it",

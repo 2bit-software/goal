@@ -86,7 +86,7 @@ func underscoreDiscard(s *ast.AssignStmt, info *Info) (Diagnostic, bool) {
 	}
 	return Diagnostic{
 		Pos:      s.Rhs[0].Pos(),
-		Severity: Warning,
+		Severity: Severity.Warning,
 		Feature:  "03-result",
 		Code:     "unresolved-result-discard",
 		Message: fmt.Sprintf("cannot verify the `Result` from `%s(…)` is handled: it is discarded with `_ :=`, but the sanctioned explicit-discard surface for a `Result` is not yet defined — must-use deferred",
@@ -99,7 +99,7 @@ func underscoreDiscard(s *ast.AssignStmt, info *Info) (Diagnostic, bool) {
 func droppedResult(pos token.Pos, callee string) Diagnostic {
 	return Diagnostic{
 		Pos:      pos,
-		Severity: Error,
+		Severity: Severity.Error,
 		Feature:  "03-result",
 		Code:     "dropped-result",
 		Message: fmt.Sprintf("the `Result` returned by `%s(…)` is dropped: a `Result` must be used — consume it with `match %s(…) { Result.Ok(v) => … Result.Err(e) => … }`, propagate it with `%s(…)?`, or bind it with `x := %s(…)`",
@@ -111,7 +111,15 @@ func droppedResult(pos token.Pos, callee string) Diagnostic {
 // ModeResult or closed-E ModeResultClosed) — the callees the must-use obligation attaches to.
 func isResultFunc(info *Info, name string) bool {
 	sig, ok := info.FuncSignatures[name]
-	return ok && (sig.Mode == ModeResult || sig.Mode == ModeResultClosed)
+	if !ok {
+		return false
+	}
+	return match sig.Mode {
+		Mode.ModeResult => true
+		Mode.ModeResultClosed => true
+		Mode.ModeOption => false
+		Mode.ModeNone => false
+	}
 }
 
 // isBlank reports whether e is the blank identifier `_`.

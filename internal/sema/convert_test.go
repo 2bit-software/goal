@@ -38,7 +38,7 @@ derive func toStorage(e EventExecution) StoredEvent
 	if len(d) != 1 {
 		t.Fatalf("want 1 diagnostic, got %d: %+v", len(d), d)
 	}
-	if d[0].Severity != Error || d[0].Code != "unsourced-field" {
+	if SeverityLabel(d[0].Severity) != "error" || d[0].Code != "unsourced-field" {
 		t.Errorf("want Error unsourced-field, got %v %q", d[0].Severity, d[0].Code)
 	}
 	if !strings.Contains(d[0].Message, "target field `StoredEvent.ExternalID` has no same-named source field") {
@@ -67,7 +67,7 @@ derive func toStorage(e EventExecution) StoredEvent
 	if len(d) != 1 {
 		t.Fatalf("want 1 diagnostic, got %d: %+v", len(d), d)
 	}
-	if d[0].Severity != Error || d[0].Code != "unbridged-field" {
+	if SeverityLabel(d[0].Severity) != "error" || d[0].Code != "unbridged-field" {
 		t.Errorf("want Error unbridged-field, got %v %q", d[0].Severity, d[0].Code)
 	}
 	if !strings.Contains(d[0].Message, "no `from func` converts `UUID`→`string`") {
@@ -100,7 +100,7 @@ derive func toDomain(s StoredEvent) EventExecution
 	if len(d) != 1 {
 		t.Fatalf("want 1 diagnostic, got %d: %+v", len(d), d)
 	}
-	if d[0].Severity != Error || d[0].Code != "fallible-in-total-derive" {
+	if SeverityLabel(d[0].Severity) != "error" || d[0].Code != "fallible-in-total-derive" {
 		t.Errorf("want Error fallible-in-total-derive, got %v %q", d[0].Severity, d[0].Code)
 	}
 	if !strings.Contains(d[0].Message, "this derive is total — declare it returning `(EventExecution, error)`") {
