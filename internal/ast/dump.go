@@ -21,10 +21,10 @@ import (
 )
 
 var (
-	posType  = reflect.TypeOf(token.Pos{})
-	kindType = reflect.TypeOf(token.Kind(0))
-	modType  = reflect.TypeOf(FuncPlain)
-	dirType  = reflect.TypeOf(SendRecv)
+	posType  = reflect.TypeFor[token.Pos]()
+	kindType = reflect.TypeFor[token.Kind]()
+	modType  = reflect.TypeFor[FuncMod]()
+	dirType  = reflect.TypeFor[ChanDir]()
 )
 
 // Sexpr renders an AST node as a deterministic, indented s-expression. Source
@@ -91,7 +91,8 @@ func (d *sexprDumper) dumpInt(v reflect.Value) {
 
 func (d *sexprDumper) dumpStruct(v reflect.Value, depth int) {
 	t := v.Type()
-	d.b.WriteString("(" + t.Name())
+	d.b.WriteByte('(')
+	d.b.WriteString(t.Name())
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		if !f.IsExported() {
@@ -104,7 +105,11 @@ func (d *sexprDumper) dumpStruct(v reflect.Value, depth int) {
 		if isEmptyField(fv) {
 			continue
 		}
-		d.b.WriteString("\n" + indent(depth+1) + "." + f.Name + " ")
+		d.b.WriteByte('\n')
+		d.b.WriteString(indent(depth + 1))
+		d.b.WriteByte('.')
+		d.b.WriteString(f.Name)
+		d.b.WriteByte(' ')
 		d.dump(fv, depth+1)
 	}
 	d.b.WriteString(")")
@@ -117,10 +122,13 @@ func (d *sexprDumper) dumpSlice(v reflect.Value, depth int) {
 	}
 	d.b.WriteString("[")
 	for i := 0; i < v.Len(); i++ {
-		d.b.WriteString("\n" + indent(depth+1))
+		d.b.WriteByte('\n')
+		d.b.WriteString(indent(depth + 1))
 		d.dump(v.Index(i), depth+1)
 	}
-	d.b.WriteString("\n" + indent(depth) + "]")
+	d.b.WriteByte('\n')
+	d.b.WriteString(indent(depth))
+	d.b.WriteByte(']')
 }
 
 // isEmptyField reports whether a struct field should be elided from the dump:

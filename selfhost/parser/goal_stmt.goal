@@ -73,9 +73,7 @@ func (p *parser) collectDoc() *ast.DocComment {
 // a raw doc-comment line literal.
 func stripDocPrefix(lit string) string {
 	s := strings.TrimPrefix(lit, "///")
-	if strings.HasPrefix(s, " ") {
-		s = s[1:]
-	}
+	s = strings.TrimPrefix(s, " ")
 	return s
 }
 

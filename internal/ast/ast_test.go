@@ -2,6 +2,7 @@ package ast
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"goal/internal/token"
@@ -164,7 +165,7 @@ func TestWalkVisitsEveryNodeExactlyOnce(t *testing.T) {
 	}
 	// And Walk must not visit anything that was not constructed.
 	for n := range c.visits {
-		if !contains(want, n) {
+		if !slices.Contains(want, n) {
 			t.Errorf("Walk visited an unexpected node %T", n)
 		}
 	}
@@ -391,15 +392,6 @@ func TestWalkGoalExprChildren(t *testing.T) {
 	if fmt.Sprintf("%T", typePattern) == fmt.Sprintf("%T", variantPattern) {
 		t.Fatalf("TypePattern and VariantPattern share a node type; they must be distinct")
 	}
-}
-
-func contains(list []Node, target Node) bool {
-	for _, n := range list {
-		if n == target {
-			return true
-		}
-	}
-	return false
 }
 
 // TestWalkIndexListExpr asserts Walk descends into IndexListExpr's X and each of
