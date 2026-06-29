@@ -104,11 +104,11 @@ func checkStructLit(lit *ast.CompositeLit, info *Info) []Diagnostic {
 // skipped silently — the qualifier is not this check's concern.
 func checkVariantLit(lit *ast.VariantLit, info *Info) []Diagnostic {
 	enumName := exprName(lit.Enum)
-	enum := info.Enums[enumName]
-	if enum == nil || lit.Variant == nil {
+	enumDecl := info.Enums[enumName]
+	if enumDecl == nil || lit.Variant == nil {
 		return nil
 	}
-	declared, ok := variantFields(enum, lit.Variant.Name)
+	declared, ok := variantFields(enumDecl, lit.Variant.Name)
 	if !ok || len(declared) == 0 {
 		return nil
 	}
@@ -123,7 +123,7 @@ func checkVariantLit(lit *ast.VariantLit, info *Info) []Diagnostic {
 		Feature:  "08-no-zero-value",
 		Code:     "missing-field",
 		Message: fmt.Sprintf("variant construction `%s.%s(…)` omits required field%s %s — a variant has no `...defaults`; name every field",
-			enum.Name, lit.Variant.Name, plural(len(missing)), quoteJoin(missing)),
+			enumDecl.Name, lit.Variant.Name, plural(len(missing)), quoteJoin(missing)),
 	}}
 }
 
@@ -178,8 +178,8 @@ func labeledArgNames(args []ast.Expr) map[string]bool {
 
 // variantFields returns the declared fields of the named variant of enum, and
 // whether such a variant exists.
-func variantFields(enum *Enum, variant string) ([]Field, bool) {
-	for _, v := range enum.Variants {
+func variantFields(enumDecl *Enum, variant string) ([]Field, bool) {
+	for _, v := range enumDecl.Variants {
 		if v.Name == variant {
 			return v.Fields, true
 		}

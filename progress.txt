@@ -1,6 +1,17 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- goal reserves three words beyond Go's keywords: `match`, `enum`, `assert`
+  (implements/sealed/from/derive are contextual keywords, NOT reserved). Go source
+  that uses any of these EXACT words as an identifier is valid Go but rejected by
+  the goal parser. Before feeding any package through the front-end, rename such
+  identifiers (e.g. `enum` -> `enumDecl`). `enumOf`/`enumName`/`.Enum` are fine —
+  only the bare word collides.
+- Self-host smoke gate: internal/selfhost transpiles a set of packages through the
+  goal front-end and `go build`s the output in a temp `module goal`. Use
+  selfhost.BuildTranspiled(layout) keyed by module-relative dir ("internal/<pkg>")
+  to verify any package's transpile compiles — `go build` is the real gate because
+  the checker is silent on miscompiles. Reused by every later port story.
 - Zero-dependency project: tests use stdlib `testing` only (no testify).
 - Verify with `task check` (go vet + full `go test ./...`) and `task build`.
   A PostToolUse hook runs `task check` after every Edit, so a multi-file refactor
@@ -4155,4 +4166,42 @@
     semicolon, reach for token line numbers (onNewLine), not more lookahead.
   - This unblocks US-005 (port token): token kinds are an iota enum that hit
     exactly this bug.
+---
+
+## [2026-06-29] - US-002 (self-host-phase-4 PRD)
+- Stood up the self-host transpile-and-build smoke gate: a new package
+  internal/selfhost transpiles each in-scope compiler package through the goal
+  front-end and `go build`s the generated Go in a throwaway temp module. This is
+  the verification harness every later port story (US-005+) reuses.
+- New: internal/selfhost/selfhost.go (InScope list; ReadPackage(dir) ->
+  *project.Package from non-test *.go; BuildTranspiled(layout) transpiles +
+  writes into a `module goal` temp module under each module-relative dir + runs
+  `go build ./...`) and internal/selfhost/selfhost_test.go (positive gate over all
+  8 packages + negative test proving a non-compiling transpile fails the gate).
+- DEFECT FOUND BY THE GATE (the whole point): the PRD premise "the compiler
+  source is already valid goal" was FALSE. goal reserves `match`, `enum`, `assert`
+  beyond Go's keywords (implements/sealed/from/derive are contextual, NOT
+  reserved). Four files used `enum` as a plain local identifier (valid Go, rejected
+  by the goal parser): internal/sema/check.go, internal/sema/fields.go,
+  internal/sema/question.go, internal/backend/emit.go. Renamed to enumDecl /
+  enumIdent (behavior-preserving; error-message strings left untouched). After the
+  renames all 8 packages transpile and build clean.
+- Files: new internal/selfhost/{selfhost.go,selfhost_test.go}; edited
+  internal/sema/{check,fields,question}.go, internal/backend/emit.go; prd.json
+  (US-002 passes:true); progress.txt. Initiative artifacts under
+  history/20260629-feature-us-002-per-package-transpile-build-smoke-gate/.
+- Verify: `task check` and `task build` green; gate test ok.
+- Learnings for future iterations:
+  - Only the EXACT words match/enum/assert are reserved; enumOf, enumName, Enums,
+    .Enum are fine (the lexer takes the longest identifier). When porting/feeding a
+    package through the front-end, grep for bare `\benum\b`/`\bmatch\b`/`\bassert\b`
+    used as identifiers and rename them first.
+  - backend.TranspilePackage stops at the FIRST file that fails to parse, so a
+    package with several offending files surfaces them one build at a time. The
+    gate's per-package error names the file; fix, re-run, repeat (or scan all files
+    up front).
+  - The 8 covered packages' non-test internal dependency closure is fully within
+    the covered set, so a single temp module holding all transpiled output builds
+    with no extra wiring (stdlib imports pass through). Reuse BuildTranspiled for
+    US-005+; key the layout map by the module-relative dir (e.g. "internal/token").
 ---

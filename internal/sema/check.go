@@ -128,8 +128,8 @@ func checkOneMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 		return nil
 	}
 
-	enum := info.Enums[enumName]
-	if enum == nil {
+	enumDecl := info.Enums[enumName]
+	if enumDecl == nil {
 		// Arms name an enum not declared in this file: its full variant set is unknown,
 		// so completeness is unprovable. Defer with a located Warning rather than risk a
 		// false "exhaustive".
@@ -148,7 +148,7 @@ func checkOneMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 		return nil
 	}
 
-	missing := missingVariants(enum, covered)
+	missing := missingVariants(enumDecl, covered)
 	if len(missing) == 0 {
 		return nil
 	}
@@ -158,7 +158,7 @@ func checkOneMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 		Feature:  "02-match",
 		Code:     "non-exhaustive-match",
 		Message: fmt.Sprintf("non-exhaustive `match` on enum `%s`: missing variant%s %s — handle %s, or add a `_` rest-arm to dismiss the rest",
-			enum.Name, plural(len(missing)), quoteVariants(enum.Name, missing), pronoun(len(missing))),
+			enumDecl.Name, plural(len(missing)), quoteVariants(enumDecl.Name, missing), pronoun(len(missing))),
 	}}
 }
 
@@ -214,9 +214,9 @@ func exprName(e ast.Expr) string {
 
 // missingVariants returns the enum's declared variants not in the covered set, in
 // declaration order (the order an agent reads them in the enum decl).
-func missingVariants(enum *Enum, covered map[string]bool) []string {
+func missingVariants(enumDecl *Enum, covered map[string]bool) []string {
 	var missing []string
-	for _, v := range enum.Variants {
+	for _, v := range enumDecl.Variants {
 		if !covered[v.Name] {
 			missing = append(missing, v.Name)
 		}

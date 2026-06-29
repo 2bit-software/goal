@@ -30,7 +30,7 @@
         "The gate is green after US-001 and fails if any covered package transpiles to non-compiling Go"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "The compiler source is already valid goal (Go superset), so the gate can feed internal/<pkg>/*.go (as .goal) through goalc/goal build. This is the verification harness every later port story reuses. `go build` is the real gate because the checker stays silent on miscompiles (that is how US-001 was found)."
     },
     {

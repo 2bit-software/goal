@@ -977,8 +977,8 @@ func (e *emitter) selectorExpr(x *ast.SelectorExpr) {
 // encoding `Enum(Enum_V{Label: x})`: labels are exported and argument values are
 // emitted recursively, so a nested construction in a payload lowers for free.
 func (e *emitter) variantLit(x *ast.VariantLit) {
-	enum, ok := x.Enum.(*ast.Ident)
-	if !ok || enumOf(e.info, enum.Name) == nil {
+	enumIdent, ok := x.Enum.(*ast.Ident)
+	if !ok || enumOf(e.info, enumIdent.Name) == nil {
 		e.fail("unsupported variant construction (enum not resolved): %T", x.Enum)
 		return
 	}
@@ -986,7 +986,7 @@ func (e *emitter) variantLit(x *ast.VariantLit) {
 		e.fail("variant construction has no variant tag")
 		return
 	}
-	e.p(fmt.Sprintf("%s(%s_%s{", enum.Name, enum.Name, x.Variant.Name))
+	e.p(fmt.Sprintf("%s(%s_%s{", enumIdent.Name, enumIdent.Name, x.Variant.Name))
 	for i, a := range x.Args {
 		if i > 0 {
 			e.p(", ")
@@ -1594,8 +1594,8 @@ func (e *emitter) armBodyType(body ast.Node) (string, bool) {
 		}
 	case *ast.VariantLit:
 		// A payload variant construction `Enum.Variant(field: v)`.
-		if enum, ok := b.Enum.(*ast.Ident); ok && enumOf(e.info, enum.Name) != nil {
-			return enum.Name, true
+		if enumIdent, ok := b.Enum.(*ast.Ident); ok && enumOf(e.info, enumIdent.Name) != nil {
+			return enumIdent.Name, true
 		}
 	}
 	return "", false

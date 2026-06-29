@@ -1,0 +1,126 @@
+// Package selfhost is the self-host verification harness: it transpiles the goal
+// compiler's own packages through the goal front-end and proves the generated Go
+// compiles. The static checker is silent on a class of transpile defects (the
+// US-001 iota miscompile was found only because the generated Go failed to build),
+// so `go build` over the generated output is the real gate. Each later port story
+// (US-005+) reuses this harness to validate its package.
+package selfhost
+
+import (
+	"fmt"
+	"go/format"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"goal/internal/backend"
+	"goal/internal/parser"
+	"goal/internal/pipeline"
+	"goal/internal/project"
+)
+
+// InScope lists the compiler packages the smoke gate covers, by directory name
+// under internal/. Their non-test internal dependency closure is contained within
+// this set, so a temp module holding the transpiled output of all of them builds
+// with no extra wiring (stdlib imports pass through).
+var InScope = []string{
+	"token", "lexer", "ast", "parser", "sema", "project", "pipeline", "backend",
+}
+
+// ReadPackage reads the non-test *.go files in dir as goal source (the compiler is
+// written in goal, a Go superset) and returns a project.Package ready for the
+// front-end. Dir is set to dir so backend.TranspilePackage's import resolver finds
+// the enclosing go.mod; Name is taken from the package clause. Each file is named
+// "<base>.goal" so the generated Go file names come out clean ("<base>.go").
+func ReadPackage(dir string) (*project.Package, error) {
+	matches, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	if err != nil {
+		return nil, err
+	}
+	var files []project.File
+	name := ""
+	for _, m := range matches {
+		if strings.HasSuffix(m, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(m)
+		if err != nil {
+			return nil, fmt.Errorf("reading %s: %w", m, err)
+		}
+		if name == "" {
+			if f, perr := parser.ParseFile(string(src)); perr == nil && f.Name != nil {
+				name = f.Name.Name
+			}
+		}
+		base := strings.TrimSuffix(filepath.Base(m), ".go") + project.Ext
+		files = append(files, project.File{Path: m, Name: base, Src: string(src)})
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no .go source files in %s", dir)
+	}
+	if name == "" {
+		return nil, fmt.Errorf("could not determine package name for %s", dir)
+	}
+	return &project.Package{Dir: dir, Name: name, Files: files}, nil
+}
+
+// BuildTranspiled transpiles each package in layout through the goal front-end,
+// writes the generated Go into a throwaway temp module under each entry's
+// module-relative key directory (e.g. "internal/token"), and runs `go build ./...`
+// over the lot. It returns a descriptive, package-identified error on any transpile
+// failure, invalid generated Go, or build failure; nil when everything compiles.
+//
+// The temp module is declared `module goal` (matching the real go.mod) so that the
+// transpiled packages' in-module imports (goal/internal/<pkg>) resolve against each
+// other rather than the real source tree.
+func BuildTranspiled(layout map[string]*project.Package) error {
+	dir, err := os.MkdirTemp("", "selfhost-gate-*")
+	if err != nil {
+		return fmt.Errorf("temp module: %w", err)
+	}
+	defer os.RemoveAll(dir)
+
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module goal\n\ngo 1.26\n"), 0o644); err != nil {
+		return fmt.Errorf("write go.mod: %w", err)
+	}
+
+	for relDir, pkg := range layout {
+		out, err := backend.TranspilePackage(pkg)
+		if err != nil {
+			return fmt.Errorf("%s: transpile: %w", relDir, err)
+		}
+		if err := writePackage(dir, relDir, pkg.Name, out); err != nil {
+			return err
+		}
+	}
+
+	cmd := exec.Command("go", "build", "./...")
+	cmd.Dir = dir
+	if b, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("transpiled packages failed to build:\n%s", b)
+	}
+	return nil
+}
+
+// writePackage writes a transpiled package's generated Go files into the temp
+// module at relDir, checking each is valid Go first so a malformed emission is
+// reported per file rather than as an opaque build error.
+func writePackage(moduleDir, relDir, pkgName string, out pipeline.PackageOutput) error {
+	if len(out.Files) == 0 {
+		return fmt.Errorf("%s: package %q produced no output files", relDir, pkgName)
+	}
+	dest := filepath.Join(moduleDir, filepath.FromSlash(relDir))
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return fmt.Errorf("%s: mkdir: %w", relDir, err)
+	}
+	for _, gf := range out.Files {
+		if _, err := format.Source([]byte(gf.Go)); err != nil {
+			return fmt.Errorf("%s: generated %s is not valid Go: %w", relDir, gf.Name, err)
+		}
+		if err := os.WriteFile(filepath.Join(dest, gf.Name), []byte(gf.Go), 0o644); err != nil {
+			return fmt.Errorf("%s: write %s: %w", relDir, gf.Name, err)
+		}
+	}
+	return nil
+}

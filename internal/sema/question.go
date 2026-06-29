@@ -166,8 +166,8 @@ func closedErrDiags(body *ast.BlockStmt, caller FuncSig, info *Info) []Diagnosti
 			return true
 		}
 		pos := call.Pos()
-		enum := info.Enums[caller.E]
-		if enum == nil {
+		enumDecl := info.Enums[caller.E]
+		if enumDecl == nil {
 			diags = append(diags, Diagnostic{Pos: pos, Severity: Warning, Feature: "06-error-e",
 				Code: "unresolved-error-enum",
 				Message: fmt.Sprintf("cannot verify closedness of `Result.Err` in a `Result[_, %s]` function: enum `%s` is not declared in this file — closedness deferred",
@@ -186,11 +186,11 @@ func closedErrDiags(body *ast.BlockStmt, caller FuncSig, info *Info) []Diagnosti
 				Code: "err-outside-closed-enum",
 				Message: fmt.Sprintf("`Result.Err(%s.%s)` escapes the closed error type: this function's error enum is `%s`, not `%s` — wrap or convert the value to a `%s` variant",
 					qual, variant, caller.E, qual, caller.E)})
-		case !enum.VSet[variant]:
+		case !enumDecl.VSet[variant]:
 			diags = append(diags, Diagnostic{Pos: pos, Severity: Error, Feature: "06-error-e",
 				Code: "unknown-error-variant",
 				Message: fmt.Sprintf("`Result.Err(%s.%s)` names `%s`, which is not a variant of enum `%s` — its variants are %s",
-					qual, variant, variant, caller.E, semaVariantList(enum))})
+					qual, variant, variant, caller.E, semaVariantList(enumDecl))})
 		}
 		return true
 	}), body)
@@ -298,10 +298,10 @@ func errVariantArg(arg ast.Expr) (qual, variant string, ok bool) {
 
 // semaVariantList renders an enum's declared variants as a comma-separated, backtick-quoted,
 // qualified list in declaration order, for the unknown-variant diagnostic.
-func semaVariantList(enum *Enum) string {
-	names := make([]string, len(enum.Variants))
-	for i, v := range enum.Variants {
-		names[i] = "`" + enum.Name + "." + v.Name + "`"
+func semaVariantList(enumDecl *Enum) string {
+	names := make([]string, len(enumDecl.Variants))
+	for i, v := range enumDecl.Variants {
+		names[i] = "`" + enumDecl.Name + "." + v.Name + "`"
 	}
 	return strings.Join(names, ", ")
 }
