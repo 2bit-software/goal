@@ -72,6 +72,12 @@ func EnrichForeign(info *Info, imports []*ast.ImportSpec, dir string, resolve Di
 	if info.Enums == nil {
 		info.Enums = map[string]*Enum{}
 	}
+	if info.Sealed == nil {
+		info.Sealed = map[string]bool{}
+	}
+	if info.SealedImpls == nil {
+		info.SealedImpls = map[string][]string{}
+	}
 	var errs []error
 	loaded := map[string]bool{} // import paths already merged, for dedupe across imports
 	for _, imp := range imports {
@@ -92,7 +98,7 @@ func EnrichForeign(info *Info, imports []*ast.ImportSpec, dir string, resolve Di
 			errs = append(errs, err)
 			continue
 		}
-		structs, funcs, methods, enums, err := foreignDecls(resolved, rawAlias)
+		structs, funcs, methods, enums, sealed, err := foreignDecls(resolved, rawAlias)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -108,6 +114,10 @@ func EnrichForeign(info *Info, imports []*ast.ImportSpec, dir string, resolve Di
 		}
 		for name, en := range enums {
 			info.Enums[name] = en
+		}
+		for iface, impls := range sealed {
+			info.Sealed[iface] = true
+			info.SealedImpls[iface] = impls
 		}
 	}
 	return errs
@@ -140,10 +150,10 @@ func importPath(tok string) (string, bool) {
 // (keyed `alias.Recv.Method`), and its exported enums reconstructed from their generated
 // §8.1 sum encoding (keyed `alias.Enum`). requestedAlias is the qualifier the goal source
 // uses; when empty (an unaliased import) the package's own declared name is used.
-func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs, methods map[string]FuncSig, enums map[string]*Enum, err error) {
+func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs, methods map[string]FuncSig, enums map[string]*Enum, sealed map[string][]string, err error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 	var goFiles, goalFiles []string
 	for _, e := range entries {
@@ -229,7 +239,13 @@ func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs
 		}
 	}
 	enums = reconstructForeignEnums(markers, structs, alias)
-	return structs, funcs, methods, enums, nil
+	// The .go path does not reconstruct sealed-interface implementor sets from the
+	// generated marker form: the real per-package `goal build ./selfhost` bootstrap
+	// resolves a sibling to its .goal SOURCE (the goalForeignDecls path below), so a
+	// cross-package sealed match is enriched there. Reconstructing sealed sets from an
+	// already-generated .go sibling is deferred, exactly as struct/func/method facts are
+	// from .goal source (SEAM-CAP-3c).
+	return structs, funcs, methods, enums, nil, nil
 }
 
 // markerEnumName reports the enum name encoded by ts when ts is the §8.1 marker
@@ -292,17 +308,21 @@ func reconstructForeignEnums(markers map[string]bool, structs map[string][]Field
 
 // goalForeignDecls is the sibling-.goal-SOURCE twin of foreignDecls' .go path: it runs the
 // goal front end (parse + ResolvePackage) over the imported package's .goal files and
-// projects its EXPORTED enums into info.Enums keyed `alias.Enum`, mirroring the in-package
-// sema.Enum the backend's match/construction lowering consults. Only enums are projected —
-// the real per-package build reaches this path before the defining package is emitted to
-// .go, and the enum facts are what a cross-package match/construction needs; struct/func/
-// method foreign facts from .goal source are out of scope (the .go path covers them once a
-// package is generated). Parse/read failures are tolerated per file, matching the .go path.
-func goalForeignDecls(dir, requestedAlias string, goalFiles []string) (structs map[string][]Field, funcs, methods map[string]FuncSig, enums map[string]*Enum, err error) {
+// projects its EXPORTED enums into info.Enums keyed `alias.Enum`, AND its EXPORTED sealed
+// interfaces' implementor sets into a `sealed` map keyed `alias.Iface` (implementors
+// requalified `*alias.T`), mirroring the in-package sema.Info facts the backend's
+// match/construction lowering and the exhaustiveness check consult. Enums and sealed
+// implementor sets are what a cross-package match/construction needs before the defining
+// package is emitted to .go; struct/func/method foreign facts from .goal source are out of
+// scope (the .go path covers them once a package is generated). Parse/read failures are
+// tolerated per file, matching the .go path. SEAM-CAP-2 added the enum projection;
+// SEAM-CAP-3c added the sealed-interface implementor-set projection.
+func goalForeignDecls(dir, requestedAlias string, goalFiles []string) (structs map[string][]Field, funcs, methods map[string]FuncSig, enums map[string]*Enum, sealed map[string][]string, err error) {
 	structs = map[string][]Field{}
 	funcs = map[string]FuncSig{}
 	methods = map[string]FuncSig{}
 	enums = map[string]*Enum{}
+	sealed = map[string][]string{}
 	files := make([]*ast.File, 0, len(goalFiles))
 	pkgName := ""
 	for _, name := range goalFiles {
@@ -324,7 +344,7 @@ func goalForeignDecls(dir, requestedAlias string, goalFiles []string) (structs m
 		alias = pkgName
 	}
 	if len(files) == 0 {
-		return structs, funcs, methods, enums, nil
+		return structs, funcs, methods, enums, sealed, nil
 	}
 	info := ResolvePackage(files)
 	for name, en := range info.Enums {
@@ -346,7 +366,23 @@ func goalForeignDecls(dir, requestedAlias string, goalFiles []string) (structs m
 		}
 		enums[qual] = qen
 	}
-	return structs, funcs, methods, enums, nil
+	// Project EXPORTED sealed interfaces' implementor sets so a consumer's cross-package
+	// type-pattern match resolves and exhaustiveness-checks. ResolvePackage already built
+	// info.Sealed (sealed iface names) and info.SealedImpls (iface -> `*T` implementors)
+	// from the defining package's `sealed interface`/`implements` clauses; requalify both
+	// the interface name and each implementor by alias (`*Lit` -> `*alias.Lit`), exactly as
+	// typeString renders a `*alias.Lit` type pattern, so the registry keys align by string.
+	for iface := range info.Sealed {
+		if !isExportedName(iface) {
+			continue
+		}
+		impls := make([]string, 0, len(info.SealedImpls[iface]))
+		for _, impl := range info.SealedImpls[iface] {
+			impls = append(impls, qualifyForeignType(impl, alias))
+		}
+		sealed[alias+"."+iface] = impls
+	}
+	return structs, funcs, methods, enums, sealed, nil
 }
 
 // isExportedName reports whether name begins with an ASCII uppercase letter — a Go/goal

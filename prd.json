@@ -120,8 +120,8 @@
         "task check, task build, task fixpoint all green; corpus behavioral unchanged"
       ],
       "priority": 3.3,
-      "passes": false,
-      "notes": "CAP-3 part 3 of 3. Gap #4 from the SEAM-004 analysis. Depends on CAP-3b and reuses SEAM-CAP-2 machinery. After this, SEAM-004 can convert atomically."
+      "passes": true,
+      "notes": "CAP-3 part 3 of 3. Gap #4 from the SEAM-004 analysis. Depends on CAP-3b and reuses SEAM-CAP-2 machinery. After this, SEAM-004 can convert atomically. DONE: goalForeignDecls now also projects EXPORTED sealed interfaces (info.Sealed + info.SealedImpls, iface+impls requalified by alias via qualifyForeignType) as a new 6th `sealed map[string][]string` return; EnrichForeign merges into info.Sealed/SealedImpls, so cross-package checkOneSealedMatch resolves + exhaustiveness-checks (no more unresolved-match-sealed defer). Backend lowering needed NO change (isSealedMatch is pattern-shape dispatch). .go foreign path returns nil sealed (real build uses .goal siblings). Mirrored line-for-line in internal/sema/foreign.go + selfhost/sema/foreign.goal. Proof: internal/sema/crosspkg_sealed_test.go + internal/backend/crosspkg_sealed_test.go over sibling-.goal fixtures. task check/build/fixpoint green (FIXPOINT OK); corpus unchanged."
     },
     {
       "id": "SEAM-004",

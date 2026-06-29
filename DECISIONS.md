@@ -3180,3 +3180,54 @@ defers); internal/ast/ast_test.go (TypePattern node identity + walk).
 Gates: `task check`, `task build`, `task fixpoint` (FIXPOINT OK — stage1==stage2 on
 the new parser/sema/backend source) all green; corpus behavioral tier unchanged
 (the feature is additive — no existing match shape changes).
+
+## SEAM-CAP-3c — cross-.goal-package sealed-interface match
+
+CAP-3 part 3 of 3, and the final prerequisite for SEAM-004: a `sealed interface`
+DEFINED in a sibling `.goal` package is now matchable (type-pattern `match`) from a
+consumer `.goal` package during the real per-package `goal build ./selfhost`
+bootstrap. CAP-3b made same-package sealed match work; this story carries the
+implementor set across the package boundary. It matters because 35 of SEAM-004's 36
+type-switches consume ast.Node/Expr/Stmt/Decl from packages OTHER than selfhost/ast.
+
+The gap: foreign enrichment propagated ENUM facts from sibling `.goal` source (the
+SEAM-CAP-2 `goalForeignDecls` path: `parser.ParseFile` + `ResolvePackage`, projecting
+exported enums into `info.Enums`) but NOT sealed-interface implementor sets. So a
+consumer's `checkOneSealedMatch` → `sealedInterfaceOf` found nothing cross-package and
+deferred with the `unresolved-match-sealed` Warning CAP-3b explicitly left open.
+
+The fix (mirrored line-for-line in `internal/sema/foreign.go` and
+`selfhost/sema/foreign.goal`):
+
+1. `goalForeignDecls` now also projects EXPORTED sealed interfaces. `ResolvePackage`
+   already builds `info.Sealed` (sealed iface names) and `info.SealedImpls`
+   (iface → `*T` implementors) from the defining package's `sealed interface` /
+   `implements` clauses. For each exported iface it requalifies the interface name and
+   each implementor by the import alias via the existing `qualifyForeignType`
+   (`*Lit` → `*shape.Lit`), exactly as `typeString` renders a `*shape.Lit` type
+   pattern, so the registry keys align by string. Returned as a new
+   `sealed map[string][]string` (the 6th `foreignDecls`/`goalForeignDecls` result).
+
+2. `EnrichForeign` merges that map into the consumer's `info.Sealed[iface] = true` and
+   `info.SealedImpls[iface] = impls`. `checkOneSealedMatch`/`sealedInterfaceOf` then
+   resolve the foreign sealed interface and check exhaustiveness across the boundary —
+   no code change needed there.
+
+The `.go` foreign path returns nil sealed: the real bootstrap resolves a sibling to its
+`.goal` SOURCE, so the goal-source path is the one exercised; reconstructing sealed sets
+from an already-generated `.go` sibling is deferred, exactly as struct/func/method facts
+are from `.goal` source (the SEAM-CAP-2 precedent). The backend `sealedMatch` lowering is
+dispatched purely by pattern SHAPE (`isSealedMatch` — any TypePattern arm) and renders
+`case *shape.T:` directly from the pattern, so cross-package match ALREADY lowered before
+this story; CAP-3c closes only the sema resolution/exhaustiveness gap.
+
+Proof: internal/sema/crosspkg_sealed_test.go (EnrichForeign projects shape.Node sealed +
+`*shape.Lit`/`*shape.Neg`; a complete cross-package match is clean, a non-exhaustive one
+is a `non-exhaustive-match` Error naming `*shape.Neg`) over a sibling-.goal fixture
+(internal/sema/testdata/sealedshape/shape.goal); internal/backend/crosspkg_sealed_test.go
+(both the defining `.goal` package and the consumer transpiled per-package, built into a
+throwaway `module goal`, and run against a reference `switch x := n.(type)` — behaviorally
+identical) over internal/backend/testdata/goalsealed/{shape,use}.
+
+Gates: `task check`, `task build`, `task fixpoint` (FIXPOINT OK — stage1==stage2 on the
+new sema source) all green; corpus behavioral tier unchanged (additive fixtures).

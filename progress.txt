@@ -205,9 +205,15 @@
   enums from the generated §8.1 marker-interface encoding (reconstructForeignEnums); when
   it holds ONLY .goal SOURCE (the real per-package `goal build ./selfhost` topology), it
   runs the goal front end (parser.ParseFile + ResolvePackage) over those .goal files and
-  projects EXPORTED enums into info.Enums keyed `alias.Enum` (goalForeignDecls). The .go
-  path wins when both exist. Only ENUMS are projected from .goal; struct/func/method
-  foreign facts from .goal source are deferred. Cross-package bare variant construction
+  projects EXPORTED enums into info.Enums keyed `alias.Enum` AND (SEAM-CAP-3c) EXPORTED
+  sealed-interface implementor sets into info.Sealed + info.SealedImpls keyed `alias.Iface`
+  (implementors requalified `*alias.T` via qualifyForeignType), as a new 6th `sealed
+  map[string][]string` return of foreignDecls/goalForeignDecls (the .go path returns nil
+  sealed). The .go path wins when both exist. Only ENUMS + SEALED-INTERFACE implementor sets
+  are projected from .goal; struct/func/method foreign facts from .goal source are deferred.
+  The sealed projection is what makes a cross-package type-pattern `match` resolve +
+  exhaustiveness-check; the backend sealedMatch lowering is pattern-SHAPE dispatch
+  (isSealedMatch) and needs no foreign fact. Cross-package bare variant construction
   (`pkg.Enum.Variant`) lowers via enumRef (the construction-side counterpart of
   matchQualifier) in backend selectorExpr/variantLit/armBodyType -> `pkg.Enum(pkg.Enum_Variant{})`.
   Mirror any such pipeline change in BOTH internal/ and selfhost/ or fixpoint breaks.
@@ -5587,4 +5593,44 @@
     propagating SealedImpls across .goal packages (extend the SEAM-CAP-2 foreign
     goal-source reading path, which today projects enums only). SEAM-004 (seal AST +
     convert ~43 type-switches) depends on 3c.
+---
+
+## 2026-06-29T23:30:00Z - SEAM-CAP-3c
+- Implemented cross-.goal-package sealed-interface match (CAP-3 part 3 of 3, the final
+  SEAM-004 prerequisite): a `sealed interface` DEFINED in a sibling .goal package is now
+  matchable (type-pattern `match`) from a consumer .goal package during the real per-package
+  `goal build ./selfhost` bootstrap. CAP-3b made same-package sealed match work; this carries
+  the implementor set across the package boundary (35 of SEAM-004's 36 type-switches consume
+  ast node interfaces from OTHER packages).
+- The gap: foreign enrichment propagated ENUM facts from sibling .goal source (SEAM-CAP-2
+  goalForeignDecls) but NOT sealed-interface implementor sets, so the consumer's
+  checkOneSealedMatch deferred with the `unresolved-match-sealed` Warning CAP-3b left open.
+- Fix (mirrored line-for-line in internal/sema/foreign.go + selfhost/sema/foreign.goal):
+  goalForeignDecls now also projects EXPORTED sealed interfaces. ResolvePackage already
+  builds info.Sealed + info.SealedImpls (from `sealed interface`/`implements` clauses);
+  for each exported iface it requalifies the iface name and each `*T` implementor by alias
+  via the existing qualifyForeignType (`*Lit` -> `*shape.Lit`), returned as a new 6th
+  `sealed map[string][]string` result of foreignDecls/goalForeignDecls. EnrichForeign merges
+  it into info.Sealed[iface]=true + info.SealedImpls[iface]=impls. checkOneSealedMatch /
+  sealedInterfaceOf then resolve cross-package and exhaustiveness-check — no change there.
+- Files: internal/sema/foreign.go, selfhost/sema/foreign.goal, DECISIONS.md, prd.json,
+  internal/sema/crosspkg_sealed_test.go (new) + internal/sema/testdata/sealedshape/shape.goal
+  (new), internal/backend/crosspkg_sealed_test.go (new) +
+  internal/backend/testdata/goalsealed/{shape/shape.goal,use/use.goal} (new).
+- Gates: task check green, task build clean, task fixpoint = FIXPOINT OK (stage1==stage2 on
+  the new sema source); corpus behavioral tier unchanged (additive fixtures).
+- Learnings for future iterations (carry into SEAM-004):
+  - Cross-package sealed match ALREADY lowered before this story: the backend sealedMatch
+    path is dispatched by isSealedMatch(m) (pattern-SHAPE only — any TypePattern arm) and
+    renders `case *pkg.T:` directly from the pattern type, so it never consulted the
+    registry. CAP-3c is therefore PURELY a sema resolution/exhaustiveness fix (project the
+    foreign implementor set); no emitter change was needed.
+  - The foreign-enrichment registry key must match typeString of the consumer's pattern:
+    qualifyForeignType("*Lit","shape") == "*shape.Lit" == typeString(*shape.Lit pattern), so
+    sealedInterfaceOf compares rendered strings with no extra normalization. Same precedent
+    SEAM-CAP-2 used for enum field types — reuse qualifyForeignType, don't hand-qualify.
+  - foreignDecls/goalForeignDecls now return 6 values (structs,funcs,methods,enums,sealed,err);
+    the .go path returns nil for `sealed` by design (the real bootstrap resolves siblings to
+    .goal SOURCE, so the goal-source path is the one exercised) — mirror BOTH copies or the
+    selfhost port gate fails to compile (it caught every transient signature drift here).
 ---
