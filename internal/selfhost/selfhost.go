@@ -103,6 +103,58 @@ func BuildTranspiled(layout map[string]*project.Package) error {
 	return nil
 }
 
+// BuildAndTest transpiles pkg into a throwaway `module goal` temp module at
+// relDir (e.g. "internal/token"), copies each path in testFiles into that same
+// package directory, and runs `go test ./<relDir>`. Because the temp module is
+// declared `module goal` (matching the real go.mod), the copied tests' import
+// path and the package's in-module imports resolve exactly as they do in the
+// real tree.
+//
+// It is the behavioral half of the self-host port gate (BuildTranspiled is the
+// compile half): the existing white-box (same-package) tests compile and run
+// against the *transpiled* source, proving the ported package behaves
+// identically to the trusted one. It returns a descriptive, package-identified
+// error on transpile failure, invalid generated Go, a missing test file, or a
+// test failure; nil when the tests pass. Reused by every later port story
+// (US-005+).
+func BuildAndTest(relDir string, pkg *project.Package, testFiles []string) error {
+	dir, err := os.MkdirTemp("", "selfhost-port-*")
+	if err != nil {
+		return fmt.Errorf("temp module: %w", err)
+	}
+	defer os.RemoveAll(dir)
+
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module goal\n\ngo 1.26\n"), 0o644); err != nil {
+		return fmt.Errorf("write go.mod: %w", err)
+	}
+
+	out, err := backend.TranspilePackage(pkg)
+	if err != nil {
+		return fmt.Errorf("%s: transpile: %w", relDir, err)
+	}
+	if err := writePackage(dir, relDir, pkg.Name, out); err != nil {
+		return err
+	}
+
+	dest := filepath.Join(dir, filepath.FromSlash(relDir))
+	for _, tf := range testFiles {
+		src, err := os.ReadFile(tf)
+		if err != nil {
+			return fmt.Errorf("%s: read test file %s: %w", relDir, tf, err)
+		}
+		if err := os.WriteFile(filepath.Join(dest, filepath.Base(tf)), src, 0o644); err != nil {
+			return fmt.Errorf("%s: write test file %s: %w", relDir, tf, err)
+		}
+	}
+
+	cmd := exec.Command("go", "test", "./"+relDir)
+	cmd.Dir = dir
+	if b, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s: transpiled package failed its tests:\n%s", relDir, b)
+	}
+	return nil
+}
+
 // writePackage writes a transpiled package's generated Go files into the temp
 // module at relDir, checking each is valid Go first so a malformed emission is
 // reported per file rather than as an opaque build error.
