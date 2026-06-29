@@ -81,6 +81,49 @@
       "notes": "Reverses the US-011 refusal. Scoped, well-bounded (~11 consumer sites). Watch the numeric `sema.Severity(x)` conversions in typecheck/lsp -- those are the real work; if any genuinely needs an int (serialization), keep an explicit conversion method instead of iota identity. DONE: both converted totally (no member kept iota; the claimed sema.Severity(x) conversions did not actually exist). Severity.String() method -> free SeverityLabel func (a goal enum lowers to a sealed interface; Go forbids a method on it). foreign.goal + calleeMode set Mode.ModeNone explicitly (enum zero is nil). Shared port-gate tests: Severity via mirrored SeverityLabel in both pkgs; Mode assertions relocated to internal-only mode_test.go. FIXPOINT OK; check+build green."
     },
     {
+      "id": "SEAM-CAP-3a",
+      "title": "Capability: sealed interfaces preserve method signatures",
+      "description": "As the seam effort, I need a goal `sealed interface` to keep its declared method signatures in emitted Go, so that sealing ast.Node (whose whole purpose is Pos()/End()) does not silently drop those methods. Today genSealedInterface emits only `type Node interface{ isNode() }` and sealedInterfaceDecl discards the parsed body.",
+      "acceptanceCriteria": [
+        "Sealing an interface that declares methods preserves those method signatures in the emitted Go (e.g. `type Node interface { Pos() Position; End() Position; isNode() }`), not just the marker method",
+        "Fixed in BOTH internal/ (live transpiler: genSealedInterface ~lower.go:295-299, sealedInterfaceDecl ~emit.go:240-246) AND the selfhost/ .goal mirror",
+        "A regression test proves a sealed interface with methods keeps them and that implementors satisfying those methods still compile",
+        "task check, task build, task fixpoint all green; corpus behavioral unchanged"
+      ],
+      "priority": 3.1,
+      "passes": false,
+      "notes": "CAP-3 part 1 of 3. Prerequisite for sealing ast.Node at all. Gap #1 from the SEAM-004 analysis."
+    },
+    {
+      "id": "SEAM-CAP-3b",
+      "title": "Capability: type-pattern match over a same-package sealed interface",
+      "description": "As the seam effort, I need `match` to work over a sealed-interface scrutinee (type patterns) within a single package, so that switch-over-node-type can become exhaustive match. Today match only handles Result/Option/enum and routes everything to enum-style `Enum_Variant` case labels; sealed-interface match does not exist.",
+      "acceptanceCriteria": [
+        "A sealed-interface implementor registry is built from `implements` clauses (replacing the bool-only info.Sealed) mapping each sealed type to its concrete implementors",
+        "Parser accepts type-pattern match arms over a sealed scrutinee; backend lowers them to a Go type-switch with concrete `case *T:` labels (a new sealedMatch path, distinct from enumMatch); sema enforces exhaustiveness against the implementor registry",
+        "Fixed in BOTH internal/ and selfhost/ (info.Sealed ~sema.go:97-98; matchStmt/matchValue lowering; parser arm grammar)",
+        "A regression fixture proves a same-package `match` over a sealed interface transpiles, behaves identically to the equivalent type-switch, and that a non-exhaustive match is a sema error",
+        "task check, task build, task fixpoint all green; corpus behavioral unchanged"
+      ],
+      "priority": 3.2,
+      "passes": false,
+      "notes": "CAP-3 part 2 of 3. The core language feature. Gaps #2 and #3 from the SEAM-004 analysis. Depends on CAP-3a."
+    },
+    {
+      "id": "SEAM-CAP-3c",
+      "title": "Capability: cross-.goal-package sealed-interface match",
+      "description": "As the seam effort, I need a sealed interface DEFINED in a sibling .goal package to be matchable from consumer .goal packages during the real `goal build ./selfhost` bootstrap, since 35 of SEAM-004's 36 type-switches live in packages other than selfhost/ast. Today foreign enrichment projects enums only (the SEAM-CAP-2 path); sealed-interface implementor sets are not propagated cross-package.",
+      "acceptanceCriteria": [
+        "Foreign enrichment propagates a sibling-.goal-package sealed interface's implementor set (extending the SEAM-CAP-2 goal-source reading path that today handles enums only), so cross-package type-pattern match resolves and lowers",
+        "Fixed in BOTH internal/ and selfhost/ (foreign.go / foreignDecls / goalForeignDecls)",
+        "A 2+-package corpus fixture proves a `match` over a sealed interface defined in a SIBLING .goal PACKAGE transpiles and behaves identically to the type-switch in the real build topology",
+        "task check, task build, task fixpoint all green; corpus behavioral unchanged"
+      ],
+      "priority": 3.3,
+      "passes": false,
+      "notes": "CAP-3 part 3 of 3. Gap #4 from the SEAM-004 analysis. Depends on CAP-3b and reuses SEAM-CAP-2 machinery. After this, SEAM-004 can convert atomically."
+    },
+    {
       "id": "SEAM-004",
       "title": "Seam: seal ast.Node/Expr/Stmt/Decl/Spec + convert all type-switches to match",
       "description": "As a goal author, I need the AST category interfaces sealed and every type-switch over them converted to match in the same atomic change, so the compiler's central data structure showcases goal's exhaustive match -- the single biggest idiom in the codebase.",
@@ -107,7 +150,7 @@
         "DECISIONS.md records which US-008..US-012 'cross-package API stays (T,error)' refusals are now converted vs which remain genuine semantic non-fits"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Reverses the scope-blocked half of the US-008..US-012 API refusals. CRITICAL honesty requirement: several refusals (accumulators, multi-value, comma-ok) are NOT scope problems and will NOT be fixed by cross-package reach -- they need struct bundles or stay as-is. Do not fake a conversion to claim the seam closed; converting where it fits and documenting the rest is the correct outcome, exactly as the per-package audit did."
     },
     {
@@ -123,6 +166,23 @@
       "priority": 6,
       "passes": false,
       "notes": "Mirror of US-013 (the per-package proof) but for the seam end state. This is where 'the compiler actually showcases goal' gets verified and measured rather than claimed."
+    },
+    {
+      "id": "SEAM-007",
+      "title": "Build the go->goal upgrade skill",
+      "description": "As a goal adopter, I need a repeatable skill that upgrades an existing Go codebase to idiomatic goal, scoped to a single go.mod package OR a single file, so the whole idiomatization pipeline learned across SEAM-002..006 becomes a one-command tool runnable in any Go repo. This skill is the culmination of the PRD: it encodes both the mechanical autofixer pass AND the manual idiom transforms the autofixer does not perform.",
+      "acceptanceCriteria": [
+        "A skill exists (in the project's skill location) that accepts EITHER a single .go file OR a single go.mod package directory as its scope, and refuses/ warns if pointed at a whole multi-package module",
+        "Step 1 (rename): renames .go -> .goal within scope, handling package clause, build tags, and reserved-word identifier collisions (enum/match/assert/etc.) the way the selfhost rename stories did",
+        "Step 2 (autofix): runs `goal fix` to mechanically convert (T,error)+manual `if err!=nil` propagation into Result/? and reports what it changed and what it skipped",
+        "Step 3 (manual idioms): applies the non-autofixer upgrades catalogued from SEAM-002..005 \u2014 iota const blocks -> goal enum where no numeric-identity/wire dependence exists; type-switch over a closed/sealed scrutinee -> sealed interface + exhaustive match; methods on would-be-enum types -> free label functions; derive/from conversions and ...defaults where they fit \u2014 and records each genuine refusal with reason (numeric identity, accumulator, multi-value, comma-ok, cross-package consumer not in scope)",
+        "Step 4 (verify + report): confirms the upgraded scope still transpiles/builds, and emits a DECISIONS-style summary of what converted vs what was left as a documented non-fit",
+        "The skill is documented (usage, scope rules, idiom catalogue) and dogfooded on at least one real example (e.g. a small package) proving it produces buildable idiomatic goal",
+        "task check, task build, task fixpoint remain green (the skill itself adds no regressions)"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Requested by the user mid-run: a one-command go->goal upgrader scoped to a single package or single file. Culmination of the PRD \u2014 encodes the autofixer pass plus the manual idiom transforms proven in SEAM-002 (enum from iota), SEAM-003 (enum + method->free-fn), SEAM-004 (seal + type-switch->match), SEAM-005 (Result/? API). Carry-forward gotchas the skill must encode: enum zero value is nil; enums can't carry methods; value-position match lowering constraints; cross-package idioms rely on SEAM-CAP/CAP-2 (whole-program enum facts). Build this AFTER SEAM-006 (the proof). Keep scope to one go.mod package or one file, matching the per-package fix model."
     }
   ]
 }

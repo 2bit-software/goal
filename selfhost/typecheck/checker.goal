@@ -11,11 +11,13 @@ import "goal/selfhost/project"
 //
 // The contract is the diagnostics, not the typed view: a native checker would not produce
 // a *types.Package, so the seam deliberately returns []Diagnostic rather than exposing
-// Load's go/types-specific *Package. Check returns an error only for a transpile/parse
-// failure (a goal-compiler bug); user-program type errors are folded into the typed view
-// and surfaced through the depth checks, exactly as Load does today.
+// Load's go/types-specific *Package. Check's error (a goal Result error, SEAM-005) means a
+// transpile/parse failure (a goal-compiler bug); user-program type errors are folded into
+// the typed view and surfaced through the depth checks, exactly as Load does today. Open-E
+// Result lowers to native (T, error), so the seam's swappable contract and every Go
+// consumer (the var _ TypeChecker oracle, two-value tc.Check call sites) are unchanged.
 type TypeChecker interface {
-	Check(pkg *project.Package) ([]Diagnostic, error)
+	Check(pkg *project.Package) Result[[]Diagnostic, error]
 }
 
 // GoTypesChecker is the default TypeChecker: it transpiles the goal package to Go, loads
@@ -25,14 +27,12 @@ type GoTypesChecker struct{}
 
 // Check implements TypeChecker. It loads the package's typed view and concatenates the
 // findings of every depth check in a stable order (implements, must-use, no-zero-value).
-func (GoTypesChecker) Check(pkg *project.Package) ([]Diagnostic, error) {
-	p, err := Load(pkg)
-	if err != nil {
-		return nil, err
-	}
+// SEAM-005: Load's pure propagation is now the idiomatic `?`; success is Result.Ok.
+func (GoTypesChecker) Check(pkg *project.Package) Result[[]Diagnostic, error] {
+	p := Load(pkg)?
 	var diags []Diagnostic
 	diags = append(diags, CheckImplements(p)...)
 	diags = append(diags, CheckMustUse(p)...)
 	diags = append(diags, CheckNoZeroValue(p)...)
-	return diags, nil
+	return Result.Ok(diags)
 }

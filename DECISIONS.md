@@ -2995,3 +2995,127 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
   unchanged internal/ Go compiler, not the selfhost tree.
 - **Capabilities relied on:** SEAM-CAP (cross-package enum-match lowering) and SEAM-CAP-2
   (cross-`.goal`-package enum visibility + bare-construction lowering); both pre-landed.
+
+## SEAM-005 — lift the fallible exported/interface API to Result/? with callers
+
+> SEAM-005 of the **seam** PRD (`prd.json`): lift the genuinely-propagating
+> fallible EXPORTED/INTERFACE API of the self-hosted compiler to goal `Result`/`?`
+> together with cross-package callers and interface contracts, under the relaxed
+> seam gate (emitted Go may change; re-proven by `task fixpoint` self-consistency +
+> corpus behavioral tier). This REVERSES the **scope-blocked** half of the
+> US-008..US-012 "cross-package API stays `(T, error)`" refusals, and — per the
+> honesty requirement — KEEPS the half blocked by **semantics**, documented below.
+> Result/Option already cross package boundaries (special-cased), so this story
+> does NOT depend on the enum/sealed capability gaps.
+
+### Converted (scope-blocked-only, pure propagation → Result/`?`)
+
+#### `typecheck.Load` → `Result[*Package, error]`
+- **Kind:** conversion (reverses the US-012 `Load` SCOPE refusal).
+- **Did:** `Load(pkg *project.Package) (*Package, error)` →
+  `Result[*Package, error]`. Each internal guard WRAPS context
+  (`fmt.Errorf("transpile: %w", …)`, `…"parse goal source %s: %w"…`,
+  `…"parse generated %s: %w"…`), so `?` (which propagates the error UNCHANGED)
+  cannot apply — every guard stays statement-form
+  `if err != nil { return Result.Err(fmt.Errorf(...)) }`; the final
+  `return p, nil` becomes `return Result.Ok(p)`.
+- **Why it now fits:** the US-012 refusal was SCOPE — `Load` is oracle-pinned and
+  has an in-tree caller (`GoTypesChecker.Check`). Under the seam gate the oracle is
+  fixpoint + corpus, not byte-pinned signatures, and the caller IS in scope.
+  Converting `Load` to Result is what lets `Check` propagate it with `?` (the real
+  idiom gain). Open-E Result lowers to native `(*Package, error)`, so the emitted
+  Go signature is unchanged (verified:
+  `func Load(pkg *project.Package) (ok *Package, err1 error)`).
+
+#### `TypeChecker.Check` + `GoTypesChecker.Check` → `Result[[]Diagnostic, error]`
+- **Kind:** conversion (reverses the US-012 `GoTypesChecker.Check` SCOPE refusal).
+- **Did:** the `TypeChecker` interface method and its `GoTypesChecker` impl
+  (checker.goal) → `Result[[]Diagnostic, error]`. The body's pure propagation
+  `p, err := Load(pkg); if err != nil { return nil, err }` becomes the idiomatic
+  `p := Load(pkg)?`; success returns `Result.Ok(diags)`.
+- **Why it now fits:** the US-012 refusal was that the interface contract + oracle
+  pin (`var _ TypeChecker = GoTypesChecker{}`, two-value `tc.Check`) put the
+  callers out of a single-package scope. Under the seam the contract is lifted in
+  LOCKSTEP (interface method + impl together) and the emitted Go is byte-identical:
+  an open-E Result interface method lowers to `Check(pkg) ([]Diagnostic, error)`,
+  and the impl lowers to `func (GoTypesChecker) Check(...) (ok []Diagnostic, err
+  error) { p, err := Load(pkg); if err != nil { return ok, err } … return diags,
+  nil }`. So the Go oracle test (`internal/typecheck/checker_test.go`:
+  `var _ TypeChecker = GoTypesChecker{}` + `got, err := tc.Check(pkg)`) stays valid
+  against BOTH the internal Go bootstrap AND the transpiled selfhost Go — the seam
+  stays swappable with no test edit. That IS the lockstep.
+
+#### `sema.AnalyzePackageInDir` → `Result[[][]Diagnostic, error]`
+- **Kind:** conversion (reverses the US-009 `AnalyzePackageInDir` SCOPE refusal).
+- **Did:** `AnalyzePackageInDir(srcs, dir) ([][]Diagnostic, error)` →
+  `Result[[][]Diagnostic, error]`. It delegates to the 3-value
+  `AnalyzePackageInDirWith` (kept — see below), so the unpack is explicit:
+  `diags, _, err := AnalyzePackageInDirWith(...); if err != nil { return
+  Result.Err(err) }; return Result.Ok(diags)`.
+- **Why it now fits:** US-009 refused it as SCOPE (exported, pinned by
+  `package_test.go`). It carries a SINGLE success value (`[][]Diagnostic`) + error,
+  so it is a clean Result. The relaxed gate allows the emitted Go to differ from
+  the prior `return diags, err`; behavior is preserved because
+  `AnalyzePackageInDirWith` returns `(nil, nil, err)` on its only error path, so
+  `return diags, err` and `if err != nil { return nil, err }; return diags, nil`
+  are behaviorally identical. The oracle `internal/sema/package_test.go`
+  (`out, err := AnalyzePackageInDir(...)`) compiles against the lowered
+  `(ok [][]Diagnostic, err1 error)` and stays green.
+
+### Mirror & gate notes
+- **`internal/` stays the lowered `(T, error)` mirror — NO production edit.** Go
+  cannot express `Result`/`?`; `internal/{typecheck,sema}` are the bootstrap Go
+  compiler and already ARE the lowered form of the converted selfhost source. The
+  behavioral mirror holds automatically.
+- **No oracle-test edits.** Because every conversion lowers to the SAME emitted Go
+  signature, the port-gated white-box tests keep their two-value call sites and the
+  `var _ TypeChecker = GoTypesChecker{}` assertion; they compile against both
+  compilers unchanged.
+
+### KEPT — genuine SEMANTIC non-fits (NOT scope; carved out, documented)
+These survive the seam relaxation because cross-package reach does not change their
+shape — each would need a struct bundle or a contract break, neither a real idiom
+gain. (Confirms / refines the US-008..US-012 refusals.)
+
+- **`parser.ParseFile (*ast.File, error)` — value-AND-error / partial result.**
+  ParseFile returns a NON-NIL partial `*ast.File` AND joined errors SIMULTANEOUSLY
+  (the parser is accumulator-style: helpers append to `p.errs` and never `error`).
+  Two callers consume the partial AST on error: `project.PackageClause`
+  (`file, _ := parser.ParseFile(src)` — its comment: "Reading the name even when
+  later body parsing failed keeps the old lexer's tolerance") and
+  `pipeline.declSites` (`file, _ := parser.ParseFile(src); if file == nil …`). A
+  `Result[*ast.File, error]` Err arm carries NO file, so converting would DROP the
+  partial AST = a behavior change (not behavior-preserving). This is the same class
+  as the multi-value carve-outs, not a cross-package-caller scope problem. KEEP
+  `(T, error)`. (The pure-propagation callers — `sema.Analyze`, `backend`,
+  `AnalyzePackageInDirWith` — already consume ParseFile via `?`/2-value against the
+  `(T, error)` form; ParseFile being `(T, error)` is exactly the open-E shape `?`
+  expects, so no caller is harmed by keeping it.)
+- **`sema.EnrichForeign (…) []error` — error ACCUMULATOR.** Appends per-import
+  errors and `continue`s; returns the COLLECTED list, not a single propagated
+  error. `?` cannot propagate a list. KEEP `[]error`.
+- **`sema.AnalyzePackageInDirWith (…) ([][]Diagnostic, []error, error)` —
+  MULTI-VALUE (3).** The per-import error slice is a SECOND meaningful value
+  alongside success; a Result holds one. KEEP 3-value (a struct bundle here is
+  ceremony, not idiom — `AnalyzePackageInDir` is the single-value Result wrapper).
+- **`sema.foreignDecls` / `sema.goalForeignDecls (…, err error)` — MULTI-VALUE
+  (4).** Three maps (structs/funcs+methods/enums) + error; a Result holds one, and
+  the sole caller `EnrichForeign` ACCUMULATES the error rather than propagating it,
+  so there is no `?` site even bundled. KEEP.
+- **`sema.moduleResolve (string, bool)`, `sema.readModulePath (string, bool)`,
+  `sema.constIntLit (int64, bool)` — comma-ok control flow.** Each collapses two
+  distinct failures onto a single bool the in-file caller branches on
+  (`if v, ok := f(…); ok`); the inner `err != nil` is deliberately swallowed.
+  `?` has nothing to propagate; `Option` would change the `(T, bool)` contract.
+  KEEP `(T, bool)`.
+
+### Equivalence proof (relaxed gate)
+- `task fixpoint` → **FIXPOINT OK** (goal-c-1/goal-c-2 byte-identical on
+  `./selfhost`, both stages agreeing on the new Result/`?` source).
+- `task check` green — incl. the `internal/selfhost` port gate transpiling
+  `selfhost/{typecheck,sema}` and running the unchanged oracle tests
+  (`checker_test.go`, `package_test.go`) against the lowered Go, plus the corpus
+  behavioral tier; `internal/{typecheck,sema}` green.
+- `task build` green. No golden regeneration needed — goldens test the unchanged
+  internal/ Go compiler, not the selfhost tree; the emitted selfhost Go signatures
+  are byte-identical (verified in `_bootstrap/fb/selfhost/...`).

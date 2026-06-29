@@ -24,10 +24,20 @@ import (
 // the package's directory, against which imported package paths are resolved for
 // foreign enrichment. Import-resolution failures are non-fatal: an unresolved
 // import simply leaves its types deferred, so the convenience entry point
-// discards the per-import error slice. A parse error in any file is returned.
-func AnalyzePackageInDir(srcs []string, dir string) ([][]Diagnostic, error) {
+// discards the per-import error slice. A parse error in any file is propagated as
+// the Result's `error`.
+//
+// SEAM-005: this single-success-valued entry point is a goal Result. It delegates
+// to the multi-value AnalyzePackageInDirWith (3-value: diags, per-import errs,
+// fatal err), which stays (T, U, error) because the per-import error slice is a
+// second meaningful value alongside success (a Result holds one) — so the unpack
+// is explicit here rather than `?`.
+func AnalyzePackageInDir(srcs []string, dir string) Result[[][]Diagnostic, error] {
 	diags, _, err := AnalyzePackageInDirWith(srcs, dir, nil)
-	return diags, err
+	if err != nil {
+		return Result.Err(err)
+	}
+	return Result.Ok(diags)
 }
 
 // AnalyzePackageInDirWith is AnalyzePackageInDir with the import resolver injected

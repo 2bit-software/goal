@@ -5440,3 +5440,51 @@
     `_test.go` kept OUT of port_test.go's BuildAndTest slice (reuse the same-package
     `mustResolve`/`repr` helpers), leaving the shared file symbol-free.
 ---
+
+## 2026-06-29T22:30:00Z - SEAM-005
+- Lifted the scope-blocked half of the fallible exported/interface API to goal
+  Result/? in selfhost/, and honestly KEPT the semantics-blocked half (documented).
+- CONVERTED (selfhost/ only; reverses US-008..US-012 SCOPE refusals):
+  - typecheck.Load (*Package,error) -> Result[*Package,error]. Wrapping guards
+    (fmt.Errorf %w) can't `?` (would drop the wrap), so each stays statement-form
+    `return Result.Err(fmt.Errorf(...))`; final `return Result.Ok(p)`.
+  - typecheck TypeChecker.Check interface + GoTypesChecker.Check ->
+    Result[[]Diagnostic,error]; body `p := Load(pkg)?` (the real idiom gain) +
+    `return Result.Ok(diags)`. Interface method + impl lifted in LOCKSTEP.
+  - sema.AnalyzePackageInDir ([][]Diagnostic,error) -> Result[[][]Diagnostic,error];
+    explicit unpack of the 3-value ...With, then Result.Ok/Result.Err.
+- KEPT as documented SEMANTIC non-fits (not scope): parser.ParseFile (partial-AST-
+  on-error value+error, load-bearing for project.PackageClause + pipeline.declSites),
+  EnrichForeign ([]error accumulator), AnalyzePackageInDirWith (3-value),
+  foreignDecls/goalForeignDecls (4-value), moduleResolve/readModulePath/constIntLit
+  (comma-ok). See DECISIONS.md "SEAM-005".
+- Files: selfhost/sema/package.goal, selfhost/typecheck/{typecheck,checker}.goal,
+  DECISIONS.md, prd.json, progress.txt, history/20260629-refactor-seam-005-*.
+- Gates: task check green (incl. internal/selfhost port gate transpiling
+  selfhost/{typecheck,sema} + running the UNCHANGED oracle tests against the lowered
+  Go, plus corpus behavioral tier), task build clean, task fixpoint = FIXPOINT OK.
+- Learnings for future iterations:
+  - Open-E Result lowers to native (T,error); an INTERFACE METHOD returning Result
+    lowers to a (T,error) method (verified: `Check(pkg) (ok []Diagnostic, err error)`).
+    So a SEAM Result conversion of an exported/interface fn is BYTE-IDENTICAL at the
+    emit boundary -> the Go bootstrap mirror (internal/*.go) needs NO edit (Go can't
+    express Result and already IS the lowered form), and the port-gated Go oracle
+    tests (two-value `v,err:=`, `var _ I = T{}`) stay green against BOTH compilers
+    unchanged. The seam stays swappable with zero test churn. This dissolves the
+    US-012 "oracle-pinned, out of scope" objection entirely.
+  - Converting a callee to Result is the ENABLER for `?` in its caller: Check's pure
+    propagation `p,err:=Load(pkg); if err!=nil {return nil,err}` only becomes the
+    idiomatic `Load(pkg)?` once Load returns Result AND Check returns Result. Lift
+    callee+caller (and the interface contract) together in one atomic change.
+  - WRAPPING propagation stays statement-form even inside a Result host: `?`
+    propagates the error UNCHANGED, so a `fmt.Errorf("ctx: %w", err)` guard must be
+    `if err != nil { return Result.Err(fmt.Errorf(...)) }`, not `?`. A Result host
+    happily contains plain `v, err := goCallee()` 2-value assignments + Result.Err
+    returns; the callee need not be Result.
+  - HONESTY: a function that returns a value AND an error SIMULTANEOUSLY meaningfully
+    (parser.ParseFile: a non-nil PARTIAL AST + joined errors, consumed partial-on-
+    error by tolerant callers) is a genuine SEMANTIC non-fit for Result (Err carries
+    no value) -- same class as multi-value/comma-ok, NOT a cross-package scope block.
+    Carve it out and document; do not fake the conversion. Grep callers for
+    `f, _ := Fn(` / partial-use-after-error before assuming a (T,error) fn is pure.
+---

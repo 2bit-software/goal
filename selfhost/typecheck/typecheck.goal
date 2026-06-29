@@ -59,10 +59,16 @@ type Package struct {
 // stdlib go/types under an error-collecting configuration. It returns an error only for
 // a transpile or parse failure (a goal-compiler bug — the lowered Go must be valid Go);
 // Go type errors in the user's program are collected into Package.Errors instead.
-func Load(pkg *project.Package) (*Package, error) {
+//
+// SEAM-005: Load is a goal Result. Its internal propagation WRAPS context
+// (fmt.Errorf("…: %w", err)) at every site, so `?` (which propagates the error
+// UNCHANGED) cannot apply — each guard stays a statement-form
+// `if err != nil { return Result.Err(fmt.Errorf(...)) }`. The Result return is
+// what lets the sole caller GoTypesChecker.Check propagate Load with `?`.
+func Load(pkg *project.Package) Result[*Package, error] {
 	out, err := backend.TranspilePackage(pkg)
 	if err != nil {
-		return nil, fmt.Errorf("transpile: %w", err)
+		return Result.Err(fmt.Errorf("transpile: %w", err))
 	}
 
 	// Parse each file's goal AST and resolve the package's name-keyed facts. This is
@@ -73,7 +79,7 @@ func Load(pkg *project.Package) (*Package, error) {
 	for i, f := range pkg.Files {
 		gf, perr := goalparser.ParseFile(f.Src)
 		if perr != nil {
-			return nil, fmt.Errorf("parse goal source %s: %w", f.Path, perr)
+			return Result.Err(fmt.Errorf("parse goal source %s: %w", f.Path, perr))
 		}
 		goalFiles[i] = gf
 	}
@@ -84,7 +90,7 @@ func Load(pkg *project.Package) (*Package, error) {
 	for _, gf := range out.Files {
 		f, err := parser.ParseFile(fset, gf.Name, gf.Go, parser.SkipObjectResolution)
 		if err != nil {
-			return nil, fmt.Errorf("parse generated %s: %w", gf.Name, err)
+			return Result.Err(fmt.Errorf("parse generated %s: %w", gf.Name, err))
 		}
 		files = append(files, f)
 	}
@@ -102,7 +108,7 @@ func Load(pkg *project.Package) (*Package, error) {
 	}
 	// Check returns a usable (possibly incomplete) package even when Error fires.
 	p.Types, _ = conf.Check(pkg.Name, fset, files, info)
-	return p, nil
+	return Result.Ok(p)
 }
 
 // Diagnostic is one depth-checker finding. Unlike the lexical checker's byte-offset
