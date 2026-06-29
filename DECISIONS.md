@@ -2421,3 +2421,127 @@ compiling Go and pass the copied `internal/project` / behavioral suites);
 green; `task build` green; `task fixpoint` → FIXPOINT OK
 (`selfhost/{project,pipeline}/*.go` byte-identical across goal-c-1/goal-c-2). No
 `.goal` source changed — this story is documentation only.
+
+## self-host idiomatic audit — US-011 (backend)
+
+> US-011 of the **self-host idiomatic** PRD (`prd.json`): the per-package
+> idiomatic audit of `selfhost/backend` — the LARGEST ported package
+> (arity/backend/doctest/emit/lower/package.goal, ~3,447 LOC). Pattern unchanged
+> from US-005..US-010: classify each Go-ism against the goal idiom it could
+> become, convert where it FITS (intra-package, behavior-preserving), record
+> refusals here. Outcome: a GENUINE conversion of the derive/`from`-conversion
+> subsystem to idiomatic Result/`?`/`match` (a coherent complete subset), plus
+> documented refusals for the pervasively-wrapping and oracle/interface-pinned
+> functions. This is the second package (after sema, US-009) with real executable
+> Result/`?` conversions, and the first to use `match` in executable selfhost
+> source.
+
+### KEY front-end fact: the EMITTER gates `?` to a Result/Option host
+- The **sema** mode model (`selfhost/sema/sema.goal:39`) says a `?` host may be
+  "a Result, a `func(…) error`, or a tuple ending in error" — so sema *accepts*
+  `?` inside a plain `(T, error)` function. BUT the **backend emitter** is
+  stricter: `emit.goal` rejects `?` whose enclosing function is not Result/Option
+  with `backend: \`?\` outside a Result- or Option-returning function`. So to
+  use `?` at a pure-propagation site, the ENCLOSING function must be converted to
+  `Result` (matching what `goal fix` already insists on — its `suggestion`
+  reports all say "…which is not Result-returning; convert its signature to use
+  `?`"). This is why a `(T,error)` host cannot simply gain a `?`.
+
+### CONVERTED: the derive-conversion cluster → Result/`?`/`match`
+- **Kind:** conversion (behavior-preserving, intra-package, byte-equivalent at
+  the emit boundary)
+- **`elemConv` (lower.goal)** stays `(func(string) string, error)` — it is the
+  leaf callee; the `?` requirement is on the HOST, not the callee, so it needs no
+  signature change (and a func-typed `Result.Ok` payload is avoided).
+- **`resolveField` (emit.goal)** `([]string, error)` → `Result[[]string, error]`.
+  It owns NO error-wrapping internally (every error return is either a direct
+  `fmt.Errorf("no conversion…")` or a pure `return nil, err` propagation of
+  `elemConv`/`deriveBody`), so it converts cleanly: the 4 `elemConv(...)` sites
+  and the 1 `e.deriveBody(...)` site become `?`; the other returns become
+  `Result.Ok(...)` / `Result.Err(...)`. (The `return out, %s` at the fallible-leaf
+  branch is GENERATED-Go *string* text, not a goal return — untouched.)
+- **`deriveBody` (emit.goal)** `([]string, error)` → `Result[[]string, error]`
+  (same shape as US-009's `sema.Analyze`). Its returns become `Result.Ok/Err`; its
+  one call to `resolveField` *wraps* the error (`nested field %q: %w`), so that
+  consumer uses `match { Result.Ok(s) => … Result.Err(err) => return
+  Result.Err(fmt.Errorf("nested field %q: %w", …)) }` — `?` would drop the wrap.
+- **`genConversion` (emit.goal)** stays `void`/`e.fail`-based (it has no error
+  return), so its call to the now-`Result` `resolveField` uses `match` whose `Err`
+  arm calls `e.fail("derive %s, field %q: %v", …)` and `return`s — never `?`.
+- **Why behavior-preserving + fixpoint-safe:** open-E `Result[T, error]` lowers to
+  native `(T, error)`; `f()?` lowers to `v, err := f(); if err != nil { return
+  zero, err }`; statement-position `match` over an open-E Result lowers to
+  `v, err := f(); if err != nil { <Err arm> } else { <Ok arm> }`
+  (`emit.goal resultMatch`/`posStmt`). All three are the manual code they replace,
+  so the cluster's runtime behavior (including every diagnostic string) is
+  identical. The fixpoint compares goal-c-1 vs goal-c-2 (both built from this
+  converted source), so it stays byte-identical; the verbatim oracle
+  (`internal/backend`, unchanged) plus the corpus behavioral tier confirm the
+  derive output is unchanged.
+
+### REFUSED: `Transpile` stays `(pipeline.Output, error)`
+- **Kind:** refusal (with reason)
+- **Why:** exported AND oracle-pinned (the `internal/backend` suite drives it as
+  the AST-engine entry point, and `corpus.TranspilerFunc` adapts it). It also
+  *wraps* two of its three propagation sites (`parse: %w`, `generated Go did not
+  parse: %w`), and only the middle `goBackend{}.Emit(...)` site is pure. Making
+  `Transpile` Result to `?`-ify that one site would force the two wrapping sites
+  onto `match` and break callers/`corpus` that consume `(pipeline.Output, error)`.
+  Open-E lowering keeps the emitted signature identical, but the cross-cutting
+  caller + wrap churn is not a behavior-preserving per-package win. `goal fix`
+  SKIPs it ("non-propagating return"). Refuse.
+
+### REFUSED: the `Backend.Emit` / `goBackend.Emit` interface method
+- **Kind:** refusal (with reason)
+- **Why:** `Emit` is pinned by the `Backend` interface (`Emit(...)
+  (pipeline.Output, error)`); converting the method to `Result` while the
+  interface declares the tuple would (at goal source level) no longer satisfy the
+  interface, requiring an interface-wide change beyond this story's scope. `Emit`
+  also wraps its `emitDoctests` site (`doctests: %w`); only the `emitFile` site is
+  pure. Refuse (kept `(T, error)`; `goal fix` emits an advisory `suggestion` only,
+  not an auto-conversion).
+
+### REFUSED: `TranspilePackage`, `GoFormatter.Format`
+- **Kind:** refusal (with reason)
+- **Why:** `TranspilePackage(pkg) (pipeline.PackageOutput, error)` is exported +
+  oracle-pinned (package-mode corpus + backend tests) and wraps its propagation
+  (`format …`). `GoFormatter.Format` is a `Formatter`-interface method that simply
+  returns `format.Source(src)` (a foreign `(…, error)` tail call — a
+  non-propagating return, not an `if err != nil` site). Neither is a clean,
+  behavior-preserving Result conversion. `goal fix` SKIPs `TranspilePackage`.
+
+### N/A: `emitFile` / `emitFileWith` / `emitDoctests`
+- **Kind:** N/A (shape is not a clean `(T, error)` propagation)
+- **Note:** `emitFileWith` returns 3 values `(src string, usedOption bool, err
+  error)` and builds its error from the emitter accumulator (`e.err`), not by
+  propagating a callee; `emitFile` is a 2-value pass-through of it (`src, _, err
+  := emitFileWith(...); return src, err` — a non-propagating return `goal fix`
+  SKIPs); `emitDoctests` is likewise 3-value and accumulator-based with wrapping
+  callers. None is an open-E `(T, error)` with a collapsible `if err != nil`
+  propagation site, so none is a Result/`?` candidate.
+
+### REFUSED: no `switch`→`match` — backend declares NO in-file `enum`
+- **Kind:** refusal (with reason)
+- **Why:** `emit.goal` (46 switches) and `lower.goal` (9) switch exclusively over
+  NON-enum scrutinees: `ast` category interfaces (`ast.Decl`/`Expr`/`Stmt`/`Spec`
+  type-switches — unsealable per US-007 §9, consumed by plain switches across
+  sema/backend/parser), `token.Kind` (`type Kind int`, not an enum per US-005),
+  `rune`, and boolean `switch {}`. Backend defines no `enum` of its own, so AC-1's
+  "switch-over-in-file-enum → `match`" has no candidate. (The `match` added by this
+  story is over Result, the §8.3 idiom — not an enum/switch conversion.) Refuse,
+  consistent with US-006/US-007/US-008/US-010.
+
+### Verification
+`goal fix -inplace selfhost/backend/*.goal` → **no source diff** on any file (the
+former `genConversion`/`resolveField`/`deriveBody` `suggestion`s are gone now that
+the cluster is Result/`?`/`match`). Remaining stderr is only deliberate
+non-auto-convertible reports: `skipped` on `Transpile`/`emitFile`/`elemConv`/
+`TranspilePackage` (non-propagating returns) and advisory `suggestion`s on
+`Emit`/`Transpile`/`emitDoctests`/`TranspilePackage` (the documented refusals) —
+neither is an auto-conversion, so AC-2 (zero remaining auto-convertible
+propagation sites) holds. `go test ./internal/selfhost -run
+TestPortedBackendPackage` green (the converted backend transpiles to compiling Go
+and passes the copied `internal/backend` behavioral suite); `task check` (incl.
+the port gate + `internal/backend` + the corpus transpile/behavioral tiers) green;
+`task build` green; `task fixpoint` → FIXPOINT OK (`selfhost/backend/*.go`
+byte-identical across goal-c-1/goal-c-2).

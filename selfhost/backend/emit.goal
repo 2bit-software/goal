@@ -1274,13 +1274,18 @@ func (e *emitter) genConversion(name, srcName, srcType, tgtType string, fallible
 			e.fail("derive %s: target field %q of %s is not sourced from %s (add an explicit `%s: …` or a `from func`)", name, f.Name, tgtType, srcType, f.Name)
 			return
 		}
-		stmts, err := e.resolveField("out."+f.Name, srcName+"."+sf.Name, sf.Type, f.Type, fallible, errName)
-		if err != nil {
+		// genConversion is void and reports via e.fail, so this consumer uses `match`:
+		// the Err arm turns resolveField's error into a located e.fail, never `?`.
+		match e.resolveField("out."+f.Name, srcName+"."+sf.Name, sf.Type, f.Type, fallible, errName) {
+		Result.Ok(stmts) => {
+			for _, s := range stmts {
+				e.p(s + "\n")
+			}
+		}
+		Result.Err(err) => {
 			e.fail("derive %s, field %q: %v", name, f.Name, err)
 			return
 		}
-		for _, s := range stmts {
-			e.p(s + "\n")
 		}
 	}
 
@@ -1294,25 +1299,25 @@ func (e *emitter) genConversion(name, srcName, srcType, tgtType string, fallible
 // unresolvable pair is an error (no field is silently zeroed). Mirrors
 // internal/pass.resolveField over sema facts; temporaries are scope-aware
 // gensyms (errName is the function's shared error name for the fallible path).
-func (e *emitter) resolveField(dst, srcExpr, sf, tf string, fallibleOK bool, errName string) ([]string, error) {
+func (e *emitter) resolveField(dst, srcExpr, sf, tf string, fallibleOK bool, errName string) Result[[]string, error] {
 	reg := e.info.FromRegistry
 	sf, tf = strings.TrimSpace(sf), strings.TrimSpace(tf)
 	if sf == tf {
-		return []string{fmt.Sprintf("%s = %s", dst, srcExpr)}, nil
+		return Result.Ok([]string{fmt.Sprintf("%s = %s", dst, srcExpr)})
 	}
 	if entry, ok := reg[[2]string{sf, tf}]; ok {
 		if !entry.Fallible {
-			return []string{fmt.Sprintf("%s = %s(%s)", dst, entry.Name, srcExpr)}, nil
+			return Result.Ok([]string{fmt.Sprintf("%s = %s(%s)", dst, entry.Name, srcExpr)})
 		}
 		if !fallibleOK {
-			return nil, fmt.Errorf("conversion %s->%s is fallible; declare the derive func returning (T, error)", sf, tf)
+			return Result.Err(fmt.Errorf("conversion %s->%s is fallible; declare the derive func returning (T, error)", sf, tf))
 		}
 		v := e.gensym("v")
-		return []string{
+		return Result.Ok([]string{
 			fmt.Sprintf("%s, %s := %s(%s)", v, errName, entry.Name, srcExpr),
 			fmt.Sprintf("if %s != nil {\nreturn out, %s\n}", errName, errName),
 			fmt.Sprintf("%s = %s", dst, v),
-		}, nil
+		})
 	}
 	// Pointer / Option recursion: *A -> *B (and Option[A] -> Option[B]) when A -> B
 	// resolves total. A nil source stays the nil target; a non-nil one is converted
@@ -1320,59 +1325,47 @@ func (e *emitter) resolveField(dst, srcExpr, sf, tf string, fallibleOK bool, err
 	if si, ok := ptrInner(sf); ok {
 		ti, ok := ptrInner(tf)
 		if !ok {
-			return nil, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+			return Result.Err(fmt.Errorf("no conversion %s -> %s in scope", sf, tf))
 		}
-		elem, err := elemConv(si, ti, reg)
-		if err != nil {
-			return nil, err
-		}
+		elem := elemConv(si, ti, reg)?
 		v := e.gensym("p")
-		return []string{
+		return Result.Ok([]string{
 			fmt.Sprintf("if %s != nil {\n%s := %s\n%s = &%s\n}", srcExpr, v, elem("*"+srcExpr), dst, v),
-		}, nil
+		})
 	}
 	// Built-in slice recursion: []A -> []B when A -> B resolves total.
 	if strings.HasPrefix(sf, "[]") && strings.HasPrefix(tf, "[]") {
-		elem, err := elemConv(sf[2:], tf[2:], reg)
-		if err != nil {
-			return nil, err
-		}
+		elem := elemConv(sf[2:], tf[2:], reg)?
 		i := e.gensym("i")
-		return []string{
+		return Result.Ok([]string{
 			fmt.Sprintf("%s = make(%s, len(%s))", dst, tf, srcExpr),
 			fmt.Sprintf("for %s := range %s {\n%s = %s\n}", i, srcExpr, dst+"["+i+"]", elem(srcExpr+"["+i+"]")),
-		}, nil
+		})
 	}
 	// Fixed-array recursion: [N]A -> [N]B (same length) when A -> B resolves total.
 	if sn, se, ok := arrElem(sf); ok {
 		tn, te, ok := arrElem(tf)
 		if !ok || sn != tn {
-			return nil, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+			return Result.Err(fmt.Errorf("no conversion %s -> %s in scope", sf, tf))
 		}
-		elem, err := elemConv(se, te, reg)
-		if err != nil {
-			return nil, err
-		}
+		elem := elemConv(se, te, reg)?
 		i := e.gensym("i")
-		return []string{
+		return Result.Ok([]string{
 			fmt.Sprintf("for %s := range %s {\n%s = %s\n}", i, srcExpr, dst+"["+i+"]", elem(srcExpr+"["+i+"]")),
-		}, nil
+		})
 	}
 	// Map recursion: map[K]A -> map[K]B (same key type) when A -> B resolves total.
 	if sk, sv, ok := mapKV(sf); ok {
 		tk, tv, ok := mapKV(tf)
 		if !ok || sk != tk {
-			return nil, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+			return Result.Err(fmt.Errorf("no conversion %s -> %s in scope", sf, tf))
 		}
-		elem, err := elemConv(sv, tv, reg)
-		if err != nil {
-			return nil, err
-		}
+		elem := elemConv(sv, tv, reg)?
 		k, v := e.gensym("k"), e.gensym("v")
-		return []string{
+		return Result.Ok([]string{
 			fmt.Sprintf("%s = make(%s, len(%s))", dst, tf, srcExpr),
 			fmt.Sprintf("for %s, %s := range %s {\n%s[%s] = %s\n}", k, v, srcExpr, dst, k, elem(v)),
-		}, nil
+		})
 	}
 	// Nested in-package struct recursion: A -> B when both are structs in this file.
 	// Build the target in a temp field-by-field, then assign it.
@@ -1380,40 +1373,38 @@ func (e *emitter) resolveField(dst, srcExpr, sf, tf string, fallibleOK bool, err
 		if _, tgtStruct := structFieldsOf(e.info, tf); tgtStruct {
 			v := e.gensym("s")
 			stmts := []string{fmt.Sprintf("var %s %s", v, tf)}
-			body, err := e.deriveBody(v, srcExpr, sf, tf, fallibleOK, errName)
-			if err != nil {
-				return nil, err
-			}
+			body := e.deriveBody(v, srcExpr, sf, tf, fallibleOK, errName)?
 			stmts = append(stmts, body...)
-			return append(stmts, fmt.Sprintf("%s = %s", dst, v)), nil
+			return Result.Ok(append(stmts, fmt.Sprintf("%s = %s", dst, v)))
 		}
 	}
-	return nil, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+	return Result.Err(fmt.Errorf("no conversion %s -> %s in scope", sf, tf))
 }
 
 // deriveBody emits the field-by-field assignments converting srcType to tgtType
 // into the already-declared dstVar — the recursion core for a nested struct
 // field. Every target field must be sourced (same name) and resolvable, or the
 // conversion is refused. Mirrors internal/pass.deriveBody over sema facts.
-func (e *emitter) deriveBody(dstVar, srcExpr, srcType, tgtType string, fallible bool, errName string) ([]string, error) {
+func (e *emitter) deriveBody(dstVar, srcExpr, srcType, tgtType string, fallible bool, errName string) Result[[]string, error] {
 	tgtFields, ok := structFieldsOf(e.info, tgtType)
 	if !ok {
-		return nil, fmt.Errorf("unknown target struct %q", tgtType)
+		return Result.Err(fmt.Errorf("unknown target struct %q", tgtType))
 	}
 	srcFields, _ := structFieldsOf(e.info, srcType)
 	var stmts []string
 	for _, f := range tgtFields {
 		sf, found := findSemaField(srcFields, f.Name)
 		if !found {
-			return nil, fmt.Errorf("nested field %q of %s is not sourced from %s", f.Name, tgtType, srcType)
+			return Result.Err(fmt.Errorf("nested field %q of %s is not sourced from %s", f.Name, tgtType, srcType))
 		}
-		s, err := e.resolveField(dstVar+"."+f.Name, srcExpr+"."+sf.Name, sf.Type, f.Type, fallible, errName)
-		if err != nil {
-			return nil, fmt.Errorf("nested field %q: %w", f.Name, err)
+		// resolveField's error is wrapped here with the nested-field context, so this
+		// consumer uses `match` rather than `?` (a bare `?` would drop the wrap).
+		match e.resolveField(dstVar+"."+f.Name, srcExpr+"."+sf.Name, sf.Type, f.Type, fallible, errName) {
+		Result.Ok(s) => { stmts = append(stmts, s...) }
+		Result.Err(err) => { return Result.Err(fmt.Errorf("nested field %q: %w", f.Name, err)) }
 		}
-		stmts = append(stmts, s...)
 	}
-	return stmts, nil
+	return Result.Ok(stmts)
 }
 
 // indexExpr emits a single-index expression, lowering an `Option[T]` type to its

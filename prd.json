@@ -148,7 +148,7 @@
         "backend tests and the corpus transpile + behavioral tiers pass against the transpiled backend, and task fixpoint stays green"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "Step 3 (audit). Largest package; may need splitting by emit.go/lower.go."
     },
     {

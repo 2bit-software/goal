@@ -151,6 +151,86 @@
   these but produces NO source diff, so AC-2 ("no remaining auto-convertible
   propagation sites") still holds with the suggestion present — a `suggestion` is
   not an auto-conversion, only a `skipped`/no-diff matters for the machine check.
+- The BACKEND EMITTER gates `?` more tightly than sema: sema accepts `?` in any
+  function whose return is "a Result, a `func(…) error`, or a tuple ending in
+  error" (sema.goal:39), but emit.goal REJECTS `?` outside a Result/Option-
+  returning host (`backend: \`?\` outside a Result- or Option-returning function`).
+  So to `?` a pure-propagation site you MUST convert the ENCLOSING function to
+  `Result` — a plain `(T,error)` host cannot host `?` even though sema allows it.
+  This matches `goal fix`'s own `suggestion` wording ("…not Result-returning;
+  convert its signature to use `?`"). Practical consequence for an audit: a `?`
+  conversion is never purely local — it forces the host to `Result`, which forces
+  every caller of that host to consume a `Result` (via `?` if it also propagates
+  purely, or `match` if it WRAPS / is void).
+- Error-WRAPPING propagation (`if err != nil { return …, fmt.Errorf("ctx: %w",
+  err) }`) is NOT a `?` site: `?` propagates the error UNCHANGED, so `?` would drop
+  the context = behavior change. Such a consumer of a `Result` callee uses
+  statement-position `match { Result.Ok(v) => {…} Result.Err(e) => { return
+  Result.Err(fmt.Errorf("ctx: %w", e)) } }` (lowers via emit.goal resultMatch to
+  `v, err := f(); if err != nil { <Err arm> } else { <Ok arm> }` — behavior-
+  identical). Backends/compilers tend to wrap pervasively (good Go practice), so
+  in such packages the genuine `?` surface is a SUBSET of the fallible functions —
+  only the cluster whose internal propagation is pure. Convert that cluster
+  (US-011 did the backend derive/`from`-conversion cluster: resolveField +
+  deriveBody -> Result, elemConv stays (T,error) callee, the 5 pure sites -> `?`,
+  the 2 wrapping/void consumers -> `match`) and refuse the wrapping/oracle/
+  interface-pinned rest with reason.
+- match arm bodies accept a block `{ … }`, a statement, or an expression (parser
+  parseMatchArm / emit.goal armBody). Wrap a multi-statement or assignment arm
+  body in a block `{ … }` to be safe (a bare `x = y` assignment is not an
+  expression). `match` over an open-E Result needs BOTH `Result.Ok` and
+  `Result.Err` arms (emit.goal:2142). It is the §8.3 Result idiom, NOT a
+  switch->enum conversion — do not count it toward AC-1's "switch-over-in-file-
+  enum -> match" (backend has no in-file enum; that part stays a refusal).
+
+## [2026-06-29T12:30:00Z] - US-011 (self-host idiomatic PRD)
+- Step 3 of 3 (idiomatic audit), seventh and LARGEST package: selfhost/backend
+  (~3,447 LOC). Unlike the leaf refusals (token/lexer/ast/parser, US-005..US-008)
+  and the project/pipeline double-refusal (US-010), this is a GENUINE conversion
+  of the derive/`from`-conversion subsystem to idiomatic Result/`?`/`match`, plus
+  documented refusals for the wrapping + oracle/interface-pinned rest. Second
+  package after sema (US-009) with executable Result/`?`, and the FIRST to use
+  `match` in executable selfhost source.
+- CONVERTED (emit.goal + lower.goal): `resolveField` ([]string,error) ->
+  Result[[]string,error] and `deriveBody` ([]string,error) -> Result[[]string,
+  error]. resolveField owns no internal wrap, so its 4 `elemConv(...)` sites + 1
+  `e.deriveBody(...)` site became `?` and its other returns became Result.Ok/Err.
+  `elemConv` stays (func(string)string, error) — it is the leaf CALLEE; the `?`
+  requirement is on the host, not the callee, so no signature change (also avoids a
+  func-typed Result.Ok payload). The two WRAPPING/void consumers of resolveField
+  became `match`: deriveBody's nested-field-wrap site and genConversion's
+  void/e.fail site.
+- REFUSED (recorded in DECISIONS.md "US-011 (backend)"): Transpile (exported +
+  oracle + wraps parse:/generated-Go:), Backend.Emit/goBackend.Emit (interface-
+  pinned + wraps doctests:), TranspilePackage (exported + oracle + wraps format:),
+  GoFormatter.Format (foreign tail-return), emitFile/emitFileWith/emitDoctests
+  (3-value accumulator shape, non-propagating), and switch->match (NO in-file enum;
+  every switch is over ast category interfaces [unsealable per US-007 §9],
+  token.Kind, rune, or bool).
+- Machine check (AC-2): `goal fix -inplace selfhost/backend/*.goal` -> NO source
+  diff (verified against a pre-fix backup). The former genConversion/resolveField/
+  deriveBody `suggestion`s are gone; remaining stderr is only `skipped` (Transpile/
+  emitFile/elemConv/TranspilePackage non-propagating returns) + advisory
+  `suggestion`s on the documented refusals — neither is an auto-conversion, so AC-2
+  holds.
+- Files: selfhost/backend/emit.goal (resolveField/deriveBody -> Result, `?`x5,
+  `match`x2 in deriveBody+genConversion); DECISIONS.md (US-011 section); prd.json
+  (US-011 passes:true); progress.txt. Initiative artifacts under
+  history/20260629-refactor-us-011-idiomatic-audit-backend/. lower.goal unchanged
+  (elemConv kept (T,error)).
+- Verify: go test ./internal/selfhost -run TestPortedBackendPackage green (the
+  converted backend transpiles to compiling Go and passes the copied internal/
+  backend behavioral suite); task check green (incl. the port gate + internal/
+  backend + the corpus transpile/behavioral tiers); task build green; task
+  fixpoint FIXPOINT OK (selfhost/backend/*.go byte-identical goal-c-1/goal-c-2).
+- Learnings for future iterations:
+  - See the three new Codebase Patterns bullets (emitter gates `?` to a Result/
+    Option host; wrapping propagation is a `match` site not a `?` site; match arm
+    bodies + Result-match shape). The net audit rule for a wrapping-heavy package:
+    convert the cluster whose internal propagation is PURE; consume its Result at
+    wrapping/void boundaries with `match`; refuse the oracle/interface-pinned and
+    wrapping-only functions.
+  - Only US-012 (typecheck) and US-013 (final whole-tree sweep) remain.
 
 ## [2026-06-28T23:25:00Z] - US-008 (checker-onto-ast PRD)
 - Migrated internal/project and internal/pipeline/sourcemap off the internal/scan
