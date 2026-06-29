@@ -1,0 +1,144 @@
+{
+  "project": "goal",
+  "branchName": "ralph/checker-onto-ast-prune-scan",
+  "description": "Wire the already-ported AST/sema checker into the live path, prove parity, delete internal/check, then prune internal/analyze and the text/scanner-based half of internal/scan — removing the last lexer crutch before self-host.",
+  "verifyCommands": [
+    "task check",
+    "task build"
+  ],
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add foreign enrichment to sema.Info",
+      "description": "As the checker, I need out-of-package struct fields and method signatures resolved into sema.Info so that AST-based checks can reason about imported types without analyze.Tables.",
+      "acceptanceCriteria": [
+        "sema.Info exposes a ForeignMethods map (pkg.Type.Method -> FuncSig) and imported struct fields are populated into the same Structs map sema already exposes",
+        "A sema.EnrichForeign(info, imports []*ast.ImportSpec, dir string, resolve DirResolver) []error function exists and reads imported package declarations via the Go toolchain, driven by ast.File.Imports",
+        "sema.EnrichForeign and its helpers contain no call to scan.Lex or analyze.ParseImports (imports come from the AST, not re-lexing)",
+        "DirResolver and DefaultResolver are available from internal/sema",
+        "A test enriches a multi-file fixture with an imported struct and method and asserts the resolved ForeignMethods + Structs entries match what analyze.EnrichForeign produces for the same input"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Decision: ForeignMethods lives directly on sema.Info to mirror analyze.Tables. This unit is shared with US-009 (backend) — build it once. Reuse the Go-toolchain reader logic from internal/analyze/foreign.go."
+    },
+    {
+      "id": "US-002",
+      "title": "Add sema package-check driver",
+      "description": "As cmd/goal, I need a package-level sema check entry point so that multi-file packages produce per-file diagnostics from the AST checker.",
+      "acceptanceCriteria": [
+        "A sema package driver (e.g. AnalyzePackageInDir(srcs []string, dir string) ([][]Diagnostic, error)) parses each file, calls ResolvePackage, runs EnrichForeign, then runs sema.Check per file",
+        "The driver returns one []Diagnostic per input file in input order",
+        "A test over a multi-file package fixture returns the expected diagnostics, including at least one finding that depends on foreign enrichment from US-001"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Mirrors the shape of the legacy check.AnalyzePackageInDir so US-004 is a near drop-in swap. sema.Diagnostic.Pos is a token.Pos already carrying Line/Col, so no OffsetToPosition mapping is needed downstream."
+    },
+    {
+      "id": "US-003",
+      "title": "Add differential checker parity gate",
+      "description": "As a maintainer, I need a test proving the sema checker and legacy checker agree on the corpus so that deleting internal/check is safe.",
+      "acceptanceCriteria": [
+        "A test runs both the sema checker and the legacy internal/check over every case under testdata/check/** and compares findings by (file, line, feature, code, severity)",
+        "The test passes only when findings are identical, except for divergences explicitly recorded in DECISIONS.md",
+        "Any divergence where the AST checker fires and the legacy checker deferred is recorded in DECISIONS.md as a documented improvement, and the corresponding // want markers are updated to the sema behavior"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Decision: accept-and-document AST/legacy divergences rather than forcing byte-for-byte legacy match, since internal/check is being deleted. The corpus already has both adapters (corpus/check_runner.go and corpus/sema_checker.go) to build this on."
+    },
+    {
+      "id": "US-004",
+      "title": "Rewire cmd/goal check onto sema",
+      "description": "As a goal user, I need `goal check` to run the AST checker so that the legacy lexical checker is no longer on the live path.",
+      "acceptanceCriteria": [
+        "cmd/goal/main.go checkPackage uses the US-002 sema driver and no longer imports internal/check",
+        "The typecheck depth stage and the lexical/depth dedup are preserved (same suppress-by-(basename,line,feature) behavior)",
+        "An end-to-end test asserts `goal check` output over the corpus check cases is unchanged from before the rewire"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "check.OffsetToPosition usage is dropped; sema diagnostics carry Line/Col directly. checkDiag and render() stay."
+    },
+    {
+      "id": "US-005",
+      "title": "Delete internal/check package",
+      "description": "As a maintainer, I need the legacy checker removed so that nothing live depends on it and the codebase has one checker.",
+      "acceptanceCriteria": [
+        "The internal/check directory is removed",
+        "grep for an import of internal/check returns no matches outside attic/ and features/_cut/",
+        "corpus/check_runner.go and its tests are repointed to the sema checker and the legacy CheckerFunc adapter is removed"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "After this story the only remaining analyze/scan consumers are typecheck, fix (survivor utils only), project, pipeline/sourcemap, backend/package, and lsp (resolver type)."
+    },
+    {
+      "id": "US-006",
+      "title": "Relocate scan/analyze pure survivors",
+      "description": "As a maintainer, I need the lexer-independent helpers moved out of scan/analyze so that the scanner and analyze can later be deleted without losing pure utilities.",
+      "acceptanceCriteria": [
+        "analyze.ZeroLit is relocated out of internal/analyze and all callers (fix, typecheck) import it from the new home",
+        "The pure scan utilities (Replacement, Splice, BaseType, IsIdent, IsLineStart, NextNewline, LeadIdent, SplitAssign, IsStmtKeyword) are moved into internal/textedit and all callers updated",
+        "internal/textedit and the new ZeroLit home do not import text/scanner",
+        "No behavior change: existing fix and typecheck tests pass against the relocated helpers"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Decision: survivors move to a new internal/textedit package (honest name) rather than a slimmed internal/scan that no longer scans. ZeroLit can live in internal/textedit or alongside sema; keep it with the other type helpers."
+    },
+    {
+      "id": "US-007",
+      "title": "Migrate typecheck off analyze and scan",
+      "description": "As the depth checker, I need to build my facts from sema.Info so that internal/typecheck no longer depends on analyze.Tables or the token scanner.",
+      "acceptanceCriteria": [
+        "internal/typecheck imports neither internal/analyze nor the scan lexer (no scan.Lex/Token/Match*/ScanFuncs)",
+        "typecheck builds its function/signature facts from sema.ResolvePackage / sema.Info and the relocated ZeroLit",
+        "All existing depth-check tests pass"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "typecheck.go uses analyze.BuildPackage + Tables; mustuse.go uses analyze.ModeResult; implements.go uses scan.Lex to find `type X struct`. Replace each with sema.Info / AST walks."
+    },
+    {
+      "id": "US-008",
+      "title": "Migrate project and sourcemap off scan",
+      "description": "As the build/source-map layer, I need package-name detection and decl-span mapping built from the AST so that internal/project and internal/pipeline/sourcemap no longer use the token scanner.",
+      "acceptanceCriteria": [
+        "internal/project and internal/pipeline/sourcemap import neither the scan lexer (scan.Lex/Token/Match*) nor internal/analyze",
+        "Package-name detection and the source map are derived from parser.ParseFile / AST node offsets (FuncDecl.Pos()/End() etc.)",
+        "Existing project and source-map tests pass"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Depends on US-006 for any retained pure helpers. The sourcemap can key declaration spans off AST node offsets the way internal/fix already does."
+    },
+    {
+      "id": "US-009",
+      "title": "Migrate backend package onto sema enrichment",
+      "description": "As the backend, I need foreign type facts from sema so that internal/backend/package.go no longer depends on analyze for lowering.",
+      "acceptanceCriteria": [
+        "internal/backend imports no internal/analyze symbols",
+        "backend/package.go uses sema.ResolvePackage and sema.EnrichForeign (from US-001) for cross-file and foreign facts",
+        "The corpus behavioral conformance tier passes on the new backend path"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Depends on US-001 (sema.EnrichForeign) and US-006. backend/package.go currently calls analyze.BuildPackage + analyze.EnrichForeign at lines ~113-114 while already using sema.ResolvePackage elsewhere."
+    },
+    {
+      "id": "US-010",
+      "title": "Delete analyze and the scanner",
+      "description": "As a maintainer, I need internal/analyze and the text/scanner-based lexer removed so that the last lexer crutch is gone before self-host.",
+      "acceptanceCriteria": [
+        "internal/analyze is removed and grep for an import of it returns no matches outside attic/ and features/_cut/",
+        "The scan lexer symbols (Lex, Token, all Match*, ScanFuncs, Func, CalleeKey, FirstBodyBrace, ParamsClose, TopLevelComma, MatchQualifier, MatchBodyBrace, IsBareQuestionStmt) are removed from the live tree",
+        "grep for text/scanner returns matches only under attic/ and features/_cut/"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "Final deletion. Depends on US-007, US-008, US-009 having removed every live consumer. The pure utilities relocated in US-006 survive in internal/textedit."
+    }
+  ]
+}

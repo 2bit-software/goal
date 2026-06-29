@@ -1,7 +1,7 @@
 {
   "project": "goal",
-  "branchName": "ralph/checker-onto-ast-prune-scan",
-  "description": "Wire the already-ported AST/sema checker into the live path, prove parity, delete internal/check, then prune internal/analyze and the text/scanner-based half of internal/scan — removing the last lexer crutch before self-host.",
+  "branchName": "ralph/self-host-phase-4",
+  "description": "Phase 4 self-host: close the front-end gaps, stand up the 3-stage bootstrap + byte-identical fixpoint, then port the compiler proper (token..backend, then typecheck) to goal leaf-to-root until a goal-built compiler compiles itself and passes the corpus. See SELF-HOST-RESEARCH.md.",
   "verifyCommands": [
     "task check",
     "task build"
@@ -9,136 +9,172 @@
   "userStories": [
     {
       "id": "US-001",
-      "title": "Add foreign enrichment to sema.Info",
-      "description": "As the checker, I need out-of-package struct fields and method signatures resolved into sema.Info so that AST-based checks can reason about imported types without analyze.Tables.",
+      "title": "Fix iota const-block miscompile",
+      "description": "As the self-host effort, I need idiomatic Go enum const blocks to transpile correctly so that the compiler's own iota-based declarations (e.g. internal/token) survive a round-trip.",
       "acceptanceCriteria": [
-        "sema.Info exposes a ForeignMethods map (pkg.Type.Method -> FuncSig) and imported struct fields are populated into the same Structs map sema already exposes",
-        "A sema.EnrichForeign(info, imports []*ast.ImportSpec, dir string, resolve DirResolver) []error function exists and reads imported package declarations via the Go toolchain, driven by ast.File.Imports",
-        "sema.EnrichForeign and its helpers contain no call to scan.Lex or analyze.ParseImports (imports come from the AST, not re-lexing)",
-        "DirResolver and DefaultResolver are available from internal/sema",
-        "A test enriches a multi-file fixture with an imported struct and method and asserts the resolved ForeignMethods + Structs entries match what analyze.EnrichForeign produces for the same input"
+        "Transpiling `const ( Red Color = iota; Green; Blue )` emits Go where Green and Blue are bare const names that repeat the iota initializer, NOT `Green Blue` collapsed into a name+type",
+        "The transpiled output of an idiomatic iota enum compiles with `go build`",
+        "A regression test (corpus transpile case or backend test) pins the corrected emission and fails on the old name+type collapse"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Decision: ForeignMethods lives directly on sema.Info to mirror analyze.Tables. This unit is shared with US-009 (backend) — build it once. Reuse the Go-toolchain reader logic from internal/analyze/foreign.go."
+      "passes": false,
+      "notes": "GATING — confirmed silent miscompile (exit 0): `const(Red Color=iota; Green; Blue)` -> `const(Red Color=iota; Green Blue)`, losing Blue's value. Lives in the parser GenDecl/ValueSpec path + backend const emission. Nothing self-hosts until this is fixed; internal/token depends on it."
     },
     {
       "id": "US-002",
-      "title": "Add sema package-check driver",
-      "description": "As cmd/goal, I need a package-level sema check entry point so that multi-file packages produce per-file diagnostics from the AST checker.",
+      "title": "Add per-package transpile-and-build smoke gate",
+      "description": "As the self-host effort, I need a gate that transpiles each in-scope compiler package and compiles the output so that silent transpile defects (which the checker does not flag) are caught by `go build`.",
       "acceptanceCriteria": [
-        "A sema package driver (e.g. AnalyzePackageInDir(srcs []string, dir string) ([][]Diagnostic, error)) parses each file, calls ResolvePackage, runs EnrichForeign, then runs sema.Check per file",
-        "The driver returns one []Diagnostic per input file in input order",
-        "A test over a multi-file package fixture returns the expected diagnostics, including at least one finding that depends on foreign enrichment from US-001"
+        "A test or `task` target transpiles each in-scope package's source through the goal front-end and runs `go build` (and where practical the package's existing tests) on the generated Go",
+        "The gate covers at least token, lexer, ast, parser, sema, project, pipeline, backend",
+        "The gate is green after US-001 and fails if any covered package transpiles to non-compiling Go"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Mirrors the shape of the legacy check.AnalyzePackageInDir so US-004 is a near drop-in swap. sema.Diagnostic.Pos is a token.Pos already carrying Line/Col, so no OffsetToPosition mapping is needed downstream."
+      "passes": false,
+      "notes": "The compiler source is already valid goal (Go superset), so the gate can feed internal/<pkg>/*.go (as .goal) through goalc/goal build. This is the verification harness every later port story reuses. `go build` is the real gate because the checker stays silent on miscompiles (that is how US-001 was found)."
     },
     {
       "id": "US-003",
-      "title": "Add differential checker parity gate",
-      "description": "As a maintainer, I need a test proving the sema checker and legacy checker agree on the corpus so that deleting internal/check is safe.",
+      "title": "Support generic function declarations",
+      "description": "As a goal author, I need top-level generic function declarations to parse and transpile so that the language is complete enough to express any compiler code without restriction.",
       "acceptanceCriteria": [
-        "A test runs both the sema checker and the legacy internal/check over every case under testdata/check/** and compares findings by (file, line, feature, code, severity)",
-        "The test passes only when findings are identical, except for divergences explicitly recorded in DECISIONS.md",
-        "Any divergence where the AST checker fires and the legacy checker deferred is recorded in DECISIONS.md as a documented improvement, and the corresponding // want markers are updated to the sema behavior"
+        "`func Identity[T any](x T) T { return x }` parses without error (no `expected (, found [`)",
+        "ast.FuncType carries a TypeParams field and the backend emits the type-parameter list",
+        "The generic function transpiles to valid Go that `go build` accepts, with a test covering a constrained param (e.g. [T comparable])"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Decision: accept-and-document AST/legacy divergences rather than forcing byte-for-byte legacy match, since internal/check is being deleted. The corpus already has both adapters (corpus/check_runner.go and corpus/sema_checker.go) to build this on."
+      "passes": false,
+      "notes": "Localized ~3-spot fix: parser.go:347 parseFuncDecl must call the existing atTypeParams/parseTypeParams (parser.go:281,296,307); add TypeParams to ast.FuncType (only TypeSpec has one, ast.go:261); emit in funcDecl/funcSig (backend/emit.go:360,439). Compiler uses zero generic funcs, so this is completeness, not gating."
     },
     {
       "id": "US-004",
-      "title": "Rewire cmd/goal check onto sema",
-      "description": "As a goal user, I need `goal check` to run the AST checker so that the legacy lexical checker is no longer on the live path.",
+      "title": "Stand up bootstrap and fixpoint harness",
+      "description": "As the self-host effort, I need the 3-stage bootstrap and byte-identical fixpoint check wired as repeatable targets so that every ported package can be validated against the trust proof from the start.",
       "acceptanceCriteria": [
-        "cmd/goal/main.go checkPackage uses the US-002 sema driver and no longer imports internal/check",
-        "The typecheck depth stage and the lexical/depth dedup are preserved (same suppress-by-(basename,line,feature) behavior)",
-        "An end-to-end test asserts `goal check` output over the corpus check cases is unchanged from before the rewire"
+        "A `selfhost/` directory holds a `package main` goal program (a goalc/goal-build equivalent), even if initially a thin skeleton",
+        "Taskfile `bootstrap` and `fixpoint` targets run the stage-0 -> goal-c-1 -> goal-c-2 sequence and `diff -r` the Go emitted by goal-c-1 and goal-c-2 for the compiler's own source",
+        "Running the fixpoint target exits 0 (byte-identical) against the current skeleton"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "check.OffsetToPosition usage is dropped; sema diagnostics carry Line/Col directly. checkDiag and render() stay."
+      "passes": false,
+      "notes": "No selfhost dir or bootstrap target exists today. Stage-0 = ./bin/goal[c]; goal-c-1 = goal-written compiler built by stage-0; goal-c-2 = built by goal-c-1; fixpoint = goal-c-1 and goal-c-2 emit identical Go. CLI contract must match stage-0 (build --emit / stdin goalc). See SELF-HOST-RESEARCH.md §5."
     },
     {
       "id": "US-005",
-      "title": "Delete internal/check package",
-      "description": "As a maintainer, I need the legacy checker removed so that nothing live depends on it and the codebase has one checker.",
+      "title": "Port token package to goal",
+      "description": "As the self-hosted compiler, I need internal/token reimplemented in goal so that the leaf of the dependency DAG is goal-native.",
       "acceptanceCriteria": [
-        "The internal/check directory is removed",
-        "grep for an import of internal/check returns no matches outside attic/ and features/_cut/",
-        "corpus/check_runner.go and its tests are repointed to the sema checker and the legacy CheckerFunc adapter is removed"
+        "selfhost/token holds the token package as goal source",
+        "It transpiles via the smoke gate (US-002) and the generated Go compiles",
+        "The existing token tests pass against the transpiled package"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "After this story the only remaining analyze/scan consumers are typecheck, fix (survivor utils only), project, pipeline/sourcemap, backend/package, and lsp (resolver type)."
+      "passes": false,
+      "notes": "361 LOC, leaf (no internal deps). Exercises the US-001 iota fix directly (token kinds are an iota enum)."
     },
     {
       "id": "US-006",
-      "title": "Relocate scan/analyze pure survivors",
-      "description": "As a maintainer, I need the lexer-independent helpers moved out of scan/analyze so that the scanner and analyze can later be deleted without losing pure utilities.",
+      "title": "Port lexer package to goal",
+      "description": "As the self-hosted compiler, I need internal/lexer reimplemented in goal so that tokenization is goal-native.",
       "acceptanceCriteria": [
-        "analyze.ZeroLit is relocated out of internal/analyze and all callers (fix, typecheck) import it from the new home",
-        "The pure scan utilities (Replacement, Splice, BaseType, IsIdent, IsLineStart, NextNewline, LeadIdent, SplitAssign, IsStmtKeyword) are moved into internal/textedit and all callers updated",
-        "internal/textedit and the new ZeroLit home do not import text/scanner",
-        "No behavior change: existing fix and typecheck tests pass against the relocated helpers"
+        "selfhost/lexer holds the lexer as goal source importing the ported token package",
+        "It transpiles and the generated Go compiles (unicode, unicode/utf8 pass through)",
+        "The existing lexer tests pass against the transpiled package"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "Decision: survivors move to a new internal/textedit package (honest name) rather than a slimmed internal/scan that no longer scans. ZeroLit can live in internal/textedit or alongside sema; keep it with the other type helpers."
+      "passes": false,
+      "notes": "514 LOC; depends on token. Foreign imports unicode/unicode/utf8 pass through."
     },
     {
       "id": "US-007",
-      "title": "Migrate typecheck off analyze and scan",
-      "description": "As the depth checker, I need to build my facts from sema.Info so that internal/typecheck no longer depends on analyze.Tables or the token scanner.",
+      "title": "Port ast package to goal",
+      "description": "As the self-hosted compiler, I need internal/ast reimplemented in goal so that node definitions and Walk are goal-native.",
       "acceptanceCriteria": [
-        "internal/typecheck imports neither internal/analyze nor the scan lexer (no scan.Lex/Token/Match*/ScanFuncs)",
-        "typecheck builds its function/signature facts from sema.ResolvePackage / sema.Info and the relocated ZeroLit",
-        "All existing depth-check tests pass"
+        "selfhost/ast holds the ast package as goal source importing the ported token package",
+        "It transpiles and the generated Go compiles",
+        "The existing ast tests pass against the transpiled package"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "typecheck.go uses analyze.BuildPackage + Tables; mustuse.go uses analyze.ModeResult; implements.go uses scan.Lex to find `type X struct`. Replace each with sema.Info / AST walks."
+      "passes": false,
+      "notes": "1,988 LOC; depends on token. dump.go uses reflect for debug Sexpr — drop it from the self-hosted build or rewrite as an explicit node switch (not on the compile path)."
     },
     {
       "id": "US-008",
-      "title": "Migrate project and sourcemap off scan",
-      "description": "As the build/source-map layer, I need package-name detection and decl-span mapping built from the AST so that internal/project and internal/pipeline/sourcemap no longer use the token scanner.",
+      "title": "Port parser package to goal",
+      "description": "As the self-hosted compiler, I need internal/parser reimplemented in goal so that source-to-AST is goal-native.",
       "acceptanceCriteria": [
-        "internal/project and internal/pipeline/sourcemap import neither the scan lexer (scan.Lex/Token/Match*) nor internal/analyze",
-        "Package-name detection and the source map are derived from parser.ParseFile / AST node offsets (FuncDecl.Pos()/End() etc.)",
-        "Existing project and source-map tests pass"
+        "selfhost/parser holds the parser as goal source importing the ported token, lexer, ast packages",
+        "It transpiles and the generated Go compiles",
+        "The existing parser tests pass against the transpiled package"
       ],
       "priority": 8,
-      "passes": true,
-      "notes": "Depends on US-006 for any retained pure helpers. The sourcemap can key declaration spans off AST node offsets the way internal/fix already does."
+      "passes": false,
+      "notes": "1,765 LOC; hand-written recursive descent with precedence climbing. Depends on token, lexer, ast. May be large for one context window — if so, split by parser.go vs goal_*.go."
     },
     {
       "id": "US-009",
-      "title": "Migrate backend package onto sema enrichment",
-      "description": "As the backend, I need foreign type facts from sema so that internal/backend/package.go no longer depends on analyze for lowering.",
+      "title": "Port sema package to goal",
+      "description": "As the self-hosted compiler, I need internal/sema reimplemented in goal so that resolution and checking are goal-native.",
       "acceptanceCriteria": [
-        "internal/backend imports no internal/analyze symbols",
-        "backend/package.go uses sema.ResolvePackage and sema.EnrichForeign (from US-001) for cross-file and foreign facts",
-        "The corpus behavioral conformance tier passes on the new backend path"
+        "selfhost/sema holds the sema package as goal source importing the ported token, ast, parser packages",
+        "It transpiles and the generated Go compiles (go/parser, go/format, go/types pass through as foreign imports)",
+        "The existing sema tests pass against the transpiled package"
       ],
       "priority": 9,
-      "passes": true,
-      "notes": "Depends on US-001 (sema.EnrichForeign) and US-006. backend/package.go currently calls analyze.BuildPackage + analyze.EnrichForeign at lines ~113-114 while already using sema.ResolvePackage elsewhere."
+      "passes": false,
+      "notes": "2,695 LOC; multi-pass resolve + check + foreign + ?-inference. foreign.go imports go/parser/go/format/go/types — confirmed they pass through. Large; may need splitting by file group (resolve, check-family, foreign)."
     },
     {
       "id": "US-010",
-      "title": "Delete analyze and the scanner",
-      "description": "As a maintainer, I need internal/analyze and the text/scanner-based lexer removed so that the last lexer crutch is gone before self-host.",
+      "title": "Port project and pipeline packages to goal",
+      "description": "As the self-hosted compiler, I need internal/project and internal/pipeline reimplemented in goal so that discovery and output types are goal-native.",
       "acceptanceCriteria": [
-        "internal/analyze is removed and grep for an import of it returns no matches outside attic/ and features/_cut/",
-        "The scan lexer symbols (Lex, Token, all Match*, ScanFuncs, Func, CalleeKey, FirstBodyBrace, ParamsClose, TopLevelComma, MatchQualifier, MatchBodyBrace, IsBareQuestionStmt) are removed from the live tree",
-        "grep for text/scanner returns matches only under attic/ and features/_cut/"
+        "selfhost/project and selfhost/pipeline hold those packages as goal source",
+        "Both transpile and the generated Go compiles (io/fs, os, path/filepath pass through)",
+        "The existing project and pipeline tests pass against the transpiled packages"
       ],
       "priority": 10,
-      "passes": true,
-      "notes": "Final deletion. Depends on US-007, US-008, US-009 having removed every live consumer. The pure utilities relocated in US-006 survive in internal/textedit."
+      "passes": false,
+      "notes": "Small (147 + 173 LOC), combined into one story. project depends on parser; pipeline is output types + source map."
+    },
+    {
+      "id": "US-011",
+      "title": "Port backend package to goal",
+      "description": "As the self-hosted compiler, I need internal/backend reimplemented in goal so that AST-to-Go emission is goal-native.",
+      "acceptanceCriteria": [
+        "selfhost/backend holds the backend as goal source importing the ported token, ast, parser, sema, project, pipeline packages",
+        "It transpiles and the generated Go compiles (go/format, go/types, go/importer pass through)",
+        "The existing backend tests and the corpus transpile + behavioral tiers pass against the transpiled backend"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "3,441 LOC; the largest and gnarliest (stateful emitter, ~100 methods, all goal-specific lowerings). Ported last against a fully working ported front-end, with the corpus as control. Likely needs splitting by emit.go vs lower.go vs the rest."
+    },
+    {
+      "id": "US-012",
+      "title": "Self-host the build path and prove fixpoint",
+      "description": "As the self-host effort, I need the goal-written compiler to compile itself so that the byte-identical fixpoint trust proof holds for the build path.",
+      "acceptanceCriteria": [
+        "selfhost/ exposes a goal-written goalc/goal-build main wired to the ported token..backend packages",
+        "The US-004 fixpoint target passes: goal-c-1 and goal-c-2 emit byte-identical Go for the compiler's own source",
+        "The goal-built compiler passes the corpus transpile + behavioral conformance tiers"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "The milestone. Covers the build/transpile path (token..backend); typecheck (the goal check depth stage) follows in US-013. This is where self-host is actually achieved for the transpiler."
+    },
+    {
+      "id": "US-013",
+      "title": "Port typecheck and self-host goal check",
+      "description": "As the self-hosted compiler, I need internal/typecheck reimplemented in goal so that the depth-check path of `goal check` is also goal-native.",
+      "acceptanceCriteria": [
+        "selfhost/typecheck holds the typecheck package as goal source (go/types, go/importer, go/ast, go/parser pass through as foreign imports)",
+        "It transpiles, the generated Go compiles, and the existing typecheck depth tests pass against it",
+        "The goal-built compiler runs `goal check` over the corpus check cases with the same diagnostics as the Go-built compiler, and the fixpoint still holds with typecheck included"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "772 LOC; deferrable past the build-path fixpoint (US-012). Extends self-host from `goal build` to `goal check`. go/types et al. import as passthrough — no shelling out needed."
     }
   ]
 }
