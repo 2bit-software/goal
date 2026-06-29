@@ -235,14 +235,26 @@ func (e *emitter) enumDecl(d *ast.EnumDecl) {
 	e.p(genEnum(en))
 }
 
-// sealedInterfaceDecl lowers `sealed interface Name {}` to its marker interface
-// `type Name interface{ isName() }`.
+// sealedInterfaceDecl lowers `sealed interface Name { methods }` to a Go interface
+// that preserves the declared method signatures alongside the synthesized marker
+// method, e.g. `type Name interface { Pos() Position; End() Position; isName() }`.
+// An empty body keeps the compact marker-only form `type Name interface{ isName() }`
+// (byte-identical to the prior lowering, so self-host fixpoint is unaffected).
 func (e *emitter) sealedInterfaceDecl(d *ast.SealedInterfaceDecl) {
 	if d.Name == nil {
 		e.fail("sealed interface declaration has no name")
 		return
 	}
-	e.p(genSealedInterface(d.Name.Name))
+	if d.Methods == nil || len(d.Methods.List) == 0 {
+		e.p(genSealedInterface(d.Name.Name))
+		return
+	}
+	e.p("type " + d.Name.Name + " interface {\n")
+	for _, m := range d.Methods.List {
+		e.interfaceMethod(m)
+		e.p("\n")
+	}
+	e.p("is" + d.Name.Name + "()\n}")
 }
 
 // implementsMarkers emits the §8.5 marker/assertion for every struct in d that
@@ -529,21 +541,28 @@ func (e *emitter) interfaceType(x *ast.InterfaceType) {
 	e.p("interface {\n")
 	if x.Methods != nil {
 		for _, m := range x.Methods.List {
-			if len(m.Names) > 0 {
-				e.identList(m.Names)
-				if ft, ok := m.Type.(*ast.FuncType); ok {
-					e.funcSig(ft)
-				} else if m.Type != nil {
-					e.p(" ")
-					e.expr(m.Type)
-				}
-			} else if m.Type != nil {
-				e.expr(m.Type)
-			}
+			e.interfaceMethod(m)
 			e.p("\n")
 		}
 	}
 	e.p("}")
+}
+
+// interfaceMethod emits a single interface element (no trailing newline): a named
+// method renders as `Name(params) results` (no `func` keyword), an embedded
+// interface as its type name. Shared by interfaceType and sealedInterfaceDecl.
+func (e *emitter) interfaceMethod(m *ast.Field) {
+	if len(m.Names) > 0 {
+		e.identList(m.Names)
+		if ft, ok := m.Type.(*ast.FuncType); ok {
+			e.funcSig(ft)
+		} else if m.Type != nil {
+			e.p(" ")
+			e.expr(m.Type)
+		}
+	} else if m.Type != nil {
+		e.expr(m.Type)
+	}
 }
 
 func (e *emitter) field(f *ast.Field) {
