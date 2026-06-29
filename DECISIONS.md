@@ -2320,3 +2320,104 @@ TestPortedSemaPackage` green (the transpiled `selfhost/sema` with the Result/`?`
 `task check` (incl. the selfhost port gate + `internal/sema`) green; `task build`
 green; `task fixpoint` → FIXPOINT OK (`selfhost/sema/*.go` byte-identical across
 goal-c-1/goal-c-2). Only `selfhost/sema/analyze.goal` changed.
+
+## self-host idiomatic audit — US-010 (project + pipeline)
+
+> US-010 of the **self-host idiomatic** PRD (`prd.json`): the per-package
+> idiomatic audit of the two smallest selfhost packages, combined into one story
+> — `selfhost/project` (project.goal) and `selfhost/pipeline` (pipeline.goal,
+> sourcemap.goal). Pattern unchanged from US-005..US-009: classify each Go-ism
+> against the goal idiom it could become, convert where it FITS (intra-package,
+> behavior-preserving, no cross-package caller edits, no oracle-pinned signature
+> change), record refusals here. Outcome: a documented refusal for both packages
+> (no `.goal` source change) — every fallible function is either oracle-pinned or
+> has no valid `?` host, and `pipeline` has no fallible surface at all. This
+> mirrors the pure-refusal leaf packages (token/lexer/ast/parser, US-005..US-008)
+> rather than the one-conversion sema audit (US-009).
+
+### `Discover` stays `([]*Package, error)` — NOT converted to Result
+- **Kind:** refusal (with reason)
+- **Refused:** converting `Discover(root string) ([]*Package, error)` to
+  `Result[[]*Package, error]`.
+- **Why:** `Discover` is exported AND heavily oracle-pinned: the US-003 verbatim
+  oracle suite `internal/project/project_test.go` calls it five ways
+  (TestDiscoverGroupsByDirectory / ConflictingPackageNames / MissingPackageClause
+  / SkipsReservedDirs / EmptyTreeYieldsNoPackages, all `pkgs, err := Discover(...)`
+  / `_, err := Discover(...)`), and the self-host port gate
+  `internal/selfhost/port_test.go` calls `project.Discover(...)` for **every**
+  ported package (token, lexer, ast, parser, sema, project, pipeline) in its
+  two-value form. The open-E Result lowering would keep the emitted Go signature
+  `([]*Package, error)` byte-identical, BUT the body uses `?` only if the enclosing
+  function is Result-returning, and the two collapsible propagation sites it owns
+  (`name, err := packageName(...); if err != nil { return nil, err }` and the walk
+  closure's `if err != nil { return nil, err }`) cannot be `?`-ified without making
+  `Discover` itself Result-typed in goal source — which is precisely what `goal fix`
+  reports it cannot do ("exported `Discover` has callers fix cannot see"). The
+  US-009 safety rule converts an exported fn ONLY when it has no in-tree callers
+  AND no oracle test; `Discover` fails both. Refuse.
+
+### `packageName` stays `(string, error)` — NOT converted to Result
+- **Kind:** refusal (with reason)
+- **Refused:** converting the unexported `packageName(dir string, files []File)
+  (string, error)` to Result.
+- **Why:** its sole caller is `Discover`, which is not Result-returning and cannot
+  become one (oracle-pinned, above). With no Result host, a `?` at the call site is
+  impossible; converting `packageName` to Result would force the caller to manually
+  unpack a Result (a struct match / `.Unwrap`) — strictly MORE code than the
+  current `name, err := …; if err != nil { return nil, err }`, not a
+  behavior-preserving idiom gain. Independently, `packageName` builds its errors in
+  place (`return "", fmt.Errorf(...)`) rather than propagating an existing one, so
+  `goal fix` SKIPs it as a "non-propagating return" — it is not an auto-convertible
+  site. Refuse.
+
+### `PackageClause` is not a `(T, error)` function — nothing to convert
+- **Kind:** N/A (not a conversion candidate)
+- **Note:** `PackageClause(src string) string` returns a plain `string` and
+  deliberately swallows the parser error (`file, _ := parser.ParseFile(src)`) to
+  preserve the legacy lexer's tolerance (it reads the package name even when later
+  body parsing failed). There is no error in its signature, so Result/`?`/Option
+  do not apply. It is also exported and oracle-pinned (TestPackageClause*), so its
+  signature is frozen regardless.
+
+### `selfhost/pipeline` has no fallible surface — nothing to convert
+- **Kind:** N/A (no fallible functions)
+- **Note:** `pipeline.goal` is pure type declarations (Output, GoFile,
+  PackageOutput) — no functions at all. `sourcemap.goal`'s functions
+  (`AddLineDirectives` → string, `declSites` → []declSite, `declLines` →
+  map[string]int, `declName` → string) return no error; `declSites` swallows the
+  parse error with `file, _ := parser.ParseFile(src)`. No `(T, error)`, no
+  comma-ok `(T, bool)`, no error-returning helper exists, so Result/Option/`?`
+  have no surface here. `goal fix` reports nothing for either file.
+
+### No `switch`→`match` applies — neither package declares an in-file `enum`
+- **Kind:** refusal (with reason)
+- **Refused:** converting the `switch` statements to `match`.
+- **Why:** the only `switch`es are in `sourcemap.go declName`: a type-switch over
+  `ast.Decl` (a category interface that **cannot be sealed** per US-007 §9 — its
+  values are consumed by plain switches in sema/backend/parser, and sealing it is a
+  cross-package break) with a nested type-switch over `ast.Spec` (`TypeSpec` /
+  `ValueSpec`), gated by `d.Tok == token.IMPORT` comparisons over `token.Kind`
+  (`type Kind int`, not an enum per US-005). Neither package declares an `enum` of
+  its own, so AC-1's "switch over an in-file enum → match" has no candidate. Refuse
+  (consistent with US-007/US-008).
+
+### No `enum` / `Option` applies
+- **Kind:** N/A
+- **Note:** neither package has a closed, unordered, payload-or-not variant set
+  (the only `const` is `Ext = ".goal"`, a single string), nor a comma-ok value
+  helper. enum and Option have no candidate.
+
+### Verification
+`goal fix selfhost/project/*.goal` and `goal fix selfhost/pipeline/*.goal` →
+**no content diff** on any file. The only stderr is project.goal's two deliberate
+non-auto-convertible SKIPs (`Discover` exported-with-hidden-callers, `packageName`
+non-propagating-return) plus one advisory `suggestion: [call-site]` on `Discover`
+(not an auto-conversion, no diff); pipeline produces no output at all. Zero
+auto-convertible propagation sites remain in either package (AC-2 holds). The
+self-host port gate `go test ./internal/selfhost -run
+'TestPortedProjectPackage|TestPortedPipelinePackage'` is green (both transpile to
+compiling Go and pass the copied `internal/project` / behavioral suites);
+`task check` (incl. the port gate + `internal/project` + `internal/pipeline`)
+green; `task build` green; `task fixpoint` → FIXPOINT OK
+(`selfhost/{project,pipeline}/*.go` byte-identical across goal-c-1/goal-c-2). No
+`.goal` source changed — this story is documentation only.

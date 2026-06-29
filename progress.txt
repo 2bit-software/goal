@@ -4960,3 +4960,56 @@
   - US-010 (project + pipeline) and US-011 (backend) are the remaining audits with
     real fallible surface; US-012 (typecheck) and US-013 (final sweep) close it.
 ---
+
+## [2026-06-29T11:30:00Z] - US-010 (self-host idiomatic PRD)
+- Step 3 of 3 (idiomatic audit), sixth audit: selfhost/project (project.goal) +
+  selfhost/pipeline (pipeline.goal, sourcemap.goal), the two smallest packages
+  combined. Outcome: a documented REFUSAL for both — no .goal source change.
+  Mirrors the pure-refusal leaf packages (token/lexer/ast/parser, US-005..US-008)
+  rather than the one-conversion sema audit (US-009).
+- Result/? (AC-1): REFUSED with reason for every fallible function:
+  - Discover ([]*Package,error): exported AND oracle-pinned (internal/project
+    project_test.go TestDiscover* + the self-host port gate calls project.Discover
+    for every ported package). Open-E Result keeps the emitted signature identical,
+    but `?` needs a Result-typed host; Discover cannot become Result (oracle), so
+    its two collapsible sites cannot be `?`-ified. goal fix SKIPs it ("exported
+    Discover has callers fix cannot see"). US-009 safety rule (no callers AND no
+    oracle) fails both. REFUSE.
+  - packageName (string,error): unexported, sole caller is the non-Result Discover,
+    so no `?` host exists; converting would force manual Result-unpacking at the
+    caller (MORE code, not an idiom gain). Also non-propagating (builds errors via
+    fmt.Errorf) -> goal fix SKIPs it. REFUSE.
+  - PackageClause: returns plain string, swallows the parse error with `_`; not a
+    (T,error) function. N/A (also oracle-pinned).
+  - pipeline: NO fallible surface at all. pipeline.goal is pure type defs;
+    sourcemap.goal's funcs return string/[]declSite/map (declSites swallows the
+    parse error with `_`). Nothing to convert.
+- switch->match (AC-1): REFUSED. Neither package declares an in-file enum. The only
+  switches are in declName: a type-switch over ast.Decl (unsealable per US-007 §9)
+  + nested over ast.Spec, gated by token.Kind == comparisons. No closed-enum
+  scrutinee.
+- enum/Option: N/A (no closed variant set; the only const is Ext=".goal"; no
+  comma-ok value helper).
+- Machine check (AC-2): `goal fix -inplace selfhost/project/*.goal` and
+  `...selfhost/pipeline/*.goal` -> EMPTY git diff. Only stderr is project's two
+  deliberate SKIPs (Discover, packageName) + one advisory call-site suggestion on
+  Discover; pipeline emits nothing. Zero auto-convertible sites in either package.
+- Files: DECISIONS.md (new "US-010 (project + pipeline)" section), prd.json (US-010
+  passes:true), progress.txt. Initiative artifacts under
+  history/20260629-refactor-us-010-idiomatic-audit-project-and-pipeline/. No .goal
+  source edit.
+- Verify: goal fix (no diff; deliberate SKIPs only); go test ./internal/selfhost
+  -run 'TestPortedProjectPackage|TestPortedPipelinePackage' green; task check green
+  (incl. port gate + internal/project + internal/pipeline); task build green; task
+  fixpoint FIXPOINT OK (selfhost/{project,pipeline}/*.go byte-identical
+  goal-c-1/goal-c-2).
+- Learnings for future iterations:
+  - A combined small-package audit can be a clean double-refusal: project's only
+    real (T,error) propagation lives in the EXPORTED, oracle-pinned Discover (no
+    Result host for `?` and a frozen signature), and pipeline has no fallible
+    surface whatsoever. When the sole propagating function is exported+pinned, the
+    US-009 byte-identical-emit trick does NOT apply (it requires no callers AND no
+    oracle test) — record the refusal, don't manufacture a Result host.
+  - US-011 (backend) and US-012 (typecheck) are the remaining audits with real
+    fallible surface; US-013 is the final whole-tree sweep.
+---

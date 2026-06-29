@@ -135,7 +135,7 @@
         "project and pipeline tests pass against the transpiled packages and task fixpoint stays green"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Step 3 (audit). Small packages combined."
     },
     {
