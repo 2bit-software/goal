@@ -207,7 +207,15 @@ func plainResultFuncs(file *ast.File) []plainFunc {
 	var out []plainFunc
 	for _, d := range file.Decls {
 		fn, ok := d.(*ast.FuncDecl)
-		if !ok || fn.Mod != ast.FuncPlain || fn.Recv != nil || fn.Name == nil || fn.Type == nil || fn.Body == nil {
+		if !ok {
+			continue
+		}
+		plain := match fn.Mod {
+			ast.FuncMod.FuncPlain => true
+			ast.FuncMod.FuncFrom => false
+			ast.FuncMod.FuncDerive => false
+		}
+		if !plain || fn.Recv != nil || fn.Name == nil || fn.Type == nil || fn.Body == nil {
 			continue
 		}
 		out = append(out, plainFunc{fn})

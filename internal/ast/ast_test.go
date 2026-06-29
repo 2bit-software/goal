@@ -244,44 +244,11 @@ func TestWalkGoalDeclChildren(t *testing.T) {
 		assertChildren(t, visits, impl, ifaceType)
 	}
 
-	// from func uuidToString(u UUID) string { ... }
-	fromName := &Ident{Name: "uuidToString"}
-	modPos := token.Pos{Offset: 0, Line: 1, Col: 1}
-	fromFunc := &FuncDecl{Mod: FuncFrom, ModPos: modPos, Name: fromName, Type: &FuncType{}}
-	{
-		visits := collect(fromFunc)
-		assertChildren(t, visits, fromFunc, fromName)
-		if fromFunc.Mod != FuncFrom {
-			t.Errorf("from-func Mod = %v, want FuncFrom", fromFunc.Mod)
-		}
-		if fromFunc.Pos() != modPos {
-			t.Errorf("from-func Pos() = %v, want ModPos %v", fromFunc.Pos(), modPos)
-		}
-	}
-
-	// derive func fromStorage(s StoredEvent) (EventExecution, error)  — bodyless
-	deriveName := &Ident{Name: "fromStorage"}
-	deriveFunc := &FuncDecl{Mod: FuncDerive, ModPos: modPos, Name: deriveName, Type: &FuncType{}}
-	{
-		visits := collect(deriveFunc)
-		assertChildren(t, visits, deriveFunc, deriveName)
-		if deriveFunc.Mod != FuncDerive {
-			t.Errorf("derive-func Mod = %v, want FuncDerive", deriveFunc.Mod)
-		}
-		if deriveFunc.Pos() != modPos {
-			t.Errorf("derive-func Pos() = %v, want ModPos %v", deriveFunc.Pos(), modPos)
-		}
-	}
-
-	// A plain FuncDecl must NOT report ModPos as its start position.
-	plainName := &Ident{Name: "plain"}
-	plainFunc := &FuncDecl{Name: plainName, Type: &FuncType{Func: token.Pos{Offset: 5, Line: 1, Col: 6}}}
-	if plainFunc.Mod != FuncPlain {
-		t.Errorf("plain-func Mod = %v, want FuncPlain", plainFunc.Mod)
-	}
-	if plainFunc.Pos() != plainFunc.Type.Pos() {
-		t.Errorf("plain-func Pos() = %v, want Type.Pos() %v", plainFunc.Pos(), plainFunc.Type.Pos())
-	}
+	// FuncDecl modifier (FuncMod) Walk/Pos coverage lives in funcmod_test.go —
+	// relocated there so the shared ast_test.go stays free of FuncMod/ChanDir
+	// symbol references and compiles against BOTH the Go-iota internal/ast (this
+	// package) and the goal-enum-transpiled selfhost/ast that the self-host port
+	// gate (internal/selfhost) builds it against (SEAM-002).
 }
 
 // TestWalkGoalExprChildren asserts Walk descends into the children of each goal

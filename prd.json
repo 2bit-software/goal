@@ -62,7 +62,7 @@
         "DECISIONS.md records the conversion and any member deliberately left as iota with reason"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Smallest real seam -- proves the pattern end to end (enum def + cross-package == / numeric / switch->match + golden regen). Directly reverses the US-005/US-007 'ordered comparable iota int, keep as-is' refusal under the relaxed gate. If a member truly needs integer identity (e.g. used as an array index or wire value), that is a real semantic blocker, not a scope blocker -- keep it and say so."
     },
     {

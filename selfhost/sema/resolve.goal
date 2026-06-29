@@ -214,8 +214,13 @@ func structFields(fl *ast.FieldList) []Field {
 // modifier registers a conversion; a receiver records a method; otherwise it is a
 // plain function signature.
 func (info *Info) resolveFunc(d *ast.FuncDecl) {
+	isConv := match d.Mod {
+		ast.FuncMod.FuncFrom => true
+		ast.FuncMod.FuncDerive => true
+		ast.FuncMod.FuncPlain => false
+	}
 	switch {
-	case d.Mod == ast.FuncFrom || d.Mod == ast.FuncDerive:
+	case isConv:
 		info.resolveConversion(d)
 	case d.Recv != nil:
 		info.resolveMethod(d)
@@ -455,13 +460,10 @@ func typeString(x ast.Expr) string {
 		}
 		return "..."
 	case *ast.ChanType:
-		switch x.Dir {
-		case ast.RecvOnly:
-			return "<-chan " + typeString(x.Value)
-		case ast.SendOnly:
-			return "chan<- " + typeString(x.Value)
-		default:
-			return "chan " + typeString(x.Value)
+		return match x.Dir {
+			ast.ChanDir.RecvOnly => "<-chan " + typeString(x.Value)
+			ast.ChanDir.SendOnly => "chan<- " + typeString(x.Value)
+			ast.ChanDir.SendRecv => "chan " + typeString(x.Value)
 		}
 	case *ast.FuncType:
 		return "func" + funcTypeString(x)

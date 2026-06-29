@@ -17,16 +17,14 @@ import "goal/selfhost/token"
 // FuncMod is the goal modifier on a FuncDecl. `from` and `derive` are contextual
 // keywords (lexed as identifiers); the parser records which, if any, prefixed a
 // function so lowering can treat it as a leaf or derived conversion.
-type FuncMod int
-
-const (
+enum FuncMod {
 	// FuncPlain is an ordinary function with no goal modifier.
-	FuncPlain FuncMod = iota
+	FuncPlain
 	// FuncFrom marks a `from func`: a leaf conversion registered for derive.
 	FuncFrom
 	// FuncDerive marks a `derive func`: a type-directed, field-by-field conversion.
 	FuncDerive
-)
+}
 
 // EnumDecl is a goal enum declaration: `enum Name { Variants }`. It is a closed
 // sum type whose Variants are the only inhabitants, which makes match over it

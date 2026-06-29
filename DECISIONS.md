@@ -2061,7 +2061,15 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
   to match on; would not compile without first sealing `Node`).
 
 ### `FuncMod` and `ChanDir` stay iota `const` blocks — NOT goal `enum`s
-- **Kind:** refusal (with reason)
+- **SUPERSEDED by SEAM-002** (see "SEAM-002 — FuncMod & ChanDir iota → goal enum"
+  near the top of this file). This was a SCOPE refusal of the per-package gate
+  (US-007 could not edit cross-package `==`/`switch` consumers, and that gate
+  required byte-identical emitted Go). Under the relaxed SEAM gate both types ARE
+  now goal `enum`s and every consumer is a `match`. The "why" below describes the
+  per-package-gate obstacles (cross-package `==` / §9 plain-switch), NOT a
+  semantic impossibility — SEAM-CAP/CAP-2 + the atomic tree-wide switch→match
+  conversion cleared them. Retained for ledger history; do not act on it.
+- **Kind:** refusal (with reason) — superseded
 - **Refused:** rewriting `type FuncMod int` + `const ( FuncPlain … iota; FuncFrom;
   FuncDerive )` (goal_decl.goal) and `type ChanDir int` + `const ( SendRecv …
   iota; SendOnly; RecvOnly )` (ast.goal) into goal `enum`s.
@@ -2862,3 +2870,66 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
   builds+runs them against a reference switch (identical behavior).
 - **Gates:** `task check`, `task build`, `task fixpoint` → FIXPOINT OK; corpus behavioral
   tier unchanged (the fixture is additive).
+
+## SEAM-002 — FuncMod & ChanDir iota → goal enum (tree-wide); token.Kind kept as iota
+
+- **Kind:** seam (relaxed gate; see "Seam methodology" above)
+- **What converted.** `selfhost/ast` `FuncMod` (FuncPlain/FuncFrom/FuncDerive) and
+  `ChanDir` (SendRecv/SendOnly/RecvOnly) are now goal `enum`s (§8.1 sealed-interface
+  encoding) instead of `type X int` + iota. Every cross- and same-package consumer
+  converted to `match` in the same atomic change:
+  - `selfhost/ast/ast.goal:170` (`FuncDecl.Pos`, same-package) — `d.Mod != FuncPlain` →
+    `notPlain := match d.Mod {…}`.
+  - `selfhost/sema/question.goal` (`plainResultFuncs`) — `fn.Mod != ast.FuncPlain` →
+    a match-bound bool, with the `!ok` type-assert guard split out FIRST so the
+    short-circuit that protected the nil deref is preserved.
+  - `selfhost/sema/resolve.goal` — `d.Mod == ast.FuncFrom || …FuncDerive` → match-bound
+    bool inside the (retained) tagless `switch {}`; the `switch x.Dir {…}` in
+    `typeString` → value-position `match` (the former `default` body re-homed under the
+    explicit `ast.ChanDir.SendRecv` arm).
+  - `selfhost/sema/convert.goal` — `fd.Mod != ast.FuncDerive` → match-bound bool (`!ok`
+    split out).
+  - `selfhost/backend/emit.goal` — `funcDecl`'s control `switch d.Mod` → `isDerive :=
+    match d.Mod {…}` + `if isDerive { e.deriveDecl(d); return }` (the unreachable
+    `default: e.fail(…)` arm dropped); `chanType`'s `switch x.Dir` → statement-position
+    `match` (former `default` → explicit `SendRecv` arm).
+  - `selfhost/parser/parser.goal` — construction sites requalified to
+    `ast.FuncMod.FuncFrom`/`…FuncDerive` and `ast.ChanDir.SendRecv`/`…RecvOnly`/`…SendOnly`.
+- **Zero-value gap (real semantic, fixed not refused).** An enum's zero value is `nil`,
+  not the first variant — unlike iota, where `FuncMod`'s zero was `FuncPlain` and
+  `ChanDir`'s was `SendRecv`. `parseFuncDecl` previously relied on `&ast.FuncDecl{}`
+  defaulting to `FuncPlain`; it now sets `Mod: ast.FuncMod.FuncPlain` explicitly
+  (`parseModFuncDecl` overwrites it for from/derive). `ChanType`'s sole constructor
+  already set `Dir` explicitly. This construction invariant (no site leaves Mod/Dir nil)
+  is what keeps the 3-arm exhaustive `match` total at run time.
+- **token.Kind KEPT as iota (documented refusal, AC-1 escape hatch).** `selfhost/token`
+  `Kind` retains `type Kind int` + iota because it has a genuine NUMERIC-IDENTITY
+  dependence that survives the seam relaxation, not a mere scope limit: it is used as an
+  ARRAY INDEX (`kindNames[k]`), in RANGE PREDICATES over contiguous numbering
+  (`literalBeg < k && k < literalEnd`, and the analogous operator/keyword ranges), and
+  relies on dense ordered integers. A goal `enum` lowers to a boxed sealed interface, not
+  an ordered int, so converting `Kind` would break those operations — a behavior change,
+  not an idiom gain. AC-1 explicitly permits keeping a member as iota for exactly this
+  reason. (This supersedes nothing for FuncMod/ChanDir, which had no such dependence and
+  were correctly converted; it upholds the US-005/US-007 `Kind`-stays-iota call on its
+  real, semantic ground.)
+- **internal/ast stays Go-iota.** The bootstrap reference compiler's own AST
+  (`internal/ast`) keeps Go iota for FuncMod/ChanDir — it is plain Go, need not mirror the
+  self-hosted representation, and is not part of the fixpoint comparison. The only
+  internal/ change is test relocation: the FuncMod Walk/Pos/Mod assertions moved from the
+  port-gated `internal/ast/ast_test.go` into a new internal-only
+  `internal/ast/funcmod_test.go` (NOT added to `internal/selfhost/port_test.go`'s
+  BuildAndTest slice), so the shared `ast_test.go` is FuncMod/ChanDir-symbol-free and
+  compiles against BOTH Go-iota internal/ast and the enum-transpiled selfhost/ast the port
+  gate builds it against.
+- **Equivalence proof (relaxed gate).** `task fixpoint` → FIXPOINT OK (goal-c-1 and
+  goal-c-2 emit byte-identical Go for `./selfhost`, both agreeing on the new enum/match
+  form); `task check` green (incl. the `internal/selfhost` behavioral port gates that
+  transpile selfhost/ast as an enum and run the relocated `ast_test.go` against it, and
+  `internal/corpus` `TestASTEngineWholeCorpusBehavioralGate`); `task build` green. The
+  emitted Go for the converted sites moved (iota int → §8.1 sealed-interface, `switch` →
+  type-switch); verified behavior-preserving (same control flow / values, only the idiom
+  moved). No golden regeneration was needed — corpus/snapshot goldens test the unchanged
+  internal/ Go compiler, not the selfhost tree.
+- **Capabilities relied on:** SEAM-CAP (cross-package enum-match lowering) and SEAM-CAP-2
+  (cross-`.goal`-package enum visibility + bare-construction lowering); both pre-landed.

@@ -223,10 +223,10 @@ func (p *parser) parseDecl() ast.Decl {
 		// precedes an ordinary func declaration (US-023). Recorded as a modifier
 		// on the FuncDecl, not as a token kind.
 		if p.isContextual("from") && p.peekKind() == token.FUNC {
-			return p.parseModFuncDecl(ast.FuncFrom)
+			return p.parseModFuncDecl(ast.FuncMod.FuncFrom)
 		}
 		if p.isContextual("derive") && p.peekKind() == token.FUNC {
-			return p.parseModFuncDecl(ast.FuncDerive)
+			return p.parseModFuncDecl(ast.FuncMod.FuncDerive)
 		}
 		return nil
 	}
@@ -362,7 +362,9 @@ func (p *parser) parseValueSpec() *ast.ValueSpec {
 // balanced-brace block without parsing its statements.
 func (p *parser) parseFuncDecl() *ast.FuncDecl {
 	keyword := p.expect(token.FUNC)
-	fd := &ast.FuncDecl{}
+	// The enum zero value is nil, not FuncPlain, so set the modifier explicitly;
+	// parseModFuncDecl overwrites it for a `from`/`derive` function.
+	fd := &ast.FuncDecl{Mod: ast.FuncMod.FuncPlain}
 	ft := &ast.FuncType{Func: keyword.Pos}
 	if p.at(token.LPAREN) {
 		fd.Recv = p.parseParamList()
@@ -508,16 +510,16 @@ func (p *parser) parseMapType() ast.Expr {
 
 // parseChanType parses chan T, chan<- T, and <-chan T.
 func (p *parser) parseChanType() ast.Expr {
-	c := &ast.ChanType{Begin: p.cur().Pos, Dir: ast.SendRecv}
+	c := &ast.ChanType{Begin: p.cur().Pos, Dir: ast.ChanDir.SendRecv}
 	if p.at(token.ARROW) {
 		p.advance()
 		p.expect(token.CHAN)
-		c.Dir = ast.RecvOnly
+		c.Dir = ast.ChanDir.RecvOnly
 	} else {
 		p.expect(token.CHAN)
 		if p.at(token.ARROW) {
 			p.advance()
-			c.Dir = ast.SendOnly
+			c.Dir = ast.ChanDir.SendOnly
 		}
 	}
 	c.Value = p.parseType()

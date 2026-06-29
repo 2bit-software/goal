@@ -167,7 +167,12 @@ type FuncDecl struct {
 }
 
 func (d *FuncDecl) Pos() token.Pos {
-	if d.Mod != FuncPlain && d.ModPos != (token.Pos{}) {
+	notPlain := match d.Mod {
+		FuncMod.FuncPlain => false
+		FuncMod.FuncFrom => true
+		FuncMod.FuncDerive => true
+	}
+	if notPlain && d.ModPos != (token.Pos{}) {
 		return d.ModPos
 	}
 	if d.Type != nil {
@@ -669,16 +674,14 @@ type ChanType struct {
 }
 
 // ChanDir is the direction of a channel type.
-type ChanDir int
-
-const (
+enum ChanDir {
 	// SendRecv is a bidirectional channel (chan T).
-	SendRecv ChanDir = iota
+	SendRecv
 	// SendOnly is a send-only channel (chan<- T).
 	SendOnly
 	// RecvOnly is a receive-only channel (<-chan T).
 	RecvOnly
-)
+}
 
 func (e *ChanType) Pos() token.Pos { return e.Begin }
 func (e *ChanType) End() token.Pos {

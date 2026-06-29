@@ -31,7 +31,15 @@ func CheckConvert(file *ast.File, info *Info) []Diagnostic {
 	var diags []Diagnostic
 	for _, d := range file.Decls {
 		fd, ok := d.(*ast.FuncDecl)
-		if !ok || fd.Mod != ast.FuncDerive {
+		if !ok {
+			continue
+		}
+		isDerive := match fd.Mod {
+			ast.FuncMod.FuncDerive => true
+			ast.FuncMod.FuncFrom => false
+			ast.FuncMod.FuncPlain => false
+		}
+		if !isDerive {
 			continue
 		}
 		diags = append(diags, checkOneConvert(fd, info)...)

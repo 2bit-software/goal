@@ -193,6 +193,24 @@
   (`pkg.Enum.Variant`) lowers via enumRef (the construction-side counterpart of
   matchQualifier) in backend selectorExpr/variantLit/armBodyType -> `pkg.Enum(pkg.Enum_Variant{})`.
   Mirror any such pipeline change in BOTH internal/ and selfhost/ or fixpoint breaks.
+- Converting an iota type to a goal `enum` (SEAM-002 pattern): (1) The enum ZERO
+  VALUE is nil, NOT the first variant — iota gave a meaningful zero, an enum does
+  not, so set the field explicitly at EVERY constructor (`grep '&ast.<Type>{'`) or a
+  later `match` faults on nil at run time. (2) Every ==/!=/plain-switch consumer
+  becomes `match`; for a `!=`/`==` inside a boolean guard, bind a bool via
+  value-position `match` and split any `!ok` type-assert check out FIRST (hoisting
+  the match above `!ok` nil-derefs the failed assertion). (3) A control switch with a
+  no-op/grouped arm is cleanest as `isX := match {…}` + `if isX`, avoiding an empty
+  `{}` match arm. (4) KEEP a member as iota only for genuine NUMERIC IDENTITY (array
+  index, range predicate, contiguous numbering — e.g. token.Kind); a boxed enum would
+  be a behavior change there (AC escape hatch). (5) internal/ast (bootstrap Go AST)
+  stays Go-iota and is NOT in the fixpoint diff, so a selfhost-only iota->enum
+  conversion moves NO corpus/snapshot goldens (those test internal/). The only
+  conflict is a SHARED port-gated internal test referencing the iota constants: it
+  cannot compile against the enum-transpiled selfhost pkg, so relocate those
+  assertions to a NEW internal-only `_test.go` kept OUT of
+  internal/selfhost/port_test.go's BuildAndTest slice (and re-create any
+  function-local closure helpers — they are not package-level).
 
 ## [2026-06-29T12:30:00Z] - US-011 (self-host idiomatic PRD)
 - Step 3 of 3 (idiomatic audit), seventh and LARGEST package: selfhost/backend
@@ -5301,4 +5319,53 @@
     their cross-package enum consumers can now lower. Payload-bearing foreign
     variant field-set reconstruction is present (reconstructForeignEnums builds
     FieldSet) but only tag-only enums are exercised so far.
+---
+
+## 2026-06-29T18:30:00Z - SEAM-002
+- Converted selfhost/ast FuncMod (FuncPlain/FuncFrom/FuncDerive) and ChanDir
+  (SendRecv/SendOnly/RecvOnly) from `type X int` + iota to goal `enum`s (§8.1
+  sealed-interface encoding), and converted every cross- and same-package consumer
+  to `match` in one atomic change. token.Kind KEPT as iota (genuine numeric
+  identity: kindNames[k] indexing, literalBeg<k<literalEnd range arithmetic,
+  contiguous numbering) — documented in DECISIONS.md per AC-1's escape hatch.
+- Files: selfhost/ast/{goal_decl.goal,ast.goal} (enum defs + same-pkg Pos match),
+  selfhost/parser/parser.goal (qualified construction `ast.FuncMod.FuncFrom`/
+  `ast.ChanDir.SendRecv` + zero-value fix `&ast.FuncDecl{Mod: ast.FuncMod.FuncPlain}`),
+  selfhost/sema/{question.goal,resolve.goal,convert.goal} (==/!=/switch -> match),
+  selfhost/backend/emit.goal (funcDecl control switch -> isDerive bool match; chanType
+  switch -> statement match), internal/ast/ast_test.go (FuncMod block removed) +
+  internal/ast/funcmod_test.go (new, internal-only), DECISIONS.md, prd.json.
+- Gates: task check green (incl. internal/selfhost port gates building selfhost/ast
+  as an enum + running the relocated ast_test.go against it, and internal/corpus
+  behavioral gate), task build clean, task fixpoint = FIXPOINT OK (stage1==stage2 on
+  the new enum/match source). Verified the bootstrap output lowers to the real forms:
+  `type FuncMod interface{ isFuncMod() }` + `FuncMod_*` structs; matches -> cross-pkg
+  Go type-switches (`case ast.ChanDir_RecvOnly:`); construction ->
+  `ast.ChanDir(ast.ChanDir_SendRecv{})`.
+- Learnings for future iterations (carry into SEAM-003/004):
+  - ENUM ZERO VALUE IS nil, not the first variant. iota silently gave a meaningful
+    zero (FuncPlain=0, SendRecv=0); an enum does not. Audit every constructor of a
+    struct holding the (soon-to-be) enum field and set it explicitly, or a later
+    `match` faults at run time on nil. Here: parseFuncDecl needed `Mod:
+    ast.FuncMod.FuncPlain`; ChanType already set Dir. fixpoint + behavioral port
+    gates catch a missed one, but find them up front by grepping `&ast.<Type>{`.
+  - == / != / plain-switch over the enum all become `match`. For a `!=`/`==` used
+    inside a boolean (`!ok || x.Mod != V || ...`), bind a bool via value-position
+    `match` and SPLIT the `!ok` type-assert guard out FIRST — hoisting the match
+    above `!ok` nil-derefs the failed assertion.
+  - A control-flow switch with a no-op/grouped arm (e.g. `case FuncPlain, FuncFrom:`
+    no-op; `case FuncDerive: …; return`) is cleanest as `isX := match {…}` + `if isX`
+    rather than a statement `match` with an empty `{}` arm.
+  - internal/ast (the bootstrap Go compiler's own AST) stays Go-iota; it need not
+    mirror selfhost's enum repr and is not in the fixpoint diff. Only the SHARED
+    oracle test conflicts: a port-gated internal test that references the iota
+    constants won't compile against the enum-transpiled selfhost pkg. Resolution =
+    relocate those assertions to a NEW internal-only `_test.go` (kept OUT of
+    internal/selfhost/port_test.go's BuildAndTest slice) so the port-gated file is
+    symbol-free. collect/assertChildren in ast_test.go are function-LOCAL closures —
+    re-create them in the new file, don't reference them.
+  - No golden regeneration was needed: corpus exact-tier goldens + parser snapshots
+    test the UNCHANGED internal/ Go compiler, not selfhost/. The selfhost tree is
+    proven only by the port gates + fixpoint. (A SEAM that edits internal/ too would
+    move goldens; a selfhost-only idiom conversion does not.)
 ---

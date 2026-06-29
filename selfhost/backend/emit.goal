@@ -358,20 +358,19 @@ func (e *emitter) spec(s ast.Spec) {
 }
 
 func (e *emitter) funcDecl(d *ast.FuncDecl) {
-	switch d.Mod {
-	case ast.FuncPlain, ast.FuncFrom:
-		// A `from func` emits as an ordinary Go function: the `from` marker is
-		// compile-time only (its source->target registration lives in
-		// sema.FromRegistry), with no syntactic residue. Its body lowers through the
-		// ordinary emitter paths (e.g. a VariantLit construction).
-	case ast.FuncDerive:
-		// A `derive func` is expanded wholesale into a generated conversion
-		// function (§12); it has no ordinary body to emit, so deriveDecl owns the
-		// whole declaration and returns.
+	// A `derive func` is expanded wholesale into a generated conversion function
+	// (§12); it has no ordinary body to emit, so deriveDecl owns the whole
+	// declaration and returns. A `from func` (and a plain func) emits as an
+	// ordinary Go function: the `from` marker is compile-time only (its
+	// source->target registration lives in sema.FromRegistry), with no syntactic
+	// residue, so its body lowers through the ordinary emitter paths below.
+	isDerive := match d.Mod {
+		ast.FuncMod.FuncPlain => false
+		ast.FuncMod.FuncFrom => false
+		ast.FuncMod.FuncDerive => true
+	}
+	if isDerive {
 		e.deriveDecl(d)
-		return
-	default:
-		e.fail("unsupported func modifier %v", d.Mod)
 		return
 	}
 	// Enter the function's gensym scope: seed the collision set with the source's
@@ -2306,13 +2305,10 @@ func (e *emitter) sliceExpr(x *ast.SliceExpr) {
 }
 
 func (e *emitter) chanType(x *ast.ChanType) {
-	switch x.Dir {
-	case ast.RecvOnly:
-		e.p("<-chan ")
-	case ast.SendOnly:
-		e.p("chan<- ")
-	default:
-		e.p("chan ")
+	match x.Dir {
+		ast.ChanDir.RecvOnly => e.p("<-chan ")
+		ast.ChanDir.SendOnly => e.p("chan<- ")
+		ast.ChanDir.SendRecv => e.p("chan ")
 	}
 	e.expr(x.Value)
 }
