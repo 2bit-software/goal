@@ -31,7 +31,7 @@
         "The existing typecheck depth tests (minus those needing repo-relative fixtures) pass against the transpiled package"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Step 1 of 3 (rename), final package. 772 LOC."
     },
     {

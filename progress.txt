@@ -4544,3 +4544,44 @@
   - Only US-002 (typecheck rename) and US-003 (wire main onto selfhost) remain
     before the verbatim self-host is complete.
 ---
+
+## [2026-06-29T06:00:00Z] - US-002 (self-host idiomatic PRD)
+- Ported internal/typecheck (the depth checker — mustuse/nozero/implements
+  analyses, ~772 non-test LOC) to goal-native source under selfhost/typecheck as
+  the FINAL package of the verbatim rename step. selfhost/typecheck/{checker,
+  implements,mustuse,nozero,typecheck}.goal are byte-for-byte copies of the
+  internal/typecheck/*.go sources (verified with `diff -q`). Go superset is valid
+  goal; ZERO bare match/enum/assert identifier collisions (the only hits are
+  string-literal error text in mustuse.go:93,194), so no source edits. Verbatim
+  RENAME only — idiomatization is US-004 (autofix)/US-012 (audit).
+- typecheck's in-module deps: token, ast, parser, sema, project, backend (+ lexer
+  and pipeline transitively via backend/parser/sema/project). Foreign passthrough:
+  fmt, go/ast, go/importer, go/parser, go/token, go/types, sort, strings — all
+  pass through untouched (go/types et al. are the whole point of this package).
+- Added internal/selfhost/port_test.go:TestPortedTypecheckPackage via the shared
+  discoverPorted helper: COMPILE gate BuildTranspiled over the 9-entry layout
+  {token,lexer,ast,parser,sema,project,pipeline,backend,typecheck}; BEHAVIORAL
+  gate BuildAndTest("internal/typecheck", typecheckPkg, [5 test files],
+  deps={the 8 deps}). All five typecheck test files are white-box (package
+  typecheck), stdlib + project/sema only, and read NO repo-relative fixtures (the
+  `.goal` HasSuffix checks run on synthetic filenames), so the full suite is
+  self-contained — no test split needed (unlike backend in US-001).
+- Files: selfhost/typecheck/*.goal (5 new); internal/selfhost/port_test.go
+  (typecheck test); prd.json (US-002 passes:true); progress.txt. Initiative
+  artifacts under
+  history/20260629-refactor-us-002-rename-typecheck-package-to-selfhost/.
+- Verify: go test ./internal/selfhost -run TestPortedTypecheckPackage green; task
+  check + task build green; task fixpoint green (FIXPOINT OK — selfhost/typecheck
+  auto-covered by project.Discover, byte-identical across goal-c-1/goal-c-2, no
+  harness change).
+- Learnings for future iterations:
+  - A package whose entire test suite is white-box and fixture-free (typecheck)
+    ports with NO test split — just list every *_test.go in BuildAndTest. Contrast
+    US-001 (backend) which needed a physical split, and US-009/US-010 which had to
+    exclude fixture-dependent suites.
+  - The verbatim RENAME step (step 1 of 3) is now COMPLETE for every in-scope
+    package: token, lexer, ast, parser, sema, project, pipeline, backend,
+    typecheck all mirror under selfhost/ as .goal. Next is US-003 (wire
+    selfhost/main onto the selfhost packages), then US-004 (autofix) begins the
+    idiomatic passes.
+---

@@ -531,3 +531,75 @@ func TestPortedBackendPackage(t *testing.T) {
 		t.Fatalf("existing backend tests failed against the transpiled package: %v", err)
 	}
 }
+
+// TestPortedTypecheckPackage validates US-002: the typecheck package (the depth
+// checker — mustuse/nozero/implements analyses) reimplemented verbatim as goal
+// source under selfhost/typecheck transpiles to compiling Go (the smoke gate,
+// with the in-module token, ast, parser, sema, project, backend imports
+// resolving against the ported packages and the foreign go/ast, go/importer,
+// go/parser, go/token, go/types imports passing through) AND passes the existing
+// internal/typecheck tests against the transpiled output (behavioral
+// equivalence — the depth checks).
+//
+// typecheck imports token, ast, parser, sema, project, backend directly; the
+// transpiled backend (and parser/sema/project) in turn import
+// goal/internal/lexer and goal/internal/pipeline, so the layout carries lexer
+// and pipeline too even though typecheck names neither. All five typecheck test
+// files are white-box (package typecheck), stdlib + project/sema only, and read
+// no repo-relative fixtures (the .goal suffix checks run on synthetic
+// filenames), so the full suite is self-contained in the harness's throwaway
+// temp module. The test's working directory is internal/selfhost, so the goal
+// sources are at ../../selfhost/{token,lexer,ast,parser,sema,project,pipeline,
+// backend,typecheck} and the existing typecheck tests are at ../typecheck.
+func TestPortedTypecheckPackage(t *testing.T) {
+	tokenPkg := discoverPorted(t, "token")
+	lexerPkg := discoverPorted(t, "lexer")
+	astPkg := discoverPorted(t, "ast")
+	parserPkg := discoverPorted(t, "parser")
+	semaPkg := discoverPorted(t, "sema")
+	projectPkg := discoverPorted(t, "project")
+	pipelinePkg := discoverPorted(t, "pipeline")
+	backendPkg := discoverPorted(t, "backend")
+	typecheckPkg := discoverPorted(t, "typecheck")
+
+	// Criterion 2: transpiles via the smoke gate and the generated Go compiles.
+	// The layout carries typecheck plus its full in-module dependency closure so
+	// the in-module imports resolve; the go/* foreign imports pass through.
+	layout := map[string]*project.Package{
+		"internal/token":     tokenPkg,
+		"internal/lexer":     lexerPkg,
+		"internal/ast":       astPkg,
+		"internal/parser":    parserPkg,
+		"internal/sema":      semaPkg,
+		"internal/project":   projectPkg,
+		"internal/pipeline":  pipelinePkg,
+		"internal/backend":   backendPkg,
+		"internal/typecheck": typecheckPkg,
+	}
+	if err := selfhost.BuildTranspiled(layout); err != nil {
+		t.Fatalf("ported typecheck failed the transpile-and-build gate: %v", err)
+	}
+
+	// Criterion 3: the existing typecheck depth tests pass against the transpiled
+	// package, with the ported dependency closure transpiled in.
+	deps := map[string]*project.Package{
+		"internal/token":    tokenPkg,
+		"internal/lexer":    lexerPkg,
+		"internal/ast":      astPkg,
+		"internal/parser":   parserPkg,
+		"internal/sema":     semaPkg,
+		"internal/project":  projectPkg,
+		"internal/pipeline": pipelinePkg,
+		"internal/backend":  backendPkg,
+	}
+	testFiles := []string{
+		"../typecheck/checker_test.go",
+		"../typecheck/implements_test.go",
+		"../typecheck/mustuse_test.go",
+		"../typecheck/nozero_test.go",
+		"../typecheck/typecheck_test.go",
+	}
+	if err := selfhost.BuildAndTest("internal/typecheck", typecheckPkg, testFiles, deps); err != nil {
+		t.Fatalf("existing typecheck tests failed against the transpiled package: %v", err)
+	}
+}
