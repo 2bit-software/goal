@@ -4226,3 +4226,37 @@
     "is this valid Go" check in backend tests; the goalc CLI takes a file path
     arg (or stdin) and emits Go suitable for a real `go build` smoke.
 ---
+
+## [2026-06-29T02:30:00Z] - US-004 (self-host phase 4)
+- Stood up the 3-stage bootstrap + byte-identical fixpoint harness as repeatable
+  Taskfile targets, against a thin goal-written compiler skeleton.
+- New selfhost/main.goal: a `package main` goal program that is a `goal build
+  --emit` equivalent (project.Discover -> backend.TranspilePackage -> write
+  out.Files/out.Tests under filepath.Join(emitDir, pkg.Dir), mirroring cmd/goal's
+  emitFiles layout exactly). It imports the real goal/internal/{project,backend,
+  pipeline}; US-005+ replace those with ported packages, at which point the
+  fixpoint becomes a genuine differential proof.
+- Taskfile: `bootstrap` (stage-0 ./bin/goal -> goal-c-1 -> goal-c-2) and
+  `fixpoint` (deps: [bootstrap]; goal-c-1 and goal-c-2 each emit Go for ./selfhost,
+  then `diff -r`). `task fixpoint` exits 0 (byte-identical) on the skeleton.
+- Files: selfhost/main.goal (new); Taskfile.yml (bootstrap/fixpoint targets,
+  clean now also rms _bootstrap); .gitignore (/_bootstrap/). Initiative artifacts
+  under history/20260629-feature-us-004-bootstrap-and-fixpoint-harness/.
+- Verify: task bootstrap exit 0; task fixpoint exit 0 (FIXPOINT OK); task check
+  and task build green; git status clean of bootstrap artifacts.
+- Learnings for future iterations:
+  - KEEP BOOTSTRAP ARTIFACTS UNDER A `_`-PREFIXED DIR. The Go toolchain ignores
+    dirs whose names begin with `_` (or `.`) when expanding `./...`, so emitting
+    to `_bootstrap/` keeps `go build ./...`/`go vet ./...`/`go test ./...` (i.e.
+    `task check`/`task build`) green — but an explicit path like
+    `go build ./_bootstrap/s1/selfhost` still builds. Verified empirically.
+  - selfhost/ holds only .goal files, so it is invisible to the Go toolchain;
+    only the goal front-end (project.Discover) sees it. No conflict with the Go
+    package internal/selfhost (the US-002 smoke gate) despite the shared name.
+  - The skeleton transpiles cleanly as plain Go-superset goal: strings.HasPrefix/
+    TrimPrefix flag parsing and octal 0o755/0o644 literals all round-trip. No
+    reserved-word (match/enum/assert) collisions.
+  - Fixpoint reuse: as each US-005+ package is ported into selfhost/, `task
+    fixpoint` already covers it (Discover walks the whole tree); no harness change
+    needed per port.
+---

@@ -56,7 +56,7 @@
         "Running the fixpoint target exits 0 (byte-identical) against the current skeleton"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "No selfhost dir or bootstrap target exists today. Stage-0 = ./bin/goal[c]; goal-c-1 = goal-written compiler built by stage-0; goal-c-2 = built by goal-c-1; fixpoint = goal-c-1 and goal-c-2 emit identical Go. CLI contract must match stage-0 (build --emit / stdin goalc). See SELF-HOST-RESEARCH.md §5."
     },
     {

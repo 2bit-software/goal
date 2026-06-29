@@ -3,6 +3,8 @@
 *.test
 *.out
 /bin/
+# Self-host bootstrap + fixpoint artifacts (rebuild with `task bootstrap`/`task fixpoint`)
+/_bootstrap/
 # Compiled reference transpilers (rebuild with `go build` in each dir)
 features/*/transpiler/transpiler
 features/_cut/*/transpiler/transpiler

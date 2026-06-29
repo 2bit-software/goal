@@ -44,7 +44,31 @@ tasks:
       - task: vet
       - task: test
 
+  bootstrap:
+    desc: 3-stage self-host bootstrap (stage-0 -> goal-c-1 -> goal-c-2)
+    cmds:
+      # stage 0: the trusted Go-built compiler.
+      - task: build
+      - rm -rf _bootstrap
+      # stage 1: stage-0 transpiles the goal-written compiler, then Go builds goal-c-1.
+      - ./bin/goal build --emit=_bootstrap/s1 ./selfhost
+      - go build -o bin/goal-c-1 ./_bootstrap/s1/selfhost
+      # stage 2: goal-c-1 transpiles the goal-written compiler, then Go builds goal-c-2.
+      - ./bin/goal-c-1 build --emit=_bootstrap/s2 ./selfhost
+      - go build -o bin/goal-c-2 ./_bootstrap/s2/selfhost
+
+  fixpoint:
+    desc: Prove goal-c-1 and goal-c-2 emit byte-identical Go for the compiler's own source
+    deps: [bootstrap]
+    cmds:
+      - rm -rf _bootstrap/fa _bootstrap/fb
+      - ./bin/goal-c-1 build --emit=_bootstrap/fa ./selfhost
+      - ./bin/goal-c-2 build --emit=_bootstrap/fb ./selfhost
+      - diff -r _bootstrap/fa _bootstrap/fb
+      - cmd: echo "FIXPOINT OK"
+        silent: true
+
   clean:
     desc: Remove build artifacts
     cmds:
-      - rm -rf bin
+      - rm -rf bin _bootstrap
