@@ -17,7 +17,7 @@
         "A regression test (corpus transpile case or backend test) pins the corrected emission and fails on the old name+type collapse"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "GATING — confirmed silent miscompile (exit 0): `const(Red Color=iota; Green; Blue)` -> `const(Red Color=iota; Green Blue)`, losing Blue's value. Lives in the parser GenDecl/ValueSpec path + backend const emission. Nothing self-hosts until this is fixed; internal/token depends on it."
     },
     {

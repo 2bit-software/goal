@@ -30,6 +30,11 @@
   DirResolver/DefaultResolver (foreign.go) and ResolvePackage/EnrichForeign —
   use those, not analyze. The foreign-package test fixture lives at
   internal/sema/testdata/extpkg.
+- The lexer strips newlines/implicit semicolons, so the parser reconstructs
+  spec/decl boundaries structurally. Where Go relies on the newline=semicolon
+  rule (e.g. a bare const continuation vs a Name+Type spec), use token line
+  numbers: p.onNewLine() (parser.go) compares cur().Pos.Line to the previous
+  token's line. Every token carries token.Pos{Offset,Line,Col} from the lexer.
 
 ## [2026-06-28T23:25:00Z] - US-008 (checker-onto-ast PRD)
 - Migrated internal/project and internal/pipeline/sourcemap off the internal/scan
@@ -4123,4 +4128,31 @@
     (foreign.go/lower.go mention scan.MatchQualifier etc. to explain why the lexer
     is NOT on the path). Those are fine — the criterion targets live symbol usage
     and imports, which are gone with the packages.
+---
+
+## [2026-06-29] - US-001 (self-host-phase-4 PRD)
+- Fixed the gating iota const-block miscompile. `const ( Red Color = iota;
+  Green; Blue )` silently transpiled (exit 0) to `Green Blue` — Green's spec
+  greedily absorbed the bare `Blue` as its type, dropping Blue's iota value.
+- Root cause: internal/parser/parser.go parseValueSpec consumed the next IDENT
+  as the spec's type whenever startsType() held, with no spec-boundary signal
+  (the lexer drops newlines). Fix: new onNewLine() helper (compares
+  cur().Pos.Line to the previous token's line); parseValueSpec only takes an
+  optional type when NOT onNewLine, so a bare continuation name on the next line
+  parses as its own ValueSpec. Matches Go's newline=semicolon rule.
+- Backend needed NO change: spec/genDecl emitters already render bare-name
+  ValueSpecs correctly; the parser was producing 2 specs instead of 3.
+- Files: internal/parser/parser.go (onNewLine + parseValueSpec guard);
+  internal/parser/parser_test.go (TestParseIotaConstBlockBoundaries);
+  internal/backend/backend_test.go (TestASTEngineEmitsIotaConstBlock);
+  prd.json (US-001 passes:true); progress.txt. Initiative artifacts under
+  history/20260629-bug-fix-iota-const-block-miscompile/.
+- Verify: task check + task build green; transpiled iota enum compiles via
+  go build; both new regression tests fail on the old collapse, pass after.
+- Learnings for future iterations:
+  - Boundary reconstruction is the recurring parser hazard now that the lexer
+    is newline-free. When a construct's meaning in Go depends on newline=
+    semicolon, reach for token line numbers (onNewLine), not more lookahead.
+  - This unblocks US-005 (port token): token kinds are an iota enum that hit
+    exactly this bug.
 ---

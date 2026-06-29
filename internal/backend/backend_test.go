@@ -1438,3 +1438,38 @@ func viaIface(b Backend) Result[int, error] {
 		}
 	}
 }
+
+// TestASTEngineEmitsIotaConstBlock pins the fix for the iota const-block
+// miscompile (US-001): bare iota-continuation names in a grouped const must
+// emit as separate const specs, not collapse into the preceding spec as a type.
+// The old defect transpiled `Green` + `Blue` into a single `Green Blue`
+// (name + type) spec, silently dropping Blue's iota value.
+func TestASTEngineEmitsIotaConstBlock(t *testing.T) {
+	const src = `package p
+
+type Color int
+
+const (
+	Red Color = iota
+	Green
+	Blue
+)
+`
+	out, err := backend.Transpile(src)
+	if err != nil {
+		t.Fatalf("Transpile: %v", err)
+	}
+	if _, err := format.Source([]byte(out.Go)); err != nil {
+		t.Fatalf("engine output is not valid Go: %v\n--- output ---\n%s", err, out.Go)
+	}
+	// The miscompile collapsed Green and Blue into one `Green Blue` name+type
+	// spec. Guard against the regression directly.
+	if strings.Contains(out.Go, "Green Blue") {
+		t.Fatalf("Green and Blue collapsed into a name+type spec:\n%s", out.Go)
+	}
+	for _, name := range []string{"Red", "Green", "Blue"} {
+		if !strings.Contains(out.Go, name) {
+			t.Fatalf("expected emitted Go to declare const %q, got:\n%s", name, out.Go)
+		}
+	}
+}

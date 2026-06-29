@@ -1071,3 +1071,58 @@ func TestParseOptionalColonPayloadField(t *testing.T) {
 		}
 	}
 }
+
+// TestParseIotaConstBlockBoundaries pins the fix for the iota const-block
+// miscompile (US-001). The goal lexer strips newlines, so within a grouped
+// const a newline (implicit semicolon) must still terminate a spec: bare
+// iota-continuation names like Green and Blue parse as their own ValueSpecs,
+// not as the type of the preceding name.
+func TestParseIotaConstBlockBoundaries(t *testing.T) {
+	const src = `package p
+
+type Color int
+
+const (
+	Red Color = iota
+	Green
+	Blue
+)
+`
+	file, err := ParseFile(src)
+	if err != nil {
+		t.Fatalf("ParseFile returned error: %v", err)
+	}
+	var gd *ast.GenDecl
+	for _, d := range file.Decls {
+		if g, ok := d.(*ast.GenDecl); ok && g.Tok == token.CONST {
+			gd = g
+			break
+		}
+	}
+	if gd == nil {
+		t.Fatal("no const declaration found")
+	}
+	if len(gd.Specs) != 3 {
+		t.Fatalf("const group has %d specs, want 3 (Red, Green, Blue)", len(gd.Specs))
+	}
+	want := []struct {
+		name    string
+		hasType bool
+	}{
+		{"Red", true},
+		{"Green", false},
+		{"Blue", false},
+	}
+	for i, w := range want {
+		vs, ok := gd.Specs[i].(*ast.ValueSpec)
+		if !ok {
+			t.Fatalf("spec %d is %T, want *ast.ValueSpec", i, gd.Specs[i])
+		}
+		if len(vs.Names) != 1 || vs.Names[0].Name != w.name {
+			t.Fatalf("spec %d names = %v, want [%s]", i, vs.Names, w.name)
+		}
+		if (vs.Type != nil) != w.hasType {
+			t.Fatalf("spec %d hasType = %v, want %v (type=%v)", i, vs.Type != nil, w.hasType, vs.Type)
+		}
+	}
+}

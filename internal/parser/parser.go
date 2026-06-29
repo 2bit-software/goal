@@ -106,6 +106,17 @@ func (p *parser) kindAt(n int) token.Kind {
 	return token.EOF
 }
 
+// onNewLine reports whether the current token begins on a later source line than
+// the previously consumed token. The lexer drops newlines/implicit semicolons,
+// so this reconstructs the line boundary used to terminate a grouped const/var
+// spec. False at the start of the stream (no previous token).
+func (p *parser) onNewLine() bool {
+	if p.pos == 0 {
+		return false
+	}
+	return p.cur().Pos.Line > p.toks[p.pos-1].Pos.Line
+}
+
 // advance consumes the current token and returns it. The cursor never moves past
 // the trailing EOF, guaranteeing progress without overrun.
 func (p *parser) advance() token.Token {
@@ -331,7 +342,12 @@ func (p *parser) parseTypeParams() *ast.FieldList {
 // and an optional "= values" list.
 func (p *parser) parseValueSpec() *ast.ValueSpec {
 	spec := &ast.ValueSpec{Names: p.parseIdentList()}
-	if !p.at(token.ASSIGN) && p.startsType() {
+	// The lexer drops newlines/implicit semicolons, so within a grouped
+	// const/var a spec boundary is reconstructed from source lines: an optional
+	// type belongs to this spec only when it begins on the same line as the
+	// names. A following identifier on the next line is a new bare spec (e.g. an
+	// iota-continuation const), not this spec's type.
+	if !p.at(token.ASSIGN) && p.startsType() && !p.onNewLine() {
 		spec.Type = p.parseType()
 	}
 	if p.at(token.ASSIGN) {
