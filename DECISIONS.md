@@ -1881,3 +1881,64 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
   and diagnostic types are the canonical ones. `lsp` keeps `analyze.DirResolver`
   as its resolver type (converted to `sema.DirResolver` at the call site), so it
   remains the lone `analyze` resolver-type consumer the later stories address.
+
+---
+
+## self-host idiomatic audit — US-005 (token)
+
+> Note: a separate, earlier "US-005" above belongs to the AST-rewrite PRD
+> (delete internal/check). This section is US-005 of the **self-host idiomatic**
+> PRD (`prd.json`): the per-package idiomatic audit of the self-hosted compiler.
+
+### `selfhost/token`'s `Kind` stays an iota `const` block — NOT a goal `enum`
+- **Kind:** refusal (with reason)
+- **Refused:** rewriting the iota-based `type Kind int` + `const ( ILLEGAL Kind =
+  iota; ... )` block in `selfhost/token/token.goal` into a goal `enum`.
+- **Why:** a goal `enum` lowers to a **sealed interface + one struct per variant +
+  an unexported marker** (see §01-enums / §8.1) — i.e. a *closed sum type whose
+  values are boxed interface values*. It is deliberately **not** an ordered
+  integer type. `Kind`, by contrast, depends on integer identity in three
+  load-bearing ways that the enum encoding cannot provide:
+  1. **Array indexing.** `kindNames [...]string` is indexed directly by `Kind`
+     (`kindNames[k]`), and `init()` iterates `for k := keywordBeg + 1; k <
+     keywordEnd; k++` to build the `keywords`/`operators` maps. A sealed-interface
+     value is not an integer and cannot index an array nor be counted in a `for`.
+  2. **Range arithmetic.** The class predicates are pure integer-range tests —
+     `IsLiteral`: `literalBeg < k && k < literalEnd`; likewise `IsOperator` /
+     `IsKeyword` — relying on the unexported `*_beg`/`*_end` sentinels that bracket
+     each contiguous `iota` run. An enum has no ordering and no sentinel run.
+  3. **Dense contiguous numbering.** The whole design mirrors `go/token.Token`: a
+     compact integer space grouped by ranges. Enum variants carry no stable
+     ordinal the predicates could use.
+  Forcing `Kind` into an `enum` would mean replacing array lookup with a giant
+  `match`, the range predicates with per-variant membership tables, and would
+  change `Kind`'s representation from `int` — breaking the package's public API
+  (`type Kind int`, `func Lookup(...) (Kind, bool)`) that the **US-003 verbatim
+  self-host oracle tests** are run against unchanged. The goal `enum` is the right
+  idiom for a *closed, unordered, possibly-payload-carrying* set; `Kind` is an
+  *ordered, dense, payload-free integer enumeration*, which is exactly the case Go
+  `iota` + a typed int already expresses idiomatically and which goal inherits
+  verbatim. This is the AC-1 "deliberate decision not to … recorded in
+  DECISIONS.md" branch.
+- **Over:** a full `enum Kind { ILLEGAL; EOF; ... }` rewrite (loses indexing,
+  range predicates, and the `int` representation the oracle pins); a *partial*
+  enum over just one sub-range (the `*_beg`/`*_end` sentinels span the whole block,
+  so no sub-range is separable without breaking the others).
+
+### No `switch`→`match` and no Result/`?` conversions apply to `selfhost/token`
+- **Kind:** assumption
+- **Chose:** leave `selfhost/token/token.goal` source unchanged beyond this
+  ledger entry.
+- **Why:** the package contains **no `switch` statement** (only the `"switch"`
+  keyword spelling string), so there is nothing to convert to `match`. It is
+  **import-free and has no `(T, error)` function**, so there is no manual `if err
+  != nil` propagation for `goal fix` to idiomatize — `goal fix
+  selfhost/token/token.goal` produces no diff and reports nothing (AC-2 already
+  holds). The one multi-value helper, `Lookup(name string) (Kind, bool)`, is the
+  **comma-ok** idiom, not a fallible `(T, error)`; converting it to
+  `Option[Kind]` was refused because (a) it is not a `goal fix` propagation site
+  and (b) it would change the public signature the reused oracle test
+  (`got, ok := Lookup(...)`) depends on, violating the behavior-preserving
+  constraint. `Lookup` therefore stays comma-ok.
+- **Over:** an `Option[Kind]` rewrite of `Lookup` (breaks the oracle test; not a
+  propagation site).

@@ -70,7 +70,7 @@
         "token tests pass against the transpiled package and task fixpoint stays green"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Step 3 of 3 (idiomatic audit), one package per story. Start small (token) to establish the audit pattern."
     },
     {

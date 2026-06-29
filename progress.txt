@@ -99,6 +99,18 @@
   Result/? is the per-package audit work (US-005..US-012), which CAN edit the
   cross-file callers; the autofixer deliberately leaves them and reports a
   result-sig Skip naming each one.
+- Idiomatic-audit pattern (US-005+): a goal `enum` lowers to a sealed interface +
+  per-variant struct + marker (DECISIONS.md §01-enums / §8.1) — it is NOT an
+  ordered integer. So a `go/token`-style iota `const` block whose values are used
+  as ARRAY INDICES (kindNames[k]), in RANGE PREDICATES (beg < k && k < end), or
+  iterated with a numeric `for` does NOT fit `enum`; keep it as `type X int` +
+  iota and record the refusal in DECISIONS.md (AC's escape hatch). `enum` fits
+  closed, UNORDERED, payload-or-not variant sets matched with `match`. Also: a
+  comma-ok helper `f() (T, bool)` is NOT a `goal fix` site and must stay comma-ok
+  if the reused US-003 oracle test pins its signature — do not "upgrade" it to
+  Option. Audit verification per package: `goal fix <pkg>/*.goal` must produce no
+  diff and no stderr report; the self-host port gate + `task fixpoint` confirm the
+  behavior-preserving oracle stays byte-identical.
 
 ## [2026-06-28T23:25:00Z] - US-008 (checker-onto-ast PRD)
 - Migrated internal/project and internal/pipeline/sourcemap off the internal/scan
@@ -4697,4 +4709,40 @@
   - When dogfooding a code-mod tool on its own compiler, run it on a SCRATCH COPY
     first (cp -r + fix --inplace + diff) to scope the blast radius before
     touching the tree — that is how the three miscompiles were found here.
+---
+
+## [2026-06-29T06:30:00Z] - US-005 (self-host idiomatic PRD)
+- Step 3 of 3 (idiomatic audit), first package: selfhost/token. Audit outcome is
+  a recorded DECISION, not a source change — selfhost/token/token.goal already
+  satisfies every behavioral AC and has no idiom that fits a rewrite.
+- enum decision (AC-1): refused rewriting `type Kind int` + iota const block into
+  a goal `enum`. A goal enum lowers to a sealed interface + per-variant struct +
+  marker (boxed, unordered) — it cannot serve Kind's three load-bearing integer
+  uses: array indexing (kindNames[k]), range predicates (literalBeg < k &&
+  k < literalEnd via the *_beg/*_end sentinels), and numeric iteration in init().
+  Forcing an enum would also change Kind's representation off `int`, breaking the
+  public API (type Kind int; Lookup(...)(Kind,bool)) that the US-003 verbatim
+  oracle tests run against unchanged. Recorded in DECISIONS.md under "self-host
+  idiomatic audit — US-005 (token)".
+- No switch->match (token.goal has no switch, only the "switch" spelling string).
+  No Result/? conversions: package is import-free with no (T,error) function;
+  the lone multi-value helper Lookup is comma-ok (Kind,bool), pinned by the
+  oracle test, and refused for Option conversion (not a goal-fix site; would
+  break the test). `goal fix selfhost/token/token.goal` => no diff, no report
+  (AC-2 already held).
+- Files: DECISIONS.md (new audit section), prd.json (US-005 passes:true),
+  progress.txt. Initiative artifacts under
+  history/20260629-refactor-us-005-idiomatic-audit-token/. No .goal source edit.
+- Verify: goal fix (no diff/report); task check (incl. internal/selfhost port
+  gate + internal/token) green; task build green; task fixpoint FIXPOINT OK
+  (selfhost/token/token.go byte-identical across goal-c-1/goal-c-2).
+- Learnings for future iterations:
+  - Establishes the per-package audit pattern (see new Codebase Patterns bullet):
+    classify each Go-ism (const-iota / switch / fallible helper) against the goal
+    idiom it could become, convert where it FITS, and record refusals in
+    DECISIONS.md. A go/token-style ordered integer enum is the canonical "keep as
+    iota" case.
+  - For a package the US-003 oracle pins, never change a public signature even to
+    a nicer idiom (Option/Result) unless the cross-file callers AND the reused
+    test are updated together — token's reused test forbids touching Lookup.
 ---
