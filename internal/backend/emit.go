@@ -285,6 +285,13 @@ func (e *emitter) implementsMarker(typeName string, clause *ast.ImplementsClause
 	switch {
 	case isSealed(e.info, iface):
 		e.p(genMarkerMethod(typeName, iface))
+		// A nested sealed hierarchy needs a marker per embedded sealed interface:
+		// `implements B` where sealed B embeds sealed A must also emit isA(), since
+		// B's Go interface folds in A's method set (including the isA() marker).
+		for _, emb := range sealedEmbeds(e.info, iface) {
+			e.p("\n\n")
+			e.p(genMarkerMethod(typeName, emb))
+		}
 	case e.pointerRecv[typeName]:
 		e.p(fmt.Sprintf("var _ %s = (*%s)(nil)", iface, typeName))
 	default:

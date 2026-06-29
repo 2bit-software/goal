@@ -287,6 +287,37 @@ func isSealed(info *sema.Info, name string) bool {
 	return info != nil && info.Sealed != nil && info.Sealed[name]
 }
 
+// sealedEmbeds returns the transitively-embedded interfaces of iface that are
+// themselves sealed, in source order with duplicates removed (nil-safe). A
+// concrete type declared `implements B` where sealed B embeds sealed A must emit
+// a marker for A too (isA()), or the emitted Go fails `go build` with a missing
+// isA() method — Go's embedding folds A's method set (including isA()) into B.
+// EmbeddedIfaces is populated for sealed interfaces, so `sealed interface B { A }`
+// yields ["A"] here. Mirrors sema.Info.sealedEmbedClosure.
+func sealedEmbeds(info *sema.Info, iface string) []string {
+	if info == nil {
+		return nil
+	}
+	return collectSealedEmbeds(info, iface, map[string]bool{}, nil)
+}
+
+// collectSealedEmbeds is the recursive worker for sealedEmbeds, threading the
+// visited set and accumulator so the walk needs no closure (kept simple for the
+// self-host mirror). Mirrors sema.Info.collectSealedEmbeds.
+func collectSealedEmbeds(info *sema.Info, name string, seen map[string]bool, out []string) []string {
+	for _, emb := range info.EmbeddedIfaces[name] {
+		if seen[emb] {
+			continue
+		}
+		seen[emb] = true
+		if isSealed(info, emb) {
+			out = append(out, emb)
+		}
+		out = collectSealedEmbeds(info, emb, seen, out)
+	}
+	return out
+}
+
 // genEnum emits the §8.1 encoding for an enum: a marker interface, one struct per
 // variant, and a marker method per variant. It mirrors internal/pass.genEnum but
 // reads its variants from the resolved sema.Enum.

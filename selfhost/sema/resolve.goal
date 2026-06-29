@@ -29,6 +29,12 @@ func ResolvePackage(files []*ast.File) *Info {
 	for _, f := range files {
 		merged.Merge(Resolve(f))
 	}
+	// Re-run the embedding cascade over the fully-merged package view: a sealed
+	// interface and its embedded sealed interface (or their implementors) may be
+	// declared in different files, so the per-file cascade in Resolve can see only
+	// part of the hierarchy. cascadeSealedImpls is idempotent (addImplementor
+	// dedups), so running it again here is safe.
+	merged.cascadeSealedImpls()
 	return merged
 }
 
@@ -91,7 +97,62 @@ func Resolve(f *ast.File) *Info {
 			info.resolveFunc(d)
 		}
 	}
+	info.cascadeSealedImpls()
 	return info
+}
+
+// cascadeSealedImpls propagates implementors up a nested sealed-interface
+// hierarchy: when a sealed interface B embeds a sealed interface A, every
+// implementor of B is also an implementor of A (mirroring Go's own interface
+// embedding). A concrete type carries a single `implements B` clause, so without
+// this cascade it would register only under B and emit only the isB() marker —
+// leaving A's implementor set incomplete (broken exhaustiveness) and the emitted
+// Go failing `go build` with a missing isA() method. The walk is transitive
+// (B embeds A embeds Node ⇒ B's implementors reach Node) and gated on Sealed so
+// embedding an ordinary interface is inert. addImplementor dedups, so the pass is
+// idempotent.
+func (info *Info) cascadeSealedImpls() {
+	// Snapshot the seed ifaces first: addImplementor mutates SealedImpls (it may
+	// append to an embedded iface's slice or create its key), and the transitive
+	// walk below already reaches every embedded level, so newly-touched keys need
+	// no separate visit.
+	ifaces := make([]string, 0, len(info.SealedImpls))
+	for iface := range info.SealedImpls {
+		ifaces = append(ifaces, iface)
+	}
+	for _, iface := range ifaces {
+		for _, emb := range info.sealedEmbedClosure(iface) {
+			for _, impl := range info.SealedImpls[iface] {
+				info.addImplementor(emb, impl)
+			}
+		}
+	}
+}
+
+// sealedEmbedClosure returns the transitively-embedded interfaces of iface that
+// are themselves sealed, in a deterministic (source) order with duplicates
+// removed. EmbeddedIfaces is populated for sealed interfaces too (a sealed
+// interface's body shares resolveInterfaceMethods with an ordinary interface), so
+// `sealed interface B { A }` yields ["A"] here.
+func (info *Info) sealedEmbedClosure(iface string) []string {
+	return info.collectSealedEmbeds(iface, map[string]bool{}, nil)
+}
+
+// collectSealedEmbeds is the recursive worker for sealedEmbedClosure, threading
+// the visited set and accumulator so the walk needs no closure (kept simple for
+// the self-host mirror).
+func (info *Info) collectSealedEmbeds(name string, seen map[string]bool, out []string) []string {
+	for _, emb := range info.EmbeddedIfaces[name] {
+		if seen[emb] {
+			continue
+		}
+		seen[emb] = true
+		if info.Sealed[emb] {
+			out = append(out, emb)
+		}
+		out = info.collectSealedEmbeds(emb, seen, out)
+	}
+	return out
 }
 
 // addImplementor records that concrete type `impl` implements interface `iface`,

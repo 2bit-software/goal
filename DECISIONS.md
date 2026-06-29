@@ -3231,3 +3231,63 @@ identical) over internal/backend/testdata/goalsealed/{shape,use}.
 
 Gates: `task check`, `task build`, `task fixpoint` (FIXPOINT OK — stage1==stage2 on the
 new sema source) all green; corpus behavioral tier unchanged (additive fixtures).
+
+## SEAM-CAP-3d — nested sealed-interface hierarchies (one sealed interface embeds another)
+
+CAP-3 part 4, and the FINAL prerequisite for SEAM-004: a concrete type may now be an
+implementor of BOTH a sealed category interface AND a sealed interface it embeds. This is
+the 2-level AST topology SEAM-004 needs — `ast.Expr`/`Stmt`/`Decl`/`Spec` all embed
+`ast.Node`. CAP-3a/b/c only proved FLAT single-level sealed interfaces.
+
+The gap: a concrete type carries exactly one `implements` clause → one marker. When sealed
+`Expr` embeds sealed `Node`, a type declared `implements Expr` emitted only `isExpr()`, so
+the emitted Go failed `go build` ("`*T` does not implement Expr (missing method isNode)"
+and "impossible type switch case … missing method isNode"), and `Node`'s implementor set
+(used for exhaustiveness) was incomplete.
+
+Design choice: **embedding cascade (option b), NOT a multi-interface clause.** A
+multi-clause `implements Expr, Node` would need new parser grammar and would re-state by
+hand what Go's interface embedding already expresses. The cascade mirrors Go's own
+embedding: declaring `implements Expr` where sealed `Expr` embeds sealed `Node`
+automatically registers the type under both interfaces and emits both markers. No parser
+change.
+
+The fix (mirrored line-for-line in `internal/` and `selfhost/`):
+
+1. **sema** (`resolve.go` / `resolve.goal`): new `cascadeSealedImpls()` — for each sealed
+   iface B with implementors, propagate them to every sealed interface B transitively
+   embeds (walking the existing `info.EmbeddedIfaces`, which is already populated for sealed
+   interfaces because their body shares `resolveInterfaceMethods` with ordinary
+   interfaces), gated on `info.Sealed`. Run at the tail of `Resolve(f)` (single-file path
+   used by `backend.Transpile`) and again at the tail of `ResolvePackage` after the merge
+   loop (cross-file hierarchies). Idempotent — `addImplementor` dedups. Helper
+   `sealedEmbedClosure`/`collectSealedEmbeds` (plain recursion, no closure, for the
+   self-host mirror).
+
+2. **backend** (`lower.go`+`emit.go` / `.goal`): new `sealedEmbeds(info, iface)` (transitive
+   embedded-sealed set, source order, deduped). `implementsMarker` now emits the sealed
+   marker for `iface` PLUS a marker per embedded sealed interface, so a `implements Expr`
+   type emits both `func (T) isExpr() {}` and `func (T) isNode() {}`.
+
+Cross-package needs NO change: `goalForeignDecls` (CAP-3c) projects `info.Sealed` +
+`info.SealedImpls` from the defining package's `ResolvePackage`, which now runs the cascade
+before projection — the foreign implementor sets arrive already cascaded. (SEAM-004's AST
+is a single package anyway.)
+
+Fixpoint safety: the selfhost source contains no nested sealed hierarchy YET (SEAM-004
+introduces it), so emitted Go is byte-identical for every existing flat sealed interface
+(the cascade adds nothing; `sealedEmbeds` is empty). The map-iteration order in the cascade
+does not reach emitted Go — `SealedImpls` order is sema metadata only; marker order follows
+source-ordered `EmbeddedIfaces`.
+
+Proof: internal/backend/nested_sealed_test.go (sealed `Node`; sealed `Expr` embeds `Node`;
+`Num`/`Neg` implement `Expr`, `Comment` implements `Node` directly — asserts both cascaded
+markers are emitted and `Comment` does NOT get `isExpr`, then builds into a throwaway
+`module goal` and runs `match` over `Expr` AND over `Node` against a reference
+`switch x := n.(type)`); internal/sema/nested_sealed_test.go (cascade registers `*Num`/`*Neg`
+under both `Expr` and `Node` while `*Comment` stays Node-only; exhaustiveness enforced at
+both levels — a match over `Expr` omitting `*Neg` and a match over `Node` omitting the
+cascaded `*Neg` are each `non-exhaustive-match` Errors).
+
+Gates: `task check`, `task build`, `task fixpoint` (FIXPOINT OK) all green; corpus
+behavioral tier unchanged (additive tests only).

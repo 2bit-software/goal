@@ -5634,3 +5634,51 @@
     .goal SOURCE, so the goal-source path is the one exercised) — mirror BOTH copies or the
     selfhost port gate fails to compile (it caught every transient signature drift here).
 ---
+
+## 2026-06-29T23:59:00Z - SEAM-CAP-3d
+- Implemented NESTED sealed-interface hierarchies (CAP-3 part 4 of 4, the FINAL SEAM-004
+  prerequisite): a concrete type declared `implements B` where sealed B embeds sealed A now
+  registers as an implementor of BOTH A and B and emits BOTH markers (isB() and isA()). This
+  is the 2-level AST topology SEAM-004 needs (ast.Expr/Stmt/Decl/Spec embed ast.Node);
+  CAP-3a/b/c only proved FLAT single-level sealed interfaces.
+- Design choice: EMBEDDING CASCADE (option b), NOT a multi-interface `implements B, A`
+  clause. Cascade mirrors Go's own interface embedding and needs NO parser change; the
+  multi-clause form would require new grammar + restate by hand what embedding expresses.
+- Fix (mirrored line-for-line internal/ + selfhost/):
+  1. sema (resolve.go/.goal): cascadeSealedImpls propagates a sealed iface's implementors to
+     every sealed interface it TRANSITIVELY embeds (via the already-populated
+     info.EmbeddedIfaces — a sealed interface body shares resolveInterfaceMethods with an
+     ordinary interface, so `sealed interface B { A }` yields EmbeddedIfaces[B]=[A]), gated
+     on info.Sealed. Run at tail of Resolve(f) (single-file backend.Transpile path) AND tail
+     of ResolvePackage after the merge loop (cross-file hierarchies). Idempotent
+     (addImplementor dedups). Helpers sealedEmbedClosure/collectSealedEmbeds use plain
+     recursion (NO closure — selfhost has no recursive-closure precedent).
+  2. backend (lower.go+emit.go / .goal): sealedEmbeds (transitive embedded-sealed set,
+     source order, deduped) + implementsMarker emits a marker per embedded sealed iface.
+- Cross-package needed NO change: goalForeignDecls (CAP-3c) projects info.Sealed +
+  info.SealedImpls from the defining package's ResolvePackage, which now cascades BEFORE
+  projection. SEAM-004's AST is one package anyway.
+- Files: internal/sema/resolve.go, internal/backend/{lower,emit}.go, selfhost/sema/resolve.goal,
+  selfhost/backend/{lower,emit}.goal, internal/sema/nested_sealed_test.go (new),
+  internal/backend/nested_sealed_test.go (new), DECISIONS.md, prd.json, progress.txt,
+  history/20260629-feature-seam-cap-3d-nested-sealed-hierarchies/.
+- Gates: task check green (incl. selfhost port gate + corpus), task build clean, task
+  fixpoint = FIXPOINT OK (stage1==stage2). Corpus behavioral unchanged (additive tests).
+- Learnings for future iterations (carry into SEAM-004):
+  - EmbeddedIfaces is ALREADY populated for sealed interfaces (shared resolveInterfaceMethods),
+    so a nested-hierarchy cascade needs no new tracking — just walk it gated on Sealed.
+  - A concrete type carries ONE `implements` clause -> the cascade is the ONLY thing making
+    it satisfy an embedded sealed interface. Without the backend marker cascade, emitted Go
+    fails `go build` "missing method isA"; without the sema registry cascade, a match over
+    the EMBEDDED interface (A) silently drops the cascaded implementors (broken exhaustiveness).
+  - Fixpoint stayed byte-identical because selfhost has NO nested sealed hierarchy yet
+    (SEAM-004 introduces it); cascade adds nothing + sealedEmbeds is empty for flat cases.
+    Map-iteration order in the cascade never reaches emitted Go (SealedImpls order is sema
+    metadata; marker order follows source-ordered EmbeddedIfaces).
+  - selfhost mirror discipline: avoid recursive closures (`var walk func(...)`); use a
+    plain recursive helper threading (seen, accumulator). The port gate compiles .goal as Go
+    and the PostToolUse task-check hook catches any signature/helper drift immediately.
+  - SEAM-004 is now FULLY unblocked: CAP-3a (sealed method sigs) + CAP-3b (same-pkg match) +
+    CAP-3c (cross-pkg match) + CAP-3d (nested hierarchy) cover every capability the AST seal
+    needs.
+---
