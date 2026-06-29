@@ -91,8 +91,8 @@
         "task check, task build, task fixpoint all green; corpus behavioral unchanged"
       ],
       "priority": 3.1,
-      "passes": false,
-      "notes": "CAP-3 part 1 of 3. Prerequisite for sealing ast.Node at all. Gap #1 from the SEAM-004 analysis."
+      "passes": true,
+      "notes": "CAP-3 part 1 of 3. Prerequisite for sealing ast.Node at all. Gap #1 from the SEAM-004 analysis. DONE: sealedInterfaceDecl now preserves declared method signatures (e.g. Pos()/End()) alongside the isName() marker; empty body keeps the compact marker-only form byte-identical (fixpoint-safe). Interface-method rendering extracted to a shared emitter helper (interfaceMethod) reused by interfaceType + sealedInterfaceDecl, mirrored in internal/ and selfhost/. Regression: internal/backend/sealed_methods_test.go proves signatures+marker preserved, empty stays compact, and methods are callable through the interface (temp-module go test). task check/build/fixpoint green; corpus unchanged. genSealedInterface (lower.go/.goal) kept for the empty case."
     },
     {
       "id": "SEAM-CAP-3b",

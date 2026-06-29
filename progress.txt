@@ -5488,3 +5488,32 @@
     Carve it out and document; do not fake the conversion. Grep callers for
     `f, _ := Fn(` / partial-use-after-error before assuming a (T,error) fn is pure.
 ---
+
+## 2026-06-29T18:28:00Z - SEAM-CAP-3a
+- Sealed interfaces now preserve their declared method signatures in emitted Go.
+  Previously sealedInterfaceDecl discarded the parsed body and emitted only the
+  marker (`type Name interface{ isName() }`), so a method-bearing sealed interface
+  (e.g. ast.Node with Pos()/End()) lost its methods — blocking sealing Node.
+- Fix: sealedInterfaceDecl emits declared methods + the isName() marker when the
+  body is non-empty; keeps the compact marker-only form (via genSealedInterface)
+  when empty so emitted Go stays byte-identical (fixpoint-safe). Interface-method
+  rendering extracted into a shared emitter helper `interfaceMethod(*ast.Field)`
+  reused by both interfaceType and sealedInterfaceDecl.
+- Files: internal/backend/emit.go, selfhost/backend/emit.goal (line-for-line
+  mirror), internal/backend/sealed_methods_test.go (new regression test).
+  lower.go/lower.goal genSealedInterface kept unchanged (empty-body path).
+- Gates: task check, task build, task fixpoint (FIXPOINT OK) all green; corpus
+  behavioral tier unchanged. Commit d79ebee.
+- Learnings for future iterations:
+  - selfhost/backend/emit.goal mirrors internal/backend/emit.go line-for-line
+    (interfaceType/funcSig/identList/field are identical) — when extracting a new
+    emitter helper in one, add the SAME helper to the other or the selfhost port
+    test fails with "e.<helper> undefined" (the .goal is real Go compiled by the
+    port gate). The PostToolUse task-check hook catches this immediately.
+  - Keeping the pre-existing compact output for the no-op/empty case is the
+    cheapest way to protect `task fixpoint` byte-identity when touching emit/lower.
+  - To prove an interface method is "callable through the interface", transpile to
+    a temp `module goal` and `go test` a file that assigns the implementor to an
+    interface-typed var and calls the method — if the signature were dropped the
+    test fails to COMPILE, not silently pass (pattern from crosspkg_goal_enum_test).
+---
