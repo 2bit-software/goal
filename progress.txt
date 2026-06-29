@@ -5132,3 +5132,41 @@
     (advisory) both satisfy AC-2 because neither is an auto-conversion.
   - US-012 done leaves only US-013 (final whole-tree sweep + self-host proof).
 ---
+
+## [2026-06-29T14:30:00Z] - US-013 (self-host idiomatic PRD)
+- CLOSING story: the whole-compiler self-host proof. No `.goal` source change — the
+  selfhost tree is already at the `goal fix` fixed point; the only repo change is a new
+  DECISIONS.md "US-013" section documenting the proof + the one previously-undocumented
+  file (selfhost/main.goal).
+- AC-1 (zero auto-convertible propagation sites): ran `goal fix -inplace` over a COPY of
+  the ENTIRE tree (all 39 selfhost/**/*.goal) and `diff -r` vs original -> EMPTY diff.
+  Whole-tree stderr is only `skipped: [result-sig]` (14) + `suggestion: [call-site]`
+  (15), ZERO `fixed` lines. Neither is an auto-conversion, so AC-1 holds with no source
+  change. (Machine check: bare `goal fix` always prints the possibly-unchanged file to
+  stdout, so the reliable test is the -inplace-on-a-copy diff, not stdout.)
+- AC-1 documentation: every flagged construct maps to a documented refusal — ParseFile
+  (US-008), Discover/packageName (US-010), the sema foreign/analyze cluster (US-009),
+  the backend derive/emit cluster (US-011), Load/Check (US-012). The ONLY file never
+  given a per-package audit was selfhost/main.goal; its `run (error)` and `emitPackage
+  (error)` are now documented as bare-error refusals (no value channel; result-sig
+  refuses bare-error; propagation either wraps fmt.Errorf usage messages or bottoms out
+  at Go (T,error)/bare-error callees — nothing to `?`; `run` is the CLI entry consumed
+  by main(), emitPackage its IO helper called only by run). Same class as typecheck
+  Load/Check (US-012).
+- AC-2 (byte-identical fixpoint): `task fixpoint` -> FIXPOINT OK (goal-c-1 and goal-c-2
+  emit byte-identical Go over ./selfhost).
+- AC-3 (corpus): `task check` green — includes internal/corpus transpile/behavioral/
+  check tiers AND internal/selfhost behavioral port gates (each builds a goal-emitted
+  selfhost/<pkg> and runs the copied internal/<pkg> tests). `task build` green.
+- Files: DECISIONS.md (new US-013 section), prd.json (US-013 passes:true), progress.txt.
+  Initiative artifacts under history/20260629-feature-us-013-final-idiomatic-sweep-selfhost-proof/.
+- Learnings for future iterations:
+  - The SELF-HOST IDIOMATIC plan is COMPLETE: the goal compiler is written in idiomatic
+    goal and compiles ITSELF to a byte-identical fixpoint while passing the corpus.
+  - Whole-tree `goal fix` machine check: copy the tree, `goal fix -inplace` every file,
+    `diff -r` vs original; empty diff + no `fixed` stderr line == zero auto-convertible
+    sites. skips/suggestions are advisory, not conversions.
+  - main.goal (the top-level CLI driver) is the one selfhost file with no per-package
+    audit story; its bare-error CLI plumbing (run/emitPackage) is a documented refusal,
+    not a conversion target.
+---

@@ -174,7 +174,7 @@
         "The goal-built idiomatic compiler passes the full corpus transpile + behavioral + check tiers"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "Closes the loop: the compiler is written in idiomatic goal AND compiles itself to a byte-identical fixpoint while passing the corpus."
     }
   ]

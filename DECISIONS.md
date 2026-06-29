@@ -2626,3 +2626,85 @@ and runs the copied `internal/typecheck` depth tests against it; `task check`
 (incl. that port gate + `internal/typecheck`) green; `task build` green; `task
 fixpoint` → FIXPOINT OK (`selfhost/typecheck/*.go` byte-identical across
 goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
+
+## self-host idiomatic audit — US-013 (final whole-tree sweep + self-host proof)
+
+> US-013 of the **self-host idiomatic** PRD (`prd.json`): the CLOSING story. After
+> the per-package audits (US-005..US-012) this is a whole-compiler proof that no
+> auto-convertible plain-Go propagation remains anywhere in the `selfhost/` tree,
+> that every remaining deliberately-Go construct is documented, and that the
+> idiomatic compiler still self-hosts to a byte-identical fixpoint while passing the
+> corpus. No `.goal` source change — the tree is already at the `goal fix` fixed
+> point; touching source would risk the byte-identical oracle.
+
+### Whole-tree machine proof (AC-1: zero auto-convertible propagation sites)
+- **Kind:** proof
+- Running `goal fix -inplace` over a COPY of the entire tree (all 39
+  `selfhost/**/*.goal` files) and `diff -r`-ing against the original yields an EMPTY
+  diff. (A bare `goal fix` always prints the possibly-unchanged rewritten file to
+  stdout, so the reliable "did it convert anything" check is the `-inplace`-on-a-copy
+  diff, not stdout inspection — see progress.txt patterns.)
+- The whole-tree stderr report contains ONLY `skipped: [result-sig]` (refusals) and
+  `suggestion: [call-site]` (advisory) lines — and NO `fixed` lines. Neither a skip
+  nor a suggestion is an auto-conversion, so AC-1 (zero remaining auto-convertible
+  propagation sites) holds with no source change. The autofixer has reached its
+  fixed point across the whole compiler.
+
+### Every flagged construct maps to a documented refusal
+- **Kind:** roll-up
+- Each function the whole-tree report flags is a deliberately-Go construct already
+  documented in this file by its per-package audit:
+  - `ParseFile` (parser) — US-008 (recovery-by-accumulation; exported oracle-pinned).
+  - `Discover`/`packageName` (project) — US-010.
+  - `EnrichForeign`/`foreignDecls`/`DefaultResolver`/`goListResolve`/`moduleResolve`/
+    `readModulePath`/`constIntLit`/`AnalyzePackageInDir`/`AnalyzePackageInDirWith`
+    (sema) — US-009.
+  - `Transpile`/`Emit`/`emitDoctests`/`emitFile`/`elemConv`/`TranspilePackage`
+    (backend) — US-011.
+  - `Load`/`Check` (typecheck) — US-012.
+- The ONLY file never given a per-package audit story is the top-level
+  `selfhost/main.goal`; its two refusals are recorded immediately below. With those
+  documented, every flagged construct in the whole-tree sweep is accounted for.
+
+### `run` stays `(error)` — NOT converted to Result (main.goal)
+- **Kind:** refusal (with reason)
+- **Refused:** converting `run(args []string) error` (selfhost/main.goal) to a
+  Result-returning signature.
+- **Why:** `run` is the CLI entry point — `main()` consumes it as
+  `if err := run(os.Args[1:]); err != nil { … os.Exit(1) }`. It returns a BARE
+  `error` (no value channel), and the result-sig rule refuses bare-error functions:
+  `goal fix` emits `skipped: [result-sig] run returns a bare error; not
+  auto-converted to Result`. Its propagation is a mix that does not fit `?`: several
+  returns CONSTRUCT usage errors via `fmt.Errorf` (`usage: …`, `unknown flag %q`,
+  `selfhost requires --emit=…`, `no .goal packages found …`) which are not
+  propagation sites at all, and the genuine propagations (`return err` from
+  `project.Discover`, `backend.TranspilePackage`, `emitPackage`) bottom out at Go
+  `(T, error)` / bare-error callees, not Result, so there is nothing to `?`.
+  Converting a bare-error top-level CLI entry to Result buys zero idiom and changes
+  the program's plumbing. Same bare-error refusal class as typecheck `Load`/`Check`
+  (US-012). Refuse.
+
+### `emitPackage` stays `(error)` — NOT converted to Result (main.goal)
+- **Kind:** refusal (with reason)
+- **Refused:** converting `emitPackage(pkg *project.Package, out pipeline.PackageOutput,
+  emitDir string) error` (selfhost/main.goal) to Result.
+- **Why:** `emitPackage` is an IO helper called only by `run` (`if err :=
+  emitPackage(…); err != nil { return err }`). It returns a bare `error` and
+  propagates `os.MkdirAll` / `os.WriteFile` failures — both bare-error Go stdlib
+  calls, nothing to `?`. The result-sig rule refuses it the same way it refuses
+  `run` (bare-error host, no value channel). Making it Result would force `run` (its
+  only caller, itself a documented refusal) into a `match`/Result wrapper for no
+  gain. Refuse.
+
+### Verification (AC-2: fixpoint; AC-3: corpus)
+- `task check` green: `go vet ./...` + the full `go test ./...` suite, which includes
+  the `internal/corpus` transpile/behavioral/check tiers AND the `internal/selfhost`
+  behavioral port gates (each transpiles a `selfhost/<pkg>` through the goal front end
+  and runs the copied `internal/<pkg>` tests against the emitted Go) — i.e. the
+  goal-built packages pass the corpus + behavioral tiers.
+- `task build` green (both binaries).
+- `task fixpoint` → FIXPOINT OK: stage-0 builds goal-c-1, goal-c-1 builds goal-c-2,
+  and `diff -r` of the two stages' emit over `./selfhost` is empty — goal-c-1 and
+  goal-c-2 emit byte-identical Go for the compiler's own source. The self-host is
+  PROVEN: a goal-built, idiomatic-goal compiler compiles itself to a byte-identical
+  fixpoint while passing the corpus. No `.goal` source changed in this story.
