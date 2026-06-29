@@ -1942,3 +1942,61 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
   constraint. `Lookup` therefore stays comma-ok.
 - **Over:** an `Option[Kind]` rewrite of `Lookup` (breaks the oracle test; not a
   propagation site).
+
+## self-host idiomatic audit — US-006 (lexer)
+
+> US-006 of the **self-host idiomatic** PRD (`prd.json`): the per-package
+> idiomatic audit of `selfhost/lexer/lexer.goal`. Follows the US-005 (token)
+> pattern: classify each Go-ism against the goal idiom it could become, convert
+> where it FITS, and record refusals-with-reason here.
+
+### The lexer's `switch` statements stay `switch` — none are over an in-file enum
+- **Kind:** refusal (with reason)
+- **Refused:** rewriting any of `selfhost/lexer/lexer.goal`'s `switch`
+  statements into `match`.
+- **Why:** AC-1 scopes the conversion to "`switch` statements over an in-file
+  enum". The lexer declares **no `enum`** (and imports none — `token.Kind` is an
+  iota `type Kind int`, deliberately NOT an enum per the US-005 decision, so
+  even a switch on a `Kind` would not be an enum switch). Every `switch` in the
+  lexer is over a non-enum value:
+  1. `Next()` — an **expression-less `switch`** whose cases are boolean
+     predicates (`ch == eof`, `isLetter(ch)`, `isDigit(ch) || (ch == '.' &&
+     isDigit(l.peek()))`, `ch == '"'`, ...). This is condition dispatch, not a
+     closed-variant scrutinee; `match` has no role here.
+  2. `scanOperator()` and its nested switches (`'+' '-' '&' '|' '<' '>' '='`,
+     and the `op2` helpers) — switch over `l.ch` / `ch`, a **`rune`** (a
+     primitive integer). The arms are individual character literals, an open
+     not-closed domain.
+  Per DECISIONS §02-match ("Switch-coexistence", §228), plain `switch` is
+  **legal on non-enum types** and `match` is reserved for closed enums (a plain
+  `switch` on a closed enum is the compile error). Forcing these rune/condition
+  switches into `match` would be both non-idiomatic and outside the AC; the
+  reference transpiler does not transform plain `switch`, and the US-003 oracle
+  pins the emitted tokens byte-for-byte. This is the AC's "convert where it
+  fits" → it does not fit.
+- **Over:** a `match l.ch { '+' => ..., ... }` rewrite of `scanOperator`
+  (rune is not a closed enum; non-idiomatic and not behavior-preserving under
+  the match lowering); a `match { ch == eof => ..., ... }` rewrite of `Next()`
+  (condition dispatch, no scrutinee enum).
+
+### No Result/Option/`?` conversion applies — the lexer has no fallible helper
+- **Kind:** assumption
+- **Chose:** leave `selfhost/lexer/lexer.goal` source unchanged beyond this
+  ledger entry.
+- **Why:** the lexer is a **total tokenizer**: no function returns `error`. It
+  reports lexical problems *in-band* by emitting a `token.ILLEGAL` token
+  (`scanOperator`'s default) rather than via a fallible `(T, error)` signature,
+  so there is **no manual `if err != nil` propagation** for `goal fix` to
+  idiomatize into Result/`?`. `goal fix selfhost/lexer/lexer.goal` produces no
+  diff and reports nothing — AC-2 ("goal fix reports no remaining
+  auto-convertible propagation sites") already holds. The package's multi-value
+  uses are not fallible-error sites: `token.Lookup(lit)` is the **comma-ok**
+  idiom `(Kind, bool)` (pinned by the US-003 oracle, kept comma-ok per the
+  US-005 decision); `utf8.DecodeRuneInString` returns `(rune, int)` (size, not
+  an error). Neither is an Option/Result candidate. Converting any internal
+  `scan*`/`peek`/`next` helper would also change behavior or signatures the
+  oracle pins, violating the behavior-preserving constraint.
+- **Over:** an `Option[token.Token]` / `Result` rewrite of the `scan*` family
+  (they are infallible and ILLEGAL is the deliberate in-band signal); an
+  `Option[Kind]` rewrite of the `Lookup` call site (not a propagation site;
+  breaks the oracle test — same as the US-005 token decision).

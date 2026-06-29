@@ -4746,3 +4746,41 @@
     a nicer idiom (Option/Result) unless the cross-file callers AND the reused
     test are updated together — token's reused test forbids touching Lookup.
 ---
+
+## [2026-06-29T07:30:00Z] - US-006 (self-host idiomatic PRD)
+- Step 3 of 3 (idiomatic audit), second package: selfhost/lexer. Audit outcome
+  is a recorded DECISION, not a source change — selfhost/lexer/lexer.goal
+  already satisfies every behavioral AC and has no idiom that fits a rewrite.
+  Mirrors US-005 (token).
+- switch->match (AC-1): refused. The lexer declares NO in-file enum, and AC-1
+  scopes the conversion to "switch over an in-file enum". Every switch in the
+  lexer is over a non-enum value: Next() is an expression-less switch over
+  boolean predicates (ch==eof / isLetter / isDigit / quote...); scanOperator
+  and its nested switches (+ - & | < > = and op2) switch over l.ch/ch, a `rune`
+  (primitive int) with individual char-literal arms. Per DECISIONS §02-match
+  §228 plain switch is legal on non-enum types and match is reserved for closed
+  enums — so these stay switch. (token.Kind is `type Kind int`, not an enum per
+  US-005, so even a Kind switch would not be an enum switch.)
+- Result/Option/? (AC-1): none apply. The lexer is a TOTAL tokenizer — no
+  function returns error; it signals lexical problems in-band by emitting
+  token.ILLEGAL (scanOperator default), so there is no `if err!=nil`
+  propagation for goal fix to idiomatize. Multi-value uses are not error sites:
+  token.Lookup is comma-ok (Kind,bool), pinned by the oracle (kept comma-ok per
+  US-005); utf8.DecodeRuneInString returns (rune,int) size not error.
+- Machine check (AC-2): `goal fix selfhost/lexer/lexer.goal` => no stdout diff
+  vs source, empty stderr (no remaining auto-convertible propagation sites).
+- Files: DECISIONS.md (new "US-006 (lexer)" audit section), prd.json (US-006
+  passes:true), progress.txt. Initiative artifacts under
+  history/20260629-refactor-us-006-idiomatic-audit-lexer/. No .goal source edit.
+- Verify: goal fix (no diff/report); task check green (incl. internal/selfhost
+  port gate + internal/lexer); task build green; task fixpoint FIXPOINT OK
+  (byte-identical across goal-c-1/goal-c-2).
+- Learnings for future iterations:
+  - A pure-producer/consumer package with NO error-returning function (signals
+    via an in-band sentinel like ILLEGAL) has zero Result/? audit surface — the
+    audit is a documented decision, same shape as token. Expect this for other
+    infallible leaf packages.
+  - "switch over an enum" means an in-file goal `enum`; switches over `rune`,
+    `int`, or boolean conditions are NOT match candidates (§02-match §228).
+    Confirm there is an actual enum declaration before planning switch->match.
+---
