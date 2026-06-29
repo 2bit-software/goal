@@ -178,8 +178,8 @@
         "A short before/after in DECISIONS.md or SELF-HOST-RESEARCH.md quantifies the shift (e.g. count of type-switches now match, iota types now enum, fallible APIs now Result) so the result is measurable, not asserted"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": "Mirror of US-013 (the per-package proof) but for the seam end state. This is where 'the compiler actually showcases goal' gets verified and measured rather than claimed."
+      "passes": true,
+      "notes": "Mirror of US-013 (the per-package proof) but for the seam end state. This is where 'the compiler actually showcases goal' gets verified and measured rather than claimed. DONE: task check/build/fixpoint all green (FIXPOINT OK — goal-c-1==goal-c-2 byte-identical on the idiomatic source); corpus behavioral+interp+check tiers green. DECISIONS.md 'SEAM-006' adds the per-seam converted-vs-non-fit tally, honest end state, goal-fix result, and a measured before/after; SELF-HOST-RESEARCH.md §9 mirrors the quantified shift. MEASURED from the tree: 4 iota->enum (FuncMod/ChanDir/Mode/Severity; token.Kind+litClass kept iota); 27 type-switches->match (134 type-pattern arms) over a sealed AST, 9 plain switches remain as documented non-fits; 7 Result-returning fallible APIs + 56 Result.Ok/Err/? sites. `goal fix` over all 39 selfhost .goal files auto-modifies ZERO (12 result-sig refusals + 14 advisory call-site notes, all = documented non-fits) -> autofixer agrees the propagating API is idiomatic. META-finding recorded as the central result: the deep idioms required FOUR new compiler capabilities built in this PRD (SEAM-CAP cross-package enum-match lowering, SEAM-CAP-2 cross-.goal-package enum/sema-fact propagation, SEAM-CAP-3a-d sealed-interface type-pattern match incl. nested hierarchies) that did not exist before — they were blocked by missing language features, not just per-package scope."
     },
     {
       "id": "SEAM-007",

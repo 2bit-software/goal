@@ -3364,3 +3364,115 @@ Gates: `task check`, `task build`, `task fixpoint` (FIXPOINT OK) all green; corp
 behavioral + interp tiers unchanged. Equivalence re-proven under the relaxed seam
 gate by fixpoint self-consistency + corpus behavioral tier (no golden regen was
 needed — the goldens test the unchanged internal/ Go compiler, not selfhost/).
+
+## SEAM-006 — cross-cutting proof: the compiler showcases goal end-to-end
+
+> SEAM-006 of the **seam** PRD (`prd.json`): the closing proof story (mirror of
+> US-013, but for the seam end state). Not a source idiom change — it VERIFIES
+> and MEASURES that the SEAM-002..005 conversions hold together, then states the
+> honest end state. Every number below is counted from the live `selfhost/` tree,
+> not asserted.
+
+### Gates (the equivalence oracle, all green)
+
+- `task check` — green (go vet + full `go test ./...`, including the
+  internal/selfhost port gates that transpile every `selfhost/*` package and run
+  the ported oracle tests against the lowered Go, plus the corpus behavioral +
+  interp + check tiers).
+- `task build` — green (both binaries).
+- `task fixpoint` — **FIXPOINT OK**: goal-c-1 and goal-c-2 emit byte-identical Go
+  for the compiler's own (now idiomatic) source. `diff -r _bootstrap/fa
+  _bootstrap/fb` is empty. This is the genuine differential self-host proof on
+  the new enum/match/Result form — both stages agree on the idiomatic shape.
+
+### Per-seam tally — converted vs documented semantic non-fit
+
+| Seam | Converted | Kept (documented non-fit / out-of-scope, with reason) |
+|------|-----------|--------------------------------------------------------|
+| SEAM-002 (iota→enum) | `ast.FuncMod` (FuncPlain/FuncFrom/FuncDerive), `ast.ChanDir` (SendRecv/SendOnly/RecvOnly) + every cross-package consumer (`==`/`!=`/switch → `match`) | `token.Kind` kept iota — genuine numeric identity (`kindNames[k]` indexing, `literalBeg<k<literalEnd` range arithmetic, contiguous wire numbering) |
+| SEAM-003 (iota→enum) | `sema.Mode` (ModeNone/ModeResult/ModeResultClosed/ModeOption), `sema.Severity` (Error/Warning) — TOTAL conversion, no member kept iota; `Severity.String()` → free `SeverityLabel` func (an enum lowers to a sealed interface; Go forbids a method on it) | none kept for these two types (neither had numeric identity; the US-011-claimed `sema.Severity(x)` numeric conversions did not actually exist) |
+| SEAM-004 (seal AST + type-switch→match) | `ast.Node/Expr/Stmt/Decl/Spec` sealed (§8.1, 2-level hierarchy via CAP-3d cascade); **27 type-switches → exhaustive `match`** (134 type-pattern arms) across sema(check,resolve,question,fields,mustuse,assert), backend(lower,emit), parser(parser,goal_construct) | `ast/walk.goal` Walk (60-arm grouped/no-op, AC-permitted exclusion); `backend/emit.goal` armBody (switches over SIBLING category interfaces `ast.Stmt`/`ast.Expr`, not variants of one — match patterns are concrete `*T`); `sema/foreign.goal` ×3 (over the `go/ast` STDLIB, unsealable); `pipeline/sourcemap.goal` ×2 and `typecheck/{nozero,implements}.goal` ×2 (partial switches with a `default`/fall-through over sealed AST, outside SEAM-004's stated package scope of sema/backend/parser/ast) |
+| SEAM-005 (fallible API→Result/?) | cross-package cluster lifted: `typecheck.Load` →Result, `TypeChecker.Check` interface + `GoTypesChecker.Check` impl (lockstep) →Result, `sema.AnalyzePackageInDir` →Result (callers use `?`). With the pre-seam per-package conversions the tree now has **7 Result-returning fallible APIs** and **56 `Result.Ok`/`Result.Err`/`?` sites** | genuine SEMANTIC non-fits (NOT scope): `parser.ParseFile` (partial AST + error simultaneously), `EnrichForeign` (`[]error` accumulator), `AnalyzePackageInDirWith`/`foreignDecls`/`goalForeignDecls` (multi-value), `moduleResolve`/`readModulePath`/`constIntLit` (comma-ok); command-boundary `run`/`emitPackage`/`Emit`/`Transpile`/`TranspilePackage` stay bare `error` (top-level `if err != nil` handlers) |
+
+### Honest end state — idioms the compiler now showcases tree-wide
+
+- **enum from iota:** the four closed, unordered classification types are goal
+  `enum`s (FuncMod, ChanDir, Mode, Severity). The only `iota` left in `selfhost/`
+  is `token.Kind` and `litClass` (numeric-identity types, documented) plus two
+  private backend implementation helpers (`roKind`, `matchPos`) that are not part
+  of the public idiom surface. The idiom is the default; the exceptions are named.
+- **match over a sealed AST:** the compiler's central data structure
+  (`ast.Node`/`Expr`/`Stmt`/`Decl`/`Spec`) is sealed and its dispatch is 27
+  exhaustive `match` blocks. The remaining 9 plain type-switches are each a
+  documented non-fit (stdlib `go/ast`, sibling-interface switch, the 60-arm Walk,
+  or out-of-scope partial switches), not a silent gap.
+- **Result/?:** the genuinely-propagating exported/interface API at the
+  compiler's seams is Result-valued and threaded with `?`; the remaining
+  `(T,error)` sites are accumulators, multi-value, comma-ok, partial-value, or
+  the command boundary — each a real semantic non-fit, not a scope dodge.
+
+### `goal fix` over the whole selfhost tree — the autofixer agrees the API is idiomatic
+
+`goal fix` was run over all 39 `selfhost/**/*.goal` files. **It would auto-modify
+ZERO of them** (verified by diffing each file against its `goal fix` output). It
+makes no automatic propagation conversion anywhere — i.e. the propagating API is
+already idiomatic by the autofixer's own judgement. Its reports are all
+deliberate refusals + advisories, recorded honestly here:
+
+- **12 `[result-sig]` skips** (refusals, no change): `Transpile`, `emitFile`,
+  `elemConv`, `TranspilePackage`, `packageName`, `ParseFile`, `DefaultResolver`,
+  `goListResolve` (non-propagating return); `AnalyzePackageInDirWith` (multiple
+  non-error values); `Discover` (exported, callers fix can't see); `run` +
+  `emitPackage` (bare `error` at the command boundary). Every one maps to a
+  SEAM-005 documented non-fit or the command boundary.
+- **14 `[call-site]` suggestions** (advisory only, not an auto-fix withheld):
+  `Emit`, `Transpile`, `emitDoctests`, `TranspilePackage`, `run`, `Discover`,
+  `constIntLit`, `EnrichForeign`, `foreignDecls`, `goalForeignDecls`,
+  `moduleResolve`, `readModulePath`, `goListResolve`, `AnalyzePackageInDirWith` —
+  each names a manual `if err != nil` whose enclosing fn is intentionally not
+  Result-returning (multi-value / accumulator / comma-ok / command boundary).
+  These are the exact carve-outs SEAM-005 documented; the autofixer cannot
+  cross-file/cross-package coordinate to convert them and correctly does not try.
+
+Net: no residual *auto-convertible* propagation. The reports are the autofixer
+confirming the same boundary SEAM-005 drew by hand.
+
+### Before / after — quantified shift (measured from the tree)
+
+| Idiom | Before (transpiled-Go shape) | After (idiomatic goal, this PRD) |
+|-------|------------------------------|----------------------------------|
+| Closed classification types | 6 `type X int` + iota blocks | 4 are now `enum` (FuncMod, ChanDir, Mode, Severity); 2 kept iota for numeric identity (token.Kind, litClass) |
+| Dispatch over the AST | ~36 plain `switch x := n.(type)` over OPEN interfaces | **27** are now exhaustive `match` over a **sealed** AST (**134** type-pattern arms); 9 remain as documented non-fits |
+| Fallible seam API | `(T, error)` + manual `if err != nil` propagation everywhere | **7** Result-returning APIs, **56** `Result.Ok`/`Err`/`?` sites; remaining `(T,error)` are documented semantic non-fits |
+
+### META-finding (the central result) — the deep idioms needed NEW compiler features
+
+The honest, load-bearing conclusion of this PRD is not "we converted N
+type-switches." It is that **goal's deep idioms were blocked not merely by
+per-package audit scope but by missing language/compiler capabilities that did
+not exist before this PRD.** The per-package audits (US-005..013) could not have
+reached this end state at any scope, because the features they would have needed
+weren't built. SEAM-006's proof rests on FOUR new compiler capabilities created
+in this PRD:
+
+1. **SEAM-CAP** — cross-package enum-match lowering in the backend (a `match`
+   over an enum DEFINED in an imported package now lowers; previously only
+   Result/Option crossed package lines, via hardcoded special-casing).
+2. **SEAM-CAP-2** — cross-`.goal`-package enum/§8.1-fact propagation during the
+   real per-package `goal build ./selfhost` bootstrap (a sibling-`.goal`-defined
+   enum is now visible to consumers in other `.goal` packages; foreign
+   enrichment reads `.goal` source, not just generated `.go`).
+3. **SEAM-CAP-3a–d** — sealed-interface type-pattern `match`, built in four
+   parts: (a) sealed interfaces preserve declared method signatures (so sealing
+   `ast.Node` keeps `Pos()/End()`); (b) same-package type-pattern match lowering
+   to a Go type-switch with exhaustiveness; (c) cross-`.goal`-package
+   sealed-interface match (implementor sets propagated across the boundary); (d)
+   nested sealed hierarchies (the 2-level AST: `Expr`/`Stmt`/`Decl`/`Spec` embed
+   `Node`, with marker + registry cascade).
+
+Before this PRD, none of these existed: a cross-package enum `match` errored with
+`unsupported statement-position match`, and sealed-interface match did not exist
+at all. The idiomatic self-host was therefore gated on building real language
+features, and SEAM-006 is the proof that those features hold together
+end-to-end — `task fixpoint` byte-identical on the idiomatic source, corpus
+behavioral + interp + check tiers green.

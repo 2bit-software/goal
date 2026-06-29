@@ -230,3 +230,30 @@ expressive enough" from "did I introduce a logic bug rewriting in a new idiom."
 Total in-scope: ~11.9k LOC, near-mechanical for most of it once §4.1 is fixed. The gating risk
 is concentrated in unit 0 (the silent `iota` bug) and the two big packages (`backend`, `sema`),
 both de-risked by the corpus control and the existing Go source as oracle.
+
+## 9. Idiomatic end state — measured (SEAM PRD, SEAM-006 proof)
+
+Phase 5 (the "dogfood pass" of §8.5) ran as a separate **seam** PRD that relaxed the
+byte-identical-output gate to a fixpoint-self-consistency + corpus-behavioral gate, so
+cross-package idiom changes that alter emitted Go could be re-proven equivalent. The
+before/after below is counted from the live `selfhost/` tree (full per-seam tally in
+DECISIONS.md "SEAM-006"):
+
+| Idiom | Before (transpiled Go) | After (idiomatic goal) |
+|-------|------------------------|------------------------|
+| iota classification types | 6 `type X int`+iota | 4 → `enum` (FuncMod, ChanDir, Mode, Severity); 2 kept iota for numeric identity (token.Kind, litClass) |
+| AST dispatch | ~36 plain `switch n.(type)` over OPEN interfaces | 27 → exhaustive `match` over a SEALED AST (134 type-pattern arms); 9 documented non-fits |
+| Fallible seam API | `(T,error)` + manual `if err!=nil` | 7 Result-returning APIs, 56 `Result.Ok`/`Err`/`?` sites; remainder documented semantic non-fits |
+
+`goal fix` over all 39 selfhost `.goal` files auto-modifies zero of them (12 result-sig
+refusals + 14 advisory call-site notes, all mapping to documented non-fits) — the autofixer
+agrees the propagating API is idiomatic. `task fixpoint` = FIXPOINT OK on the new source.
+
+**The central result is a META-finding:** goal's deep idioms were blocked not only by
+per-package scope but by MISSING compiler features. Reaching this end state required FOUR new
+capabilities built in the seam PRD — SEAM-CAP (cross-package enum-match lowering), SEAM-CAP-2
+(cross-`.goal`-package enum/sema-fact propagation), and SEAM-CAP-3a–d (sealed-interface
+type-pattern match: method-sig preservation, same-package match, cross-`.goal`-package match,
+nested hierarchies). Before this work a cross-package enum `match` errored and
+sealed-interface match did not exist. The idiomatic self-host was gated on building real
+language features, not merely on widening audit scope.

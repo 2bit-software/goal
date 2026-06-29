@@ -5727,3 +5727,50 @@
     arm-type->interface resolver MUST disambiguate by the covered set (smallest superset),
     or it is nondeterministic under map iteration.
 ---
+
+## 2026-06-29T23:59:59Z - SEAM-006
+- Cross-cutting PROOF story (no source idiom change): verified + MEASURED that the
+  SEAM-002..005 conversions hold together and the self-hosted compiler reads as
+  idiomatic goal. Mirror of US-013 for the seam end state.
+- Gates (the equivalence oracle): task check green (incl. selfhost port gates +
+  corpus behavioral/interp/check tiers), task build clean, task fixpoint = FIXPOINT
+  OK (goal-c-1 and goal-c-2 byte-identical on the new idiomatic source).
+- Quantified from the live selfhost/ tree (not asserted):
+  - iota -> enum: 4 converted (ast.FuncMod, ast.ChanDir, sema.Mode, sema.Severity);
+    token.Kind + litClass kept iota (numeric identity), plus 2 private backend
+    helpers (roKind, matchPos) not on the public idiom surface.
+  - type-switch -> match: 27 sealed-interface match blocks (134 type-pattern arms)
+    across sema(check,resolve,question,fields,mustuse,assert), backend(lower,emit),
+    parser(parser,goal_construct) — confirms SEAM-004's "~25". 9 plain type-switches
+    remain, each a documented non-fit: 3 over go/ast stdlib (foreign), 1 Walk
+    (60-arm), 1 emit armBody (sibling category interfaces), 2 pipeline/sourcemap +
+    2 typecheck (partial/default switches outside SEAM-004's stated scope).
+  - fallible API -> Result: 7 Result-returning APIs + 56 Result.Ok/Err/? sites;
+    SEAM-005 lifted the cross-package cluster (Load, Check iface+impl,
+    AnalyzePackageInDir). Remaining (T,error) are accumulator/multi-value/comma-ok/
+    partial-value/command-boundary — documented semantic non-fits.
+- goal fix over all 39 selfhost .goal files auto-modifies ZERO (verified by diffing
+  each file vs its fix output): 12 result-sig skips (refusals) + 14 call-site
+  suggestions (advisory), every one mapping to a SEAM-005 documented non-fit or the
+  command boundary. The autofixer agrees the propagating API is idiomatic.
+- META-finding (the central result): the deep idioms were blocked not just by
+  per-package scope but by MISSING compiler features. Reaching this end state
+  required FOUR new capabilities built in this PRD — SEAM-CAP (cross-package
+  enum-match lowering), SEAM-CAP-2 (cross-.goal-package enum/sema-fact propagation),
+  SEAM-CAP-3a-d (sealed-interface type-pattern match: method-sig preservation,
+  same-package, cross-.goal-package, nested hierarchies). Before this work a
+  cross-package enum match errored and sealed-interface match did not exist.
+- Files: DECISIONS.md (new "SEAM-006" section: per-seam tally, honest end state,
+  goal-fix result, before/after, META-finding), SELF-HOST-RESEARCH.md (new §9
+  measured end state), prd.json (SEAM-006 passes:true), progress.txt,
+  history/20260629-feature-seam-006-cross-cutting-proof/.
+- Learnings for future iterations:
+  - The seam proof is measurable with grep: `^\s*\*Type(x)? =>` counts type-pattern
+    arms (sealed matches); `enum ` counts enum decls; `Result[` in func sigs counts
+    lifted APIs; diff each file vs `goal fix <file>` stdout to prove zero auto-fixes.
+  - `goal fix <dir>` reports only the entry file's reports cleanly; iterate per-file
+    over `find selfhost -name '*.goal'` to get the full residual list. Reports are
+    "skipped" (refused, no change) or "suggestion" (advisory) — neither is an
+    auto-applied conversion, so a tree with only those = autofixer-idiomatic.
+  - ./bin/goal is the full CLI (build|run|check|fix|fmt|ai|lsp); ./bin/goal-c-1/-c-2
+    are the bootstrap selfhost binaries with only `build --emit`.
