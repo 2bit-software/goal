@@ -268,18 +268,21 @@ func collectQuestionSites(body *ast.BlockStmt) []qsite {
 		return sites
 	}
 	ast.Walk(visitorFunc(func(n ast.Node) bool {
-		switch s := n.(type) {
-		case *ast.AssignStmt:
-			for i, rhs := range s.Rhs {
-				if u, ok := rhs.(*ast.UnwrapExpr); ok {
-					discard := i < len(s.Lhs) && isBlank(s.Lhs[i])
-					sites = append(sites, qsite{unwrap: u, discard: discard})
+		match n {
+			*ast.AssignStmt(s) => {
+				for i, rhs := range s.Rhs {
+					if u, ok := rhs.(*ast.UnwrapExpr); ok {
+						discard := i < len(s.Lhs) && isBlank(s.Lhs[i])
+						sites = append(sites, qsite{unwrap: u, discard: discard})
+					}
 				}
 			}
-		case *ast.ExprStmt:
-			if u, ok := s.X.(*ast.UnwrapExpr); ok {
-				sites = append(sites, qsite{unwrap: u, discard: true})
+			*ast.ExprStmt(s) => {
+				if u, ok := s.X.(*ast.UnwrapExpr); ok {
+					sites = append(sites, qsite{unwrap: u, discard: true})
+				}
 			}
+			_ => {}
 		}
 		return true
 	}), body)
@@ -295,14 +298,17 @@ func resolveQuestionCallee(u *ast.UnwrapExpr, info *Info) (sig FuncSig, key stri
 	if !ok {
 		return FuncSig{}, "", false
 	}
-	switch f := call.Fun.(type) {
-	case *ast.Ident:
-		s, ok := info.FuncSignatures[f.Name]
-		return s, f.Name, ok
-	case *ast.SelectorExpr:
-		return FuncSig{}, exprName(f), false
-	default:
-		return FuncSig{}, "", false
+	match call.Fun {
+		*ast.Ident(f) => {
+			s, ok := info.FuncSignatures[f.Name]
+			return s, f.Name, ok
+		}
+		*ast.SelectorExpr(f) => {
+			return FuncSig{}, exprName(f), false
+		}
+		_ => {
+			return FuncSig{}, "", false
+		}
 	}
 }
 
@@ -321,21 +327,24 @@ func isResultErr(fun ast.Expr) bool {
 // an *ast.VariantLit. Anything else (a bound identifier, a call) is not a resolvable
 // variant construction.
 func errVariantArg(arg ast.Expr) (qual, variant string, ok bool) {
-	switch a := arg.(type) {
-	case *ast.SelectorExpr:
-		base := exprName(a.X)
-		if base == "" || a.Sel == nil {
+	match arg {
+		*ast.SelectorExpr(a) => {
+			base := exprName(a.X)
+			if base == "" || a.Sel == nil {
+				return "", "", false
+			}
+			return base, a.Sel.Name, true
+		}
+		*ast.VariantLit(a) => {
+			base := exprName(a.Enum)
+			if base == "" || a.Variant == nil {
+				return "", "", false
+			}
+			return base, a.Variant.Name, true
+		}
+		_ => {
 			return "", "", false
 		}
-		return base, a.Sel.Name, true
-	case *ast.VariantLit:
-		base := exprName(a.Enum)
-		if base == "" || a.Variant == nil {
-			return "", "", false
-		}
-		return base, a.Variant.Name, true
-	default:
-		return "", "", false
 	}
 }
 

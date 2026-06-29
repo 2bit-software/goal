@@ -18,7 +18,7 @@ import "goal/selfhost/token"
 // first top-level comma after the condition separates the message — commas
 // nested inside the condition (e.g. a call's arguments) stay part of Cond. Msg
 // is nil and Args is empty for the bare form.
-type AssertStmt struct {
+type AssertStmt struct implements Stmt {
 	Assert token.Pos // position of the "assert" keyword
 	Cond   Expr      // the asserted condition
 	Comma  token.Pos // position of the "," before the message; zero for the bare form
@@ -40,7 +40,6 @@ func (s *AssertStmt) End() token.Pos {
 	const n = len("assert")
 	return token.Pos{Offset: s.Assert.Offset + n, Line: s.Assert.Line, Col: s.Assert.Col + n}
 }
-func (*AssertStmt) stmtNode() {}
 
 // DocComment is a run of consecutive `///` doc-comment lines attached to a
 // declaration. Lines holds each line's text with the leading `///` (and at most
@@ -48,7 +47,7 @@ func (*AssertStmt) stmtNode() {}
 // from those lines. A doc run with no `>>>` line is still represented (with an
 // empty Doctests), since it documents the declaration. It is a support node
 // (Node only, like Field/Variant), reached via FuncDecl.Doc.
-type DocComment struct {
+type DocComment struct implements Node {
 	Slash    token.Pos  // position of the first "///"
 	Lines    []string   // each /// line, prefix-stripped, in source order
 	Doctests []*Doctest // the >>> examples, in source order

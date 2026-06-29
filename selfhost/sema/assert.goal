@@ -68,27 +68,31 @@ func CheckAssert(file *ast.File, info *Info) []Diagnostic {
 // returns decidable=false so the runtime assert stands. Mirrors
 // internal/check/assert.go's folder over the AST.
 func foldAssertCond(cond ast.Expr) (value bool, decidable bool) {
-	switch c := cond.(type) {
-	case *ast.Ident:
-		switch c.Name {
-		case "true":
-			return true, true
-		case "false":
-			return false, true
-		}
-		return false, false
-	case *ast.BinaryExpr:
-		lhs, lok := constIntLit(c.X)
-		if !lok {
+	match cond {
+		*ast.Ident(c) => {
+			switch c.Name {
+			case "true":
+				return true, true
+			case "false":
+				return false, true
+			}
 			return false, false
 		}
-		rhs, rok := constIntLit(c.Y)
-		if !rok {
+		*ast.BinaryExpr(c) => {
+			lhs, lok := constIntLit(c.X)
+			if !lok {
+				return false, false
+			}
+			rhs, rok := constIntLit(c.Y)
+			if !rok {
+				return false, false
+			}
+			return evalIntCompare(lhs, c.Op, rhs)
+		}
+		_ => {
 			return false, false
 		}
-		return evalIntCompare(lhs, c.Op, rhs)
 	}
-	return false, false
 }
 
 // constIntLit parses an integer-literal expression (decimal, 0x, 0o, 0b, or
@@ -133,13 +137,18 @@ func evalIntCompare(lhs int64, op token.Kind, rhs int64) (bool, bool) {
 // of the two. Only the foldable shapes reach here, so the renderer need not be
 // general.
 func renderCond(cond ast.Expr) string {
-	switch c := cond.(type) {
-	case *ast.Ident:
-		return c.Name
-	case *ast.BasicLit:
-		return c.Value
-	case *ast.BinaryExpr:
-		return renderCond(c.X) + " " + c.Op.String() + " " + renderCond(c.Y)
+	match cond {
+		*ast.Ident(c) => {
+			return c.Name
+		}
+		*ast.BasicLit(c) => {
+			return c.Value
+		}
+		*ast.BinaryExpr(c) => {
+			return renderCond(c.X) + " " + c.Op.String() + " " + renderCond(c.Y)
+		}
+		_ => {
+			return ""
+		}
 	}
-	return ""
 }

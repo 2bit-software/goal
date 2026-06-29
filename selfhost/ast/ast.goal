@@ -16,36 +16,27 @@ import "goal/selfhost/token"
 
 // Node is the interface implemented by every AST node. Pos returns the position
 // of the node's first token; End returns the position just past its last token.
-type Node interface {
+// Sealed (SEAM-004): only same-package types declaring `implements Node` (directly
+// or, via the embedding cascade, `implements Expr`/`Stmt`/`Decl`/`Spec`) satisfy it.
+sealed interface Node {
 	Pos() token.Pos
 	End() token.Pos
 }
 
-// Decl is the interface for declaration nodes (the children of a File). The
-// unexported marker keeps the category closed to this package.
-type Decl interface {
-	Node
-	declNode()
-}
+// Decl is the interface for declaration nodes (the children of a File). Sealing
+// (it embeds the sealed Node) makes the category closed: a concrete declaration
+// type declares `implements Decl`, and the cascade emits the isNode() marker too.
+sealed interface Decl { Node }
 
 // Stmt is the interface for statement nodes.
-type Stmt interface {
-	Node
-	stmtNode()
-}
+sealed interface Stmt { Node }
 
 // Expr is the interface for expression and type-expression nodes.
-type Expr interface {
-	Node
-	exprNode()
-}
+sealed interface Expr { Node }
 
 // Spec is the interface for the individual specs inside a GenDecl (import, value,
 // type).
-type Spec interface {
-	Node
-	specNode()
-}
+sealed interface Spec { Node }
 
 // ----------------------------------------------------------------------------
 // Support nodes
@@ -53,7 +44,7 @@ type Spec interface {
 // Field is one field in a FieldList: a (possibly empty) list of names sharing a
 // type, with an optional struct tag. Used for struct fields, interface methods,
 // and function parameters/results.
-type Field struct {
+type Field struct implements Node {
 	Names []*Ident   // field/parameter names; may be nil for embedded or unnamed
 	Type  Expr       // field/parameter type
 	Tag   *BasicLit  // struct tag; or nil
@@ -84,7 +75,7 @@ func (f *Field) End() token.Pos {
 
 // FieldList is a parenthesized or braced list of Fields (parameters, results,
 // struct fields, interface methods).
-type FieldList struct {
+type FieldList struct implements Node {
 	Opening token.Pos // position of opening "(", "[" or "{"; may be zero
 	List    []*Field  // field entries
 	Closing token.Pos // position of closing ")", "]" or "}"; may be zero
@@ -111,7 +102,7 @@ func (fl *FieldList) End() token.Pos {
 }
 
 // File is the root of one parsed source file.
-type File struct {
+type File struct implements Node {
 	Package token.Pos      // position of the "package" keyword
 	Name    *Ident         // package name
 	Imports []*ImportSpec  // the file's import specs (also reachable via Decls)
@@ -135,7 +126,7 @@ func (f *File) End() token.Pos {
 
 // GenDecl is a general declaration: an import, const, var, or type declaration.
 // Tok is one of token.IMPORT, token.CONST, token.VAR, or token.TYPE.
-type GenDecl struct {
+type GenDecl struct implements Decl {
 	TokPos token.Pos   // position of Tok
 	Tok    token.Kind  // IMPORT, CONST, VAR, or TYPE
 	Specs  []Spec      // the declared specs
@@ -150,13 +141,12 @@ func (d *GenDecl) End() token.Pos {
 	return d.TokPos
 }
 
-func (*GenDecl) declNode() {}
 
 // FuncDecl is a function or method declaration. Recv is nil for a plain function.
 // Mod records a goal `from`/`derive` modifier (FuncPlain when absent); ModPos is
 // the position of that modifier keyword. Doc holds the `///` doc-comment run
 // (with any doctests) attached to the declaration, or nil when absent.
-type FuncDecl struct {
+type FuncDecl struct implements Decl {
 	Doc    *DocComment // attached /// doc-comment run; or nil
 	Mod    FuncMod     // goal modifier: FuncPlain, FuncFrom, or FuncDerive
 	ModPos token.Pos   // position of the from/derive keyword; zero when FuncPlain
@@ -197,13 +187,12 @@ func (d *FuncDecl) End() token.Pos {
 	return token.Pos{}
 }
 
-func (*FuncDecl) declNode() {}
 
 // ----------------------------------------------------------------------------
 // Specs
 
 // ImportSpec is a single import within an import GenDecl.
-type ImportSpec struct {
+type ImportSpec struct implements Spec {
 	Name *Ident    // local package name (incl. "." and "_"); or nil
 	Path *BasicLit // import path string literal
 }
@@ -228,11 +217,10 @@ func (s *ImportSpec) End() token.Pos {
 	return token.Pos{}
 }
 
-func (*ImportSpec) specNode() {}
 
 // ValueSpec is a const or var spec: a list of names with an optional type and
 // optional values.
-type ValueSpec struct {
+type ValueSpec struct implements Spec {
 	Names  []*Ident // value names
 	Type   Expr     // value type; or nil
 	Values []Expr   // initial values; or nil
@@ -258,10 +246,9 @@ func (s *ValueSpec) End() token.Pos {
 	return token.Pos{}
 }
 
-func (*ValueSpec) specNode() {}
 
 // TypeSpec is a single type declaration: a name bound to a type expression.
-type TypeSpec struct {
+type TypeSpec struct implements Spec {
 	Name       *Ident     // type name
 	TypeParams *FieldList // generic type parameters in "[...]"; nil when non-generic
 	Assign     token.Pos  // position of "=" for an alias declaration; zero otherwise
@@ -285,13 +272,12 @@ func (s *TypeSpec) End() token.Pos {
 	return token.Pos{}
 }
 
-func (*TypeSpec) specNode() {}
 
 // ----------------------------------------------------------------------------
 // Expressions
 
 // Ident is an identifier.
-type Ident struct {
+type Ident struct implements Expr {
 	NamePos token.Pos // identifier position
 	Name    string    // identifier text
 }
@@ -300,10 +286,9 @@ func (e *Ident) Pos() token.Pos { return e.NamePos }
 func (e *Ident) End() token.Pos {
 	return token.Pos{Offset: e.NamePos.Offset + len(e.Name), Line: e.NamePos.Line, Col: e.NamePos.Col + len(e.Name)}
 }
-func (*Ident) exprNode() {}
 
 // BasicLit is a literal of basic type (int, float, imag, char, string).
-type BasicLit struct {
+type BasicLit struct implements Expr {
 	ValuePos token.Pos  // literal position
 	Kind     token.Kind // INT, FLOAT, IMAG, CHAR, or STRING
 	Value    string     // literal text, e.g. "42", "\"abc\""
@@ -313,10 +298,9 @@ func (e *BasicLit) Pos() token.Pos { return e.ValuePos }
 func (e *BasicLit) End() token.Pos {
 	return token.Pos{Offset: e.ValuePos.Offset + len(e.Value), Line: e.ValuePos.Line, Col: e.ValuePos.Col + len(e.Value)}
 }
-func (*BasicLit) exprNode() {}
 
 // ParenExpr is a parenthesized expression.
-type ParenExpr struct {
+type ParenExpr struct implements Expr {
 	Lparen token.Pos // position of "("
 	X      Expr      // parenthesized expression
 	Rparen token.Pos // position of ")"
@@ -326,12 +310,11 @@ func (e *ParenExpr) Pos() token.Pos { return e.Lparen }
 func (e *ParenExpr) End() token.Pos {
 	return token.Pos{Offset: e.Rparen.Offset + 1, Line: e.Rparen.Line, Col: e.Rparen.Col + 1}
 }
-func (*ParenExpr) exprNode() {}
 
 // UnaryExpr is a unary expression. Op is the operator kind; for postfix unwrap
 // (token.QUESTION) it is still represented here in the Go subset, though goal's
 // dedicated UnwrapExpr arrives in a later story.
-type UnaryExpr struct {
+type UnaryExpr struct implements Expr {
 	OpPos token.Pos  // position of Op
 	Op    token.Kind // operator kind
 	X     Expr       // operand
@@ -344,10 +327,9 @@ func (e *UnaryExpr) End() token.Pos {
 	}
 	return e.OpPos
 }
-func (*UnaryExpr) exprNode() {}
 
 // BinaryExpr is a binary expression.
-type BinaryExpr struct {
+type BinaryExpr struct implements Expr {
 	X     Expr       // left operand
 	OpPos token.Pos  // position of Op
 	Op    token.Kind // operator kind
@@ -366,10 +348,9 @@ func (e *BinaryExpr) End() token.Pos {
 	}
 	return e.OpPos
 }
-func (*BinaryExpr) exprNode() {}
 
 // SelectorExpr is a selector x.Sel.
-type SelectorExpr struct {
+type SelectorExpr struct implements Expr {
 	X   Expr   // expression
 	Sel *Ident // field or method selector
 }
@@ -386,10 +367,9 @@ func (e *SelectorExpr) End() token.Pos {
 	}
 	return e.X.End()
 }
-func (*SelectorExpr) exprNode() {}
 
 // IndexExpr is an index expression x[Index].
-type IndexExpr struct {
+type IndexExpr struct implements Expr {
 	X      Expr      // expression
 	Lbrack token.Pos // position of "["
 	Index  Expr      // index expression
@@ -405,12 +385,11 @@ func (e *IndexExpr) Pos() token.Pos {
 func (e *IndexExpr) End() token.Pos {
 	return token.Pos{Offset: e.Rbrack.Offset + 1, Line: e.Rbrack.Line, Col: e.Rbrack.Col + 1}
 }
-func (*IndexExpr) exprNode() {}
 
 // IndexListExpr is an index expression with multiple indices x[A, B], used for
 // multi-element generic type-argument lists (e.g. Result[int, error]). A single
 // index uses IndexExpr; only two-or-more indices produce an IndexListExpr.
-type IndexListExpr struct {
+type IndexListExpr struct implements Expr {
 	X       Expr      // expression
 	Lbrack  token.Pos // position of "["
 	Indices []Expr    // index expressions
@@ -426,10 +405,9 @@ func (e *IndexListExpr) Pos() token.Pos {
 func (e *IndexListExpr) End() token.Pos {
 	return token.Pos{Offset: e.Rbrack.Offset + 1, Line: e.Rbrack.Line, Col: e.Rbrack.Col + 1}
 }
-func (*IndexListExpr) exprNode() {}
 
 // SliceExpr is a slice expression x[Low:High:Max].
-type SliceExpr struct {
+type SliceExpr struct implements Expr {
 	X      Expr      // expression
 	Lbrack token.Pos // position of "["
 	Low    Expr      // begin of slice range; or nil
@@ -447,11 +425,10 @@ func (e *SliceExpr) Pos() token.Pos {
 func (e *SliceExpr) End() token.Pos {
 	return token.Pos{Offset: e.Rbrack.Offset + 1, Line: e.Rbrack.Line, Col: e.Rbrack.Col + 1}
 }
-func (*SliceExpr) exprNode() {}
 
 // TypeAssertExpr is a type assertion x.(T). Type is nil for the x.(type) form,
 // which appears only as the guard of a type switch.
-type TypeAssertExpr struct {
+type TypeAssertExpr struct implements Expr {
 	X      Expr      // expression
 	Lparen token.Pos // position of "("
 	Type   Expr      // asserted type; nil for the x.(type) guard
@@ -467,10 +444,9 @@ func (e *TypeAssertExpr) Pos() token.Pos {
 func (e *TypeAssertExpr) End() token.Pos {
 	return token.Pos{Offset: e.Rparen.Offset + 1, Line: e.Rparen.Line, Col: e.Rparen.Col + 1}
 }
-func (*TypeAssertExpr) exprNode() {}
 
 // CallExpr is a function or method call (or a conversion).
-type CallExpr struct {
+type CallExpr struct implements Expr {
 	Fun      Expr      // function expression
 	Lparen   token.Pos // position of "("
 	Args     []Expr    // function arguments
@@ -487,10 +463,9 @@ func (e *CallExpr) Pos() token.Pos {
 func (e *CallExpr) End() token.Pos {
 	return token.Pos{Offset: e.Rparen.Offset + 1, Line: e.Rparen.Line, Col: e.Rparen.Col + 1}
 }
-func (*CallExpr) exprNode() {}
 
 // StarExpr is a pointer dereference *X or a pointer type *T.
-type StarExpr struct {
+type StarExpr struct implements Expr {
 	Star token.Pos // position of "*"
 	X    Expr      // operand
 }
@@ -502,10 +477,9 @@ func (e *StarExpr) End() token.Pos {
 	}
 	return e.Star
 }
-func (*StarExpr) exprNode() {}
 
 // KeyValueExpr is a key: value pair in a composite literal.
-type KeyValueExpr struct {
+type KeyValueExpr struct implements Expr {
 	Key   Expr      // key
 	Colon token.Pos // position of ":"
 	Value Expr      // value
@@ -523,10 +497,9 @@ func (e *KeyValueExpr) End() token.Pos {
 	}
 	return e.Colon
 }
-func (*KeyValueExpr) exprNode() {}
 
 // CompositeLit is a composite literal Type{Elts}.
-type CompositeLit struct {
+type CompositeLit struct implements Expr {
 	Type   Expr      // literal type; or nil for an elided type
 	Lbrace token.Pos // position of "{"
 	Elts   []Expr    // list of composite elements
@@ -542,10 +515,9 @@ func (e *CompositeLit) Pos() token.Pos {
 func (e *CompositeLit) End() token.Pos {
 	return token.Pos{Offset: e.Rbrace.Offset + 1, Line: e.Rbrace.Line, Col: e.Rbrace.Col + 1}
 }
-func (*CompositeLit) exprNode() {}
 
 // FuncLit is a function literal: a signature plus a body.
-type FuncLit struct {
+type FuncLit struct implements Expr {
 	Type *FuncType  // function signature
 	Body *BlockStmt // function body
 }
@@ -565,13 +537,12 @@ func (e *FuncLit) End() token.Pos {
 	}
 	return token.Pos{}
 }
-func (*FuncLit) exprNode() {}
 
 // ----------------------------------------------------------------------------
 // Type expressions
 
 // ArrayType is an array or slice type [Len]Elt (Len nil for a slice).
-type ArrayType struct {
+type ArrayType struct implements Expr {
 	Lbrack token.Pos // position of "["
 	Len    Expr      // array length; nil for a slice type
 	Elt    Expr      // element type
@@ -584,10 +555,9 @@ func (e *ArrayType) End() token.Pos {
 	}
 	return e.Lbrack
 }
-func (*ArrayType) exprNode() {}
 
 // MapType is a map type map[Key]Value.
-type MapType struct {
+type MapType struct implements Expr {
 	Map   token.Pos // position of "map"
 	Key   Expr      // key type
 	Value Expr      // value type
@@ -603,12 +573,11 @@ func (e *MapType) End() token.Pos {
 	}
 	return e.Map
 }
-func (*MapType) exprNode() {}
 
 // StructType is a struct type struct{ Fields }. Implements carries a goal
 // `implements Iface` clause (`type T struct implements I { ... }`) when present;
 // it is nil for an ordinary Go struct type.
-type StructType struct {
+type StructType struct implements Expr {
 	Struct     token.Pos         // position of "struct"
 	Implements *ImplementsClause // goal implements clause; or nil
 	Fields     *FieldList        // list of field declarations
@@ -621,10 +590,9 @@ func (e *StructType) End() token.Pos {
 	}
 	return e.Struct
 }
-func (*StructType) exprNode() {}
 
 // InterfaceType is an interface type interface{ Methods }.
-type InterfaceType struct {
+type InterfaceType struct implements Expr {
 	Interface token.Pos  // position of "interface"
 	Methods   *FieldList // list of embedded interfaces and methods
 }
@@ -636,10 +604,9 @@ func (e *InterfaceType) End() token.Pos {
 	}
 	return e.Interface
 }
-func (*InterfaceType) exprNode() {}
 
 // FuncType is a function signature: parameters and results.
-type FuncType struct {
+type FuncType struct implements Expr {
 	Func       token.Pos  // position of "func" keyword (may be zero for methods)
 	TypeParams *FieldList // generic type parameters in "[...]"; nil when non-generic
 	Params     *FieldList // parameters
@@ -664,10 +631,9 @@ func (e *FuncType) End() token.Pos {
 	}
 	return e.Func
 }
-func (*FuncType) exprNode() {}
 
 // ChanType is a channel type chan Value (with an optional direction).
-type ChanType struct {
+type ChanType struct implements Expr {
 	Begin token.Pos  // position of "chan" keyword or "<-" (whichever comes first)
 	Dir   ChanDir    // channel direction
 	Value Expr       // value type
@@ -690,10 +656,9 @@ func (e *ChanType) End() token.Pos {
 	}
 	return e.Begin
 }
-func (*ChanType) exprNode() {}
 
 // Ellipsis is a "..." node, used for variadic parameter types (...Elt).
-type Ellipsis struct {
+type Ellipsis struct implements Expr {
 	Ellipsis token.Pos // position of "..."
 	Elt      Expr      // element type; or nil
 }
@@ -705,13 +670,12 @@ func (e *Ellipsis) End() token.Pos {
 	}
 	return token.Pos{Offset: e.Ellipsis.Offset + 3, Line: e.Ellipsis.Line, Col: e.Ellipsis.Col + 3}
 }
-func (*Ellipsis) exprNode() {}
 
 // ----------------------------------------------------------------------------
 // Statements
 
 // BlockStmt is a braced statement list { ... }.
-type BlockStmt struct {
+type BlockStmt struct implements Stmt {
 	Lbrace token.Pos // position of "{"
 	List   []Stmt    // statements
 	Rbrace token.Pos // position of "}"
@@ -721,20 +685,18 @@ func (s *BlockStmt) Pos() token.Pos { return s.Lbrace }
 func (s *BlockStmt) End() token.Pos {
 	return token.Pos{Offset: s.Rbrace.Offset + 1, Line: s.Rbrace.Line, Col: s.Rbrace.Col + 1}
 }
-func (*BlockStmt) stmtNode() {}
 
 // ExprStmt is a standalone expression used as a statement.
-type ExprStmt struct {
+type ExprStmt struct implements Stmt {
 	X Expr // expression
 }
 
 func (s *ExprStmt) Pos() token.Pos { return s.X.Pos() }
 func (s *ExprStmt) End() token.Pos { return s.X.End() }
-func (*ExprStmt) stmtNode()        {}
 
 // AssignStmt is an assignment or short variable declaration. Tok is token.ASSIGN
 // or token.DEFINE (or a compound-assign operator).
-type AssignStmt struct {
+type AssignStmt struct implements Stmt {
 	Lhs    []Expr     // left-hand side
 	TokPos token.Pos  // position of Tok
 	Tok    token.Kind // assignment token (ASSIGN, DEFINE, ADD_ASSIGN, ...)
@@ -753,10 +715,9 @@ func (s *AssignStmt) End() token.Pos {
 	}
 	return s.TokPos
 }
-func (*AssignStmt) stmtNode() {}
 
 // IncDecStmt is an increment or decrement statement (x++ / x--).
-type IncDecStmt struct {
+type IncDecStmt struct implements Stmt {
 	X      Expr       // operand
 	TokPos token.Pos  // position of Tok
 	Tok    token.Kind // INC or DEC
@@ -766,10 +727,9 @@ func (s *IncDecStmt) Pos() token.Pos { return s.X.Pos() }
 func (s *IncDecStmt) End() token.Pos {
 	return token.Pos{Offset: s.TokPos.Offset + 2, Line: s.TokPos.Line, Col: s.TokPos.Col + 2}
 }
-func (*IncDecStmt) stmtNode() {}
 
 // ReturnStmt is a return statement.
-type ReturnStmt struct {
+type ReturnStmt struct implements Stmt {
 	Return  token.Pos // position of "return"
 	Results []Expr    // returned expressions; or nil
 }
@@ -781,10 +741,9 @@ func (s *ReturnStmt) End() token.Pos {
 	}
 	return token.Pos{Offset: s.Return.Offset + 6, Line: s.Return.Line, Col: s.Return.Col + 6}
 }
-func (*ReturnStmt) stmtNode() {}
 
 // IfStmt is an if statement, optionally with an init statement and an else branch.
-type IfStmt struct {
+type IfStmt struct implements Stmt {
 	If   token.Pos // position of "if"
 	Init Stmt      // initialization statement; or nil
 	Cond Expr      // condition
@@ -802,10 +761,9 @@ func (s *IfStmt) End() token.Pos {
 	}
 	return s.If
 }
-func (*IfStmt) stmtNode() {}
 
 // ForStmt is a for statement (Init/Cond/Post all optional).
-type ForStmt struct {
+type ForStmt struct implements Stmt {
 	For  token.Pos // position of "for"
 	Init Stmt      // initialization statement; or nil
 	Cond Expr      // condition; or nil
@@ -820,10 +778,9 @@ func (s *ForStmt) End() token.Pos {
 	}
 	return s.For
 }
-func (*ForStmt) stmtNode() {}
 
 // RangeStmt is a for-range statement.
-type RangeStmt struct {
+type RangeStmt struct implements Stmt {
 	For    token.Pos  // position of "for"
 	Key    Expr       // key/index iteration variable; or nil
 	Value  Expr       // value iteration variable; or nil
@@ -840,10 +797,9 @@ func (s *RangeStmt) End() token.Pos {
 	}
 	return s.For
 }
-func (*RangeStmt) stmtNode() {}
 
 // SwitchStmt is an expression switch statement.
-type SwitchStmt struct {
+type SwitchStmt struct implements Stmt {
 	Switch token.Pos  // position of "switch"
 	Init   Stmt       // initialization statement; or nil
 	Tag    Expr       // switch tag expression; or nil
@@ -857,10 +813,9 @@ func (s *SwitchStmt) End() token.Pos {
 	}
 	return s.Switch
 }
-func (*SwitchStmt) stmtNode() {}
 
 // CaseClause is one case (or default) clause within a switch body.
-type CaseClause struct {
+type CaseClause struct implements Stmt {
 	Case  token.Pos // position of "case" or "default"
 	List  []Expr    // case expressions; nil for the default clause
 	Colon token.Pos // position of ":"
@@ -874,10 +829,9 @@ func (s *CaseClause) End() token.Pos {
 	}
 	return token.Pos{Offset: s.Colon.Offset + 1, Line: s.Colon.Line, Col: s.Colon.Col + 1}
 }
-func (*CaseClause) stmtNode() {}
 
 // DeferStmt is a defer statement.
-type DeferStmt struct {
+type DeferStmt struct implements Stmt {
 	Defer token.Pos // position of "defer"
 	Call  *CallExpr // the deferred call
 }
@@ -889,10 +843,9 @@ func (s *DeferStmt) End() token.Pos {
 	}
 	return s.Defer
 }
-func (*DeferStmt) stmtNode() {}
 
 // GoStmt is a go statement.
-type GoStmt struct {
+type GoStmt struct implements Stmt {
 	Go   token.Pos // position of "go"
 	Call *CallExpr // the called goroutine
 }
@@ -904,10 +857,9 @@ func (s *GoStmt) End() token.Pos {
 	}
 	return s.Go
 }
-func (*GoStmt) stmtNode() {}
 
 // BranchStmt is a break, continue, goto, or fallthrough statement.
-type BranchStmt struct {
+type BranchStmt struct implements Stmt {
 	TokPos token.Pos  // position of Tok
 	Tok    token.Kind // BREAK, CONTINUE, GOTO, or FALLTHROUGH
 	Label  *Ident     // label; or nil
@@ -920,10 +872,9 @@ func (s *BranchStmt) End() token.Pos {
 	}
 	return token.Pos{Offset: s.TokPos.Offset + len(s.Tok.String()), Line: s.TokPos.Line, Col: s.TokPos.Col + len(s.Tok.String())}
 }
-func (*BranchStmt) stmtNode() {}
 
 // SendStmt is a channel send statement ch <- value.
-type SendStmt struct {
+type SendStmt struct implements Stmt {
 	Chan  Expr      // the channel
 	Arrow token.Pos // position of "<-"
 	Value Expr      // the value sent
@@ -941,11 +892,10 @@ func (s *SendStmt) End() token.Pos {
 	}
 	return s.Arrow
 }
-func (*SendStmt) stmtNode() {}
 
 // LabeledStmt is a labeled statement "Label: Stmt", the target of a goto, break,
 // or continue.
-type LabeledStmt struct {
+type LabeledStmt struct implements Stmt {
 	Label *Ident    // the label
 	Colon token.Pos // position of ":"
 	Stmt  Stmt      // the labeled statement
@@ -963,12 +913,11 @@ func (s *LabeledStmt) End() token.Pos {
 	}
 	return token.Pos{Offset: s.Colon.Offset + 1, Line: s.Colon.Line, Col: s.Colon.Col + 1}
 }
-func (*LabeledStmt) stmtNode() {}
 
 // TypeSwitchStmt is a type switch "switch [Init;] Assign { ... }", where Assign
 // is the guard: an ExprStmt holding an x.(type) assertion, or an AssignStmt
 // "v := x.(type)". Its body holds CaseClauses whose case lists are types.
-type TypeSwitchStmt struct {
+type TypeSwitchStmt struct implements Stmt {
 	Switch token.Pos  // position of "switch"
 	Init   Stmt       // initialization statement; or nil
 	Assign Stmt       // the type-switch guard (ExprStmt or AssignStmt)
@@ -982,10 +931,9 @@ func (s *TypeSwitchStmt) End() token.Pos {
 	}
 	return s.Switch
 }
-func (*TypeSwitchStmt) stmtNode() {}
 
 // SelectStmt is a select statement whose body holds CommClauses.
-type SelectStmt struct {
+type SelectStmt struct implements Stmt {
 	Select token.Pos  // position of "select"
 	Body   *BlockStmt // CommClauses wrapped in a block
 }
@@ -997,11 +945,10 @@ func (s *SelectStmt) End() token.Pos {
 	}
 	return s.Select
 }
-func (*SelectStmt) stmtNode() {}
 
 // CommClause is one "case Comm:" or "default:" clause of a select. Comm is a send
 // or receive statement; it is nil for the default clause.
-type CommClause struct {
+type CommClause struct implements Stmt {
 	Case  token.Pos // position of "case" or "default"
 	Comm  Stmt      // send or receive statement; nil for default
 	Colon token.Pos // position of ":"
@@ -1015,19 +962,17 @@ func (s *CommClause) End() token.Pos {
 	}
 	return token.Pos{Offset: s.Colon.Offset + 1, Line: s.Colon.Line, Col: s.Colon.Col + 1}
 }
-func (*CommClause) stmtNode() {}
 
 // DeclStmt is a declaration (const/var/type GenDecl) used as a statement.
-type DeclStmt struct {
+type DeclStmt struct implements Stmt {
 	Decl Decl // a *GenDecl
 }
 
 func (s *DeclStmt) Pos() token.Pos { return s.Decl.Pos() }
 func (s *DeclStmt) End() token.Pos { return s.Decl.End() }
-func (*DeclStmt) stmtNode()        {}
 
 // EmptyStmt is an empty statement (a lone ";").
-type EmptyStmt struct {
+type EmptyStmt struct implements Stmt {
 	Semicolon token.Pos // position of the ";"
 }
 
@@ -1035,4 +980,3 @@ func (s *EmptyStmt) Pos() token.Pos { return s.Semicolon }
 func (s *EmptyStmt) End() token.Pos {
 	return token.Pos{Offset: s.Semicolon.Offset + 1, Line: s.Semicolon.Line, Col: s.Semicolon.Col + 1}
 }
-func (*EmptyStmt) stmtNode() {}

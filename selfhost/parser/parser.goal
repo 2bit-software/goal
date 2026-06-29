@@ -929,18 +929,22 @@ func (p *parser) parseSwitchStmt() ast.Stmt {
 // isTypeSwitchGuard reports whether s is a type-switch guard: a bare `x.(type)`
 // assertion or a `v := x.(type)` binding (a TypeAssertExpr with no asserted type).
 func isTypeSwitchGuard(s ast.Stmt) bool {
-	switch g := s.(type) {
-	case *ast.ExprStmt:
-		ta, ok := g.X.(*ast.TypeAssertExpr)
-		return ok && ta.Type == nil
-	case *ast.AssignStmt:
-		if g.Tok != token.DEFINE || len(g.Rhs) != 1 {
+	match s {
+		*ast.ExprStmt(g) => {
+			ta, ok := g.X.(*ast.TypeAssertExpr)
+			return ok && ta.Type == nil
+		}
+		*ast.AssignStmt(g) => {
+			if g.Tok != token.DEFINE || len(g.Rhs) != 1 {
+				return false
+			}
+			ta, ok := g.Rhs[0].(*ast.TypeAssertExpr)
+			return ok && ta.Type == nil
+		}
+		_ => {
 			return false
 		}
-		ta, ok := g.Rhs[0].(*ast.TypeAssertExpr)
-		return ok && ta.Type == nil
 	}
-	return false
 }
 
 // parseCaseBody parses the braced "{ case … }" body shared by ordinary and type
@@ -1271,12 +1275,18 @@ func (p *parser) parsePostfix(x ast.Expr) ast.Expr {
 // compositeOK reports whether x is a type-name form that may precede a composite
 // literal body.
 func compositeOK(x ast.Expr) bool {
-	switch x.(type) {
-	case *ast.Ident, *ast.SelectorExpr, *ast.IndexExpr, *ast.IndexListExpr,
-		*ast.ArrayType, *ast.MapType, *ast.StructType:
-		return true
+	// match takes one type pattern per arm, so the grouped type-name forms that may
+	// precede a composite-literal body are listed as separate arms.
+	match x {
+		*ast.Ident => { return true }
+		*ast.SelectorExpr => { return true }
+		*ast.IndexExpr => { return true }
+		*ast.IndexListExpr => { return true }
+		*ast.ArrayType => { return true }
+		*ast.MapType => { return true }
+		*ast.StructType => { return true }
+		_ => { return false }
 	}
-	return false
 }
 
 // parseCallSuffix parses a call argument list applied to fun. A list containing

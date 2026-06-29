@@ -5682,3 +5682,48 @@
     CAP-3c (cross-pkg match) + CAP-3d (nested hierarchy) cover every capability the AST seal
     needs.
 ---
+
+## 2026-06-29T23:59:59Z - SEAM-004
+- Sealed the AST: selfhost/ast Node/Expr/Stmt/Decl/Spec are now `sealed interface`s
+  (Node carries Pos()/End(); Expr/Stmt/Decl/Spec each `{ Node }`). Every concrete node
+  type declares `implements <Category>` (CAP-3d cascade emits both isCat()+isNode());
+  Node-only support types (Field, FieldList, File, DocComment, Variant, PayloadField,
+  MatchArm, ImplementsClause) declare `implements Node`. Old marker methods deleted.
+- Converted ~25 type-switches over a single sealed AST interface to goal `match` with
+  exhaustiveness across selfhost/sema (check, resolve, question, fields, mustuse,
+  assert), selfhost/backend (lower, emit), selfhost/parser (parser, goal_construct).
+- KEPT PLAIN (documented in DECISIONS.md + inline): ast/walk.goal Walk (60-arm, grouped
+  multi-type + no-op clauses; AC-permitted exclusion); backend/emit.goal armBody (cases
+  over SIBLING interfaces ast.Stmt/ast.Expr, not variants of one); sema/foreign.goal ×3
+  (over go/ast stdlib, unsealable). go/ast-mirror oracle RESOLVED by retaining the
+  mirror unchanged — internal/ast tests reference no marker methods, so they pass
+  against both open internal/ast and the sealed selfhost transpile.
+- PREREQUISITE BUG FIXED (was a ~50%/run flake the real nested AST exposed):
+  sema.sealedInterfaceOf resolved a sealed match's interface by first-map-hit over one
+  arm type, nondeterministic when a type is in several sealed sets via the cascade
+  (every *ast.Expr is also under ast.Node). Now resolves to the MOST SPECIFIC sealed
+  interface (smallest implementor set, ties by name) containing ALL covered arm types.
+  Mirrored internal/sema/check.go + selfhost/sema/check.goal. Call site passes `covered`.
+- Files: selfhost/ast/{ast,goal_decl,goal_expr,goal_stmt,walk}.goal,
+  selfhost/sema/{check,resolve,question,fields,mustuse,assert}.goal,
+  selfhost/backend/{lower,emit}.goal, selfhost/parser/{parser,goal_construct}.goal,
+  internal/sema/check.go, DECISIONS.md, prd.json (passes via orchestrator), progress.txt.
+- Gates: task check, task build, task fixpoint (FIXPOINT OK) all green; full go test ./...
+  run twice clean; corpus behavioral + interp tiers unchanged; no golden regen needed
+  (goldens test the internal/ Go compiler, not selfhost/).
+- Learnings for future iterations:
+  - A plain type-switch over a sealed interface is NOT rejected by sema, so the seal and
+    the switch->match conversions can land incrementally; every committed state still
+    built. (The §9 rule is enforced only against `match` exhaustiveness, not switches.)
+  - sealed match arm lowering only ALIASES a USED binding to the type-switch guard (no
+    `b := v.(*T)` is emitted), so an unused arm binding never causes declared-and-not-used
+    — and a no-binding type pattern (`*RestPattern =>`) is valid.
+  - A value-returning type-switch becomes a STATEMENT-position match with `return` inside
+    each arm block (avoids value-position match constraints). A `case nil:` is hoisted to
+    an `if x == nil` guard before the match (no nil type pattern exists).
+  - A switch over SIBLING category interfaces (`case ast.Stmt:`/`case ast.Expr:`) cannot
+    be a `match` (match patterns are concrete *T) — keep it a plain type-switch.
+  - Nested sealed hierarchies make a type belong to multiple sealed sets; any
+    arm-type->interface resolver MUST disambiguate by the covered set (smallest superset),
+    or it is nondeterministic under map iteration.
+---

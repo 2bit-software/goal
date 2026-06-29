@@ -109,20 +109,23 @@ func checkOneMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 	covered := map[string]bool{}
 	hasRest := false
 	for _, arm := range m.Arms {
-		switch p := arm.Pattern.(type) {
-		case *ast.RestPattern:
-			hasRest = true
-		case *ast.VariantPattern:
-			qual := patternEnumName(p)
-			if qual == "" || p.Variant == nil {
-				continue // a pattern this check cannot read — ignore the arm
+		match arm.Pattern {
+			*ast.RestPattern => {
+				hasRest = true
 			}
-			if enumName == "" {
-				enumName = qual
+			*ast.VariantPattern(p) => {
+				qual := patternEnumName(p)
+				if qual == "" || p.Variant == nil {
+					continue // a pattern this check cannot read — ignore the arm
+				}
+				if enumName == "" {
+					enumName = qual
+				}
+				if qual == enumName {
+					covered[p.Variant.Name] = true
+				}
 			}
-			if qual == enumName {
-				covered[p.Variant.Name] = true
-			}
+			_ => {}
 		}
 	}
 
@@ -186,25 +189,28 @@ func checkOneSealedMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 	hasRest := false
 	firstType := ""
 	for _, arm := range m.Arms {
-		switch p := arm.Pattern.(type) {
-		case *ast.RestPattern:
-			hasRest = true
-		case *ast.TypePattern:
-			name := typeString(p.Type)
-			if name == "" {
-				continue
+		match arm.Pattern {
+			*ast.RestPattern => {
+				hasRest = true
 			}
-			if firstType == "" {
-				firstType = name
+			*ast.TypePattern(p) => {
+				name := typeString(p.Type)
+				if name == "" {
+					continue
+				}
+				if firstType == "" {
+					firstType = name
+				}
+				covered[name] = true
 			}
-			covered[name] = true
+			_ => {}
 		}
 	}
 	if firstType == "" {
 		return nil
 	}
 
-	iface := sealedInterfaceOf(info, firstType)
+	iface := sealedInterfaceOf(info, covered)
 	if iface == "" {
 		return []Diagnostic{{
 			Pos:      m.Match,
@@ -235,25 +241,50 @@ func checkOneSealedMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 	}}
 }
 
-// sealedInterfaceOf returns the sealed interface that registers concrete type
-// `impl` (e.g. "*Ident") as an implementor, or "" when no same-package sealed
-// interface does. Only interfaces in Sealed are considered, so an ordinary
-// interface's `implements` relation never masquerades as a sealed match target.
-func sealedInterfaceOf(info *Info, impl string) string {
+// sealedInterfaceOf returns the MOST SPECIFIC sealed interface whose implementor
+// set contains every covered concrete type, or "" when none does. "Most specific"
+// means smallest implementor set (ties broken lexicographically by name). Only
+// interfaces in Sealed are considered, so an ordinary interface's `implements`
+// relation never masquerades as a sealed match target.
+//
+// Under a NESTED sealed hierarchy (SEAM-CAP-3d) a single concrete type belongs to
+// several sealed sets via the embedding cascade (e.g. `*Ident` is registered under
+// both Expr and the embedded Node). Resolving from one arm type alone would then be
+// ambiguous and, because SealedImpls is a map, nondeterministic — a match over the
+// embedding interface (Expr) could intermittently be checked against the embedded
+// super-interface (Node) and falsely flagged non-exhaustive. Choosing the smallest
+// superset of the covered arm types resolves to the narrowest level the match
+// actually targets, deterministically.
+func sealedInterfaceOf(info *Info, covered map[string]bool) string {
 	if info == nil || info.SealedImpls == nil {
 		return ""
 	}
+	best := ""
+	bestSize := 0
 	for iface, impls := range info.SealedImpls {
 		if !info.Sealed[iface] {
 			continue
 		}
+		set := map[string]bool{}
 		for _, t := range impls {
-			if t == impl {
-				return iface
+			set[t] = true
+		}
+		containsAll := true
+		for c := range covered {
+			if !set[c] {
+				containsAll = false
+				break
 			}
 		}
+		if !containsAll {
+			continue
+		}
+		if best == "" || len(impls) < bestSize || (len(impls) == bestSize && iface < best) {
+			best = iface
+			bestSize = len(impls)
+		}
 	}
-	return ""
+	return best
 }
 
 // missingImplementors returns the registered implementors not in the covered set,
@@ -314,17 +345,20 @@ func patternEnumName(p *ast.VariantPattern) string {
 // exprName renders an *Ident / *SelectorExpr reference as a dotted name string;
 // anything else yields "".
 func exprName(e ast.Expr) string {
-	switch x := e.(type) {
-	case *ast.Ident:
-		return x.Name
-	case *ast.SelectorExpr:
-		base := exprName(x.X)
-		if base == "" || x.Sel == nil {
+	match e {
+		*ast.Ident(x) => {
+			return x.Name
+		}
+		*ast.SelectorExpr(x) => {
+			base := exprName(x.X)
+			if base == "" || x.Sel == nil {
+				return ""
+			}
+			return base + "." + x.Sel.Name
+		}
+		_ => {
 			return ""
 		}
-		return base + "." + x.Sel.Name
-	default:
-		return ""
 	}
 }
 

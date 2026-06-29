@@ -29,7 +29,7 @@ enum FuncMod {
 // EnumDecl is a goal enum declaration: `enum Name { Variants }`. It is a closed
 // sum type whose Variants are the only inhabitants, which makes match over it
 // exhaustively checkable.
-type EnumDecl struct {
+type EnumDecl struct implements Decl {
 	Enum     token.Pos  // position of the "enum" keyword
 	Name     *Ident     // enum type name
 	Lbrace   token.Pos  // position of "{"
@@ -41,12 +41,11 @@ func (d *EnumDecl) Pos() token.Pos { return d.Enum }
 func (d *EnumDecl) End() token.Pos {
 	return token.Pos{Offset: d.Rbrace.Offset + 1, Line: d.Rbrace.Line, Col: d.Rbrace.Col + 1}
 }
-func (*EnumDecl) declNode() {}
 
 // Variant is one variant of an EnumDecl: a bare tag (`Admit`) or a tag carrying a
 // payload (`Reject { reason: Rejection }`). Payload is nil for a data-less
 // variant; a non-nil Payload (with Lbrace/Rbrace set) marks a payload variant.
-type Variant struct {
+type Variant struct implements Node {
 	Name    *Ident          // variant tag name
 	Lbrace  token.Pos       // position of "{"; zero for a data-less variant
 	Payload []*PayloadField // payload fields; nil for a data-less variant
@@ -70,7 +69,7 @@ func (v *Variant) End() token.Pos {
 }
 
 // PayloadField is one `name: Type` field inside a Variant payload.
-type PayloadField struct {
+type PayloadField struct implements Node {
 	Name *Ident // field name
 	Type Expr   // field type
 }
@@ -98,7 +97,7 @@ func (f *PayloadField) End() token.Pos {
 // Only same-package types declaring `implements Name` may satisfy it, so its set
 // of implementors is closed (and match over it exhaustively checkable). The method
 // set is often empty (`{}`).
-type SealedInterfaceDecl struct {
+type SealedInterfaceDecl struct implements Decl {
 	Sealed    token.Pos  // position of the "sealed" keyword
 	Interface token.Pos  // position of the "interface" keyword
 	Name      *Ident     // interface name
@@ -115,13 +114,12 @@ func (d *SealedInterfaceDecl) End() token.Pos {
 	}
 	return d.Interface
 }
-func (*SealedInterfaceDecl) declNode() {}
 
 // ImplementsClause is the `implements Iface` clause on a struct type declaration
 // (`type Circle struct implements Shape { ... }`). Type is the named interface the
 // struct is asserted to implement — an *Ident (Shape) or a *SelectorExpr
 // (io.Writer). It attaches to a StructType via StructType.Implements.
-type ImplementsClause struct {
+type ImplementsClause struct implements Node {
 	Implements token.Pos // position of the "implements" keyword
 	Type       Expr      // the asserted interface type
 }

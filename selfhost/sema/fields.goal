@@ -38,11 +38,14 @@ import (
 func CheckFields(file *ast.File, info *Info) []Diagnostic {
 	var diags []Diagnostic
 	ast.Walk(visitorFunc(func(n ast.Node) bool {
-		switch x := n.(type) {
-		case *ast.CompositeLit:
-			diags = append(diags, checkStructLit(x, info)...)
-		case *ast.VariantLit:
-			diags = append(diags, checkVariantLit(x, info)...)
+		match n {
+			*ast.CompositeLit(x) => {
+				diags = append(diags, checkStructLit(x, info)...)
+			}
+			*ast.VariantLit(x) => {
+				diags = append(diags, checkVariantLit(x, info)...)
+			}
+			_ => {}
 		}
 		return true
 	}), file)

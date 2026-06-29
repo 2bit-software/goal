@@ -3291,3 +3291,76 @@ cascaded `*Neg` are each `non-exhaustive-match` Errors).
 
 Gates: `task check`, `task build`, `task fixpoint` (FIXPOINT OK) all green; corpus
 behavioral tier unchanged (additive tests only).
+
+## SEAM-004 — seal ast.Node/Expr/Stmt/Decl/Spec + convert AST type-switches to match
+- **Kind:** seam (reverses the US-007 AST-seal refusal and the Walk refusal)
+
+The AST category interfaces in `selfhost/ast` are now sealed:
+
+    sealed interface Node { Pos() token.Pos; End() token.Pos }
+    sealed interface Decl { Node }   // and Stmt / Expr / Spec, each embedding Node
+
+Every concrete node type declares `implements <Category>` (e.g. `type Ident struct
+implements Expr { … }`); the SEAM-CAP-3d embedding cascade emits BOTH the category
+marker (`isExpr()`) and the embedded `isNode()` from that single clause. The
+Node-only support types (Field, FieldList, File, DocComment, Variant, PayloadField,
+MatchArm, ImplementsClause) declare `implements Node` directly. The old unexported
+marker methods (declNode/stmtNode/exprNode/specNode) are deleted — the seal
+generates the markers.
+
+**Type-switches converted to `match`.** Every type-switch over a single sealed AST
+interface (scrutinee Node/Expr/Stmt/Decl/Spec) is now a goal `match` with type
+patterns and exhaustiveness: in `selfhost/sema` (check, resolve, question, fields,
+mustuse, assert), `selfhost/backend` (lower, emit), and `selfhost/parser` (parser,
+goal_construct). Partial switches carry a `_` rest-arm (the §8.2 opt-out);
+value-returning switches stay statement-position matches with `return` inside arm
+blocks; a `case nil:` is hoisted to an `if x == nil` guard before the match (a
+sealed match dispatches on concrete `*T`, so the nil-interface case has no pattern).
+
+**Three switches deliberately kept as plain type-switches** (recorded here so the
+non-conversion is a decision, not an oversight):
+1. `selfhost/ast/walk.goal` Walk — the AC permits a justified exclusion. It is the
+   one switch enumerating the ENTIRE Node implementor set and uses two Go
+   type-switch features `match` lacks: grouped multi-type clauses
+   (`case *Ident, *BasicLit:`) and no-op clauses. Expanding to ~60 single-type arms
+   (several empty) is strictly less readable with no idiom gain; the visitor is
+   exhaustive by construction.
+2. `selfhost/backend/emit.goal` armBody — its cases discriminate across the SIBLING
+   sealed interfaces `ast.Stmt` and `ast.Expr` (plus a nil arm): one value tested
+   against two DIFFERENT sealed-category interfaces, not against the concrete `*T`
+   variants of ONE. `match` lowers type patterns as concrete `case *T:` labels and
+   cannot express interface-typed `case ast.Stmt:` clauses.
+3. `selfhost/sema/foreign.goal` ×3 — these switch over `go/ast` (Go stdlib) nodes
+   read from imported `.go` packages. go/ast's interfaces are not goal-sealed and
+   are unsealable from here, so they stay plain Go type-switches.
+
+**The US-003 go/ast-mirror oracle is RESOLVED by retaining the mirror unchanged.**
+`selfhost/ast` was modeled byte-for-byte on `go/ast`, with the ported `internal/ast`
+unit tests as the oracle. Sealing changes the EMITTED Go shape (markers move from
+`exprNode()` to `isExpr()`/`isNode()`), but the public API the mirror tests exercise
+— struct fields, `Pos()`/`End()`, node construction, and assignability to the
+category interfaces — is unchanged. The port-gated `internal/ast/ast_test.go`
+references no marker method (verified), so it compiles and passes against BOTH the
+open `internal/ast` (the live Go compiler's own AST, left open) and the sealed
+`selfhost/ast` transpile. No mirror test was changed or deleted; the seal simply
+does not disturb the behavior the oracle pins. `internal/ast` stays open Go because
+it is the bootstrap compiler's AST and is not in the fixpoint diff (same precedent
+as SEAM-002 keeping internal/ast iota).
+
+**A prerequisite nondeterminism bug was fixed** (required for a reliably-green
+gate): `sema.sealedInterfaceOf` resolved a sealed match's interface from one arm's
+concrete type by iterating the `SealedImpls` map and returning the first hit. Under
+the now-real nested AST hierarchy a concrete type belongs to several sealed sets via
+the cascade (every `*ast.Expr` is also registered under `ast.Node`), so map
+iteration order made resolution nondeterministic — an exhaustive `match` over the
+embedding interface could intermittently be checked against the embedded
+super-interface and falsely flagged non-exhaustive (a ~50%-per-run flake in
+`TestNestedMatchExhaustiveBothLevels`). The fix resolves to the MOST SPECIFIC sealed
+interface (smallest implementor set, ties broken by name) whose set contains every
+covered arm type — deterministic and semantically the narrowest level the match
+targets. Mirrored line-for-line in `internal/sema/check.go` + `selfhost/sema/check.goal`.
+
+Gates: `task check`, `task build`, `task fixpoint` (FIXPOINT OK) all green; corpus
+behavioral + interp tiers unchanged. Equivalence re-proven under the relaxed seam
+gate by fixpoint self-consistency + corpus behavioral tier (no golden regen was
+needed — the goldens test the unchanged internal/ Go compiler, not selfhost/).

@@ -210,7 +210,7 @@ func checkOneSealedMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 		return nil
 	}
 
-	iface := sealedInterfaceOf(info, firstType)
+	iface := sealedInterfaceOf(info, covered)
 	if iface == "" {
 		return []Diagnostic{{
 			Pos:      m.Match,
@@ -241,25 +241,50 @@ func checkOneSealedMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 	}}
 }
 
-// sealedInterfaceOf returns the sealed interface that registers concrete type
-// `impl` (e.g. "*Ident") as an implementor, or "" when no same-package sealed
-// interface does. Only interfaces in Sealed are considered, so an ordinary
-// interface's `implements` relation never masquerades as a sealed match target.
-func sealedInterfaceOf(info *Info, impl string) string {
+// sealedInterfaceOf returns the MOST SPECIFIC sealed interface whose implementor
+// set contains every covered concrete type, or "" when none does. "Most specific"
+// means smallest implementor set (ties broken lexicographically by name). Only
+// interfaces in Sealed are considered, so an ordinary interface's `implements`
+// relation never masquerades as a sealed match target.
+//
+// Under a NESTED sealed hierarchy (SEAM-CAP-3d) a single concrete type belongs to
+// several sealed sets via the embedding cascade (e.g. `*Ident` is registered under
+// both Expr and the embedded Node). Resolving from one arm type alone would then be
+// ambiguous and, because SealedImpls is a map, nondeterministic — a match over the
+// embedding interface (Expr) could intermittently be checked against the embedded
+// super-interface (Node) and falsely flagged non-exhaustive. Choosing the smallest
+// superset of the covered arm types resolves to the narrowest level the match
+// actually targets, deterministically.
+func sealedInterfaceOf(info *Info, covered map[string]bool) string {
 	if info == nil || info.SealedImpls == nil {
 		return ""
 	}
+	best := ""
+	bestSize := 0
 	for iface, impls := range info.SealedImpls {
 		if !info.Sealed[iface] {
 			continue
 		}
+		set := map[string]bool{}
 		for _, t := range impls {
-			if t == impl {
-				return iface
+			set[t] = true
+		}
+		containsAll := true
+		for c := range covered {
+			if !set[c] {
+				containsAll = false
+				break
 			}
 		}
+		if !containsAll {
+			continue
+		}
+		if best == "" || len(impls) < bestSize || (len(impls) == bestSize && iface < best) {
+			best = iface
+			bestSize = len(impls)
+		}
 	}
-	return ""
+	return best
 }
 
 // missingImplementors returns the registered implementors not in the covered set,

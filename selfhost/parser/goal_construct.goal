@@ -37,14 +37,17 @@ func (p *parser) parseCallArg() ast.Expr {
 // *ast.Ident or, when further qualified, an *ast.SelectorExpr).
 func (p *parser) makeVariantLit(fun ast.Expr, lparen token.Pos, args []ast.Expr, rparen token.Pos) *ast.VariantLit {
 	vl := &ast.VariantLit{Lparen: lparen, Args: args, Rparen: rparen}
-	switch f := fun.(type) {
-	case *ast.SelectorExpr:
-		vl.Enum = f.X
-		vl.Variant = f.Sel
-	case *ast.Ident:
-		vl.Variant = f
-	default:
-		p.errorf(fun.Pos(), "invalid variant construction target %T", fun)
+	match fun {
+		*ast.SelectorExpr(f) => {
+			vl.Enum = f.X
+			vl.Variant = f.Sel
+		}
+		*ast.Ident(f) => {
+			vl.Variant = f
+		}
+		_ => {
+			p.errorf(fun.Pos(), "invalid variant construction target %T", fun)
+		}
 	}
 	return vl
 }

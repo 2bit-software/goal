@@ -79,22 +79,27 @@ func Resolve(f *ast.File) *Info {
 		return info
 	}
 	for _, d := range f.Decls {
-		switch d := d.(type) {
-		case *ast.EnumDecl:
-			info.resolveEnum(d)
-		case *ast.SealedInterfaceDecl:
-			if d.Name != nil {
-				info.Sealed[d.Name.Name] = true
-				// A sealed interface's methods are a real method set too, so a
-				// `recv.Method()?` on a sealed-interface-typed receiver resolves.
-				info.resolveInterfaceMethods(d.Name.Name, d.Methods)
+		match d {
+			*ast.EnumDecl(d) => {
+				info.resolveEnum(d)
 			}
-		case *ast.GenDecl:
-			if d.Tok == token.TYPE {
-				info.resolveTypeDecl(d)
+			*ast.SealedInterfaceDecl(d) => {
+				if d.Name != nil {
+					info.Sealed[d.Name.Name] = true
+					// A sealed interface's methods are a real method set too, so a
+					// `recv.Method()?` on a sealed-interface-typed receiver resolves.
+					info.resolveInterfaceMethods(d.Name.Name, d.Methods)
+				}
 			}
-		case *ast.FuncDecl:
-			info.resolveFunc(d)
+			*ast.GenDecl(d) => {
+				if d.Tok == token.TYPE {
+					info.resolveTypeDecl(d)
+				}
+			}
+			*ast.FuncDecl(d) => {
+				info.resolveFunc(d)
+			}
+			_ => {}
 		}
 	}
 	info.cascadeSealedImpls()
@@ -211,23 +216,26 @@ func (info *Info) resolveTypeDecl(d *ast.GenDecl) {
 		if !ok || ts.Name == nil {
 			continue
 		}
-		switch t := ts.Type.(type) {
-		case *ast.StructType:
-			if t.Fields != nil {
-				info.Structs[ts.Name.Name] = structFields(t.Fields)
-			}
-			// `type T struct implements I { … }` registers T as an implementor of I,
-			// building the sealed-interface implementor registry (consulted for sealed
-			// I; inert for ordinary I). The pointer form `*T` is the value a sealed
-			// `match`/type-switch dispatches on, so store it as "*T".
-			if t.Implements != nil {
-				iface := exprName(t.Implements.Type)
-				if iface != "" {
-					info.addImplementor(iface, "*"+ts.Name.Name)
+		match ts.Type {
+			*ast.StructType(t) => {
+				if t.Fields != nil {
+					info.Structs[ts.Name.Name] = structFields(t.Fields)
+				}
+				// `type T struct implements I { … }` registers T as an implementor of I,
+				// building the sealed-interface implementor registry (consulted for sealed
+				// I; inert for ordinary I). The pointer form `*T` is the value a sealed
+				// `match`/type-switch dispatches on, so store it as "*T".
+				if t.Implements != nil {
+					iface := exprName(t.Implements.Type)
+					if iface != "" {
+						info.addImplementor(iface, "*"+ts.Name.Name)
+					}
 				}
 			}
-		case *ast.InterfaceType:
-			info.resolveInterface(ts.Name.Name, t)
+			*ast.InterfaceType(t) => {
+				info.resolveInterface(ts.Name.Name, t)
+			}
+			_ => {}
 		}
 	}
 }
@@ -417,19 +425,22 @@ func resultGeneric(fl *ast.FieldList) (head string, args []string) {
 	if len(f.Names) != 0 {
 		return "", nil
 	}
-	switch x := f.Type.(type) {
-	case *ast.IndexExpr:
-		if id, ok := x.X.(*ast.Ident); ok {
-			return id.Name, []string{typeString(x.Index)}
-		}
-	case *ast.IndexListExpr:
-		if id, ok := x.X.(*ast.Ident); ok {
-			out := make([]string, 0, len(x.Indices))
-			for _, idx := range x.Indices {
-				out = append(out, typeString(idx))
+	match f.Type {
+		*ast.IndexExpr(x) => {
+			if id, ok := x.X.(*ast.Ident); ok {
+				return id.Name, []string{typeString(x.Index)}
 			}
-			return id.Name, out
 		}
+		*ast.IndexListExpr(x) => {
+			if id, ok := x.X.(*ast.Ident); ok {
+				out := make([]string, 0, len(x.Indices))
+				for _, idx := range x.Indices {
+					out = append(out, typeString(idx))
+				}
+				return id.Name, out
+			}
+		}
+		_ => {}
 	}
 	return "", nil
 }
@@ -527,59 +538,77 @@ func receiverType(fl *ast.FieldList) string {
 // text. It is comma-safe (commas inside a func type or generic argument list stay
 // inside the rendered type), which is the whole point of resolving off the AST.
 func typeString(x ast.Expr) string {
-	switch x := x.(type) {
-	case nil:
+	// A sealed `match` dispatches on concrete *T patterns; the nil-interface case
+	// (an absent type expression) has no type pattern, so handle it before the match.
+	if x == nil {
 		return ""
-	case *ast.Ident:
-		return x.Name
-	case *ast.BasicLit:
-		return x.Value
-	case *ast.SelectorExpr:
-		return typeString(x.X) + "." + selName(x.Sel)
-	case *ast.StarExpr:
-		return "*" + typeString(x.X)
-	case *ast.ParenExpr:
-		return "(" + typeString(x.X) + ")"
-	case *ast.ArrayType:
-		if x.Len != nil {
-			return "[" + typeString(x.Len) + "]" + typeString(x.Elt)
+	}
+	match x {
+		*ast.Ident(x) => {
+			return x.Name
 		}
-		return "[]" + typeString(x.Elt)
-	case *ast.MapType:
-		return "map[" + typeString(x.Key) + "]" + typeString(x.Value)
-	case *ast.IndexExpr:
-		return typeString(x.X) + "[" + typeString(x.Index) + "]"
-	case *ast.IndexListExpr:
-		parts := make([]string, 0, len(x.Indices))
-		for _, idx := range x.Indices {
-			parts = append(parts, typeString(idx))
+		*ast.BasicLit(x) => {
+			return x.Value
 		}
-		return typeString(x.X) + "[" + strings.Join(parts, ", ") + "]"
-	case *ast.Ellipsis:
-		if x.Elt != nil {
-			return "..." + typeString(x.Elt)
+		*ast.SelectorExpr(x) => {
+			return typeString(x.X) + "." + selName(x.Sel)
 		}
-		return "..."
-	case *ast.ChanType:
-		return match x.Dir {
-			ast.ChanDir.RecvOnly => "<-chan " + typeString(x.Value)
-			ast.ChanDir.SendOnly => "chan<- " + typeString(x.Value)
-			ast.ChanDir.SendRecv => "chan " + typeString(x.Value)
+		*ast.StarExpr(x) => {
+			return "*" + typeString(x.X)
 		}
-	case *ast.FuncType:
-		return "func" + funcTypeString(x)
-	case *ast.InterfaceType:
-		if x.Methods == nil || len(x.Methods.List) == 0 {
-			return "interface{}"
+		*ast.ParenExpr(x) => {
+			return "(" + typeString(x.X) + ")"
 		}
-		return "interface{ ... }"
-	case *ast.StructType:
-		if x.Fields == nil || len(x.Fields.List) == 0 {
-			return "struct{}"
+		*ast.ArrayType(x) => {
+			if x.Len != nil {
+				return "[" + typeString(x.Len) + "]" + typeString(x.Elt)
+			}
+			return "[]" + typeString(x.Elt)
 		}
-		return "struct{ ... }"
-	default:
-		return ""
+		*ast.MapType(x) => {
+			return "map[" + typeString(x.Key) + "]" + typeString(x.Value)
+		}
+		*ast.IndexExpr(x) => {
+			return typeString(x.X) + "[" + typeString(x.Index) + "]"
+		}
+		*ast.IndexListExpr(x) => {
+			parts := make([]string, 0, len(x.Indices))
+			for _, idx := range x.Indices {
+				parts = append(parts, typeString(idx))
+			}
+			return typeString(x.X) + "[" + strings.Join(parts, ", ") + "]"
+		}
+		*ast.Ellipsis(x) => {
+			if x.Elt != nil {
+				return "..." + typeString(x.Elt)
+			}
+			return "..."
+		}
+		*ast.ChanType(x) => {
+			return match x.Dir {
+				ast.ChanDir.RecvOnly => "<-chan " + typeString(x.Value)
+				ast.ChanDir.SendOnly => "chan<- " + typeString(x.Value)
+				ast.ChanDir.SendRecv => "chan " + typeString(x.Value)
+			}
+		}
+		*ast.FuncType(x) => {
+			return "func" + funcTypeString(x)
+		}
+		*ast.InterfaceType(x) => {
+			if x.Methods == nil || len(x.Methods.List) == 0 {
+				return "interface{}"
+			}
+			return "interface{ ... }"
+		}
+		*ast.StructType(x) => {
+			if x.Fields == nil || len(x.Fields.List) == 0 {
+				return "struct{}"
+			}
+			return "struct{ ... }"
+		}
+		_ => {
+			return ""
+		}
 	}
 }
 

@@ -38,15 +38,18 @@ import (
 func CheckMustUse(file *ast.File, info *Info) []Diagnostic {
 	var diags []Diagnostic
 	ast.Walk(visitorFunc(func(n ast.Node) bool {
-		switch s := n.(type) {
-		case *ast.ExprStmt:
-			if name, ok := resultCallName(s.X, info); ok {
-				diags = append(diags, droppedResult(s.X.Pos(), name))
+		match n {
+			*ast.ExprStmt(s) => {
+				if name, ok := resultCallName(s.X, info); ok {
+					diags = append(diags, droppedResult(s.X.Pos(), name))
+				}
 			}
-		case *ast.AssignStmt:
-			if d, ok := underscoreDiscard(s, info); ok {
-				diags = append(diags, d)
+			*ast.AssignStmt(s) => {
+				if d, ok := underscoreDiscard(s, info); ok {
+					diags = append(diags, d)
+				}
 			}
+			_ => {}
 		}
 		return true
 	}), file)

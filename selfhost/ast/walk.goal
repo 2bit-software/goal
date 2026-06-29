@@ -15,6 +15,16 @@ type Visitor interface {
 // Every node in the tree is passed to Visit exactly once (the trailing
 // Visit(nil) calls carry a nil node and are not part of that count). New
 // goal-specific node types add cases to the switch below.
+//
+// SEAM-004: Node/Expr/Stmt/Decl/Spec are now sealed, but this dispatch stays a
+// plain type-switch (the AC permits a justified exclusion). It is the one switch
+// that enumerates the ENTIRE Node implementor set, and it leans on two Go
+// type-switch features a `match` arm does not offer: grouped multi-type clauses
+// (`case *Ident, *BasicLit:`) and no-op clauses with a documenting comment but no
+// body. Expanding those into ~60 single-type `match` arms (several intentionally
+// empty) would be strictly less readable than the structural traversal here, with
+// no idiom gain — the visitor is exhaustive by construction already. Converting it
+// is the rare case where `match` is the worse fit.
 func Walk(v Visitor, node Node) {
 	if node == nil {
 		return

@@ -200,21 +200,26 @@ func isImportDecl(d ast.Decl) bool {
 }
 
 func (e *emitter) decl(d ast.Decl) {
-	switch d := d.(type) {
-	case *ast.GenDecl:
-		e.genDecl(d)
-		// A struct `implements` clause lowers to a separate marker/assertion decl
-		// emitted right after the type declaration (the clause itself is dropped
-		// from the struct by structType).
-		e.implementsMarkers(d)
-	case *ast.FuncDecl:
-		e.funcDecl(d)
-	case *ast.EnumDecl:
-		e.enumDecl(d)
-	case *ast.SealedInterfaceDecl:
-		e.sealedInterfaceDecl(d)
-	default:
-		e.fail("unsupported declaration %T", d)
+	match d {
+		*ast.GenDecl(d) => {
+			e.genDecl(d)
+			// A struct `implements` clause lowers to a separate marker/assertion decl
+			// emitted right after the type declaration (the clause itself is dropped
+			// from the struct by structType).
+			e.implementsMarkers(d)
+		}
+		*ast.FuncDecl(d) => {
+			e.funcDecl(d)
+		}
+		*ast.EnumDecl(d) => {
+			e.enumDecl(d)
+		}
+		*ast.SealedInterfaceDecl(d) => {
+			e.sealedInterfaceDecl(d)
+		}
+		_ => {
+			e.fail("unsupported declaration %T", d)
+		}
 	}
 }
 
@@ -303,23 +308,27 @@ func (e *emitter) implementsMarker(typeName string, clause *ast.ImplementsClause
 // (`Shape`), a *SelectorExpr (`io.Writer`), or a pointer to one — to its text, or
 // "" if the shape is unsupported.
 func typeExprName(x ast.Expr) string {
-	switch x := x.(type) {
-	case *ast.Ident:
-		return x.Name
-	case *ast.SelectorExpr:
-		base := typeExprName(x.X)
-		if base == "" || x.Sel == nil {
+	match x {
+		*ast.Ident(x) => {
+			return x.Name
+		}
+		*ast.SelectorExpr(x) => {
+			base := typeExprName(x.X)
+			if base == "" || x.Sel == nil {
+				return ""
+			}
+			return base + "." + x.Sel.Name
+		}
+		*ast.StarExpr(x) => {
+			inner := typeExprName(x.X)
+			if inner == "" {
+				return ""
+			}
+			return "*" + inner
+		}
+		_ => {
 			return ""
 		}
-		return base + "." + x.Sel.Name
-	case *ast.StarExpr:
-		inner := typeExprName(x.X)
-		if inner == "" {
-			return ""
-		}
-		return "*" + inner
-	default:
-		return ""
 	}
 }
 
@@ -340,39 +349,43 @@ func (e *emitter) genDecl(d *ast.GenDecl) {
 }
 
 func (e *emitter) spec(s ast.Spec) {
-	switch s := s.(type) {
-	case *ast.ImportSpec:
-		if s.Name != nil {
-			e.p(s.Name.Name)
-			e.p(" ")
+	match s {
+		*ast.ImportSpec(s) => {
+			if s.Name != nil {
+				e.p(s.Name.Name)
+				e.p(" ")
+			}
+			if s.Path != nil {
+				e.p(s.Path.Value)
+			}
 		}
-		if s.Path != nil {
-			e.p(s.Path.Value)
+		*ast.ValueSpec(s) => {
+			e.identList(s.Names)
+			if s.Type != nil {
+				e.p(" ")
+				e.expr(s.Type)
+			}
+			if len(s.Values) > 0 {
+				e.p(" = ")
+				e.exprList(s.Values)
+			}
 		}
-	case *ast.ValueSpec:
-		e.identList(s.Names)
-		if s.Type != nil {
+		*ast.TypeSpec(s) => {
+			if s.Name != nil {
+				e.p(s.Name.Name)
+			}
+			if s.TypeParams != nil {
+				e.fieldList(s.TypeParams, "[", "]")
+			}
 			e.p(" ")
+			if s.Assign != (token.Pos{}) {
+				e.p("= ")
+			}
 			e.expr(s.Type)
 		}
-		if len(s.Values) > 0 {
-			e.p(" = ")
-			e.exprList(s.Values)
+		_ => {
+			e.fail("unsupported spec %T", s)
 		}
-	case *ast.TypeSpec:
-		if s.Name != nil {
-			e.p(s.Name.Name)
-		}
-		if s.TypeParams != nil {
-			e.fieldList(s.TypeParams, "[", "]")
-		}
-		e.p(" ")
-		if s.Assign != (token.Pos{}) {
-			e.p("= ")
-		}
-		e.expr(s.Type)
-	default:
-		e.fail("unsupported spec %T", s)
 	}
 }
 
@@ -596,22 +609,27 @@ func (e *emitter) block(b *ast.BlockStmt) {
 }
 
 func (e *emitter) stmt(s ast.Stmt) {
-	switch s := s.(type) {
-	case *ast.BlockStmt:
-		e.block(s)
-	case *ast.ExprStmt:
-		// A statement-position `match` over a Result/Option lowers to an if/else
-		// split (§8.3/§8.4); a bare `expr?` discards the unwrapped value and
-		// propagates only the failure; any other expression statement emits verbatim.
-		switch x := s.X.(type) {
-		case *ast.MatchExpr:
-			e.matchStmt(x)
-		case *ast.UnwrapExpr:
-			e.unwrap("_", x, true)
-		default:
-			e.expr(s.X)
+	match s {
+		*ast.BlockStmt(s) => {
+			e.block(s)
 		}
-	case *ast.AssignStmt:
+		*ast.ExprStmt(s) => {
+			// A statement-position `match` over a Result/Option lowers to an if/else
+			// split (§8.3/§8.4); a bare `expr?` discards the unwrapped value and
+			// propagates only the failure; any other expression statement emits verbatim.
+			match s.X {
+				*ast.MatchExpr(x) => {
+					e.matchStmt(x)
+				}
+				*ast.UnwrapExpr(x) => {
+					e.unwrap("_", x, true)
+				}
+				_ => {
+					e.expr(s.X)
+				}
+			}
+		}
+		*ast.AssignStmt(s) => {
 		// `name := match …` over an enum lowers to a `var name T` declaration (T
 		// inferred from the arm bodies) followed by a value-position type-switch whose
 		// arms assign `name = <body>`. Mirrors the explicitly-typed `var name T = match`
@@ -638,56 +656,74 @@ func (e *emitter) stmt(s ast.Stmt) {
 		e.p(s.Tok.String())
 		e.p(" ")
 		e.exprList(s.Rhs)
-	case *ast.IncDecStmt:
-		e.expr(s.X)
-		e.p(s.Tok.String())
-	case *ast.ReturnStmt:
-		e.returnStmt(s)
-	case *ast.IfStmt:
-		e.ifStmt(s)
-	case *ast.ForStmt:
-		e.forStmt(s)
-	case *ast.RangeStmt:
-		e.rangeStmt(s)
-	case *ast.SwitchStmt:
-		e.switchStmt(s)
-	case *ast.TypeSwitchStmt:
-		e.typeSwitchStmt(s)
-	case *ast.SelectStmt:
-		e.selectStmt(s)
-	case *ast.SendStmt:
-		e.expr(s.Chan)
-		e.p(" <- ")
-		e.expr(s.Value)
-	case *ast.LabeledStmt:
-		e.p(s.Label.Name)
-		e.p(":\n")
-		e.stmt(s.Stmt)
-	case *ast.DeclStmt:
-		// `var name T = match …` over an enum lowers to a `var name T` declaration
-		// followed by a value-position type-switch whose arms assign `name = <body>`.
-		if e.tryVarMatch(s.Decl) {
-			return
 		}
-		e.decl(s.Decl)
-	case *ast.DeferStmt:
-		e.p("defer ")
-		e.expr(s.Call)
-	case *ast.GoStmt:
-		e.p("go ")
-		e.expr(s.Call)
-	case *ast.BranchStmt:
-		e.p(s.Tok.String())
-		if s.Label != nil {
-			e.p(" ")
+		*ast.IncDecStmt(s) => {
+			e.expr(s.X)
+			e.p(s.Tok.String())
+		}
+		*ast.ReturnStmt(s) => {
+			e.returnStmt(s)
+		}
+		*ast.IfStmt(s) => {
+			e.ifStmt(s)
+		}
+		*ast.ForStmt(s) => {
+			e.forStmt(s)
+		}
+		*ast.RangeStmt(s) => {
+			e.rangeStmt(s)
+		}
+		*ast.SwitchStmt(s) => {
+			e.switchStmt(s)
+		}
+		*ast.TypeSwitchStmt(s) => {
+			e.typeSwitchStmt(s)
+		}
+		*ast.SelectStmt(s) => {
+			e.selectStmt(s)
+		}
+		*ast.SendStmt(s) => {
+			e.expr(s.Chan)
+			e.p(" <- ")
+			e.expr(s.Value)
+		}
+		*ast.LabeledStmt(s) => {
 			e.p(s.Label.Name)
+			e.p(":\n")
+			e.stmt(s.Stmt)
 		}
-	case *ast.AssertStmt:
-		e.assertStmt(s)
-	case *ast.EmptyStmt:
-		// nothing
-	default:
-		e.fail("unsupported statement %T", s)
+		*ast.DeclStmt(s) => {
+			// `var name T = match …` over an enum lowers to a `var name T` declaration
+			// followed by a value-position type-switch whose arms assign `name = <body>`.
+			if e.tryVarMatch(s.Decl) {
+				return
+			}
+			e.decl(s.Decl)
+		}
+		*ast.DeferStmt(s) => {
+			e.p("defer ")
+			e.expr(s.Call)
+		}
+		*ast.GoStmt(s) => {
+			e.p("go ")
+			e.expr(s.Call)
+		}
+		*ast.BranchStmt(s) => {
+			e.p(s.Tok.String())
+			if s.Label != nil {
+				e.p(" ")
+				e.p(s.Label.Name)
+			}
+		}
+		*ast.AssertStmt(s) => {
+			e.assertStmt(s)
+		}
+		*ast.EmptyStmt => {
+			// nothing
+		}
+		_ => {
+			e.fail("unsupported statement %T", s)
+		}
 	}
 }
 
@@ -886,103 +922,127 @@ func (e *emitter) expr(x ast.Expr) {
 	if e.tryOptionValue(x) {
 		return
 	}
-	switch x := x.(type) {
-	case *ast.Ident:
-		// A match-arm binding rename (e.g. the Ok payload `cfg` -> a gensym `v`)
-		// applies here; outside a renaming arm, renames is empty.
-		if r, ok := e.renames[x.Name]; ok {
-			e.p(r)
-		} else {
-			e.p(x.Name)
+	match x {
+		*ast.Ident(x) => {
+			// A match-arm binding rename (e.g. the Ok payload `cfg` -> a gensym `v`)
+			// applies here; outside a renaming arm, renames is empty.
+			if r, ok := e.renames[x.Name]; ok {
+				e.p(r)
+			} else {
+				e.p(x.Name)
+			}
 		}
-	case *ast.BasicLit:
-		e.p(x.Value)
-	case *ast.ParenExpr:
-		e.p("(")
-		e.expr(x.X)
-		e.p(")")
-	case *ast.UnaryExpr:
-		e.p(x.Op.String())
-		e.expr(x.X)
-	case *ast.BinaryExpr:
-		e.expr(x.X)
-		e.p(" ")
-		e.p(x.Op.String())
-		e.p(" ")
-		e.expr(x.Y)
-	case *ast.SelectorExpr:
-		e.selectorExpr(x)
-	case *ast.VariantLit:
-		e.variantLit(x)
-	case *ast.StarExpr:
-		e.p("*")
-		e.expr(x.X)
-	case *ast.IndexExpr:
-		e.indexExpr(x)
-	case *ast.IndexListExpr:
-		e.expr(x.X)
-		e.p("[")
-		e.exprList(x.Indices)
-		e.p("]")
-	case *ast.SliceExpr:
-		e.sliceExpr(x)
-	case *ast.CallExpr:
-		e.expr(x.Fun)
-		e.p("(")
-		e.exprList(x.Args)
-		if x.Ellipsis.IsValid() {
-			e.p("...")
+		*ast.BasicLit(x) => {
+			e.p(x.Value)
 		}
-		e.p(")")
-	case *ast.TypeAssertExpr:
-		e.expr(x.X)
-		e.p(".(")
-		if x.Type == nil {
-			e.p("type")
-		} else {
-			e.expr(x.Type)
+		*ast.ParenExpr(x) => {
+			e.p("(")
+			e.expr(x.X)
+			e.p(")")
 		}
-		e.p(")")
-	case *ast.KeyValueExpr:
-		e.expr(x.Key)
-		e.p(": ")
-		e.expr(x.Value)
-	case *ast.CompositeLit:
-		e.compositeLit(x)
-	case *ast.FuncLit:
-		e.p("func")
-		e.funcSig(x.Type)
-		e.p(" ")
-		e.block(x.Body)
-	// Type expressions.
-	case *ast.ArrayType:
-		e.p("[")
-		if x.Len != nil {
-			e.expr(x.Len)
+		*ast.UnaryExpr(x) => {
+			e.p(x.Op.String())
+			e.expr(x.X)
 		}
-		e.p("]")
-		e.expr(x.Elt)
-	case *ast.MapType:
-		e.p("map[")
-		e.expr(x.Key)
-		e.p("]")
-		e.expr(x.Value)
-	case *ast.StructType:
-		e.structType(x)
-	case *ast.InterfaceType:
-		e.interfaceType(x)
-	case *ast.FuncType:
-		e.p("func")
-		e.funcSig(x)
-	case *ast.ChanType:
-		e.chanType(x)
-	case *ast.Ellipsis:
-		e.p("...")
-		if x.Elt != nil {
+		*ast.BinaryExpr(x) => {
+			e.expr(x.X)
+			e.p(" ")
+			e.p(x.Op.String())
+			e.p(" ")
+			e.expr(x.Y)
+		}
+		*ast.SelectorExpr(x) => {
+			e.selectorExpr(x)
+		}
+		*ast.VariantLit(x) => {
+			e.variantLit(x)
+		}
+		*ast.StarExpr(x) => {
+			e.p("*")
+			e.expr(x.X)
+		}
+		*ast.IndexExpr(x) => {
+			e.indexExpr(x)
+		}
+		*ast.IndexListExpr(x) => {
+			e.expr(x.X)
+			e.p("[")
+			e.exprList(x.Indices)
+			e.p("]")
+		}
+		*ast.SliceExpr(x) => {
+			e.sliceExpr(x)
+		}
+		*ast.CallExpr(x) => {
+			e.expr(x.Fun)
+			e.p("(")
+			e.exprList(x.Args)
+			if x.Ellipsis.IsValid() {
+				e.p("...")
+			}
+			e.p(")")
+		}
+		*ast.TypeAssertExpr(x) => {
+			e.expr(x.X)
+			e.p(".(")
+			if x.Type == nil {
+				e.p("type")
+			} else {
+				e.expr(x.Type)
+			}
+			e.p(")")
+		}
+		*ast.KeyValueExpr(x) => {
+			e.expr(x.Key)
+			e.p(": ")
+			e.expr(x.Value)
+		}
+		*ast.CompositeLit(x) => {
+			e.compositeLit(x)
+		}
+		*ast.FuncLit(x) => {
+			e.p("func")
+			e.funcSig(x.Type)
+			e.p(" ")
+			e.block(x.Body)
+		}
+		// Type expressions.
+		*ast.ArrayType(x) => {
+			e.p("[")
+			if x.Len != nil {
+				e.expr(x.Len)
+			}
+			e.p("]")
 			e.expr(x.Elt)
 		}
-	default:
-		e.fail("unsupported expression %T", x)
+		*ast.MapType(x) => {
+			e.p("map[")
+			e.expr(x.Key)
+			e.p("]")
+			e.expr(x.Value)
+		}
+		*ast.StructType(x) => {
+			e.structType(x)
+		}
+		*ast.InterfaceType(x) => {
+			e.interfaceType(x)
+		}
+		*ast.FuncType(x) => {
+			e.p("func")
+			e.funcSig(x)
+		}
+		*ast.ChanType(x) => {
+			e.chanType(x)
+		}
+		*ast.Ellipsis(x) => {
+			e.p("...")
+			if x.Elt != nil {
+				e.expr(x.Elt)
+			}
+		}
+		_ => {
+			e.fail("unsupported expression %T", x)
+		}
 	}
 }
 
@@ -1084,13 +1144,16 @@ func (e *emitter) buildTypeDecls(f *ast.File) map[string]string {
 			if !ok || ts.Name == nil {
 				continue
 			}
-			switch ts.Type.(type) {
-			case *ast.StructType:
-				m[ts.Name.Name] = "struct"
-			case *ast.InterfaceType:
-				m[ts.Name.Name] = "interface"
-			default:
-				m[ts.Name.Name] = e.exprText(ts.Type)
+			match ts.Type {
+				*ast.StructType => {
+					m[ts.Name.Name] = "struct"
+				}
+				*ast.InterfaceType => {
+					m[ts.Name.Name] = "interface"
+				}
+				_ => {
+					m[ts.Name.Name] = e.exprText(ts.Type)
+				}
 			}
 		}
 	}
@@ -1614,27 +1677,32 @@ func (e *emitter) inferMatchType(m *ast.MatchExpr) (string, bool) {
 // VariantLit of a resolved enum) -> the enum's name. Any other body (numeric,
 // identifier, call, compound expression) is not inferable.
 func (e *emitter) armBodyType(body ast.Node) (string, bool) {
-	switch b := body.(type) {
-	case *ast.BasicLit:
-		if b.Kind == token.STRING {
-			return "string", true
+	match body {
+		*ast.BasicLit(b) => {
+			if b.Kind == token.STRING {
+				return "string", true
+			}
 		}
-	case *ast.Ident:
-		if b.Name == "true" || b.Name == "false" {
-			return "bool", true
+		*ast.Ident(b) => {
+			if b.Name == "true" || b.Name == "false" {
+				return "bool", true
+			}
 		}
-	case *ast.SelectorExpr:
-		// A data-less variant reference `Enum.Variant` or `pkg.Enum.Variant`.
-		if key, ok := enumRef(b.X); ok && b.Sel != nil {
-			if en := enumOf(e.info, key); en != nil && en.VSet[b.Sel.Name] {
+		*ast.SelectorExpr(b) => {
+			// A data-less variant reference `Enum.Variant` or `pkg.Enum.Variant`.
+			if key, ok := enumRef(b.X); ok && b.Sel != nil {
+				if en := enumOf(e.info, key); en != nil && en.VSet[b.Sel.Name] {
+					return key, true
+				}
+			}
+		}
+		*ast.VariantLit(b) => {
+			// A payload variant construction `Enum.Variant(field: v)` or `pkg.Enum.Variant(...)`.
+			if key, ok := enumRef(b.Enum); ok && enumOf(e.info, key) != nil {
 				return key, true
 			}
 		}
-	case *ast.VariantLit:
-		// A payload variant construction `Enum.Variant(field: v)` or `pkg.Enum.Variant(...)`.
-		if key, ok := enumRef(b.Enum); ok && enumOf(e.info, key) != nil {
-			return key, true
-		}
+		_ => {}
 	}
 	return "", false
 }
@@ -1921,18 +1989,19 @@ func (e *emitter) calleeSig(x ast.Expr) (sema.FuncSig, bool) {
 	if !ok {
 		return sema.FuncSig{}, false
 	}
-	switch fn := call.Fun.(type) {
-	case *ast.Ident:
-		if e.info == nil || e.info.FuncSignatures == nil {
-			return sema.FuncSig{}, false
+	match call.Fun {
+		*ast.Ident(fn) => {
+			if e.info == nil || e.info.FuncSignatures == nil {
+				return sema.FuncSig{}, false
+			}
+			sig, ok := e.info.FuncSignatures[fn.Name]
+			return sig, ok
 		}
-		sig, ok := e.info.FuncSignatures[fn.Name]
-		return sig, ok
-	case *ast.SelectorExpr:
-		pkg, ok := fn.X.(*ast.Ident)
-		if !ok || fn.Sel == nil {
-			return sema.FuncSig{}, false
-		}
+		*ast.SelectorExpr(fn) => {
+			pkg, ok := fn.X.(*ast.Ident)
+			if !ok || fn.Sel == nil {
+				return sema.FuncSig{}, false
+			}
 		// A `recv.M(...)` whose `recv` is a receiver/parameter resolves through the
 		// receiver's type method set — so a `?` on a method returning a Result (or a
 		// trailing error) sees the real lowered arity. This takes precedence over the
@@ -1949,6 +2018,8 @@ func (e *emitter) calleeSig(x ast.Expr) (sema.FuncSig, bool) {
 			return sema.FuncSig{Mode: sema.Mode.ModeResult, Arity: 1, EndsInError: true}, true
 		}
 		return sema.FuncSig{}, false
+		}
+		_ => {}
 	}
 	return sema.FuncSig{}, false
 }
@@ -2019,17 +2090,22 @@ func (e *emitter) buildRecvTypes(d *ast.FuncDecl) map[string]string {
 // to its head name (`Tree[T]` -> `Tree`). A package-qualified type (`pkg.Type`) and
 // any non-named type (slice, map, func, …) yield "" — their methods are not in-file.
 func recvBaseType(x ast.Expr) string {
-	switch t := x.(type) {
-	case *ast.StarExpr:
-		return recvBaseType(t.X)
-	case *ast.Ident:
-		return t.Name
-	case *ast.IndexExpr:
-		return recvBaseType(t.X)
-	case *ast.IndexListExpr:
-		return recvBaseType(t.X)
-	default:
-		return ""
+	match x {
+		*ast.StarExpr(t) => {
+			return recvBaseType(t.X)
+		}
+		*ast.Ident(t) => {
+			return t.Name
+		}
+		*ast.IndexExpr(t) => {
+			return recvBaseType(t.X)
+		}
+		*ast.IndexListExpr(t) => {
+			return recvBaseType(t.X)
+		}
+		_ => {
+			return ""
+		}
 	}
 }
 
@@ -2409,6 +2485,14 @@ func (e *emitter) armBodyRenamedWrap(body ast.Node, binding, target string, pos 
 
 // armBody emits a match arm body: a statement/block as a statement, or an
 // expression as an expression statement.
+//
+// SEAM-004: this stays a plain type-switch rather than a `match`. Its cases
+// discriminate across the SIBLING sealed interfaces ast.Stmt and ast.Expr (plus a
+// nil arm) — a single value is tested against two different sealed-category
+// interfaces, not against the concrete *T variants of ONE sealed interface. A goal
+// `match` lowers type patterns as concrete `case *T:` labels, so it cannot express
+// `case ast.Stmt:` / `case ast.Expr:` (interface-typed cases); this is genuinely a
+// plain Go type-switch over interface types, kept as such.
 func (e *emitter) armBody(n ast.Node) {
 	switch b := n.(type) {
 	case nil:
