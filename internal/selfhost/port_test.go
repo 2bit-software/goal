@@ -143,3 +143,93 @@ func TestPortedAstPackage(t *testing.T) {
 		t.Fatalf("existing ast tests failed against the transpiled package: %v", err)
 	}
 }
+
+// TestPortedParserPackage validates US-008: the parser package reimplemented as
+// goal source under selfhost/parser transpiles to compiling Go (the US-002 smoke
+// gate, with the in-module token, lexer, and ast imports resolving against the
+// ported packages) AND passes the existing internal/parser tests against the
+// transpiled output (behavioral equivalence — recursive-descent parsing,
+// precedence climbing, and the goal-specific constructs).
+//
+// The behavioral gate runs the self-contained parser_test.go suite. The other
+// parser suites (goal_construct/decl/match/stmt_test.go) read repo-relative
+// ../../features example fixtures via shared helpers, and snapshot_test.go depends
+// on ast.Sexpr (intentionally dropped from the ported ast in US-007) plus
+// repo-relative fixtures — none are self-contained in the harness's throwaway temp
+// module, so they are excluded from this gate. The test's working directory is
+// internal/selfhost, so the goal sources are at ../../selfhost/{token,lexer,ast,parser}
+// and the existing parser tests are at ../parser.
+func TestPortedParserPackage(t *testing.T) {
+	tokenPkgs, err := project.Discover("../../selfhost/token")
+	if err != nil {
+		t.Fatalf("discovering selfhost/token: %v", err)
+	}
+	if len(tokenPkgs) != 1 {
+		t.Fatalf("selfhost/token: got %d packages, want exactly 1", len(tokenPkgs))
+	}
+	tokenPkg := tokenPkgs[0]
+	if tokenPkg.Name != "token" {
+		t.Fatalf("selfhost/token: package name = %q, want \"token\"", tokenPkg.Name)
+	}
+
+	lexerPkgs, err := project.Discover("../../selfhost/lexer")
+	if err != nil {
+		t.Fatalf("discovering selfhost/lexer: %v", err)
+	}
+	if len(lexerPkgs) != 1 {
+		t.Fatalf("selfhost/lexer: got %d packages, want exactly 1", len(lexerPkgs))
+	}
+	lexerPkg := lexerPkgs[0]
+	if lexerPkg.Name != "lexer" {
+		t.Fatalf("selfhost/lexer: package name = %q, want \"lexer\"", lexerPkg.Name)
+	}
+
+	astPkgs, err := project.Discover("../../selfhost/ast")
+	if err != nil {
+		t.Fatalf("discovering selfhost/ast: %v", err)
+	}
+	if len(astPkgs) != 1 {
+		t.Fatalf("selfhost/ast: got %d packages, want exactly 1", len(astPkgs))
+	}
+	astPkg := astPkgs[0]
+	if astPkg.Name != "ast" {
+		t.Fatalf("selfhost/ast: package name = %q, want \"ast\"", astPkg.Name)
+	}
+
+	parserPkgs, err := project.Discover("../../selfhost/parser")
+	if err != nil {
+		t.Fatalf("discovering selfhost/parser: %v", err)
+	}
+	if len(parserPkgs) != 1 {
+		t.Fatalf("selfhost/parser: got %d packages, want exactly 1", len(parserPkgs))
+	}
+	parserPkg := parserPkgs[0]
+	if parserPkg.Name != "parser" {
+		t.Fatalf("selfhost/parser: package name = %q, want \"parser\"", parserPkg.Name)
+	}
+
+	// Criterion 2: transpiles via the US-002 smoke gate and the generated Go
+	// compiles. The layout carries parser plus its token, lexer, and ast
+	// dependencies so the in-module imports resolve.
+	layout := map[string]*project.Package{
+		"internal/token":  tokenPkg,
+		"internal/lexer":  lexerPkg,
+		"internal/ast":    astPkg,
+		"internal/parser": parserPkg,
+	}
+	if err := selfhost.BuildTranspiled(layout); err != nil {
+		t.Fatalf("ported parser failed the transpile-and-build gate: %v", err)
+	}
+
+	// Criterion 3: the existing parser tests pass against the transpiled package,
+	// with the ported token, lexer, and ast packages transpiled in as its
+	// in-module dependencies.
+	deps := map[string]*project.Package{
+		"internal/token": tokenPkg,
+		"internal/lexer": lexerPkg,
+		"internal/ast":   astPkg,
+	}
+	if err := selfhost.BuildAndTest("internal/parser", parserPkg, []string{"../parser/parser_test.go"}, deps); err != nil {
+		t.Fatalf("existing parser tests failed against the transpiled package: %v", err)
+	}
+}

@@ -1,0 +1,101 @@
+// This file extends the parser with goal's closed-type declaration surface
+// (REWRITE-ARCHITECTURE §1.4): enum declarations (data-less and payload
+// variants), sealed interface declarations, and the `implements` clause on a
+// struct type. It is the declaration-tier counterpart to ast/goal_decl.go.
+//
+// The contextual keywords `sealed` and `implements` are lexed as ordinary
+// identifiers (token.IDENT); the parser decides their meaning positionally —
+// `sealed` leading a top-level declaration, `implements` immediately after the
+// `struct` keyword. `enum` is a reserved keyword (token.ENUM); the interface
+// body of a sealed interface reuses the Go method-spec parsing.
+//
+// Because the lexer inserts no semicolons, enum variants and payload-field
+// blocks are delimited structurally: a variant is an identifier tag optionally
+// followed by a `{ ... }` payload block, and the variant loop runs until the
+// enum's closing brace.
+package parser
+
+import (
+	"goal/internal/ast"
+	"goal/internal/token"
+)
+
+// isContextual reports whether the current token is the contextual keyword
+// word — an identifier (not a reserved kind) whose literal text is word.
+func (p *parser) isContextual(word string) bool {
+	return p.at(token.IDENT) && p.cur().Lit == word
+}
+
+// parseEnumDecl parses an enum declaration: `enum Name { Variant... }`. Each
+// variant is parsed in source order; the loop runs until the closing brace.
+func (p *parser) parseEnumDecl() *ast.EnumDecl {
+	kw := p.expect(token.ENUM)
+	d := &ast.EnumDecl{Enum: kw.Pos, Name: p.ident()}
+	lb := p.expect(token.LBRACE)
+	d.Lbrace = lb.Pos
+	for !p.at(token.RBRACE) && !p.at(token.EOF) {
+		d.Variants = append(d.Variants, p.parseVariant())
+	}
+	rb := p.expect(token.RBRACE)
+	d.Rbrace = rb.Pos
+	return d
+}
+
+// parseVariant parses one enum variant: a bare tag (`Pending`) or a tag carrying
+// a payload (`Active { since: Time }`). A `{` immediately after the tag name
+// introduces the payload block; otherwise the variant is data-less.
+func (p *parser) parseVariant() *ast.Variant {
+	v := &ast.Variant{Name: p.ident()}
+	if p.at(token.LBRACE) {
+		lb := p.advance()
+		v.Lbrace = lb.Pos
+		for !p.at(token.RBRACE) && !p.at(token.EOF) {
+			v.Payload = append(v.Payload, p.parsePayloadField())
+			if p.at(token.COMMA) {
+				p.advance()
+			} else {
+				break
+			}
+		}
+		rb := p.expect(token.RBRACE)
+		v.Rbrace = rb.Pos
+	}
+	return v
+}
+
+// parsePayloadField parses one field inside a variant payload. The colon is
+// optional, so both the goal `name: Type` form and the Go-style `name Type` form
+// parse.
+func (p *parser) parsePayloadField() *ast.PayloadField {
+	f := &ast.PayloadField{Name: p.ident()}
+	if p.at(token.COLON) {
+		p.advance()
+	}
+	f.Type = p.parseType()
+	return f
+}
+
+// parseSealedInterfaceDecl parses `sealed interface Name { methods }`. The
+// leading `sealed` is the contextual keyword (an identifier); `interface` is the
+// reserved keyword. The method set reuses the Go interface body parsing and may
+// be empty (`{}`).
+func (p *parser) parseSealedInterfaceDecl() *ast.SealedInterfaceDecl {
+	sealed := p.advance() // contextual "sealed"
+	d := &ast.SealedInterfaceDecl{Sealed: sealed.Pos}
+	d.Interface = p.expect(token.INTERFACE).Pos
+	d.Name = p.ident()
+	d.Methods = p.parseInterfaceBody()
+	return d
+}
+
+// parseImplementsClause parses an optional `implements <TypeName>` clause on a
+// struct type. It returns nil and consumes nothing when the current token is not
+// the contextual `implements` keyword, so inline `struct{...}` types are
+// unaffected. The interface type is a (possibly qualified) type name.
+func (p *parser) parseImplementsClause() *ast.ImplementsClause {
+	if !p.isContextual("implements") {
+		return nil
+	}
+	kw := p.advance()
+	return &ast.ImplementsClause{Implements: kw.Pos, Type: p.parseTypeName()}
+}

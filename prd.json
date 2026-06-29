@@ -108,7 +108,7 @@
         "The existing parser tests pass against the transpiled package"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "1,765 LOC; hand-written recursive descent with precedence climbing. Depends on token, lexer, ast. May be large for one context window — if so, split by parser.go vs goal_*.go."
     },
     {

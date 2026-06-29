@@ -4375,3 +4375,33 @@
     change is needed; the main package does not import the ported pkgs yet
     (that is US-012), so `go build ./selfhost` is unaffected.
 ---
+
+## [2026-06-29T00:00:00Z] - US-008 (self-host phase 4)
+- Ported internal/parser to goal-native source under selfhost/parser (verbatim
+  copy of the 5 non-test files: parser.go, goal_construct.go, goal_decl.go,
+  goal_match.go, goal_stmt.go -> *.goal). Go superset = valid goal; zero bare
+  match/enum/assert identifier collisions (all occurrences are comments or
+  token.MATCH/token.ENUM constants), so no source edits were needed.
+- Added internal/selfhost/port_test.go:TestPortedParserPackage, mirroring
+  TestPortedAstPackage: COMPILE gate via selfhost.BuildTranspiled over layout
+  {token,lexer,ast,parser}; BEHAVIORAL gate via selfhost.BuildAndTest
+  ("internal/parser", parserPkg, ["../parser/parser_test.go"], deps={token,lexer,ast}).
+- Files: selfhost/parser/{parser,goal_construct,goal_decl,goal_match,goal_stmt}.goal,
+  internal/selfhost/port_test.go, prd.json, progress.txt. Initiative artifacts under
+  history/20260629-feature-us-008-port-parser-package-to-goal/.
+- Verified: go test ./internal/selfhost (parser gate green), task check, task build,
+  and task fixpoint (FIXPOINT OK — selfhost/parser auto-covered by project.Discover,
+  byte-identical across goal-c-1/goal-c-2 emission, no harness change).
+- Learnings for future iterations:
+  - The behavioral gate runs the SELF-CONTAINED parser_test.go only. The other
+    parser suites (goal_construct/decl/match/stmt_test.go) read repo-relative
+    ../../features example fixtures via shared readExample/parseExample helpers
+    (defined in goal_decl_test.go / goal_stmt_test.go), and snapshot_test.go needs
+    ast.Sexpr (dropped from the ported ast in US-007) plus ../../features + testdata.
+    None survive the harness's throwaway temp module, so they are excluded — same
+    spirit as US-007 dropping the Sexpr path. parser_test.go has no shared helpers
+    and reads no files, so it is the faithful behavioral suite for the isolated gate.
+  - Multi-dep ports: pass every in-module dep (token, lexer, ast) in BOTH the
+    BuildTranspiled layout AND the BuildAndTest deps map, keyed by module-relative
+    dir; the harness transpiles each into the same temp `module goal`.
+---
