@@ -57,7 +57,7 @@
         "After the autofix, task check, task build, task fixpoint, and the corpus behavioral tier are all green"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Step 2 of 3 (autofix everything). goal fix auto-converts (T,error)+manual `if err!=nil` into Result[T,error]+`?` (resultsig/propagate rules); it only REPORTS switch->match and never touches enums/interfaces/conversions — those are the US-005+ audit. This story also dogfoods goal fix itself on real compiler code; if it miscompiles, fix that here."
     },
     {

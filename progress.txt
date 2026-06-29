@@ -85,6 +85,20 @@
   rule (e.g. a bare const continuation vs a Name+Type spec), use token line
   numbers: p.onNewLine() (parser.go) compares cur().Pos.Line to the previous
   token's line. Every token carries token.Pos{Offset,Line,Col} from the lexer.
+- `goal fix` is PER-FILE (cmd/goal cmdFix calls fix.File on each file
+  independently — no cross-file/cross-package coordination). Therefore the
+  result-sig rule (internal/fix/resultsig.go) only converts a `(T,error)`
+  function to Result[T,error] when it can PROVE every call site stays valid:
+  it refuses EXPORTED functions (callers may be in another file/package fix never
+  sees) and refuses any function referenced anywhere but a collapsible
+  `v,err:=f(); if err!=nil{...}` propagation site (a tail `return f(...)`, an
+  unguarded call, or a value/argument use would break, since Result is a single
+  value not a 2-tuple). Net effect on the selfhost compiler: ~zero safe
+  auto-conversions — almost every fallible function bottoms out at an exported
+  cross-package API (Discover/Analyze/ParseFile/Transpile/...). Converting those
+  Result/? is the per-package audit work (US-005..US-012), which CAN edit the
+  cross-file callers; the autofixer deliberately leaves them and reports a
+  result-sig Skip naming each one.
 
 ## [2026-06-28T23:25:00Z] - US-008 (checker-onto-ast PRD)
 - Migrated internal/project and internal/pipeline/sourcemap off the internal/scan
@@ -4636,3 +4650,51 @@
     Keep this rewrite if more behavioral suites are added.
   - The fixpoint is now load-bearing as the verbatim ORACLE: any US-004+ change
     that breaks goal-c self-reproduction shows up as a non-empty `diff -r`.
+
+## [2026-06-29T05:30:00Z] - US-004 (self-host idiomatic PRD)
+- Step 2 of 3 (autofix). Ran `goal fix --inplace` across all selfhost/*.goal to
+  mechanically idiomatize (T,error)+manual `if err!=nil` propagation into
+  Result/?. The run DOGFOODED `goal fix` on the goal-written compiler and exposed
+  a real fixer miscompile: result-sig was converting functions whose call sites
+  it could not (per-file) rewrite, producing non-compiling output. Three concrete
+  cases in selfhost: `Discover` (exported; caller selfhost/main.goal:64
+  `pkgs, err := project.Discover(root)` in another file), `Analyze` (exported),
+  and `goListResolve` (unexported but tail-returned by DefaultResolver, which is
+  exported + non-propagating so it stayed (string,error) while its body returned
+  a Result).
+- Fix landed in internal/fix/resultsig.go (the story's "fix the fixer here"
+  clause). result-sig is now conservative about call-site safety, matching the
+  package's stated philosophy (never emit incorrect code):
+  - Split per-decl structural analysis into classifyResultSig (returns a
+    *sigCand candidate or a near-miss *Report), keeping the exact bare-error /
+    multi-value / non-propagating Skip messages.
+  - fixResultSig now: collect candidates -> compute willResult + the safe
+    call-site offset set (safeLocalPropagationCalls, mirroring fixPropagate's
+    match: `v,err:=f(); if err!=nil{<propagation>}` adjacency inside a
+    will-be-Result fn, recording the local-call Fun ident offset) -> for each
+    candidate refuse if exported (Skip "exported `X` has callers fix cannot see")
+    or if unsafeRefOffset finds any reference not in the safe set (Skip "`X` is
+    called where `?` cannot apply"); else convert. Removed the old
+    exported-Warn-and-convert branch.
+- RESULT: zero selfhost source changes (every candidate is an unsafe
+  cross-boundary conversion, now correctly refused). goal fix is idempotent on
+  selfhost (second run writes nothing). The Result/? idiomatization of selfhost's
+  exported APIs is deferred to the per-package audits US-005+, which coordinate
+  cross-file callers.
+- Files: internal/fix/resultsig.go; prd.json (US-004 passes:true); progress.txt.
+  Initiative artifacts under history/20260629-refactor-us-004-autofix-selfhost/.
+- Verify: go test ./internal/fix ./cmd/goal green (TestConvertTupleToResult,
+  TestFixExportedWarning et al. preserved — the exported test still sees an
+  "exported"+name report, now a Skip). task check (incl. corpus 15s + selfhost
+  port gate 16s), task build, task fixpoint (FIXPOINT OK) all green.
+- Learnings for future iterations:
+  - `goal fix` will report a result-sig Skip for every fallible exported API and
+    every function with a non-propagating caller. US-005..US-012 should treat
+    those Skips as the worklist: convert the signature AND hand-edit the
+    cross-file callers (`x, err := F()` -> `x := F()?` inside a Result fn, or
+    `F().Unwrap()`/match at a non-Result boundary), then confirm `goal fix`
+    reports none for the package.
+  - When dogfooding a code-mod tool on its own compiler, run it on a SCRATCH COPY
+    first (cp -r + fix --inplace + diff) to scope the blast radius before
+    touching the tree — that is how the three miscompiles were found here.
+---

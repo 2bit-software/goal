@@ -7,6 +7,16 @@ import (
 	"goal/internal/token"
 )
 
+// sigCand is a function that has the convertible `(T, error)` shape with all-conforming
+// returns — a candidate for the Result conversion, pending the call-site safety check.
+type sigCand struct {
+	fn          *ast.FuncDecl
+	nameLine    int
+	successT    string
+	res         *ast.FieldList
+	successReps []textedit.Replacement
+}
+
 // fixResultSig converts a function written as a Go `(T, error)` tuple into one returning
 // `Result[T, error]`, the keystone Go→goal migration. It rewrites the signature and turns
 // each `return v, nil` success exit into `return Result.Ok(v)`; the manual `if err != nil`
@@ -17,71 +27,206 @@ import (
 // propagation): if any return decorates, wraps, or returns a non-zero value alongside the
 // error, the signature is left unchanged and a Skip records why — a half-converted
 // signature would be worse than none. Only the single-non-error-value shape `(T, error)` is
-// mapped; `(A, B, error)` and bare `error` are reported as out of scope. An exported
-// function additionally gets a Warn, since callers outside the scanned path may break.
+// mapped; `(A, B, error)` and bare `error` are reported as out of scope.
+//
+// Converting a function changes its call ABI from a 2-tuple to a single Result, so a
+// conversion is unsafe unless every call site of the function will remain valid afterwards.
+// fix runs one file at a time and cannot rewrite call sites it does not control, so the
+// conversion is refused when (a) the function is exported (callers may live in another
+// file/package fix never sees) or (b) any reference to it in the file is not a collapsible
+// error-propagation call site that fixPropagate will turn into `f()?` — a tail return
+// `return f(...)`, an unguarded binding, or a value/argument use would all break. This keeps
+// fix's promise that it never emits non-compiling code.
 func fixResultSig(src string, file *ast.File, info *sema.Info, decls map[string]string, changes *[]Change, reports *[]Report) []textedit.Replacement {
-	var reps []textedit.Replacement
+	// Pass A: structurally classify every function, surfacing near-miss Skips and
+	// collecting the convertible candidates.
+	var cands []*sigCand
 	for _, d := range file.Decls {
-		fn, ok := d.(*ast.FuncDecl)
-		if !ok || fn.Name == nil || fn.Body == nil || fn.Type == nil {
-			continue
+		c, rep := classifyResultSig(src, d, info, decls)
+		if rep != nil {
+			*reports = append(*reports, *rep)
 		}
-		if sig, ok := info.FuncSignatures[fn.Name.Name]; !ok || sig.Mode != sema.ModeNone {
-			continue // only plain functions; Result/Option are already idiomatic
-		}
-		nameLine := lineOf(src, fn.Name.Pos().Offset)
-		res := fn.Type.Results
-		if res == nil || len(res.List) == 0 {
-			continue // no results — not a tuple
-		}
-		// An unparenthesized single result has no Opening paren: the only shape worth a
-		// note is a bare `error` return, which fix cannot auto-convert to Result.
-		if res.Opening == (token.Pos{}) {
-			if len(res.List) == 1 && len(res.List[0].Names) == 0 && identName(res.List[0].Type) == "error" {
-				*reports = append(*reports, Report{nameLine, Skip, "result-sig",
-					"`" + fn.Name.Name + "` returns a bare `error`; not auto-converted to Result"})
-			}
-			continue
-		}
-		// A parenthesized result list: convert only the all-unnamed `(T, error)` tuple.
-		types := flattenResultTypes(res)
-		if types == nil {
-			continue // named results — out of the conservative scope
-		}
-		if len(types) < 2 {
-			continue // single parenthesized return type, not a tuple
-		}
-		if identName(types[len(types)-1]) != "error" {
-			continue // not error-terminated — not the shape fix targets
-		}
-		if len(types) > 2 {
-			*reports = append(*reports, Report{nameLine, Skip, "result-sig",
-				"`" + fn.Name.Name + "` returns multiple non-error values; not auto-converted to Result"})
-			continue
-		}
-		successT := nodeText(src, types[0])
-
-		// Every return in the body (excluding nested function literals) must be a
-		// recognized success or bare propagation, or we abandon the whole function.
-		successReps, conforms, badLine := classifyReturns(src, fn, successT, decls)
-		if !conforms {
-			*reports = append(*reports, Report{badLine, Skip, "result-sig",
-				"`" + fn.Name.Name + "` has a non-propagating return; not auto-converted to Result"})
-			continue
-		}
-
-		reps = append(reps, textedit.Replacement{
-			Start: res.Opening.Offset, End: res.Closing.Offset + 1,
-			Text: "Result[" + successT + ", error]",
-		})
-		reps = append(reps, successReps...)
-		*changes = append(*changes, Change{nameLine, "result-sig"})
-		if isExported(fn.Name.Name) {
-			*reports = append(*reports, Report{nameLine, Warn, "result-sig",
-				"exported `" + fn.Name.Name + "` changed to Result[" + successT + ", error]; callers outside the scanned path may need manual updates"})
+		if c != nil {
+			cands = append(cands, c)
 		}
 	}
+	if len(cands) == 0 {
+		return nil
+	}
+
+	// A call site inside a Result/Option-returning function — already so, or a candidate
+	// that will become so this pass — is the only place a converted function's 2-tuple use
+	// becomes a valid `?`.
+	successTOf := map[string]string{}
+	for _, c := range cands {
+		successTOf[c.fn.Name.Name] = c.successT
+	}
+	willResult := func(name string) bool {
+		if _, ok := successTOf[name]; ok {
+			return true
+		}
+		m := info.FuncSignatures[name].Mode
+		return m == sema.ModeResult || m == sema.ModeOption
+	}
+	safe := safeLocalPropagationCalls(src, file, info, decls, successTOf, willResult)
+
+	// Pass B: convert each candidate whose call sites are all provably safe.
+	var reps []textedit.Replacement
+	for _, c := range cands {
+		name := c.fn.Name.Name
+		if isExported(name) {
+			*reports = append(*reports, Report{c.nameLine, Skip, "result-sig",
+				"exported `" + name + "` has callers fix cannot see; not auto-converted to Result"})
+			continue
+		}
+		if off, unsafe := unsafeRefOffset(file, name, safe); unsafe {
+			*reports = append(*reports, Report{lineOf(src, off), Skip, "result-sig",
+				"`" + name + "` is called where `?` cannot apply (e.g. a tail return or unguarded call); not auto-converted to Result"})
+			continue
+		}
+		reps = append(reps, textedit.Replacement{
+			Start: c.res.Opening.Offset, End: c.res.Closing.Offset + 1,
+			Text: "Result[" + c.successT + ", error]",
+		})
+		reps = append(reps, c.successReps...)
+		*changes = append(*changes, Change{c.nameLine, "result-sig"})
+	}
 	return reps
+}
+
+// classifyResultSig examines one top-level declaration. It returns a candidate when the
+// function has the convertible `(T, error)` shape with all-conforming returns; otherwise it
+// returns a Skip report for a near-miss worth surfacing (a bare `error`, a multi-value
+// tuple, or a non-propagating return), or (nil, nil) for a decl that is simply out of scope.
+func classifyResultSig(src string, d ast.Decl, info *sema.Info, decls map[string]string) (*sigCand, *Report) {
+	fn, ok := d.(*ast.FuncDecl)
+	if !ok || fn.Name == nil || fn.Body == nil || fn.Type == nil {
+		return nil, nil
+	}
+	if sig, ok := info.FuncSignatures[fn.Name.Name]; !ok || sig.Mode != sema.ModeNone {
+		return nil, nil // only plain functions; Result/Option are already idiomatic
+	}
+	nameLine := lineOf(src, fn.Name.Pos().Offset)
+	res := fn.Type.Results
+	if res == nil || len(res.List) == 0 {
+		return nil, nil // no results — not a tuple
+	}
+	// An unparenthesized single result has no Opening paren: the only shape worth a note is
+	// a bare `error` return, which fix cannot auto-convert to Result.
+	if res.Opening == (token.Pos{}) {
+		if len(res.List) == 1 && len(res.List[0].Names) == 0 && identName(res.List[0].Type) == "error" {
+			return nil, &Report{nameLine, Skip, "result-sig",
+				"`" + fn.Name.Name + "` returns a bare `error`; not auto-converted to Result"}
+		}
+		return nil, nil
+	}
+	// A parenthesized result list: convert only the all-unnamed `(T, error)` tuple.
+	types := flattenResultTypes(res)
+	if types == nil {
+		return nil, nil // named results — out of the conservative scope
+	}
+	if len(types) < 2 {
+		return nil, nil // single parenthesized return type, not a tuple
+	}
+	if identName(types[len(types)-1]) != "error" {
+		return nil, nil // not error-terminated — not the shape fix targets
+	}
+	if len(types) > 2 {
+		return nil, &Report{nameLine, Skip, "result-sig",
+			"`" + fn.Name.Name + "` returns multiple non-error values; not auto-converted to Result"}
+	}
+	successT := nodeText(src, types[0])
+
+	// Every return in the body (excluding nested function literals) must be a recognized
+	// success or bare propagation, or we abandon the whole function.
+	successReps, conforms, badLine := classifyReturns(src, fn, successT, decls)
+	if !conforms {
+		return nil, &Report{badLine, Skip, "result-sig",
+			"`" + fn.Name.Name + "` has a non-propagating return; not auto-converted to Result"}
+	}
+	return &sigCand{fn: fn, nameLine: nameLine, successT: successT, res: res, successReps: successReps}, nil
+}
+
+// safeLocalPropagationCalls returns the source offsets of local-call Fun identifiers that
+// sit in a collapsible error-propagation binding (`v, err := f(args)` immediately above an
+// `if err != nil { <propagation> }` guard) inside a function that is or will be Result/Option
+// returning — exactly the call sites fixPropagate will rewrite to `f(args)?`. A converted
+// function is only safe when every reference to it is one of these.
+func safeLocalPropagationCalls(src string, file *ast.File, info *sema.Info, decls map[string]string, successTOf map[string]string, willResult func(string) bool) map[int]bool {
+	safe := map[int]bool{}
+	for _, d := range file.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Name == nil || fn.Body == nil || !willResult(fn.Name.Name) {
+			continue
+		}
+		// The enclosing function's success type, for the conforming-return check: a
+		// candidate's computed type, else the already-Result signature's T.
+		sigT := successTOf[fn.Name.Name]
+		if sigT == "" {
+			sigT = info.FuncSignatures[fn.Name.Name].T
+		}
+		forEachBlock(fn.Body, func(list []ast.Stmt) {
+			for i := 0; i+1 < len(list); i++ {
+				as, ok := list[i].(*ast.AssignStmt)
+				if !ok || as.Tok != token.DEFINE || len(as.Rhs) != 1 {
+					continue
+				}
+				ifs, ok := list[i+1].(*ast.IfStmt)
+				if !ok || ifs.Init != nil || ifs.Else != nil {
+					continue
+				}
+				condVar, ok := nilGuardVar(ifs.Cond, true)
+				if !ok {
+					continue
+				}
+				if _, ok := propagationLHS(as, condVar, true); !ok {
+					continue
+				}
+				if ifs.Body == nil || len(ifs.Body.List) != 1 {
+					continue
+				}
+				ret, ok := ifs.Body.List[0].(*ast.ReturnStmt)
+				if !ok || !validPropagationReturn(src, ret, true, condVar, sigT, decls) {
+					continue
+				}
+				if !adjacentSingleLine(src, as, ifs) {
+					continue
+				}
+				if call, ok := as.Rhs[0].(*ast.CallExpr); ok {
+					if id, ok := call.Fun.(*ast.Ident); ok {
+						safe[id.Pos().Offset] = true
+					}
+				}
+			}
+		})
+	}
+	return safe
+}
+
+// unsafeRefOffset returns the offset of the first reference to name in file that is neither
+// the function's own declaration nor a safe propagation call site, and whether one exists.
+// It is conservative: any reference shape it cannot account for counts as unsafe.
+func unsafeRefOffset(file *ast.File, name string, safe map[int]bool) (int, bool) {
+	declOff := map[int]bool{}
+	for _, d := range file.Decls {
+		if fn, ok := d.(*ast.FuncDecl); ok && fn.Name != nil && fn.Name.Name == name {
+			declOff[fn.Name.Pos().Offset] = true
+		}
+	}
+	bad, found := 0, false
+	ast.Walk(visitFn(func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		if id, ok := n.(*ast.Ident); ok && id.Name == name {
+			off := id.Pos().Offset
+			if !declOff[off] && !safe[off] {
+				bad, found = off, true
+			}
+		}
+		return true
+	}), file)
+	return bad, found
 }
 
 // flattenResultTypes returns the result types of an all-unnamed parenthesized result list,
