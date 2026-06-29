@@ -4279,6 +4279,46 @@
     needed per port.
 ---
 
+## [2026-06-29T04:00:00Z] - US-009 (self-host phase 4)
+- Ported internal/sema to goal-native source under selfhost/sema (verbatim copy
+  of the 12 non-test files: analyze, assert, check, convert, fields, foreign,
+  implements, mustuse, package, question, resolve, sema .go -> .goal). Go
+  superset = valid goal; the only bare match/enum/assert occurrences are string
+  literals ("10-assert", "assert-always-true", ...), zero identifier collisions,
+  so no source edits were needed. No reflection/dump file to drop (unlike ast).
+- sema imports token, ast, parser directly; the transpiled parser pulls in
+  goal/internal/lexer, so the BuildTranspiled layout AND BuildAndTest deps carry
+  lexer too even though sema never imports it directly.
+- Added internal/selfhost/port_test.go:TestPortedSemaPackage, mirroring
+  TestPortedParserPackage: COMPILE gate via BuildTranspiled over layout
+  {token,lexer,ast,parser,sema}; BEHAVIORAL gate via BuildAndTest("internal/sema",
+  semaPkg, <8 self-contained suites>, deps={token,lexer,ast,parser}).
+- Behavioral gate runs the self-contained sema suites: sema, assert, check,
+  convert, implements, mustuse, question, resolve _test.go. Excluded
+  foreign_test.go and package_test.go — both read the repo-relative
+  internal/sema/testdata/extpkg fixture (filepath.Abs("testdata","extpkg")),
+  absent from the harness's throwaway temp module (same exclusion spirit as
+  US-007/US-008 fixture-dependent suites). The shared helper hasDiag lives only
+  in the excluded package_test.go; every other suite defines its own analyzeX
+  helper locally, so the included set compiles standalone.
+- Files: selfhost/sema/*.goal (12 new); internal/selfhost/port_test.go (sema
+  test); prd.json (US-009 passes:true); progress.txt. Initiative artifacts under
+  history/20260629-feature-us-009-port-sema-package-to-goal/.
+- Verify: go test ./internal/selfhost -run TestPortedSemaPackage green; task
+  check + task build green; task fixpoint green (FIXPOINT OK — selfhost/sema
+  auto-covered by project.Discover, byte-identical across goal-c-1/goal-c-2).
+- Learnings for future iterations:
+  - foreign go/parser, go/format, go/types pass through transpilation cleanly —
+    confirmed for the sema port; no special handling beyond listing in-module
+    deps in the layout.
+  - When a ported package imports parser, remember parser's own lexer dependency
+    must be in BOTH the layout and the deps map or the temp module won't compile,
+    even if the package under test never names lexer.
+  - Excluded-suite rule generalizes: any *_test.go that reads a repo-relative
+    fixture dir (testdata, ../../features) is unfit for the throwaway-module
+    behavioral gate; include only self-contained suites.
+---
+
 ## [2026-06-29T03:00:00Z] - US-007 (self-host phase 4)
 - Ported internal/ast to goal as the node layer above the token leaf.
   selfhost/ast/{ast,walk,goal_decl,goal_expr,goal_stmt}.goal are verbatim copies

@@ -233,3 +233,120 @@ func TestPortedParserPackage(t *testing.T) {
 		t.Fatalf("existing parser tests failed against the transpiled package: %v", err)
 	}
 }
+
+// TestPortedSemaPackage validates US-009: the sema package reimplemented as goal
+// source under selfhost/sema transpiles to compiling Go (the US-002 smoke gate,
+// with the in-module token, ast, and parser imports resolving against the ported
+// packages and the foreign go/parser, go/format, go/types imports passing
+// through) AND passes the existing internal/sema tests against the transpiled
+// output (behavioral equivalence — resolution and checking).
+//
+// sema imports token, ast, parser directly; the transpiled parser in turn
+// imports goal/internal/lexer, so the layout carries lexer too even though sema
+// does not import it directly. The behavioral gate runs the self-contained sema
+// suites; foreign_test.go and package_test.go are excluded because they read the
+// repo-relative internal/sema/testdata/extpkg fixture, which is absent from the
+// harness's throwaway temp module (same spirit as US-007/US-008 excluding
+// fixture-dependent suites). The test's working directory is internal/selfhost,
+// so the goal sources are at ../../selfhost/{token,lexer,ast,parser,sema} and the
+// existing sema tests are at ../sema.
+func TestPortedSemaPackage(t *testing.T) {
+	tokenPkgs, err := project.Discover("../../selfhost/token")
+	if err != nil {
+		t.Fatalf("discovering selfhost/token: %v", err)
+	}
+	if len(tokenPkgs) != 1 {
+		t.Fatalf("selfhost/token: got %d packages, want exactly 1", len(tokenPkgs))
+	}
+	tokenPkg := tokenPkgs[0]
+	if tokenPkg.Name != "token" {
+		t.Fatalf("selfhost/token: package name = %q, want \"token\"", tokenPkg.Name)
+	}
+
+	lexerPkgs, err := project.Discover("../../selfhost/lexer")
+	if err != nil {
+		t.Fatalf("discovering selfhost/lexer: %v", err)
+	}
+	if len(lexerPkgs) != 1 {
+		t.Fatalf("selfhost/lexer: got %d packages, want exactly 1", len(lexerPkgs))
+	}
+	lexerPkg := lexerPkgs[0]
+	if lexerPkg.Name != "lexer" {
+		t.Fatalf("selfhost/lexer: package name = %q, want \"lexer\"", lexerPkg.Name)
+	}
+
+	astPkgs, err := project.Discover("../../selfhost/ast")
+	if err != nil {
+		t.Fatalf("discovering selfhost/ast: %v", err)
+	}
+	if len(astPkgs) != 1 {
+		t.Fatalf("selfhost/ast: got %d packages, want exactly 1", len(astPkgs))
+	}
+	astPkg := astPkgs[0]
+	if astPkg.Name != "ast" {
+		t.Fatalf("selfhost/ast: package name = %q, want \"ast\"", astPkg.Name)
+	}
+
+	parserPkgs, err := project.Discover("../../selfhost/parser")
+	if err != nil {
+		t.Fatalf("discovering selfhost/parser: %v", err)
+	}
+	if len(parserPkgs) != 1 {
+		t.Fatalf("selfhost/parser: got %d packages, want exactly 1", len(parserPkgs))
+	}
+	parserPkg := parserPkgs[0]
+	if parserPkg.Name != "parser" {
+		t.Fatalf("selfhost/parser: package name = %q, want \"parser\"", parserPkg.Name)
+	}
+
+	semaPkgs, err := project.Discover("../../selfhost/sema")
+	if err != nil {
+		t.Fatalf("discovering selfhost/sema: %v", err)
+	}
+	if len(semaPkgs) != 1 {
+		t.Fatalf("selfhost/sema: got %d packages, want exactly 1", len(semaPkgs))
+	}
+	semaPkg := semaPkgs[0]
+	if semaPkg.Name != "sema" {
+		t.Fatalf("selfhost/sema: package name = %q, want \"sema\"", semaPkg.Name)
+	}
+
+	// Criterion 2: transpiles via the US-002 smoke gate and the generated Go
+	// compiles. The layout carries sema plus its token, ast, and parser
+	// dependencies (and lexer, pulled in by the transpiled parser) so the
+	// in-module imports resolve; the go/* foreign imports pass through.
+	layout := map[string]*project.Package{
+		"internal/token":  tokenPkg,
+		"internal/lexer":  lexerPkg,
+		"internal/ast":    astPkg,
+		"internal/parser": parserPkg,
+		"internal/sema":   semaPkg,
+	}
+	if err := selfhost.BuildTranspiled(layout); err != nil {
+		t.Fatalf("ported sema failed the transpile-and-build gate: %v", err)
+	}
+
+	// Criterion 3: the existing sema tests pass against the transpiled package,
+	// with the ported token, lexer, ast, and parser packages transpiled in as its
+	// in-module dependencies. The self-contained suites are included;
+	// foreign_test.go and package_test.go are excluded (testdata/extpkg fixture).
+	deps := map[string]*project.Package{
+		"internal/token":  tokenPkg,
+		"internal/lexer":  lexerPkg,
+		"internal/ast":    astPkg,
+		"internal/parser": parserPkg,
+	}
+	testFiles := []string{
+		"../sema/sema_test.go",
+		"../sema/assert_test.go",
+		"../sema/check_test.go",
+		"../sema/convert_test.go",
+		"../sema/implements_test.go",
+		"../sema/mustuse_test.go",
+		"../sema/question_test.go",
+		"../sema/resolve_test.go",
+	}
+	if err := selfhost.BuildAndTest("internal/sema", semaPkg, testFiles, deps); err != nil {
+		t.Fatalf("existing sema tests failed against the transpiled package: %v", err)
+	}
+}

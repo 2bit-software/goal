@@ -1,0 +1,396 @@
+package sema
+
+// Foreign-type enrichment for the AST checker: read the exported struct field sets and
+// method/function signatures of imported Go packages so a check (and the backend, via
+// US-009) can resolve a `derive func` / `from func` whose source or target is an
+// out-of-package type, or a `recv.Method()?` whose receiver type is foreign — without
+// ever reaching for analyze.Tables.
+//
+// This is the native (AST-driven) twin of internal/analyze/foreign.go. The crucial
+// difference is the input: the imports come from the PARSED goal file (the *ast.File's
+// import specs), not from re-lexing the source. EnrichForeign therefore makes no call to
+// scan.Lex or analyze.ParseImports — the lexer is not on this path. The foreign Go
+// packages themselves are still read with the stdlib go/parser (the one IO seam), and
+// the rendering of foreign struct fields and method arities mirrors analyze byte-for-byte
+// so the two enrichers agree on the same input (the US-001 parity gate).
+//
+// Reading the foreign field set, not type-checking it: each imported package's
+// `type X struct {…}` declarations are parsed, the EXPORTED fields kept, and keyed by the
+// qualifier the goal source uses (`alias.Type`). A field's type is re-rendered qualified
+// by that same alias — a package-local `*Workspace` in the foreign source becomes
+// `*alias.Workspace`, matching how the goal source names it — so registry and recursion
+// lookups align by string, exactly as for in-file structs.
+
+import (
+	"bytes"
+	goast "go/ast"
+	"go/format"
+	goparser "go/parser"
+	gotoken "go/token"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"goal/internal/ast"
+)
+
+// DirResolver maps an import path to the directory holding that package's Go source,
+// resolved relative to fromDir. It is the one IO dependency of enrichment, injected so
+// tests can resolve against a fixture directory without the go toolchain. DefaultResolver
+// is the production implementation.
+type DirResolver func(importPath, fromDir string) (string, error)
+
+// EnrichForeign augments info with the exported struct field sets and method/function
+// signatures of the Go packages imported by a goal file, driven by the file's parsed
+// import specs (imports). dir is the goal package's directory (import paths resolve
+// relative to it). resolve may be nil, in which case DefaultResolver is used.
+//
+// It mutates info in place: foreign structs land in info.Structs (keyed `alias.Type`),
+// foreign methods in info.ForeignMethods (keyed `alias.Type.Method`), and foreign
+// receiver-less functions in info.FuncSignatures (keyed `alias.Func`). It returns any
+// per-import errors (resolution or directory-read failures), which are non-fatal: an
+// unresolved import simply leaves its types unknown, exactly as analyze.EnrichForeign
+// behaves. A blank import (`_ "x"`) names no qualified type and is skipped.
+func EnrichForeign(info *Info, imports []*ast.ImportSpec, dir string, resolve DirResolver) []error {
+	if resolve == nil {
+		resolve = DefaultResolver
+	}
+	if info.Structs == nil {
+		info.Structs = map[string][]Field{}
+	}
+	if info.ForeignMethods == nil {
+		info.ForeignMethods = map[string]FuncSig{}
+	}
+	if info.FuncSignatures == nil {
+		info.FuncSignatures = map[string]FuncSig{}
+	}
+	var errs []error
+	loaded := map[string]bool{} // import paths already merged, for dedupe across imports
+	for _, imp := range imports {
+		if imp == nil || imp.Path == nil {
+			continue
+		}
+		path, ok := importPath(imp.Path.Value)
+		if !ok || loaded[path] {
+			continue
+		}
+		rawAlias := importAlias(imp)
+		if rawAlias == "_" {
+			continue // blank import contributes no qualifier
+		}
+		loaded[path] = true
+		resolved, err := resolve(path, dir)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		structs, funcs, methods, err := foreignDecls(resolved, rawAlias)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		for name, fields := range structs {
+			info.Structs[name] = fields
+		}
+		for name, sig := range funcs {
+			info.FuncSignatures[name] = sig
+		}
+		for name, sig := range methods {
+			info.ForeignMethods[name] = sig
+		}
+	}
+	return errs
+}
+
+// importAlias returns the explicit local name of a goal import spec (the qualifier the
+// source uses), or "" when the import has no explicit name.
+func importAlias(imp *ast.ImportSpec) string {
+	if imp.Name == nil {
+		return ""
+	}
+	return imp.Name.Name
+}
+
+// importPath returns the unquoted path of a string-literal import path and whether the
+// token was a string literal.
+func importPath(tok string) (string, bool) {
+	if len(tok) < 2 || (tok[0] != '"' && tok[0] != '`') {
+		return "", false
+	}
+	if p, err := strconv.Unquote(tok); err == nil {
+		return p, true
+	}
+	return "", false
+}
+
+// foreignDecls parses the Go source files in dir and returns its exported struct types
+// (keyed `alias.Type`, each field's type rendered qualified by alias), its exported
+// receiver-less function arities (keyed `alias.Func`), and its exported method arities
+// (keyed `alias.Recv.Method`). requestedAlias is the qualifier the goal source uses; when
+// empty (an unaliased import) the package's own declared name is used.
+func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs, methods map[string]FuncSig, err error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	fset := gotoken.NewFileSet()
+	var files []*goast.File
+	pkgName := ""
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		f, perr := goparser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, goparser.SkipObjectResolution)
+		if perr != nil {
+			continue // tolerate an unparseable sibling; read what we can
+		}
+		if pkgName == "" {
+			pkgName = f.Name.Name
+		}
+		files = append(files, f)
+	}
+	alias := requestedAlias
+	if alias == "" {
+		alias = pkgName
+	}
+	structs = map[string][]Field{}
+	funcs = map[string]FuncSig{}
+	methods = map[string]FuncSig{}
+	for _, f := range files {
+		for _, decl := range f.Decls {
+			switch d := decl.(type) {
+			case *goast.GenDecl:
+				if d.Tok != gotoken.TYPE {
+					continue
+				}
+				for _, spec := range d.Specs {
+					ts, ok := spec.(*goast.TypeSpec)
+					if !ok || !ts.Name.IsExported() {
+						continue
+					}
+					st, ok := ts.Type.(*goast.StructType)
+					if !ok {
+						continue
+					}
+					structs[alias+"."+ts.Name.Name] = foreignFields(st, alias)
+				}
+			case *goast.FuncDecl:
+				if !d.Name.IsExported() {
+					continue
+				}
+				// Mode left at ModeNone: a foreign entry carries only the `?`-relevant
+				// facts (arity and whether it ends in error), matching analyze.
+				sig := FuncSig{Arity: goResultArity(d.Type), EndsInError: endsInErrorAST(d.Type)}
+				if d.Recv == nil {
+					funcs[alias+"."+d.Name.Name] = sig
+				} else if base := foreignRecvBase(d.Recv); base != "" {
+					methods[alias+"."+base+"."+d.Name.Name] = sig
+				}
+			}
+		}
+	}
+	return structs, funcs, methods, nil
+}
+
+// foreignFields returns the exported, named fields of a struct (embedded and unexported
+// fields are skipped), each typed via goTypeString so package-local type references are
+// qualified by alias.
+func foreignFields(st *goast.StructType, alias string) []Field {
+	var fields []Field
+	for _, f := range st.Fields.List {
+		if len(f.Names) == 0 {
+			continue // embedded field — unsupported by the nominal model
+		}
+		typ := goTypeString(f.Type, alias)
+		for _, n := range f.Names {
+			if n.IsExported() {
+				fields = append(fields, Field{Name: n.Name, Type: typ})
+			}
+		}
+	}
+	return fields
+}
+
+// foreignRecvBase returns the bare receiver type name of a foreign method (`*File` ->
+// "File", `Tree[T]` -> "Tree"), or "" when it can't be read.
+func foreignRecvBase(recv *goast.FieldList) string {
+	if recv == nil || len(recv.List) == 0 {
+		return ""
+	}
+	expr := recv.List[0].Type
+	if star, ok := expr.(*goast.StarExpr); ok {
+		expr = star.X
+	}
+	switch e := expr.(type) {
+	case *goast.IndexExpr: // generic receiver Type[T]
+		expr = e.X
+	case *goast.IndexListExpr: // generic receiver Type[T, U]
+		expr = e.X
+	}
+	if id, ok := expr.(*goast.Ident); ok {
+		return id.Name
+	}
+	return ""
+}
+
+// endsInErrorAST reports whether a foreign function's last result is the type `error` —
+// the failure a `?` propagates. A named group's last field (`… err error`) counts by type.
+func endsInErrorAST(ft *goast.FuncType) bool {
+	if ft.Results == nil || len(ft.Results.List) == 0 {
+		return false
+	}
+	last := ft.Results.List[len(ft.Results.List)-1]
+	id, ok := last.Type.(*goast.Ident)
+	return ok && id.Name == "error"
+}
+
+// goResultArity reports how many values a foreign function returns: an unnamed result
+// counts once and a named group (`(a, b int)`) counts by name.
+func goResultArity(ft *goast.FuncType) int {
+	if ft.Results == nil {
+		return 0
+	}
+	n := 0
+	for _, field := range ft.Results.List {
+		if len(field.Names) == 0 {
+			n++
+			continue
+		}
+		n += len(field.Names)
+	}
+	return n
+}
+
+// goTypeString renders a Go AST type expression as goal-source text, qualifying every
+// package-local named type with alias (so the foreign package's `*Workspace` reads as
+// the goal source's `*alias.Workspace`). Predeclared types are left bare; an
+// already-qualified `pkg.T` keeps its own qualifier; an anonymous/unhandled shape falls
+// back to its printed form so an unbridgeable field is surfaced rather than dropped.
+func goTypeString(expr goast.Expr, alias string) string {
+	switch e := expr.(type) {
+	case *goast.Ident:
+		if isGoBuiltin(e.Name) {
+			return e.Name
+		}
+		return alias + "." + e.Name
+	case *goast.StarExpr:
+		return "*" + goTypeString(e.X, alias)
+	case *goast.ArrayType:
+		if e.Len == nil {
+			return "[]" + goTypeString(e.Elt, alias)
+		}
+		return "[" + goExprText(e.Len) + "]" + goTypeString(e.Elt, alias)
+	case *goast.MapType:
+		return "map[" + goTypeString(e.Key, alias) + "]" + goTypeString(e.Value, alias)
+	case *goast.SelectorExpr:
+		if x, ok := e.X.(*goast.Ident); ok {
+			return x.Name + "." + e.Sel.Name
+		}
+		return goExprText(expr)
+	case *goast.InterfaceType:
+		return "any"
+	case *goast.Ellipsis:
+		return "..." + goTypeString(e.Elt, alias)
+	default:
+		return goExprText(expr)
+	}
+}
+
+// goExprText prints a Go AST expression to source text via go/format, a syntactic
+// fallback for type shapes goTypeString does not special-case.
+func goExprText(expr goast.Expr) string {
+	var b bytes.Buffer
+	if err := format.Node(&b, gotoken.NewFileSet(), expr); err != nil {
+		return ""
+	}
+	return b.String()
+}
+
+// isGoBuiltin reports whether name is a predeclared Go type, which must not be qualified.
+func isGoBuiltin(name string) bool {
+	switch name {
+	case "bool", "string", "error", "any", "byte", "rune", "uintptr",
+		"int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64",
+		"float32", "float64", "complex64", "complex128":
+		return true
+	}
+	return false
+}
+
+// DefaultResolver resolves an import path to its package directory. It first tries a
+// same-module resolution (walk up from fromDir to go.mod and map a path under the module
+// onto the tree) — offline, deterministic, and the common case for a project's own
+// generated code. It falls back to `go list` for an external module (resolved through
+// the module cache), matching how the rest of the toolchain shells out to `go`.
+func DefaultResolver(importPath, fromDir string) (string, error) {
+	if dir, ok := moduleResolve(importPath, fromDir); ok {
+		return dir, nil
+	}
+	return goListResolve(importPath, fromDir)
+}
+
+// moduleResolve maps importPath onto the local module tree by finding the nearest go.mod
+// at or above fromDir, reading its module path, and joining the path's tail. It reports
+// ok=false when there is no enclosing module, the path is outside it, or the computed
+// directory does not exist (so the caller falls back to `go list`).
+func moduleResolve(importPath, fromDir string) (string, bool) {
+	dir, err := filepath.Abs(fromDir)
+	if err != nil {
+		return "", false
+	}
+	for {
+		modPath, ok := readModulePath(filepath.Join(dir, "go.mod"))
+		if ok {
+			if importPath == modPath {
+				return dir, isDir(dir)
+			}
+			if rest, under := strings.CutPrefix(importPath, modPath+"/"); under {
+				cand := filepath.Join(dir, filepath.FromSlash(rest))
+				return cand, isDir(cand)
+			}
+			return "", false // inside a module, but path belongs to another module
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", false
+		}
+		dir = parent
+	}
+}
+
+// readModulePath returns the module path declared by a go.mod file and whether the file
+// was read and had a `module` directive.
+func readModulePath(goMod string) (string, bool) {
+	data, err := os.ReadFile(goMod)
+	if err != nil {
+		return "", false
+	}
+	for line := range strings.SplitSeq(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if rest, ok := strings.CutPrefix(line, "module"); ok {
+			return strings.TrimSpace(rest), true
+		}
+	}
+	return "", false
+}
+
+// goListResolve asks the go tool for an import path's directory, run from fromDir so the
+// module graph (requires, replaces, the cache) is the project's own.
+func goListResolve(importPath, fromDir string) (string, error) {
+	cmd := exec.Command("go", "list", "-f", "{{.Dir}}", "--", importPath)
+	cmd.Dir = fromDir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// isDir reports whether path exists and is a directory.
+func isDir(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.IsDir()
+}

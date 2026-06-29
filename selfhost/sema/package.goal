@@ -1,0 +1,65 @@
+package sema
+
+// package.go is the package-level entry point for the AST checker: it checks a
+// whole multi-file goal package at once, producing per-file diagnostics from
+// merged, foreign-enriched facts. It is the AST analogue of
+// internal/check.AnalyzePackageInDir — same shape, so cmd/goal's check path
+// (US-004) is a near drop-in swap from the legacy lexical checker onto sema.
+//
+// Where the single-file Resolve+Check sees only one file's declarations, this
+// driver resolves the whole package (ResolvePackage) so a `match` / `derive` /
+// `?` over an enum or struct declared in a SIBLING file resolves, then enriches
+// the merged facts with the struct field sets and method/function signatures of
+// the IMPORTED Go packages (EnrichForeign, US-001) so a cross-package construct
+// resolves too. Each file is then checked against the one shared Info, and the
+// per-file diagnostic lists are returned in input order.
+
+import (
+	"goal/internal/ast"
+	"goal/internal/parser"
+)
+
+// AnalyzePackageInDir runs the AST checker over a multi-file goal package and
+// returns one []Diagnostic per input file, aligned with the input order. dir is
+// the package's directory, against which imported package paths are resolved for
+// foreign enrichment. Import-resolution failures are non-fatal: an unresolved
+// import simply leaves its types deferred, so the convenience entry point
+// discards the per-import error slice. A parse error in any file is returned.
+func AnalyzePackageInDir(srcs []string, dir string) ([][]Diagnostic, error) {
+	diags, _, err := AnalyzePackageInDirWith(srcs, dir, nil)
+	return diags, err
+}
+
+// AnalyzePackageInDirWith is AnalyzePackageInDir with the import resolver injected
+// and the non-fatal per-import enrichment errors surfaced. Callers that drive the
+// checker in tests supply a fake resolver (so no Go toolchain is needed); a nil
+// resolve uses DefaultResolver. The enrichment errors stay non-fatal — an
+// unresolved import leaves its types deferred, exactly as the legacy checker
+// behaves.
+func AnalyzePackageInDirWith(srcs []string, dir string, resolve DirResolver) ([][]Diagnostic, []error, error) {
+	files := make([]*ast.File, len(srcs))
+	for i, src := range srcs {
+		f, err := parser.ParseFile(src)
+		if err != nil {
+			return nil, nil, err
+		}
+		files[i] = f
+	}
+
+	// Merge every file's facts so a cross-file reference resolves, then fold in
+	// the imported packages' foreign facts over the one shared Info. Imports are
+	// aggregated across all files because EnrichForeign dedupes by import path,
+	// and the merged Info is what every per-file Check reads.
+	info := ResolvePackage(files)
+	var imports []*ast.ImportSpec
+	for _, f := range files {
+		imports = append(imports, f.Imports...)
+	}
+	ferrs := EnrichForeign(info, imports, dir, resolve)
+
+	out := make([][]Diagnostic, len(files))
+	for i, f := range files {
+		out[i] = Check(f, info)
+	}
+	return out, ferrs, nil
+}

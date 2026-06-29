@@ -121,7 +121,7 @@
         "The existing sema tests pass against the transpiled package"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "2,695 LOC; multi-pass resolve + check + foreign + ?-inference. foreign.go imports go/parser/go/format/go/types — confirmed they pass through. Large; may need splitting by file group (resolve, check-family, foreign)."
     },
     {
