@@ -69,7 +69,7 @@
         "The existing token tests pass against the transpiled package"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "361 LOC, leaf (no internal deps). Exercises the US-001 iota fix directly (token kinds are an iota enum)."
     },
     {

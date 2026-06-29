@@ -41,6 +41,19 @@
   DirResolver/DefaultResolver (foreign.go) and ResolvePackage/EnrichForeign —
   use those, not analyze. The foreign-package test fixture lives at
   internal/sema/testdata/extpkg.
+- Self-host port verification has TWO halves in internal/selfhost, both reused by
+  every US-005+ port: selfhost.BuildTranspiled(layout) is the COMPILE gate
+  (transpile + `go build` in a temp `module goal`); selfhost.BuildAndTest(relDir,
+  pkg, testFiles) is the BEHAVIORAL gate (transpile + copy the EXISTING
+  internal/<pkg> white-box test files beside the generated Go + `go test`). Port a
+  package by copying internal/<pkg>/*.go to selfhost/<pkg>/*.goal (Go superset =
+  valid goal; grep for bare match/enum/assert first), then add a port_test that
+  Discovers selfhost/<pkg> and runs both gates against ../<pkg>/<pkg>_test.go.
+- Adding a package under selfhost/ is automatically covered by `task fixpoint`:
+  project.Discover walks the whole selfhost tree, so both bootstrap stages emit
+  the new package and the diff stays byte-identical — no harness change per port.
+  selfhost/ is .goal-only (invisible to the Go toolchain), so it never collides
+  with the Go package internal/selfhost despite the shared name.
 - The lexer strips newlines/implicit semicolons, so the parser reconstructs
   spec/decl boundaries structurally. Where Go relies on the newline=semicolon
   rule (e.g. a bare const continuation vs a Name+Type spec), use token line
@@ -4259,4 +4272,36 @@
   - Fixpoint reuse: as each US-005+ package is ported into selfhost/, `task
     fixpoint` already covers it (Discover walks the whole tree); no harness change
     needed per port.
+---
+
+## [2026-06-29T02:00:00Z] - US-005 (self-host phase 4)
+- Ported internal/token to goal as the leaf of the self-hosted compiler DAG.
+  selfhost/token/token.goal is a verbatim copy of internal/token/token.go (Go
+  superset is valid goal; ENUM is uppercase so it dodges goal's reserved `enum`).
+  It is the first real package under selfhost/ and exercises the US-001 iota
+  const-block fix directly via its Kind enum.
+- Added the behavioral half of the port harness: internal/selfhost.BuildAndTest
+  transpiles a ported package into a throwaway `module goal`, copies the existing
+  white-box test files beside the generated Go, and runs `go test` — so the
+  trusted internal/token tests run against the TRANSPILED output. New
+  internal/selfhost/port_test.go (TestPortedTokenPackage) runs both gates
+  (BuildTranspiled = compile, BuildAndTest = behavior).
+- Files: selfhost/token/token.goal (new); internal/selfhost/selfhost.go
+  (BuildAndTest); internal/selfhost/port_test.go (new); prd.json (US-005
+  passes:true); progress.txt. Initiative artifacts under
+  history/20260629-feature-us-005-port-token-package-to-goal/.
+- Verify: task check + task build green; task fixpoint green (FIXPOINT OK — both
+  bootstrap stages emit selfhost/token/token.go byte-identically); the ported
+  package passes the existing token tests against the transpiled Go.
+- Learnings for future iterations:
+  - Reuse BuildTranspiled + BuildAndTest for US-006+ (lexer, ast, ...). Port =
+    copy internal/<pkg>/*.go -> selfhost/<pkg>/*.goal, then a port_test that
+    Discovers it and runs both gates against ../<pkg>/<pkg>_test.go.
+  - Foreign/stdlib imports pass through; lexer (US-006) imports token, so its
+    port_test layout must include BOTH selfhost/token and selfhost/lexer in the
+    temp module (BuildTranspiled takes a multi-entry layout; extend BuildAndTest
+    or pre-build deps if a ported package gains an internal dep).
+  - selfhost/ is auto-discovered by the fixpoint target, so no per-port harness
+    change is needed; the main package does not import the ported pkgs yet
+    (that is US-012), so `go build ./selfhost` is unaffected.
 ---
