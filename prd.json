@@ -82,7 +82,7 @@
         "The existing lexer tests pass against the transpiled package"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "514 LOC; depends on token. Foreign imports unicode/unicode/utf8 pass through."
     },
     {

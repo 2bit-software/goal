@@ -110,6 +110,11 @@ func BuildTranspiled(layout map[string]*project.Package) error {
 // path and the package's in-module imports resolve exactly as they do in the
 // real tree.
 //
+// deps holds any in-module dependency packages the package under test imports
+// (keyed by their module-relative dir, e.g. "internal/token"); each is
+// transpiled into the same temp module first so those imports resolve. Pass nil
+// when the package has no in-module dependencies (e.g. the leaf token package).
+//
 // It is the behavioral half of the self-host port gate (BuildTranspiled is the
 // compile half): the existing white-box (same-package) tests compile and run
 // against the *transpiled* source, proving the ported package behaves
@@ -117,7 +122,7 @@ func BuildTranspiled(layout map[string]*project.Package) error {
 // error on transpile failure, invalid generated Go, a missing test file, or a
 // test failure; nil when the tests pass. Reused by every later port story
 // (US-005+).
-func BuildAndTest(relDir string, pkg *project.Package, testFiles []string) error {
+func BuildAndTest(relDir string, pkg *project.Package, testFiles []string, deps map[string]*project.Package) error {
 	dir, err := os.MkdirTemp("", "selfhost-port-*")
 	if err != nil {
 		return fmt.Errorf("temp module: %w", err)
@@ -126,6 +131,18 @@ func BuildAndTest(relDir string, pkg *project.Package, testFiles []string) error
 
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module goal\n\ngo 1.26\n"), 0o644); err != nil {
 		return fmt.Errorf("write go.mod: %w", err)
+	}
+
+	// Transpile in-module dependencies into the temp module first so the package
+	// under test (and its tests) can import them.
+	for depRel, dep := range deps {
+		depOut, err := backend.TranspilePackage(dep)
+		if err != nil {
+			return fmt.Errorf("%s: transpile dependency %s: %w", relDir, depRel, err)
+		}
+		if err := writePackage(dir, depRel, dep.Name, depOut); err != nil {
+			return err
+		}
 	}
 
 	out, err := backend.TranspilePackage(pkg)

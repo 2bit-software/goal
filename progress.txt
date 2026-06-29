@@ -44,11 +44,16 @@
 - Self-host port verification has TWO halves in internal/selfhost, both reused by
   every US-005+ port: selfhost.BuildTranspiled(layout) is the COMPILE gate
   (transpile + `go build` in a temp `module goal`); selfhost.BuildAndTest(relDir,
-  pkg, testFiles) is the BEHAVIORAL gate (transpile + copy the EXISTING
+  pkg, testFiles, deps) is the BEHAVIORAL gate (transpile + copy the EXISTING
   internal/<pkg> white-box test files beside the generated Go + `go test`). Port a
   package by copying internal/<pkg>/*.go to selfhost/<pkg>/*.goal (Go superset =
   valid goal; grep for bare match/enum/assert first), then add a port_test that
   Discovers selfhost/<pkg> and runs both gates against ../<pkg>/<pkg>_test.go.
+  When the ported package has an in-module dependency (e.g. lexer imports token),
+  pass its ported deps as BuildAndTest's `deps map[string]*project.Package`
+  (keyed by module-relative dir like "internal/token") so they are transpiled
+  into the same temp module; pass nil for a leaf like token. BuildTranspiled
+  already takes a multi-entry layout — list every dep package there too.
 - Adding a package under selfhost/ is automatically covered by `task fixpoint`:
   project.Discover walks the whole selfhost tree, so both bootstrap stages emit
   the new package and the diff stays byte-identical — no harness change per port.
@@ -4272,6 +4277,38 @@
   - Fixpoint reuse: as each US-005+ package is ported into selfhost/, `task
     fixpoint` already covers it (Discover walks the whole tree); no harness change
     needed per port.
+---
+
+## [2026-06-29T02:10:00Z] - US-006 (self-host phase 4)
+- Ported internal/lexer to goal as the next layer above the token leaf.
+  selfhost/lexer/lexer.goal is a verbatim copy of internal/lexer/lexer.go (Go
+  superset is valid goal); it imports the ported goal/internal/token plus
+  unicode/unicode/utf8 (pass-through). Reserved words match/enum/assert appear in
+  lexer.go only inside comments and in lexer_test.go only as string literals, so
+  no renaming was needed.
+- Extended internal/selfhost.BuildAndTest with a `deps map[string]*project.Package`
+  param: it transpiles each in-module dependency into the temp `module goal`
+  before the package under test, so lexer's `goal/internal/token` import resolves
+  when the copied internal/lexer tests run against the transpiled output. The
+  existing token call now passes nil deps (token is a leaf).
+- Added internal/selfhost/port_test.go TestPortedLexerPackage: discovers
+  selfhost/{token,lexer}, runs BuildTranspiled over both (compile gate) and
+  BuildAndTest on lexer with token as a dep against ../lexer/lexer_test.go
+  (behavioral gate).
+- Files: selfhost/lexer/lexer.goal (new); internal/selfhost/selfhost.go
+  (BuildAndTest deps param); internal/selfhost/port_test.go (token call + lexer
+  test); prd.json (US-006 passes:true); progress.txt. Initiative artifacts under
+  history/20260629-feature-us-006-port-lexer-package-to-goal/.
+- Verify: task check + task build green; task fixpoint green (FIXPOINT OK — both
+  bootstrap stages emit selfhost/lexer/lexer.go byte-identically); the ported
+  lexer passes the existing internal/lexer tests against the transpiled Go.
+- Learnings for future iterations:
+  - The deps-aware BuildAndTest is the template for every multi-dep port from
+    here up (ast->token; parser->token,lexer,ast; ...). Build the full layout
+    once and reuse it for both gates.
+  - A copied internal/<pkg> source needs zero edits when its only specials are
+    inside comments/strings — confirm with the bare-word grep, then it ports
+    verbatim like token did.
 ---
 
 ## [2026-06-29T02:00:00Z] - US-005 (self-host phase 4)
