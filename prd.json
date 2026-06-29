@@ -109,7 +109,7 @@
         "parser tests pass against the transpiled package and task fixpoint stays green"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Step 3 (audit). Result/? is the headline idiom here."
     },
     {

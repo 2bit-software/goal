@@ -2105,3 +2105,93 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
 - **Over:** an `Option`/`Result` rewrite of the `Pos()`/`End()` accessors or the
   `walk*` helpers (all infallible; returning a sentinel `token.Pos{}` is the
   deliberate in-band signal, mirroring `go/ast`).
+
+## self-host idiomatic audit — US-008 (parser)
+
+> US-008 of the **self-host idiomatic** PRD (`prd.json`): the per-package
+> idiomatic audit of `selfhost/parser` (parser.goal, goal_construct.goal,
+> goal_decl.goal, goal_match.goal, goal_stmt.goal). The headline idiom the story
+> anticipated is Result/`?` for `(node, error)` parser functions. Following the
+> US-005/006/007 pattern: classify each Go-ism against the goal idiom it could
+> become, convert where it FITS and is behavior-preserving (intra-package, no
+> cross-package caller edits), and record refusals-with-reason here. This audit
+> went looking specifically for the intra-package Result/`?` surface the story
+> names; it genuinely does not exist (see below), so the outcome is a recorded
+> DECISION with **no `.goal` source change**.
+
+### Parser error handling stays the error-accumulator pattern — NO intra-package Result/`?` surface exists
+- **Kind:** refusal (with reason)
+- **Refused:** rewriting parser functions to return `Result[node, error]` with `?`
+  propagation.
+- **Why:** the anticipated `(node, error)` propagation simply is not how this
+  parser is built. `selfhost/parser` uses an **error-accumulator** design, not
+  per-function `(T, error)` propagation:
+  1. **No internal `(T, error)` functions.** An exhaustive scan of all five
+     `.goal` files for `func … error` returns exactly two hits: the exported
+     `ParseFile` and `(*parser).errorf` — and `errorf` returns *nothing* (it is
+     the error *recorder*). Every internal parse helper (`parseDecl`,
+     `parseStmt`, `parseExpr`, `parseType`, `parseGenDecl`, the `goal_*`
+     constructors, …) returns a **bare `ast` node** (or `nil`); none returns an
+     `error`. There is therefore **no `if err != nil { return …, err }`
+     propagation site anywhere** for Result/`?` to replace (a grep for
+     `err != nil` / `, err` across the package finds only `ParseFile`'s closing
+     `errors.Join`). Errors are appended to `parser.errs []error` by `errorf`
+     and the parser keeps making progress (`expect`/`advance` always advance);
+     this in-band accumulation is the parser's deliberate recovery strategy and
+     is behavior-load-bearing (it produces *all* parse errors and a partial
+     `*ast.File`, not just the first).
+  2. **The one `(T, error)` function is the exported, oracle-pinned entry point.**
+     `ParseFile(src string) (*ast.File, error)` joins `p.errs` at the end. It is
+     the public API the **US-003 verbatim self-host oracle** pins — the ported
+     `internal/parser/parser_test.go` calls it with the `(*ast.File, error)`
+     signature unchanged. Converting it to `Result[*ast.File, error]` would break
+     that signature (forbidden) and is exactly the case `goal fix` already refuses:
+     `goal fix selfhost/parser/parser.goal` emits a result-sig **SKIP** —
+     `parser.goal:57: skipped: [result-sig] ParseFile has a non-propagating
+     return; not auto-converted to Result` — i.e. it is **not an auto-convertible
+     site**. AC-2 ("goal fix reports no remaining auto-convertible propagation
+     sites") therefore holds: zero auto-convertible sites remain.
+- **Over:** converting `ParseFile` to `Result` and rewriting its cross-package
+  callers + the reused oracle test (out of scope; changes the oracle-pinned public
+  API); inventing `(T, error)` returns on the internal helpers purely to apply
+  `?` (would replace the accumulate-and-recover strategy, changing error-reporting
+  behavior — not behavior-preserving).
+
+### No `switch`→`match` applies — `selfhost/parser` declares no in-file `enum`
+- **Kind:** refusal (with reason)
+- **Refused:** converting the package's `switch` statements to `match`.
+- **Why:** AC-1 scopes the conversion to "switch over an in-file enum", and
+  `selfhost/parser` declares **no `enum`** of its own (it *parses* enum syntax in
+  other source; it has none). Every `switch` in the package is over a **non-enum
+  scrutinee**, for which `match` has no legal subject (§02-match §228):
+  - over `token.Kind` (`p.kind()`, `tok`, `k`) — `Kind` is `type Kind int`,
+    deliberately NOT a goal `enum` per the US-005 decision;
+  - type-switches `x.(type)` / `s.(type)` / `fun.(type)` over the `ast` category
+    interfaces (`Node`/`Stmt`/`Expr`/`Decl`) — those cannot be sealed per the
+    US-007 decision (§9 switch-coexistence + oracle break), so they remain plain
+    type-switches;
+  - bare `switch { … }` over boolean conditions (e.g. `describe`,
+    `parseSimpleStmt`).
+  None is a closed-enum value, so each stays a plain `switch`.
+- **Over:** sealing `token.Kind` or the `ast` interfaces to manufacture a `match`
+  scrutinee (both refused cross-package conversions per US-005/US-007).
+
+### No `Option` conversion applies — the bool helpers are pure predicates
+- **Kind:** assumption
+- **Chose:** leave the package's `bool`-returning helpers unchanged.
+- **Why:** the `bool` funcs (`at`, `onNewLine`, `atTypeParams`, `nameThenType`,
+  `startsType`/`startsTypeKind`, `startsExpr`, `startsArmStmt`, `isContextual`,
+  `isTypeSwitchGuard`) are **pure predicates**, not fallible comma-ok lookups with
+  a missing-value case; there is no `(T, bool)` lookup in the package. `Option`
+  would be neither meaningful nor behavior-preserving for a predicate.
+- **Over:** an `Option` rewrite of any predicate (no absent-value semantics to
+  model).
+
+### Verification
+`goal fix selfhost/parser/*.goal` → no content diff on any file; the only stderr
+is the `ParseFile` result-sig SKIP above (a deliberately non-auto-convertible
+site). `task check` (incl. the `internal/selfhost` port gate that builds and tests
+the transpiled `selfhost/parser` against `internal/parser/parser_test.go`, plus
+`internal/parser`) green; `task build` green; `task fixpoint` → FIXPOINT OK
+(`selfhost/parser/*.go` byte-identical across goal-c-1/goal-c-2). The
+`selfhost/parser` `.goal` source is unchanged.

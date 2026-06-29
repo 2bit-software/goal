@@ -123,6 +123,17 @@
   "keep as iota" case as token.Kind even without array-index/range uses, because
   ==/plain-switch consumption + the `int` representation make a boxed enum a
   behavior break.
+- A recursive-descent parser written in the error-ACCUMULATOR style (a
+  `parser.errs []error` field appended by an `errorf` recorder; internal helpers
+  return a bare AST node / nil and never `error`; the exported entry point joins
+  the slice at the end) has ZERO intra-package Result/? surface — there is no
+  `if err!=nil` propagation site to idiomatize, and the lone `(T,error)` function
+  is the exported, oracle-pinned entry point that `goal fix` correctly result-sig
+  SKIPs. Before planning a "parser -> Result/?" audit, grep `func .*error`: if the
+  only hits are the public ParseFile + a void errorf recorder, the headline idiom
+  does not apply and the audit is a documented refusal (US-008). Recovery-by-
+  accumulation is behavior-load-bearing (it emits ALL errors + a partial AST), so
+  manufacturing (T,error) returns just to apply `?` would NOT be behavior-preserving.
 
 ## [2026-06-28T23:25:00Z] - US-008 (checker-onto-ast PRD)
 - Migrated internal/project and internal/pipeline/sourcemap off the internal/scan
@@ -4844,4 +4855,46 @@
     ChanDir) are the same "keep as iota" case as token.Kind: equality/plain-
     switch consumption + int representation make the boxed enum encoding a
     behavior break, independent of array-indexing/range-predicate uses.
+---
+
+## [2026-06-29T09:30:00Z] - US-008 (self-host idiomatic PRD)
+- Step 3 of 3 (idiomatic audit), fourth package: selfhost/parser (parser.goal,
+  goal_construct/decl/match/stmt.goal). The story names Result/? as the headline
+  idiom; this audit went looking specifically for that intra-package surface and
+  it genuinely does NOT exist, so the outcome is a recorded DECISION with no
+  .goal source change. Mirrors US-005 (token) / US-006 (lexer) / US-007 (ast).
+- Result/? (AC-1): REFUSED with reason. The parser uses an error-ACCUMULATOR
+  design, not (T,error) propagation: `parser.errs []error` appended by the void
+  recorder `errorf`; every internal helper returns a bare ast node/nil and never
+  error; the lone (T,error) function is the exported, oracle-pinned
+  ParseFile(src)(*ast.File,error) which joins p.errs at the end. Grep of all 5
+  files for `func .*error` => only ParseFile + errorf; grep `err != nil`/`, err`
+  => only ParseFile's errors.Join. So there is NO `if err!=nil` propagation site
+  to convert, and ParseFile is forbidden to change (US-003 oracle pins its
+  signature; parser_test.go calls it). goal fix result-sig SKIPs ParseFile, i.e.
+  it is not an auto-convertible site -> AC-2 holds (zero auto-convertible sites).
+- switch->match (AC-1): REFUSED. selfhost/parser declares no in-file `enum`. All
+  switches are over non-enum scrutinees: token.Kind (`type Kind int`, not an enum
+  per US-005), type-switches over ast category interfaces (can't seal per US-007
+  §9), and boolean `switch {}`. No closed-enum scrutinee => no match candidate.
+- Option (predicates): N/A. The bool helpers (at/onNewLine/startsType/
+  atTypeParams/nameThenType/isTypeSwitchGuard/startsExpr/...) are pure predicates,
+  not comma-ok fallible lookups.
+- Machine check (AC-2): `goal fix selfhost/parser/*.goal` => no content diff on
+  any file; only stderr is the ParseFile result-sig SKIP (non-auto-convertible).
+- Files: DECISIONS.md (new "US-008 (parser)" section), prd.json (US-008
+  passes:true), progress.txt. Initiative artifacts under
+  history/20260629-refactor-us-008-idiomatic-audit-parser/. No .goal source edit.
+- Verify: goal fix (no diff; only the deliberate ParseFile skip); task check green
+  (incl. internal/selfhost port gate + internal/parser); task build green; task
+  fixpoint FIXPOINT OK (selfhost/parser/*.go byte-identical goal-c-1/goal-c-2).
+- Learnings for future iterations:
+  - See the new Codebase Patterns bullet: an error-accumulator parser has zero
+    intra-package Result/? surface. The "Result/? is the headline idiom" note in
+    a story is an EXPECTATION to test against the source, not a guarantee the
+    surface exists — verify the package's error strategy first.
+  - sema (US-009) is the next audit: it DOES have real (T,error)/Result surface
+    per the US-004 result-sig skips; expect genuine conversions there, unlike the
+    leaf packages token/lexer/ast/parser which all bottomed out at documented
+    refusals.
 ---
