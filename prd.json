@@ -43,7 +43,7 @@
         "The generic function transpiles to valid Go that `go build` accepts, with a test covering a constrained param (e.g. [T comparable])"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Localized ~3-spot fix: parser.go:347 parseFuncDecl must call the existing atTypeParams/parseTypeParams (parser.go:281,296,307); add TypeParams to ast.FuncType (only TypeSpec has one, ast.go:261); emit in funcDecl/funcSig (backend/emit.go:360,439). Compiler uses zero generic funcs, so this is completeness, not gating."
     },
     {

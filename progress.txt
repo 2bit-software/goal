@@ -4205,3 +4205,24 @@
     with no extra wiring (stdlib imports pass through). Reuse BuildTranspiled for
     US-005+; key the layout map by the module-relative dir (e.g. "internal/token").
 ---
+
+## [2026-06-29T01:30:00Z] - US-003 (self-host phase 4)
+- Added top-level generic function declaration support. Parser now reads a
+  type-parameter list after a (non-method) function name; ast.FuncType carries
+  TypeParams; backend emits the list between the name and value params.
+- Files: internal/ast/ast.go, internal/ast/walk.go, internal/parser/parser.go,
+  internal/backend/emit.go, internal/backend/backend_test.go. Initiative
+  artifacts under history/20260629-feature-us-003-generic-function-declarations/.
+- Learnings for future iterations:
+  - Generic type-param parsing is already solved for type decls: reuse
+    p.atTypeParams()/p.parseTypeParams() (parser.go) — they handle shared
+    constraints ([T, U any]) and disambiguate from array/slice types. No new
+    parsing logic needed for generic funcs.
+  - Backend emits a FieldList type-param list with e.fieldList(fl, "[", "]"),
+    same call used for TypeSpec.TypeParams (emit.go ~347). Mirror it in funcSig.
+  - Gate func type params on fd.Recv == nil: Go forbids type parameters on
+    methods, and the receiver param list is parsed before the name.
+  - go/format (format.Source) fully parses Go generics, so it is a valid
+    "is this valid Go" check in backend tests; the goalc CLI takes a file path
+    arg (or stdin) and emits Go suitable for a real `go build` smoke.
+---
