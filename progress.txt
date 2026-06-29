@@ -182,6 +182,17 @@
   `Result.Err` arms (emit.goal:2142). It is the §8.3 Result idiom, NOT a
   switch->enum conversion — do not count it toward AC-1's "switch-over-in-file-
   enum -> match" (backend has no in-file enum; that part stays a refusal).
+- Foreign enrichment (sema.EnrichForeign -> foreignDecls) has TWO source paths now
+  (SEAM-CAP-2): when the resolved import dir holds non-test .go, it reconstructs foreign
+  enums from the generated §8.1 marker-interface encoding (reconstructForeignEnums); when
+  it holds ONLY .goal SOURCE (the real per-package `goal build ./selfhost` topology), it
+  runs the goal front end (parser.ParseFile + ResolvePackage) over those .goal files and
+  projects EXPORTED enums into info.Enums keyed `alias.Enum` (goalForeignDecls). The .go
+  path wins when both exist. Only ENUMS are projected from .goal; struct/func/method
+  foreign facts from .goal source are deferred. Cross-package bare variant construction
+  (`pkg.Enum.Variant`) lowers via enumRef (the construction-side counterpart of
+  matchQualifier) in backend selectorExpr/variantLit/armBodyType -> `pkg.Enum(pkg.Enum_Variant{})`.
+  Mirror any such pipeline change in BOTH internal/ and selfhost/ or fixpoint breaks.
 
 ## [2026-06-29T12:30:00Z] - US-011 (self-host idiomatic PRD)
 - Step 3 of 3 (idiomatic audit), seventh and LARGEST package: selfhost/backend
@@ -5197,6 +5208,47 @@
     `workflow next`; running `workflow next` again clears the gate and advances.
     Each `next` also pre-fetches the NEXT step's skill, so write a step's artifact
     BEFORE advancing (it transitions you into the following step's audit).
+---
+
+## 2026-06-29T17:30:00Z - SEAM-CAP-2
+- Implemented cross-.goal-package enum/sema-fact propagation: an enum DEFINED in a
+  sibling .goal package is now visible to consumers in other .goal packages during the
+  real per-package transpile, so a cross-package `match` and bare variant construction
+  lower correctly (previously: `unsupported expression *ast.MatchExpr` and verbatim
+  invalid Go). SEAM-CAP only covered the .go-defining-package case; this covers the
+  sibling-.goal-package case the live `goal build ./selfhost` bootstrap actually uses.
+- Two-part fix, applied to BOTH internal/ (live) and selfhost/ (.goal mirror):
+  1. Enrichment (foreign.go / foreign.goal): foreignDecls classifies the resolved dir;
+     when NO non-test .go but some .goal, it delegates to new goalForeignDecls, which
+     parses the .goal files (parser.ParseFile) + ResolvePackage and projects EXPORTED
+     enums into info.Enums keyed `alias.Enum` (same sema.Enum shape the .go path
+     reconstructs). The .go path is unchanged and wins when both exist — strictly
+     additive (a .goal-only dir previously yielded nothing). New helpers: goalForeignDecls,
+     isExportedName, qualifyForeignType. sema now imports parser (no cycle — parser does
+     not import sema).
+  2. Construction lowering (lower.go/emit.go + .goal): new enumRef resolves an enum key
+     from a bare Ident OR a package-qualified SelectorExpr (`pkg.Enum`); selectorExpr,
+     variantLit, armBodyType use it so `pkg.Enum.Variant` lowers to
+     `pkg.Enum(pkg.Enum_Variant{})`. Match lowering already handled the qualified case
+     (SEAM-CAP matchQualifier) — it only needed the enum present in info.Enums.
+- Files: internal/sema/foreign.go, internal/backend/lower.go, internal/backend/emit.go,
+  selfhost/sema/foreign.goal, selfhost/backend/lower.goal, selfhost/backend/emit.goal,
+  internal/backend/crosspkg_goal_enum_test.go (new),
+  internal/backend/testdata/goalenum/{mood/mood.goal,use/use.goal} (new sibling-.goal
+  fixture), DECISIONS.md, prd.json.
+- Gates: task check green, task build clean, task fixpoint = FIXPOINT OK (both bootstrap
+  stages byte-identical on the new emitter source); corpus behavioral tier unchanged
+  (fixture is additive).
+- Learnings for future iterations:
+  - The proof MUST exercise the real topology: transpile BOTH the sibling .goal defining
+    package AND the consumer per-package (backend.TranspilePackage each), then build+run.
+    The corpus package runner (buildPackageOutput) only copies foreign .go, so it cannot
+    wire a .goal foreign dep — use a dedicated backend test (mirrors SEAM-CAP's
+    crosspkg_enum_test.go) instead.
+  - SEAM-CAP-2 unblocks SEAM-002/003/004 in the SELF-HOST topology: FuncMod/ChanDir/
+    Mode/Severity are tag-only enums, so enum-only .goal projection + qualifyForeignType
+    (best-effort, moot for tag-only) suffices. Payload-bearing cross-.goal-package
+    construction works via variantLit+enumRef but is not yet exercised.
 ---
 
 ## 2026-06-29T15:30:00Z - SEAM-CAP

@@ -953,15 +953,17 @@ func (e *emitter) expr(x ast.Expr) {
 	}
 }
 
-// selectorExpr emits a selector, lowering a data-less enum variant reference
-// (`Status.Pending`, which parses to a SelectorExpr) to its construction encoding
-// `Status(Status_Pending{})`. The guard requires the base to be an *Ident naming a
-// resolved enum whose variant set contains the selector, so ordinary and
-// package-qualified selectors (`io.Writer`, `c.n`) are emitted unchanged.
+// selectorExpr emits a selector, lowering a data-less enum variant reference —
+// local (`Status.Pending`) or package-qualified (`pkg.Enum.Variant`), both of which
+// parse to a SelectorExpr — to its construction encoding `key(key_Variant{})`. The
+// guard (enumRef) requires the base to name a resolved enum whose variant set contains
+// the selector, so ordinary selectors (`io.Writer`, `c.n`) are emitted unchanged.
 func (e *emitter) selectorExpr(x *ast.SelectorExpr) {
-	if id, ok := x.X.(*ast.Ident); ok && x.Sel != nil {
-		if en := enumOf(e.info, id.Name); en != nil && en.VSet[x.Sel.Name] {
-			e.p(fmt.Sprintf("%s(%s_%s{})", id.Name, id.Name, x.Sel.Name))
+	if key, ok := enumRef(x.X); ok && x.Sel != nil {
+		// A data-less variant reference, local (`Status.Pending`) or package-qualified
+		// (`pkg.Enum.Variant`), lowers to its §8.1 construction `key(key_Variant{})`.
+		if en := enumOf(e.info, key); en != nil && en.VSet[x.Sel.Name] {
+			e.p(fmt.Sprintf("%s(%s_%s{})", key, key, x.Sel.Name))
 			return
 		}
 	}
@@ -983,8 +985,8 @@ func (e *emitter) selectorExpr(x *ast.SelectorExpr) {
 // encoding `Enum(Enum_V{Label: x})`: labels are exported and argument values are
 // emitted recursively, so a nested construction in a payload lowers for free.
 func (e *emitter) variantLit(x *ast.VariantLit) {
-	enumIdent, ok := x.Enum.(*ast.Ident)
-	if !ok || enumOf(e.info, enumIdent.Name) == nil {
+	key, ok := enumRef(x.Enum)
+	if !ok || enumOf(e.info, key) == nil {
 		e.fail("unsupported variant construction (enum not resolved): %T", x.Enum)
 		return
 	}
@@ -992,7 +994,7 @@ func (e *emitter) variantLit(x *ast.VariantLit) {
 		e.fail("variant construction has no variant tag")
 		return
 	}
-	e.p(fmt.Sprintf("%s(%s_%s{", enumIdent.Name, enumIdent.Name, x.Variant.Name))
+	e.p(fmt.Sprintf("%s(%s_%s{", key, key, x.Variant.Name))
 	for i, a := range x.Args {
 		if i > 0 {
 			e.p(", ")
@@ -1592,16 +1594,16 @@ func (e *emitter) armBodyType(body ast.Node) (string, bool) {
 			return "bool", true
 		}
 	case *ast.SelectorExpr:
-		// A data-less variant reference `Enum.Variant`.
-		if base, ok := b.X.(*ast.Ident); ok && b.Sel != nil {
-			if en := enumOf(e.info, base.Name); en != nil && en.VSet[b.Sel.Name] {
-				return base.Name, true
+		// A data-less variant reference `Enum.Variant` or `pkg.Enum.Variant`.
+		if key, ok := enumRef(b.X); ok && b.Sel != nil {
+			if en := enumOf(e.info, key); en != nil && en.VSet[b.Sel.Name] {
+				return key, true
 			}
 		}
 	case *ast.VariantLit:
-		// A payload variant construction `Enum.Variant(field: v)`.
-		if enumIdent, ok := b.Enum.(*ast.Ident); ok && enumOf(e.info, enumIdent.Name) != nil {
-			return enumIdent.Name, true
+		// A payload variant construction `Enum.Variant(field: v)` or `pkg.Enum.Variant(...)`.
+		if key, ok := enumRef(b.Enum); ok && enumOf(e.info, key) != nil {
+			return key, true
 		}
 	}
 	return "", false

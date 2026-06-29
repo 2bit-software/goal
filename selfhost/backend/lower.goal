@@ -235,6 +235,24 @@ func (f identFinder) Visit(n ast.Node) ast.Visitor {
 	return f
 }
 
+// enumRef returns the enum key an expression names when used as a construction base:
+// a bare `*ast.Ident` (`Enum`) yields its name, and a package-qualified
+// `*ast.SelectorExpr` whose own base is an ident (`pkg.Enum`) yields `pkg.Enum` — the
+// same key matchQualifier produces and EnrichForeign stores for an imported enum. Any
+// other shape returns ok=false, so an ordinary selector (`io.Writer`, `c.n`) is left
+// alone. It is the construction-side counterpart of matchQualifier.
+func enumRef(x ast.Expr) (string, bool) {
+	switch e := x.(type) {
+	case *ast.Ident:
+		return e.Name, true
+	case *ast.SelectorExpr:
+		if pkg, ok := e.X.(*ast.Ident); ok && e.Sel != nil {
+			return pkg.Name + "." + e.Sel.Name, true
+		}
+	}
+	return "", false
+}
+
 // enumOf returns the resolved enum named name, or nil when info or the enum is
 // absent (nil-safe so the plain-Go path, which carries no enums, is harmless).
 func enumOf(info *sema.Info, name string) *sema.Enum {

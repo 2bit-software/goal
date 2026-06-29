@@ -37,6 +37,20 @@
       "notes": "Prerequisite discovered while attempting SEAM-002 (BLOCKED). Without this, FuncMod/ChanDir (SEAM-002), Mode/Severity (SEAM-003), and the sealed-AST match conversions (SEAM-004) cannot lower because their match consumers live in different packages than the type definition. Root cause: lower.goal matchQualifier returns \"\" for SelectorExpr variant patterns + enumOf resolves only same-package enums. This is a real compiler feature, not a refusal."
     },
     {
+      "id": "SEAM-CAP-2",
+      "title": "Compiler capability: cross-.goal-package enum/sema-fact propagation during self-host build",
+      "description": "As the seam idiomatization effort, I need an enum (and its \u00a78.1 facts) DEFINED in a sibling .goal package to be visible to consumers in OTHER .goal packages during the real per-package `goal build ./selfhost` bootstrap, so SEAM-002/003/004 conversions actually transpile in the self-host topology (not just when the defining package is pre-generated as .go). SEAM-CAP enabled cross-package enum-match lowering only when the defining package is available as generated .go; the live bootstrap transpiles each package from sibling .goal SOURCE and enrichForeign/foreignDecls reads only .go files, so a sibling .goal-defined enum is invisible to dependents (match fails `unsupported expression *ast.MatchExpr`; bare construction lowers verbatim to invalid Go).",
+      "acceptanceCriteria": [
+        "During per-package transpile, an enum defined in a sibling .goal package is resolved by consumers in other .goal packages \u2014 either by enrichForeign reading sibling .goal sources (lex/parse/extract enum + \u00a78.1 facts) or by dependency-ordered whole-program transpile that propagates sema.Info across packages",
+        "A 2+-package corpus fixture proves a `match` over an enum DEFINED IN A SIBLING .goal PACKAGE (not a .go fixture) both transpiles and behaves identically to the equivalent switch \u2014 exercising the real `goal build ./selfhost`-style topology",
+        "Bare construction of a cross-.goal-package enum variant lowers to the correct \u00a78.1 form (e.g. `pkg.Enum(pkg.Enum_Variant{})`), not verbatim",
+        "task check, task build, task fixpoint all green; corpus behavioral tier unchanged"
+      ],
+      "priority": 1.6,
+      "passes": true,
+      "notes": "Second prerequisite, discovered while retrying SEAM-002. Distinct from SEAM-CAP: that handled the .go-defining-package case (its fixture used .go); this handles the sibling-.goal-package case that the real self-host bootstrap uses. Keystone for the enum/AST half of the PRD (SEAM-002/003/004). Prefer the bounded enrichForeign-reads-.goal extension over a full whole-program rearchitecture if it suffices. Watch fixpoint closely \u2014 touches the build/transpile pipeline."
+    },
+    {
       "id": "SEAM-002",
       "title": "Seam: token.Kind (+ FuncMod, ChanDir) iota -> goal enum, tree-wide",
       "description": "As a goal author, I need token.Kind expressed as a goal enum and every cross-package consumer updated in the same change, so the compiler's most pervasive iota type reads as idiomatic goal.",

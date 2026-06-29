@@ -2821,3 +2821,44 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
 - `task check` green (`go vet ./...` + full `go test ./...`); `task build` green
   (both binaries); `task fixpoint` → FIXPOINT OK — all unchanged from the
   US-013 baseline because no source moved.
+
+## SEAM-CAP-2 — cross-.goal-package enum/sema-fact propagation during self-host build
+
+- **Kind:** compiler capability
+- **Problem:** SEAM-CAP lowered a cross-package enum `match`/construction only when the
+  DEFINING package was available as generated `.go` (its fixture used a `.go` foreign
+  package; `EnrichForeign`/`foreignDecls` read only `.go`). The real per-package
+  `goal build ./selfhost` transpiles each package from sibling `.goal` SOURCE, so an enum
+  defined in a sibling `.goal` package (e.g. `ast.FuncMod`) was invisible to consumers in
+  other `.goal` packages: a `match` over it failed (`unsupported expression *ast.MatchExpr`)
+  and bare construction `a.Mod.From` lowered VERBATIM instead of the §8.1
+  `a.Mod(a.Mod_From{})`.
+- **Fix (bounded — enrichForeign reads `.goal`):** `foreignDecls` now classifies the
+  resolved dir's entries; when it holds NO non-test `.go` but some `.goal`, it delegates to
+  a new `goalForeignDecls` that runs the goal front end (`parser.ParseFile` +
+  `ResolvePackage`) over those `.goal` files and projects the package's EXPORTED enums into
+  `info.Enums` keyed `alias.Enum` (the same `sema.Enum` shape the `.go` path reconstructs
+  from the generated §8.1 sum encoding). The `.go` path is unchanged and takes precedence
+  when both forms exist, so SEAM-CAP's behavior is preserved; this is strictly ADDITIVE (a
+  `.goal`-only dir previously yielded nothing).
+- **Construction lowering:** added `enumRef` (the construction-side counterpart of
+  `matchQualifier`) resolving an enum key from a bare `Ident` (`Enum`) OR a package-qualified
+  `SelectorExpr` (`pkg.Enum`). `selectorExpr`, `variantLit`, and `armBodyType` use it, so a
+  bare cross-package variant `pkg.Enum.Variant` lowers to `pkg.Enum(pkg.Enum_Variant{})`.
+  Match lowering already handled the qualified case (SEAM-CAP `matchQualifier`); it only
+  needed the enum present in `info.Enums["pkg.Enum"]`, which the enrichment now supplies.
+- **Scope:** enum facts only from `.goal` source (the keystone for SEAM-002/003/004 —
+  FuncMod/ChanDir/Mode/Severity are tag-only). Struct/func/method foreign facts from sibling
+  `.goal` source are deferred (the `.go` path covers them once a package is emitted).
+  `qualifyForeignType` requalifies variant field types best-effort (moot for tag-only).
+- **Applied in BOTH** `internal/` (live transpiler — `internal/sema/foreign.go`,
+  `internal/backend/lower.go`+`emit.go`) AND `selfhost/` (`selfhost/sema/foreign.goal`,
+  `selfhost/backend/lower.goal`+`emit.goal`), so the self-host stays consistent and the
+  fixpoint holds.
+- **Proof:** a 2-package fixture under `internal/backend/testdata/goalenum/` where the enum
+  is DEFINED IN A SIBLING `.goal` PACKAGE (`mood/mood.goal`) and consumed via cross-package
+  `match` + bare construction (`use/use.goal`). `crosspkg_goal_enum_test.go` transpiles BOTH
+  packages per-package (real topology), asserts the §8.1 type-switch + construction form, and
+  builds+runs them against a reference switch (identical behavior).
+- **Gates:** `task check`, `task build`, `task fixpoint` → FIXPOINT OK; corpus behavioral
+  tier unchanged (the fixture is additive).

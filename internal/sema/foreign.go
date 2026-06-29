@@ -34,6 +34,7 @@ import (
 	"strings"
 
 	"goal/internal/ast"
+	"goal/internal/parser"
 )
 
 // DirResolver maps an import path to the directory holding that package's Go source,
@@ -144,14 +145,36 @@ func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+	var goFiles, goalFiles []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		switch {
+		case strings.HasSuffix(name, ".go"):
+			goFiles = append(goFiles, name)
+		case strings.HasSuffix(name, ".goal"):
+			goalFiles = append(goalFiles, name)
+		}
+	}
+	// A sibling package that exists only as .goal SOURCE (not yet emitted to .go) is the
+	// real per-package `goal build ./selfhost` topology: each package is transpiled from
+	// .goal source, so a dependent resolves an imported sibling to its .goal dir, not a
+	// generated one. Read the enums straight from that source (the §8.1 facts the backend
+	// match/construction lowering consults) so a cross-package match/construction lowers,
+	// exactly as the .go path reconstructs them from the generated sum encoding. SEAM-CAP-2.
+	if len(goFiles) == 0 && len(goalFiles) > 0 {
+		return goalForeignDecls(dir, requestedAlias, goalFiles)
+	}
 	fset := gotoken.NewFileSet()
 	var files []*goast.File
 	pkgName := ""
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
-			continue
-		}
-		f, perr := goparser.ParseFile(fset, filepath.Join(dir, e.Name()), nil, goparser.SkipObjectResolution)
+	for _, name := range goFiles {
+		f, perr := goparser.ParseFile(fset, filepath.Join(dir, name), nil, goparser.SkipObjectResolution)
 		if perr != nil {
 			continue // tolerate an unparseable sibling; read what we can
 		}
@@ -265,6 +288,104 @@ func reconstructForeignEnums(markers map[string]bool, structs map[string][]Field
 		}
 	}
 	return enums
+}
+
+// goalForeignDecls is the sibling-.goal-SOURCE twin of foreignDecls' .go path: it runs the
+// goal front end (parse + ResolvePackage) over the imported package's .goal files and
+// projects its EXPORTED enums into info.Enums keyed `alias.Enum`, mirroring the in-package
+// sema.Enum the backend's match/construction lowering consults. Only enums are projected —
+// the real per-package build reaches this path before the defining package is emitted to
+// .go, and the enum facts are what a cross-package match/construction needs; struct/func/
+// method foreign facts from .goal source are out of scope (the .go path covers them once a
+// package is generated). Parse/read failures are tolerated per file, matching the .go path.
+func goalForeignDecls(dir, requestedAlias string, goalFiles []string) (structs map[string][]Field, funcs, methods map[string]FuncSig, enums map[string]*Enum, err error) {
+	structs = map[string][]Field{}
+	funcs = map[string]FuncSig{}
+	methods = map[string]FuncSig{}
+	enums = map[string]*Enum{}
+	files := make([]*ast.File, 0, len(goalFiles))
+	pkgName := ""
+	for _, name := range goalFiles {
+		data, rerr := os.ReadFile(filepath.Join(dir, name))
+		if rerr != nil {
+			continue // tolerate an unreadable sibling; read what we can
+		}
+		f, perr := parser.ParseFile(string(data))
+		if perr != nil {
+			continue // tolerate an unparseable sibling
+		}
+		if pkgName == "" && f.Name != nil {
+			pkgName = f.Name.Name
+		}
+		files = append(files, f)
+	}
+	alias := requestedAlias
+	if alias == "" {
+		alias = pkgName
+	}
+	if len(files) == 0 {
+		return structs, funcs, methods, enums, nil
+	}
+	info := ResolvePackage(files)
+	for name, en := range info.Enums {
+		if en == nil || !isExportedName(name) {
+			continue
+		}
+		qual := alias + "." + name
+		qen := &Enum{Name: qual, VSet: map[string]bool{}, FieldSet: map[string]map[string]bool{}}
+		for _, v := range en.Variants {
+			fields := make([]Field, 0, len(v.Fields))
+			fset := map[string]bool{}
+			for _, fld := range v.Fields {
+				fields = append(fields, Field{Name: fld.Name, Type: qualifyForeignType(fld.Type, alias)})
+				fset[fld.Name] = true
+			}
+			qen.Variants = append(qen.Variants, Variant{Name: v.Name, Fields: fields})
+			qen.VSet[v.Name] = true
+			qen.FieldSet[v.Name] = fset
+		}
+		enums[qual] = qen
+	}
+	return structs, funcs, methods, enums, nil
+}
+
+// isExportedName reports whether name begins with an ASCII uppercase letter — a Go/goal
+// exported identifier, the only kind reachable across a package boundary.
+func isExportedName(name string) bool {
+	if name == "" {
+		return false
+	}
+	c := name[0]
+	return c >= 'A' && c <= 'Z'
+}
+
+// qualifyForeignType re-renders a variant field's type (as ResolvePackage produced it from
+// the defining package's own source, with package-local names bare) into how the importing
+// goal source names it: a bare local named type is prefixed with alias, matching goTypeString
+// on the .go path. Leading decorations (`*`, `[]`, `...`, `[N]`, `map[K]V`) are peeled and
+// requalified; an already-qualified, predeclared, or composite/anonymous shape is left as-is.
+func qualifyForeignType(t, alias string) string {
+	t = strings.TrimSpace(t)
+	switch {
+	case strings.HasPrefix(t, "*"):
+		return "*" + qualifyForeignType(t[1:], alias)
+	case strings.HasPrefix(t, "[]"):
+		return "[]" + qualifyForeignType(t[2:], alias)
+	case strings.HasPrefix(t, "..."):
+		return "..." + qualifyForeignType(t[3:], alias)
+	case strings.HasPrefix(t, "map["):
+		if i := strings.IndexByte(t, ']'); i > len("map[") {
+			return "map[" + qualifyForeignType(t[len("map["):i], alias) + "]" + qualifyForeignType(t[i+1:], alias)
+		}
+	case strings.HasPrefix(t, "["):
+		if i := strings.IndexByte(t, ']'); i > 0 {
+			return t[:i+1] + qualifyForeignType(t[i+1:], alias)
+		}
+	}
+	if t == "" || isGoBuiltin(t) || strings.ContainsAny(t, ".{}()[] \t") {
+		return t // qualified, predeclared, or a composite/anon shape — leave intact
+	}
+	return alias + "." + t
 }
 
 // foreignFields returns the exported, named fields of a struct (embedded and unexported

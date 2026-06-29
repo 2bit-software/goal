@@ -1,0 +1,10 @@
+package mood
+
+// Mood is an enum DEFINED in this sibling .goal package, with NO generated .go beside
+// it — the real per-package `goal build` topology SEAM-CAP-2 targets. A dependent
+// package importing this one must read these variants straight from .goal source to
+// lower a cross-package match or bare construction over Mood.
+enum Mood {
+	Happy
+	Sad
+}
