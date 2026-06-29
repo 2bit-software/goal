@@ -191,8 +191,19 @@ func matchQualifier(m *ast.MatchExpr) string {
 		if !ok {
 			continue
 		}
-		if id, ok := vp.Enum.(*ast.Ident); ok {
-			return id.Name
+		switch e := vp.Enum.(type) {
+		case *ast.Ident:
+			// Local enum, Result, or Option: `Enum.Variant`.
+			return e.Name
+		case *ast.SelectorExpr:
+			// Package-qualified enum imported from another package:
+			// `pkg.Enum.Variant`. The qualifier `pkg.Enum` feeds the type-switch
+			// case-label builder (`pkg.Enum_Variant`, the correct reference to the
+			// imported §8.1 variant struct) and enumOf, which resolves it from the
+			// merged cross-package sema.Info (keyed `pkg.Enum`).
+			if pkg, ok := e.X.(*ast.Ident); ok && e.Sel != nil {
+				return pkg.Name + "." + e.Sel.Name
+			}
 		}
 	}
 	return ""

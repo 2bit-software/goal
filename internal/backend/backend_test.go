@@ -903,6 +903,17 @@ var astPackageCases = []struct {
 		files:   []string{"testdata/package/foreign-derive/conv.goal"},
 		imports: map[string]string{"goal/internal/pipeline/testdata/extpkg": "internal/pipeline/testdata/extpkg"},
 	},
+	{
+		// SEAM-CAP: a `match` over an enum DEFINED in an imported package. The
+		// foreign package carries the enum's generated §8.1 sum encoding; the
+		// driver must reconstruct it (sema.EnrichForeign) and lower the match to a
+		// type-switch over `light.Light_On`/`light.Light_Off`.
+		id:      "cross-pkg-enum",
+		dir:     "testdata/package/cross-pkg-enum",
+		name:    "use",
+		files:   []string{"testdata/package/cross-pkg-enum/use.goal"},
+		imports: map[string]string{"goal/internal/backend/testdata/extenum": "internal/backend/testdata/extenum"},
+	},
 }
 
 // TestASTEnginePackageBehavioralTier is the US-041 gap-3 witness: each package

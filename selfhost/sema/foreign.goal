@@ -48,11 +48,13 @@ type DirResolver func(importPath, fromDir string) (string, error)
 // relative to it). resolve may be nil, in which case DefaultResolver is used.
 //
 // It mutates info in place: foreign structs land in info.Structs (keyed `alias.Type`),
-// foreign methods in info.ForeignMethods (keyed `alias.Type.Method`), and foreign
-// receiver-less functions in info.FuncSignatures (keyed `alias.Func`). It returns any
-// per-import errors (resolution or directory-read failures), which are non-fatal: an
-// unresolved import simply leaves its types unknown, exactly as analyze.EnrichForeign
-// behaves. A blank import (`_ "x"`) names no qualified type and is skipped.
+// foreign methods in info.ForeignMethods (keyed `alias.Type.Method`), foreign
+// receiver-less functions in info.FuncSignatures (keyed `alias.Func`), and foreign
+// enums (reconstructed from their generated §8.1 sum encoding) in info.Enums (keyed
+// `alias.Enum`). It returns any per-import errors (resolution or directory-read
+// failures), which are non-fatal: an unresolved import simply leaves its types
+// unknown, exactly as analyze.EnrichForeign behaves. A blank import (`_ "x"`) names no
+// qualified type and is skipped.
 func EnrichForeign(info *Info, imports []*ast.ImportSpec, dir string, resolve DirResolver) []error {
 	if resolve == nil {
 		resolve = DefaultResolver
@@ -65,6 +67,9 @@ func EnrichForeign(info *Info, imports []*ast.ImportSpec, dir string, resolve Di
 	}
 	if info.FuncSignatures == nil {
 		info.FuncSignatures = map[string]FuncSig{}
+	}
+	if info.Enums == nil {
+		info.Enums = map[string]*Enum{}
 	}
 	var errs []error
 	loaded := map[string]bool{} // import paths already merged, for dedupe across imports
@@ -86,7 +91,7 @@ func EnrichForeign(info *Info, imports []*ast.ImportSpec, dir string, resolve Di
 			errs = append(errs, err)
 			continue
 		}
-		structs, funcs, methods, err := foreignDecls(resolved, rawAlias)
+		structs, funcs, methods, enums, err := foreignDecls(resolved, rawAlias)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -99,6 +104,9 @@ func EnrichForeign(info *Info, imports []*ast.ImportSpec, dir string, resolve Di
 		}
 		for name, sig := range methods {
 			info.ForeignMethods[name] = sig
+		}
+		for name, en := range enums {
+			info.Enums[name] = en
 		}
 	}
 	return errs
@@ -127,13 +135,14 @@ func importPath(tok string) (string, bool) {
 
 // foreignDecls parses the Go source files in dir and returns its exported struct types
 // (keyed `alias.Type`, each field's type rendered qualified by alias), its exported
-// receiver-less function arities (keyed `alias.Func`), and its exported method arities
-// (keyed `alias.Recv.Method`). requestedAlias is the qualifier the goal source uses; when
-// empty (an unaliased import) the package's own declared name is used.
-func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs, methods map[string]FuncSig, err error) {
+// receiver-less function arities (keyed `alias.Func`), its exported method arities
+// (keyed `alias.Recv.Method`), and its exported enums reconstructed from their generated
+// §8.1 sum encoding (keyed `alias.Enum`). requestedAlias is the qualifier the goal source
+// uses; when empty (an unaliased import) the package's own declared name is used.
+func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs, methods map[string]FuncSig, enums map[string]*Enum, err error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	fset := gotoken.NewFileSet()
 	var files []*goast.File
@@ -158,6 +167,7 @@ func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs
 	structs = map[string][]Field{}
 	funcs = map[string]FuncSig{}
 	methods = map[string]FuncSig{}
+	markers := map[string]bool{} // enum names whose §8.1 marker interface was seen
 	for _, f := range files {
 		for _, decl := range f.Decls {
 			switch d := decl.(type) {
@@ -168,6 +178,10 @@ func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs
 				for _, spec := range d.Specs {
 					ts, ok := spec.(*goast.TypeSpec)
 					if !ok || !ts.Name.IsExported() {
+						continue
+					}
+					if name, ok := markerEnumName(ts); ok {
+						markers[name] = true
 						continue
 					}
 					st, ok := ts.Type.(*goast.StructType)
@@ -191,7 +205,66 @@ func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs
 			}
 		}
 	}
-	return structs, funcs, methods, nil
+	enums = reconstructForeignEnums(markers, structs, alias)
+	return structs, funcs, methods, enums, nil
+}
+
+// markerEnumName reports the enum name encoded by ts when ts is the §8.1 marker
+// interface of an enum — an interface with exactly one method named `is`+TypeName
+// (the marker the backend emits for `type X interface{ isX() }`). It is how a foreign
+// enum is recognized in an imported package's already-lowered Go, without the enum
+// keyword surviving into the generated source.
+func markerEnumName(ts *goast.TypeSpec) (string, bool) {
+	it, ok := ts.Type.(*goast.InterfaceType)
+	if !ok || it.Methods == nil || len(it.Methods.List) != 1 {
+		return "", false
+	}
+	m := it.Methods.List[0]
+	if len(m.Names) != 1 {
+		return "", false
+	}
+	if _, ok := m.Type.(*goast.FuncType); !ok {
+		return "", false
+	}
+	if m.Names[0].Name != "is"+ts.Name.Name {
+		return "", false
+	}
+	return ts.Name.Name, true
+}
+
+// reconstructForeignEnums rebuilds each foreign enum (keyed `alias.Enum`) from its
+// generated §8.1 encoding: for a marker interface `X`, every struct named `X_<Variant>`
+// is a variant. It mirrors the in-package sema.Enum the backend's match lowering
+// consults, so an imported enum match lowers exactly like a same-package one. Variant
+// structs are also left in structs (a harmless duplicate; no match consumer keys a
+// variant struct by that name).
+func reconstructForeignEnums(markers map[string]bool, structs map[string][]Field, alias string) map[string]*Enum {
+	enums := map[string]*Enum{}
+	for name := range markers {
+		en := &Enum{
+			Name:     alias + "." + name,
+			VSet:     map[string]bool{},
+			FieldSet: map[string]map[string]bool{},
+		}
+		prefix := alias + "." + name + "_"
+		for key, fields := range structs {
+			variant, ok := strings.CutPrefix(key, prefix)
+			if !ok {
+				continue
+			}
+			fset := map[string]bool{}
+			for _, f := range fields {
+				fset[f.Name] = true
+			}
+			en.Variants = append(en.Variants, Variant{Name: variant, Fields: fields})
+			en.VSet[variant] = true
+			en.FieldSet[variant] = fset
+		}
+		if len(en.VSet) > 0 {
+			enums[en.Name] = en
+		}
+	}
+	return enums
 }
 
 // foreignFields returns the exported, named fields of a struct (embedded and unexported

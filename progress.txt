@@ -5198,3 +5198,55 @@
     Each `next` also pre-fetches the NEXT step's skill, so write a step's artifact
     BEFORE advancing (it transitions you into the following step's audit).
 ---
+
+## 2026-06-29T15:30:00Z - SEAM-CAP
+- Implemented cross-package enum-match lowering in the backend: a `match` over an
+  enum DEFINED in an imported package now lowers to a Go type-switch over the
+  imported §8.1 sum encoding (`case pkg.Enum_Variant:`), exactly like a
+  same-package enum match. Previously failed with
+  `unsupported statement-position match on ""`.
+- Two-part fix (applied to BOTH the live Go transpiler in internal/ and the .goal
+  self-host mirror in selfhost/):
+  1. matchQualifier (lower.go / lower.goal): handle a package-qualified variant
+     pattern whose `vp.Enum` is an *ast.SelectorExpr (`pkg.Enum`), returning the
+     qualified string `"pkg.Enum"`. The existing case-label builder
+     (`enumName + "_" + Variant`) then yields the correct `pkg.Enum_Variant`
+     reference to the imported variant struct — no emit.go change needed.
+  2. EnrichForeign (foreign.go / foreign.goal): reconstruct foreign enums from an
+     imported package's generated §8.1 encoding (a marker interface
+     `type X interface{ isX() }` + variant structs `X_<V>`) and fold them into
+     info.Enums keyed `alias.Enum`. enumOf then resolves imported enums from the
+     merged cross-package sema.Info, generalizing beyond the Result/Option
+     special-casing. New helpers: markerEnumName, reconstructForeignEnums;
+     foreignDecls gained a 4th return (enums map).
+- Files changed: internal/backend/lower.go, internal/sema/foreign.go,
+  selfhost/backend/lower.goal, selfhost/sema/foreign.goal,
+  internal/backend/backend_test.go (new astPackageCases entry),
+  internal/backend/crosspkg_enum_test.go (new behavioral test),
+  internal/backend/testdata/extenum/extenum.go (foreign §8.1 fixture),
+  testdata/package/cross-pkg-enum/use.goal (corpus fixture), corpus manifest is
+  generated, the case is registered via astPackageCases.
+- Gates: task check green, task build clean, task fixpoint = FIXPOINT OK (both
+  bootstrap stages still byte-identical on the new emitter source); corpus
+  behavioral tier unchanged (the new case is additive).
+- Learnings for future iterations:
+  - internal/ is the LIVE transpiler (corpus + unit tier); selfhost/ is the .goal
+    mirror for `task fixpoint`. A backend capability must be implemented in BOTH:
+    internal so the corpus behavioral fixture exercises it, selfhost so the
+    self-hosted compiler has it and fixpoint stays green (selfhost source need not
+    yet USE it — it only must remain valid goal that both stages emit identically).
+  - Cross-package enum resolution lives in PACKAGE mode only: single-file
+    backend.Transpile uses sema.Resolve (no foreign enrichment), so a cross-package
+    enum match can only be proven via a ModePackage corpus case
+    (backend_test.go astPackageCases) whose `imports` map wires a foreign Go
+    fixture. The foreign package must carry the GENERATED §8.1 enum form, not goal
+    source (EnrichForeign reads .go).
+  - An imported enum's qualifier (`pkg.Enum`) doubles as the case-label prefix:
+    because the generated variant type in pkg is `Enum_Variant`, the qualified
+    `pkg.Enum_Variant` is already the correct cross-package Go reference. This is
+    why no emit.go change was needed — the qualifier carries the package through.
+  - SEAM-CAP unblocks SEAM-002/003/004 (FuncMod/ChanDir/Mode/Severity/AST kinds):
+    their cross-package enum consumers can now lower. Payload-bearing foreign
+    variant field-set reconstruction is present (reconstructForeignEnums builds
+    FieldSet) but only tag-only enums are exercised so far.
+---

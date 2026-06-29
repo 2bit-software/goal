@@ -1,0 +1,19 @@
+package use
+
+import light "goal/internal/backend/testdata/extenum"
+
+// label returns a string for the imported enum in return position.
+func label(l light.Light) string {
+	return match l {
+		light.Light.On => "on"
+		light.Light.Off => "off"
+	}
+}
+
+// describe matches the imported enum in statement position.
+func describe(l light.Light) {
+	match l {
+		light.Light.On => println("on")
+		light.Light.Off => println("off")
+	}
+}
