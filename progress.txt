@@ -5170,3 +5170,31 @@
     audit story; its bare-error CLI plumbing (run/emitPackage) is a documented refusal,
     not a conversion target.
 ---
+
+## 2026-06-29T14:31:30Z - SEAM-001
+- Established the seam methodology + equivalence oracle for the SEAM PRD: added a
+  "## Seam methodology" section to DECISIONS.md defining the RELAXED gate for
+  cross-package idiom changes (SEAM-002..006) that may alter emitted Go.
+- Documentation + procedure only; no source idiom change.
+- Files changed: DECISIONS.md (new section), prd.json (SEAM-001 passes:true;
+  note: prd.json was already swapped from the per-package US-001..013 PRD to the
+  SEAM PRD in the working tree), progress.txt, and the morse-code initiative dir
+  history/20260629-feature-seam-001-seam-methodology-and-equivalence-oracle/.
+- Learnings for future iterations:
+  - The relaxed gate's keystone: `task fixpoint` proves goal-c-1==goal-c-2
+    (stage1==stage2 self-consistency), NOT output==before — so a seam edit may
+    change emitted Go and still be FIXPOINT OK. The per-package audits leaned on
+    fixpoint as if it pinned output; it only ever pinned self-consistency.
+  - Golden regen mechanisms for later seams: corpus exact goldens via
+    `go test ./internal/corpus -run TestUpdateGoldens -update-goldens`; parser AST
+    snapshots via `go test ./internal/parser -update-snapshots`; go/ast-mirror
+    unit tests in internal/ast are hand-updated (no flag) and are the US-003 oracle
+    tension SEAM-004 must confront.
+  - EXPECTED-to-change tests under a seam: go/ast-mirror units + golden
+    transpile-shape fixtures. MUST-stay-green: task fixpoint, corpus behavioral
+    tier, full task check after golden regen.
+  - morse-code automode: human-review gates ("user-approval") pause on the first
+    `workflow next`; running `workflow next` again clears the gate and advances.
+    Each `next` also pre-fetches the NEXT step's skill, so write a step's artifact
+    BEFORE advancing (it transitions you into the following step's audit).
+---

@@ -1,7 +1,7 @@
 {
   "project": "goal",
-  "branchName": "ralph/self-host-idiomatic",
-  "description": "Make the self-hosted goal compiler idiomatic goal, not transpiled Go: (1) finish renaming internal/*.go -> selfhost/*.goal, (2) run `goal fix` across everything to mechanically idiomatize error handling into Result/?, (3) audit each package to use goal idioms (enum, match, sealed interface, derive/from, ...defaults). Gated throughout by behavioral tests, the corpus, and the byte-identical fixpoint. See SELF-HOST-RESEARCH.md and [[goal-selfhost-must-be-idiomatic]].",
+  "branchName": "ralph/self-host-idiomatic-seams",
+  "description": "Cross-cutting idiomatization of the self-hosted goal compiler, structured around SEAMS (type-definition-vs-consumer boundaries that cross package lines) rather than packages. The per-package PRD (prd.json, US-001..013, all passed) reached only the intra-package idiomatic surface because its gate required emitted Go to stay byte-identical and oracle-pinned signatures to stay fixed -- which is exactly what every deep idiom violates. This PRD's central move is to RELAX that gate: cross-package idiom changes (seal AST -> match, iota -> enum, fallible API -> Result/?) ARE allowed to change emitted Go, and equivalence is re-proven by (a) `task fixpoint` self-consistency (goal-c-1 and goal-c-2 still emit byte-identical Go for the compiler's own source -- both stages agree on the NEW form), (b) the corpus BEHAVIORAL tier staying green (compiled programs behave identically), and (c) deliberately regenerated golden/transpile-shape tests reviewed for behavior preservation. Each story is a single atomic cross-package unit; partial application that leaves the tree red is not a valid intermediate. Every refusal documented in DECISIONS.md as 'cross-package, out of scope' is in scope HERE. See DECISIONS.md US-005..US-013 audits and [[goal-selfhost-must-be-idiomatic]].",
   "verifyCommands": [
     "task check",
     "task build",
@@ -9,173 +9,92 @@
   ],
   "userStories": [
     {
-      "id": "US-001",
-      "title": "Rename backend package to selfhost",
-      "description": "As the self-host effort, I need internal/backend mirrored into selfhost/backend as goal source so that step 1 (rename) covers the largest package.",
+      "id": "SEAM-001",
+      "title": "Establish the seam methodology and equivalence oracle",
+      "description": "As the idiomatization effort, I need a documented, repeatable gate for cross-package idiom changes that may alter emitted Go, so that every later seam story has a clear definition of 'behavior-preserving' that does not require byte-identical emitted output.",
       "acceptanceCriteria": [
-        "selfhost/backend holds the backend package as .goal files mirroring internal/backend (reserved-word identifier collisions like enum/match/assert renamed as needed)",
-        "The transpile-and-build smoke gate compiles selfhost/backend and its ported deps",
-        "The existing backend tests (minus those needing repo-relative fixtures) pass against the transpiled package"
+        "DECISIONS.md gains a 'Seam methodology' section that states: per-package audits required unchanged emitted Go; seam stories explicitly allow emitted-Go change and re-prove equivalence via fixpoint self-consistency + corpus behavioral tier + reviewed golden regeneration",
+        "The section enumerates which existing tests are EXPECTED to change under a seam edit (ported go/ast-mirror unit tests, golden transpile-shape fixtures) versus which must stay byte-green (task fixpoint, corpus behavioral/interp tiers, full task check after golden regen)",
+        "A documented procedure exists for regenerating and reviewing goldens (which task target / update flag, what a reviewer checks), so a seam story can change emitted Go without the change reading as an undetected regression",
+        "task check, task build, task fixpoint are all green (this story is documentation + procedure only; no source idiom change yet)"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Step 1 of 3 (rename). This is the verbatim rename only — idiomatic upgrades come in US-004 (autofix) and US-011 (audit). 3,441 LOC; may need splitting by emit.go/lower.go if it exceeds one context window. token..pipeline are already renamed; backend and typecheck remain."
+      "notes": "Pure setup story. De-risks every later seam by settling the oracle question once. The crux: `task fixpoint` proves stage1==stage2 (self-consistency), NOT output==before, so it survives emitted-Go changes; the things that break are golden/shape tests, which must be regenerated deliberately and reviewed, never blindly accepted."
     },
     {
-      "id": "US-002",
-      "title": "Rename typecheck package to selfhost",
-      "description": "As the self-host effort, I need internal/typecheck mirrored into selfhost/typecheck as goal source so that the rename step is complete for every in-scope package.",
+      "id": "SEAM-002",
+      "title": "Seam: token.Kind (+ FuncMod, ChanDir) iota -> goal enum, tree-wide",
+      "description": "As a goal author, I need token.Kind expressed as a goal enum and every cross-package consumer updated in the same change, so the compiler's most pervasive iota type reads as idiomatic goal.",
       "acceptanceCriteria": [
-        "selfhost/typecheck holds the typecheck package as .goal files mirroring internal/typecheck (go/types, go/importer, go/ast, go/parser pass through as foreign imports)",
-        "The smoke gate compiles selfhost/typecheck and its ported deps",
-        "The existing typecheck depth tests (minus those needing repo-relative fixtures) pass against the transpiled package"
+        "selfhost/token: Kind (and FuncMod, ChanDir per DECISIONS US-007) are expressed as goal enums where the value set is closed and unordered-usage permits, or any member kept as iota is justified inline against the relaxed gate (e.g. a genuine ordering/numeric-identity dependence that survives the seam relaxation)",
+        "Every cross-package consumer is updated atomically: `==` comparisons, numeric conversions, and `switch`-over-Kind sites in selfhost/{lexer,parser,sema,backend} are converted to the enum/match form (consumers currently in lexer.goal, parser.goal, goal_stmt/decl/match.goal, sema analyze/resolve/question/mustuse/implements.goal)",
+        "No plain switch over the sealed Kind remains (would be a §9 switch-coexistence compile error); each is `match` with exhaustiveness",
+        "task check (after golden regen), task build, task fixpoint all green; corpus behavioral tier unchanged",
+        "DECISIONS.md records the conversion and any member deliberately left as iota with reason"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Step 1 of 3 (rename), final package. 772 LOC."
+      "passes": false,
+      "notes": "Smallest real seam -- proves the pattern end to end (enum def + cross-package == / numeric / switch->match + golden regen). Directly reverses the US-005/US-007 'ordered comparable iota int, keep as-is' refusal under the relaxed gate. If a member truly needs integer identity (e.g. used as an array index or wire value), that is a real semantic blocker, not a scope blocker -- keep it and say so."
     },
     {
-      "id": "US-003",
-      "title": "Wire self-host main onto ported packages",
-      "description": "As the self-host effort, I need the selfhost compiler main to import the selfhost packages (not internal/*) so that the goal-built compiler is genuinely self-contained and the fixpoint covers the whole compiler.",
+      "id": "SEAM-003",
+      "title": "Seam: sema.Mode and sema.Severity iota -> goal enum, with backend + typecheck consumers",
+      "description": "As a goal author, I need Mode and Severity as goal enums with their cross-package consumers updated together, so sema's exported classification types are idiomatic.",
       "acceptanceCriteria": [
-        "selfhost/main.goal imports selfhost/{token,lexer,ast,parser,sema,project,pipeline,backend} rather than any internal/* package",
-        "The bootstrap builds goal-c-1 and goal-c-2 from the self-contained selfhost tree",
-        "task fixpoint passes (goal-c-1 and goal-c-2 emit byte-identical Go for the compiler's own source) and the goal-built compiler passes the corpus transpile + behavioral tiers"
+        "selfhost/sema: Mode (ModeNone/ModeResult/ModeResultClosed/ModeOption) and Severity (Error/Warning) are goal enums",
+        "Cross-package consumers updated atomically: `sig.Mode == sema.ModeResultClosed` and `calleeMode(...) sema.Mode` in selfhost/backend (lower.goal, emit.goal); `Severity: sema.Error/Warning`, the Severity field type, and any `sema.Severity(x)` numeric conversions in selfhost/typecheck (~11 sites total)",
+        "Any remaining ordering/numeric dependence is removed or re-expressed (e.g. an explicit ordering method) rather than relying on iota int identity",
+        "task check (after golden regen), task build, task fixpoint all green; corpus behavioral tier unchanged",
+        "DECISIONS.md records the conversion, superseding the US-011 'Mode and Severity stay iota' refusal with the seam rationale"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Completes the verbatim self-host: a working goal-built compiler that compiles itself. This is the differential ORACLE for the idiomatic passes that follow — keep it green at every later step."
+      "passes": false,
+      "notes": "Reverses the US-011 refusal. Scoped, well-bounded (~11 consumer sites). Watch the numeric `sema.Severity(x)` conversions in typecheck/lsp -- those are the real work; if any genuinely needs an int (serialization), keep an explicit conversion method instead of iota identity."
     },
     {
-      "id": "US-004",
-      "title": "Run the autofixer across selfhost",
-      "description": "As the self-host effort, I need `goal fix` applied to every selfhost package so that manual (T,error) propagation is mechanically idiomatized into Result/? before the hand audit.",
+      "id": "SEAM-004",
+      "title": "Seam: seal ast.Node/Expr/Stmt/Decl/Spec + convert all type-switches to match",
+      "description": "As a goal author, I need the AST category interfaces sealed and every type-switch over them converted to match in the same atomic change, so the compiler's central data structure showcases goal's exhaustive match -- the single biggest idiom in the codebase.",
       "acceptanceCriteria": [
-        "`goal fix --inplace` is run across all selfhost/*.goal and the resulting changes are committed",
-        "Re-running `goal fix` over selfhost produces no further changes (the autofix has reached its fixed point)",
-        "After the autofix, task check, task build, task fixpoint, and the corpus behavioral tier are all green"
+        "selfhost/ast: Node, Expr, Stmt, Decl, and Spec are sealed interfaces (§8.1 encoding via implements clauses), not open Go interfaces",
+        "All ~43 `switch x := n.(type)` type-switches across selfhost/sema (check, resolve, question, fields, mustuse, foreign, assert), selfhost/backend (lower, emit), selfhost/parser (parser, goal_construct), and selfhost/ast (walk) are converted to goal `match` with exhaustiveness; no plain switch over a sealed node kind remains (each would otherwise be a §9 compile error)",
+        "The US-003 go/ast-mirror oracle tension is resolved explicitly: either the ported internal/ast byte-for-byte mirror tests are updated to the sealed shape with a documented rationale that the self-hosted AST no longer needs to mirror go/ast, or the mirror is deliberately retained and the seal scoped around it -- decision recorded in DECISIONS.md",
+        "task check (after golden regen + go/ast-mirror test update), task build, task fixpoint all green; corpus behavioral and interp tiers unchanged",
+        "Walk's type-switch (walk.goal) is included in the conversion or its exclusion is justified"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Step 2 of 3 (autofix everything). goal fix auto-converts (T,error)+manual `if err!=nil` into Result[T,error]+`?` (resultsig/propagate rules); it only REPORTS switch->match and never touches enums/interfaces/conversions — those are the US-005+ audit. This story also dogfoods goal fix itself on real compiler code; if it miscompiles, fix that here."
+      "passes": false,
+      "notes": "THE big one -- reverses US-007's AST-seal refusal and the Walk refusal. Largest blast radius (43 switches, 13 files, 4 packages, one atomic change). Highest risk: the go/ast-mirror oracle (selfhost/ast modeled byte-for-byte on go/ast with ported tests) directly conflicts with sealing. That conflict must be confronted head-on, not worked around. May need splitting the conversion across multiple commits within the story, but the tree must not be left red between commits (seal + all switches land together or the build fails on §9)."
     },
     {
-      "id": "US-005",
-      "title": "Idiomatic audit: token",
-      "description": "As a goal author, I need selfhost/token to use goal idioms so that token kinds are expressed as the language intends.",
+      "id": "SEAM-005",
+      "title": "Seam: lift the fallible exported/interface API to Result/? with callers",
+      "description": "As a goal author, I need the genuinely-propagating fallible exported API lifted to Result/? together with every cross-package caller and interface contract, so error handling at the compiler's seams is idiomatic -- while honestly carving out the sites blocked by semantics, not scope.",
       "acceptanceCriteria": [
-        "iota-based token-kind const blocks are expressed as a goal `enum` where it fits, or the deliberate decision not to is recorded in DECISIONS.md",
-        "No manual `if err != nil { return ..., err }` propagation remains that `goal fix` would flag (goal fix reports none for the package)",
-        "token tests pass against the transpiled package and task fixpoint stays green"
+        "Pure-propagation exported/interface fns blocked ONLY by cross-package callers are converted to Result with `?` at call sites: e.g. parser.ParseFile and its callers, the TypeChecker.Check interface method + GoTypesChecker.Check + Load chain + checker_test.go oracle, AnalyzePackageInDir family where single-success-valued",
+        "Sites blocked by SEMANTICS (not scope) are explicitly carved out and kept, with the distinction documented: error ACCUMULATORS (EnrichForeign []error), MULTI-VALUE returns (foreignDecls 4-value, AnalyzePackageInDirWith 3-value, InDir), and comma-ok control flow (constIntLit, moduleResolve, readModulePath) -- each either gets a struct-bundle Result if that is a real idiom gain, or a recorded refusal that survives the seam relaxation",
+        "Interface contracts and their oracle tests are updated in lockstep (var _ TypeChecker = ...; tc.Check two-value call sites) so the seam stays swappable",
+        "task check (after golden regen), task build, task fixpoint all green; corpus behavioral tier unchanged",
+        "DECISIONS.md records which US-008..US-012 'cross-package API stays (T,error)' refusals are now converted vs which remain genuine semantic non-fits"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Step 3 of 3 (idiomatic audit), one package per story. Start small (token) to establish the audit pattern."
+      "passes": false,
+      "notes": "Reverses the scope-blocked half of the US-008..US-012 API refusals. CRITICAL honesty requirement: several refusals (accumulators, multi-value, comma-ok) are NOT scope problems and will NOT be fixed by cross-package reach -- they need struct bundles or stay as-is. Do not fake a conversion to claim the seam closed; converting where it fits and documenting the rest is the correct outcome, exactly as the per-package audit did."
     },
     {
-      "id": "US-006",
-      "title": "Idiomatic audit: lexer",
-      "description": "As a goal author, I need selfhost/lexer to use goal idioms so that tokenization reads as idiomatic goal.",
+      "id": "SEAM-006",
+      "title": "Cross-cutting proof: the compiler showcases goal end-to-end",
+      "description": "As the idiomatization effort, I need a whole-compiler proof that the seam conversions hold together, so the self-hosted compiler demonstrably reads as idiomatic goal rather than transpiled Go.",
       "acceptanceCriteria": [
-        "switch statements over an in-file enum are converted to `match`, and fallible helpers return Result/Option with `?` propagation where natural",
-        "goal fix reports no remaining auto-convertible propagation sites in the package",
-        "lexer tests pass against the transpiled package and task fixpoint stays green"
+        "task fixpoint green (goal-c-1 and goal-c-2 byte-identical on the new idiomatic source) and the full corpus behavioral + interp + check tiers green",
+        "A DECISIONS.md writeup tallies, per seam, what converted and what remains a documented semantic non-fit, and states the honest end state (which idioms the compiler now showcases tree-wide: enum, match over sealed AST, Result/?)",
+        "`goal fix` over the whole selfhost tree reports no remaining auto-convertible propagation (the autofixer agrees the propagating API is idiomatic)",
+        "A short before/after in DECISIONS.md or SELF-HOST-RESEARCH.md quantifies the shift (e.g. count of type-switches now match, iota types now enum, fallible APIs now Result) so the result is measurable, not asserted"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "Step 3 (audit)."
-    },
-    {
-      "id": "US-007",
-      "title": "Idiomatic audit: ast",
-      "description": "As a goal author, I need selfhost/ast to use goal idioms so that node kinds and traversal are expressed idiomatically.",
-      "acceptanceCriteria": [
-        "Node-kind groups expressed as Go interfaces are evaluated for `sealed interface`/`enum` representation, with conversions or a recorded DECISIONS.md rationale; switch-over-node-kind becomes `match` where it fits",
-        "goal fix reports no remaining auto-convertible propagation sites in the package",
-        "ast tests pass against the transpiled package and task fixpoint stays green"
-      ],
-      "priority": 7,
-      "passes": true,
-      "notes": "Step 3 (audit). Largest idiomatic opportunity (sealed interfaces + match over node kinds) and largest risk — keep the US-003 verbatim oracle as the behavioral reference. May need splitting."
-    },
-    {
-      "id": "US-008",
-      "title": "Idiomatic audit: parser",
-      "description": "As a goal author, I need selfhost/parser to use goal idioms so that parse error handling uses Result/?.",
-      "acceptanceCriteria": [
-        "Parser functions returning (node, error) use Result with `?` propagation; switch-over-enum becomes `match` where it fits",
-        "goal fix reports no remaining auto-convertible propagation sites in the package",
-        "parser tests pass against the transpiled package and task fixpoint stays green"
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "Step 3 (audit). Result/? is the headline idiom here."
-    },
-    {
-      "id": "US-009",
-      "title": "Idiomatic audit: sema",
-      "description": "As a goal author, I need selfhost/sema to use goal idioms so that resolution and checking use Result/Option and enums.",
-      "acceptanceCriteria": [
-        "Fallible resolution/check functions use Result/Option with `?`; diagnostic/mode kinds expressed as enums + match where they fit",
-        "goal fix reports no remaining auto-convertible propagation sites in the package",
-        "sema tests pass against the transpiled package and task fixpoint stays green"
-      ],
-      "priority": 9,
-      "passes": true,
-      "notes": "Step 3 (audit). 12 files; may need splitting by resolve/check-family/foreign."
-    },
-    {
-      "id": "US-010",
-      "title": "Idiomatic audit: project and pipeline",
-      "description": "As a goal author, I need selfhost/project and selfhost/pipeline to use goal idioms.",
-      "acceptanceCriteria": [
-        "Fallible discovery/output functions use Result/Option with `?` where natural",
-        "goal fix reports no remaining auto-convertible propagation sites in either package",
-        "project and pipeline tests pass against the transpiled packages and task fixpoint stays green"
-      ],
-      "priority": 10,
-      "passes": true,
-      "notes": "Step 3 (audit). Small packages combined."
-    },
-    {
-      "id": "US-011",
-      "title": "Idiomatic audit: backend",
-      "description": "As a goal author, I need selfhost/backend to use goal idioms so that emission code reads as idiomatic goal.",
-      "acceptanceCriteria": [
-        "Fallible emit/format functions use Result with `?`; switch-over-node/enum in the emitter becomes `match` where it fits",
-        "goal fix reports no remaining auto-convertible propagation sites in the package",
-        "backend tests and the corpus transpile + behavioral tiers pass against the transpiled backend, and task fixpoint stays green"
-      ],
-      "priority": 11,
-      "passes": true,
-      "notes": "Step 3 (audit). Largest package; may need splitting by emit.go/lower.go."
-    },
-    {
-      "id": "US-012",
-      "title": "Idiomatic audit: typecheck",
-      "description": "As a goal author, I need selfhost/typecheck to use goal idioms.",
-      "acceptanceCriteria": [
-        "Fallible depth-check functions use Result/Option with `?` where natural",
-        "goal fix reports no remaining auto-convertible propagation sites in the package",
-        "typecheck depth tests pass against the transpiled package and task fixpoint stays green"
-      ],
-      "priority": 12,
-      "passes": true,
-      "notes": "Step 3 (audit)."
-    },
-    {
-      "id": "US-013",
-      "title": "Final idiomatic sweep and self-host proof",
-      "description": "As the self-host effort, I need a whole-compiler check that no plain-Go patterns remain and the idiomatic compiler still self-hosts, so that the dogfooding is complete and proven.",
-      "acceptanceCriteria": [
-        "Running `goal fix` across the entire selfhost tree reports zero remaining auto-convertible propagation sites, and any deliberately-Go constructs are recorded in DECISIONS.md",
-        "task fixpoint passes for the fully idiomatic compiler (goal-c-1 and goal-c-2 byte-identical)",
-        "The goal-built idiomatic compiler passes the full corpus transpile + behavioral + check tiers"
-      ],
-      "priority": 13,
-      "passes": true,
-      "notes": "Closes the loop: the compiler is written in idiomatic goal AND compiles itself to a byte-identical fixpoint while passing the corpus."
+      "passes": false,
+      "notes": "Mirror of US-013 (the per-package proof) but for the seam end state. This is where 'the compiler actually showcases goal' gets verified and measured rather than claimed."
     }
   ]
 }

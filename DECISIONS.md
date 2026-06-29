@@ -2708,3 +2708,116 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
   goal-c-2 emit byte-identical Go for the compiler's own source. The self-host is
   PROVEN: a goal-built, idiomatic-goal compiler compiles itself to a byte-identical
   fixpoint while passing the corpus. No `.goal` source changed in this story.
+
+## Seam methodology — equivalence oracle for cross-package idiom changes (SEAM-001)
+
+> SEAM-001 of the **self-host idiomatic SEAMS** PRD (`prd.json`, stories
+> SEAM-001..006): the OPENING story. The per-package idiomatic audits
+> (US-005..US-013, all passed) reached only the intra-package idiomatic surface
+> because their gate required emitted Go to stay byte-identical and the US-003
+> verbatim oracle signatures to stay fixed — which is exactly what every deep,
+> cross-package idiom (seal AST → match, iota → enum, fallible API → Result/?)
+> must violate. This section defines the RELAXED gate the seam stories
+> (SEAM-002..006) verify against, so "behavior-preserving" has one written
+> meaning that does NOT require byte-identical emitted output. Documentation +
+> procedure only; no source idiom change in this story.
+
+### The two gates, contrasted
+- **Kind:** methodology
+- **Per-package gate (US-005..US-013):** an audit was behavior-preserving only if
+  the emitted Go stayed **byte-identical** and the oracle-pinned exported/interface
+  signatures stayed fixed. Under that gate, every cross-package idiom was correctly
+  recorded as a refusal — `token.Kind`/`FuncMod`/`ChanDir` kept as iota int
+  (US-005/US-007), `Mode`/`Severity` kept as iota (US-011), the `ast` category
+  interfaces left unsealed and their type-switches left as plain switches
+  (US-007), and the fallible exported API left as `(T, error)` (US-008..US-012).
+  Each refusal was tagged "cross-package, out of scope" — a SCOPE limit of the
+  per-package gate, not a semantic impossibility.
+- **Seam gate (this PRD):** a seam story is a single ATOMIC cross-package unit
+  (type definition + every consumer across package lines, landing together). It is
+  EXPLICITLY ALLOWED to change emitted Go. Equivalence is re-proven by the three
+  proofs below instead of by byte-identical output. Partial application that
+  leaves the tree red (e.g. a sealed interface whose plain-`switch` consumers
+  still exist — a §9 switch-coexistence compile error) is NOT a valid intermediate.
+
+### The crux: `task fixpoint` is self-consistency, not output-stability
+- **Kind:** methodology
+- `task fixpoint` proves **goal-c-1 == goal-c-2** — stage-0 builds goal-c-1,
+  goal-c-1 builds goal-c-2, and `diff -r` of the two stages' emit over `./selfhost`
+  is empty. This is STAGE1==STAGE2 self-consistency (both bootstrap stages agree on
+  the *new* idiomatic form), **NOT** output==before (the new form vs the old form).
+- Therefore an emitted-Go change introduced by a seam edit does **not** break the
+  fixpoint: as long as both stages are built from the same converted source and
+  reach the same fixed point, FIXPOINT OK still holds. This is the single fact that
+  makes the relaxed gate sound — the per-package audits leaned on the fixpoint AS
+  IF it pinned output, but it only ever pinned self-consistency.
+
+### The three equivalence proofs for a seam edit
+- **Kind:** methodology
+- A seam edit is behavior-preserving when ALL THREE hold:
+  1. **Fixpoint self-consistency** — `task fixpoint` → FIXPOINT OK on the new
+     idiomatic source (goal-c-1 and goal-c-2 byte-identical to each other).
+  2. **Corpus behavioral tier** — the compiled programs behave identically
+     (`internal/corpus` behavioral tier + the `internal/selfhost` behavioral port
+     gates, which transpile each `selfhost/<pkg>` through the goal front end and run
+     the copied `internal/<pkg>` tests against the emitted Go). Behavioral green is
+     the real "same program" proof once exact emitted-Go bytes are allowed to move.
+  3. **Reviewed golden regeneration** — any golden/shape fixture whose bytes
+     legitimately change is regenerated DELIBERATELY and reviewed for behavior
+     preservation (procedure below), never blindly accepted.
+
+### Which tests are EXPECTED to change vs MUST stay byte-green
+- **Kind:** methodology
+- **EXPECTED to change under a seam edit (regenerate + review, do not treat the
+  diff as a regression):**
+  - The ported **go/ast-mirror unit tests** in `internal/ast` (ast_test.go and the
+    byte-for-byte mirror the US-003 oracle pins). Sealing the `ast` category
+    interfaces (SEAM-004) directly changes their shape; that conflict is confronted
+    in SEAM-004, with the mirror either updated to the sealed shape (documented
+    rationale: the self-hosted AST no longer needs to mirror go/ast) or
+    deliberately retained and the seal scoped around it.
+  - **Golden transpile-shape fixtures** — the corpus exact-tier goldens
+    (`*.go.expected`) and the parser AST snapshots
+    (`internal/parser/testdata/snapshots/`). iota→enum and switch→match change the
+    emitted Go, so these shift by design.
+- **MUST stay byte-green (a diff here is a real regression, never regenerate to
+  "fix" it):**
+  - `task fixpoint` → FIXPOINT OK (stage1==stage2; see the crux above).
+  - The corpus **behavioral** tier and the interp/check tiers (the repo's corpus
+    tiers are transpile / behavioral / check — "interp" denotes the
+    behavioral/execution tier; there is no separately-named interp target).
+  - The full `task check` AFTER goldens have been regenerated — i.e. once the
+    EXPECTED-to-change fixtures are deliberately updated, the whole `go test ./...`
+    suite + `go vet` must be green again with no remaining diffs.
+
+### Procedure: regenerate and review goldens
+- **Kind:** procedure
+- **Regenerate** (only after a deliberate, behavior-preserving emitted-Go change):
+  - Corpus exact-tier goldens (`*.go.expected`):
+    `go test ./internal/corpus -run TestUpdateGoldens -update-goldens`
+    (rewrites every exact-tier golden from the AST backend; a no-op/skip without
+    the flag — see `internal/corpus/update_goldens_test.go`).
+  - Parser AST snapshots: `go test ./internal/parser -update-snapshots`
+    (see `internal/parser/snapshot_test.go`).
+  - The go/ast-mirror unit tests in `internal/ast` are hand-updated to the sealed
+    shape when SEAM-004 seals the category interfaces (no update flag).
+- **Reviewer checklist** — before accepting a regenerated golden, confirm:
+  1. The diff is **gofmt-stable** (both sides normalize; no stray formatting
+     churn masking a real change).
+  2. The change is **behavior-preserving** — same control flow / same values, only
+     the idiom moved (e.g. a plain `switch` became a `match` lowering, an iota int
+     became the §8.1 sealed-interface enum encoding). No new/removed cases, no
+     altered constants with numeric identity.
+  3. `task fixpoint` is still **FIXPOINT OK** after the change.
+  4. The corpus **behavioral** tier is still green after the change.
+  5. The regen was scoped to the seam being landed — no unrelated golden moved.
+  A golden diff that fails any check is a regression, not a regeneration: fix the
+  source, do not check in the diff.
+
+### Verification (this story is documentation + procedure only)
+- **Kind:** verification
+- No `.goal`/`.go` source idiom change in SEAM-001, so the relaxed gate is not yet
+  exercised; it is only DEFINED here for SEAM-002..006.
+- `task check` green (`go vet ./...` + full `go test ./...`); `task build` green
+  (both binaries); `task fixpoint` → FIXPOINT OK — all unchanged from the
+  US-013 baseline because no source moved.
