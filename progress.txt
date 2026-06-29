@@ -111,6 +111,18 @@
   Option. Audit verification per package: `goal fix <pkg>/*.goal` must produce no
   diff and no stderr report; the self-host port gate + `task fixpoint` confirm the
   behavior-preserving oracle stays byte-identical.
+- §9 switch-coexistence is the dominant blocker for SEALING a type during a
+  single-package audit (US-007+): a plain `switch`/type-switch on a closed
+  enum/sealed value is a sema COMPILE ERROR. So a type whose values are consumed
+  by plain switches in OTHER packages (e.g. ast's Node/Decl/Stmt/Expr and the
+  FuncMod/ChanDir modifiers are switched on in selfhost/{sema,backend,parser})
+  CANNOT be converted to enum/sealed-interface without a coordinated tree-wide
+  switch->match in packages the per-package story may not edit. Refuse and record
+  it; cross-package conversions, if ever wanted, belong to the whole-tree US-013
+  sweep. go/ast-style ordered iota ints used as modifiers/directions are the same
+  "keep as iota" case as token.Kind even without array-index/range uses, because
+  ==/plain-switch consumption + the `int` representation make a boxed enum a
+  behavior break.
 
 ## [2026-06-28T23:25:00Z] - US-008 (checker-onto-ast PRD)
 - Migrated internal/project and internal/pipeline/sourcemap off the internal/scan
@@ -4783,4 +4795,53 @@
   - "switch over an enum" means an in-file goal `enum`; switches over `rune`,
     `int`, or boolean conditions are NOT match candidates (§02-match §228).
     Confirm there is an actual enum declaration before planning switch->match.
+---
+
+## [2026-06-29T08:30:00Z] - US-007 (self-host idiomatic PRD)
+- Step 3 of 3 (idiomatic audit), third and highest-opportunity package:
+  selfhost/ast (ast.goal, goal_decl/expr/stmt.goal, walk.goal). Outcome is a
+  recorded DECISION, not a source change — every idiomatic candidate's only
+  behavior-preserving form lies OUTSIDE selfhost/ast, so converting would break
+  the US-003 verbatim self-host oracle and/or ripple beyond this story's scope.
+  Mirrors US-005 (token) / US-006 (lexer).
+- Category interfaces Node/Decl/Stmt/Expr/Spec -> sealed interface: REFUSED.
+  (a) A goal sealed interface lowers via §8.1 (synthesized isNAME() marker +
+  per-type `implements NAME for T`), changing the go/ast-mirrored public API the
+  oracle pins. (b) Per §9 switch-coexistence, a plain switch on a closed
+  enum/sealed value is a sema COMPILE ERROR — and selfhost/{sema,backend,parser}
+  dispatch on these interfaces with dozens of plain `switch x.(type)`
+  type-switches, so sealing them would force a tree-wide switch->match
+  conversion that is explicitly OUTSIDE US-007 (scoped to selfhost/ast only).
+- Walk's `switch node.(type)` -> match: REFUSED. match needs a closed
+  enum/sealed scrutinee (§228); since Node must stay a plain interface (above),
+  its match form has no legal scrutinee. The traversal is behavior-identical as
+  a plain switch.
+- FuncMod / ChanDir (`type X int` + iota) -> enum: REFUSED. Both public,
+  oracle-pinned, ORDERED integer enums consumed cross-package by ==/!= (sema:
+  question/convert/resolve) and plain switch (backend/emit; sema/resolve for
+  Dir). A goal enum is a boxed sealed interface, not an int, so == breaks and
+  the plain switches become §9 compile errors — all out of scope. Same canonical
+  "ordered/comparable iota int, keep as-is" case as token.Kind (US-005).
+- No Result/Option/?: NONE APPLY. selfhost/ast is pure AST data + the total Walk
+  traversal; it declares no error-returning function (the lone "error" is a word
+  in a doc comment). `goal fix selfhost/ast/*.goal` => no diff, no report across
+  all five files (AC-2 already holds).
+- Files: DECISIONS.md (new "US-007 (ast)" section), prd.json (US-007
+  passes:true), progress.txt. Initiative artifacts under
+  history/20260629-refactor-us-007-idiomatic-audit-ast/. No .goal source edit.
+- Verify: goal fix (no diff/report); task check green (incl. internal/selfhost
+  port gate + internal/ast); task build green; task fixpoint FIXPOINT OK
+  (byte-identical goal-c-1/goal-c-2).
+- Learnings for future iterations:
+  - The §9 switch-coexistence rule is the dominant blocker for sealing AST
+    category interfaces: any package whose closed-type values are consumed by
+    plain `switch`/type-switch in OTHER packages cannot be sealed without a
+    coordinated cross-package switch->match conversion. A single-package audit
+    story (US-008..US-012) should NOT seal a type whose consumers it may not
+    edit. The whole-tree US-013 sweep is where such cross-package conversions,
+    if ever wanted, would belong.
+  - go/ast-style ordered iota ints used as modifiers/directions (FuncMod,
+    ChanDir) are the same "keep as iota" case as token.Kind: equality/plain-
+    switch consumption + int representation make the boxed enum encoding a
+    behavior break, independent of array-indexing/range-predicate uses.
 ---

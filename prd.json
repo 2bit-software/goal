@@ -96,7 +96,7 @@
         "ast tests pass against the transpiled package and task fixpoint stays green"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Step 3 (audit). Largest idiomatic opportunity (sealed interfaces + match over node kinds) and largest risk — keep the US-003 verbatim oracle as the behavioral reference. May need splitting."
     },
     {
