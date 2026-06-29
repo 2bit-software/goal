@@ -10,6 +10,11 @@ features/_cut/*/transpiler/transpiler
 # Editor / OS
 .DS_Store
 
+# morse-code runtime state (per-developer loop state, not shared)
+.morse-code/state.json
+.morse-code/initiative.json
+morse-code.local.yaml
+
 # Generated playground artifacts (rebuild with scripts/build-site.sh)
 /site/goal.wasm
 /site/wasm_exec.js
