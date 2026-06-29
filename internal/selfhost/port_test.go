@@ -90,3 +90,56 @@ func TestPortedLexerPackage(t *testing.T) {
 		t.Fatalf("existing lexer tests failed against the transpiled package: %v", err)
 	}
 }
+
+// TestPortedAstPackage validates US-007: the ast package reimplemented as goal
+// source under selfhost/ast transpiles to compiling Go (the US-002 smoke gate,
+// with the in-module token import resolving against the ported token package)
+// AND passes the existing internal/ast tests against the transpiled output
+// (behavioral equivalence — node definitions and Walk). The reflection-driven
+// dump.go debug renderer is intentionally excluded from the self-hosted build
+// (off the compile path; unreferenced by the tests). The test's working
+// directory is internal/selfhost, so the goal sources are at
+// ../../selfhost/{token,ast} and the existing ast tests are at ../ast.
+func TestPortedAstPackage(t *testing.T) {
+	tokenPkgs, err := project.Discover("../../selfhost/token")
+	if err != nil {
+		t.Fatalf("discovering selfhost/token: %v", err)
+	}
+	if len(tokenPkgs) != 1 {
+		t.Fatalf("selfhost/token: got %d packages, want exactly 1", len(tokenPkgs))
+	}
+	tokenPkg := tokenPkgs[0]
+	if tokenPkg.Name != "token" {
+		t.Fatalf("selfhost/token: package name = %q, want \"token\"", tokenPkg.Name)
+	}
+
+	astPkgs, err := project.Discover("../../selfhost/ast")
+	if err != nil {
+		t.Fatalf("discovering selfhost/ast: %v", err)
+	}
+	if len(astPkgs) != 1 {
+		t.Fatalf("selfhost/ast: got %d packages, want exactly 1", len(astPkgs))
+	}
+	astPkg := astPkgs[0]
+	if astPkg.Name != "ast" {
+		t.Fatalf("selfhost/ast: package name = %q, want \"ast\"", astPkg.Name)
+	}
+
+	// Criterion 2: transpiles via the US-002 smoke gate and the generated Go
+	// compiles. The layout carries both ast and its token dependency so the
+	// in-module import resolves.
+	layout := map[string]*project.Package{
+		"internal/token": tokenPkg,
+		"internal/ast":   astPkg,
+	}
+	if err := selfhost.BuildTranspiled(layout); err != nil {
+		t.Fatalf("ported ast failed the transpile-and-build gate: %v", err)
+	}
+
+	// Criterion 3: the existing ast tests pass against the transpiled package,
+	// with the ported token package transpiled in as its in-module dependency.
+	deps := map[string]*project.Package{"internal/token": tokenPkg}
+	if err := selfhost.BuildAndTest("internal/ast", astPkg, []string{"../ast/ast_test.go"}, deps); err != nil {
+		t.Fatalf("existing ast tests failed against the transpiled package: %v", err)
+	}
+}

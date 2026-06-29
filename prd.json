@@ -95,7 +95,7 @@
         "The existing ast tests pass against the transpiled package"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "1,988 LOC; depends on token. dump.go uses reflect for debug Sexpr — drop it from the self-hosted build or rewrite as an explicit node switch (not on the compile path)."
     },
     {

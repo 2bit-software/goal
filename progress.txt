@@ -4279,6 +4279,39 @@
     needed per port.
 ---
 
+## [2026-06-29T03:00:00Z] - US-007 (self-host phase 4)
+- Ported internal/ast to goal as the node layer above the token leaf.
+  selfhost/ast/{ast,walk,goal_decl,goal_expr,goal_stmt}.goal are verbatim copies
+  of the matching internal/ast/*.go (Go superset == valid goal); they import the
+  ported goal/internal/token. ast depends only on token (same dep shape as
+  lexer), so reused the US-006 deps-aware harness unchanged.
+- Dropped dump.go from the self-hosted build per the prd note: it is a
+  reflection-driven debug Sexpr renderer, off the compile path, and nothing
+  references Sexpr/sexprDumper outside dump.go (ast_test.go does not touch it),
+  so excluding it is safe and the existing ast tests still pass.
+- The only reserved-word (match/enum/assert) hit across the copied non-test
+  sources is the string literal len("assert") in goal_stmt.go — a string, not an
+  identifier — so the files ported verbatim with zero edits.
+- Added internal/selfhost/port_test.go TestPortedAstPackage: discovers
+  selfhost/{token,ast}, runs BuildTranspiled over both (compile gate) and
+  BuildAndTest on ast with token as a dep against ../ast/ast_test.go (behavioral
+  gate).
+- Files: selfhost/ast/*.goal (5 new); internal/selfhost/port_test.go (ast test);
+  prd.json (US-007 passes:true); progress.txt. Initiative artifacts under
+  history/20260629-feature-us-007-port-ast-package-to-goal/.
+- Verify: task check + task build green; task fixpoint green (FIXPOINT OK — both
+  bootstrap stages emit selfhost/ast/*.go byte-identically); the ported ast
+  passes the existing internal/ast tests against the transpiled Go.
+- Learnings for future iterations:
+  - A reflection-driven file (uses reflect over node fields) is the canonical
+    thing to DROP from a self-host port — confirm it is debug-only and
+    unreferenced (grep its exported symbols across the package + tests), then
+    just omit the .goal copy. ast_test.go ignored dump.go entirely.
+  - ast ports verbatim like token/lexer: copy *.go -> *.goal, grep bare
+    match/enum/assert (string-literal hits are fine), reuse the deps-aware
+    BuildTranspiled/BuildAndTest with token keyed "internal/token".
+---
+
 ## [2026-06-29T02:10:00Z] - US-006 (self-host phase 4)
 - Ported internal/lexer to goal as the next layer above the token leaf.
   selfhost/lexer/lexer.goal is a verbatim copy of internal/lexer/lexer.go (Go
