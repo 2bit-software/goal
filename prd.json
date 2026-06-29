@@ -161,7 +161,7 @@
         "typecheck depth tests pass against the transpiled package and task fixpoint stays green"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "Step 3 (audit)."
     },
     {

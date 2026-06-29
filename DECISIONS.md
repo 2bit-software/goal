@@ -2545,3 +2545,84 @@ and passes the copied `internal/backend` behavioral suite); `task check` (incl.
 the port gate + `internal/backend` + the corpus transpile/behavioral tiers) green;
 `task build` green; `task fixpoint` → FIXPOINT OK (`selfhost/backend/*.go`
 byte-identical across goal-c-1/goal-c-2).
+
+## self-host idiomatic audit — US-012 (typecheck)
+
+> US-012 of the **self-host idiomatic** PRD (`prd.json`): the per-package
+> idiomatic audit of the FINAL package, `selfhost/typecheck` (the go/types-over-
+> lowered-Go depth-checker harness: checker.goal, typecheck.goal, implements.goal,
+> mustuse.goal, nozero.goal). Pattern unchanged from US-005..US-011: classify each
+> Go-ism against the goal idiom it could become, convert where it FITS
+> (intra-package, behavior-preserving, no cross-package caller edits, no
+> oracle-pinned signature change), record refusals here. Outcome: a documented
+> refusal (no `.goal` source change) — the only two error-returning functions are
+> exported, oracle-pinned `Load` (wrapping propagation, non-Result callees) and the
+> `TypeChecker`-interface-pinned `Check` method; every depth check returns
+> `[]Diagnostic` with no error at all. This mirrors the pure-refusal packages
+> (token/lexer/ast/parser, US-005..US-008, and project/pipeline, US-010) rather
+> than the conversion audits (sema US-009, backend US-011).
+
+### `Load` stays `(*Package, error)` — NOT converted to Result
+- **Kind:** refusal (with reason)
+- **Refused:** converting `Load(pkg *project.Package) (*Package, error)` (typecheck.goal)
+  to `Result[*Package, error]`.
+- **Why:** every internal propagation site in `Load` WRAPS context —
+  `fmt.Errorf("transpile: %w", err)`, `fmt.Errorf("parse goal source %s: %w", …)`,
+  `fmt.Errorf("parse generated %s: %w", …)`. `?` propagates the error UNCHANGED, so
+  `?`-ifying these would DROP the context = a behavior change (the §-wrapping rule).
+  Independently, the callees those sites guard (`backend.TranspilePackage`,
+  `goalparser.ParseFile`, `go/parser.ParseFile`) return Go `(T, error)` tuples, not
+  Result, so there is nothing to `?`. And `Load` is exported AND heavily
+  oracle-pinned: the US-003 verbatim oracle suite calls `p, err := Load(…)` (and
+  `_, err := Load(…)`) in SIX places across the depth tests
+  (implements_test.go:10, checker_test.go:13, mustuse_test.go:12,
+  nozero_test.go:12 & :212, typecheck_test.go:42 & :73) and it has an in-tree
+  caller (`GoTypesChecker.Check`). The US-009 safety rule converts an exported fn
+  ONLY when it has no in-tree callers AND no oracle test; `Load` fails both.
+  Converting only its return wrapper to Result would introduce zero `?`, force the
+  interface-pinned `Check` into a `match` wrapper (below), and leave the wrapping
+  `if err != nil` blocks intact — net churn, no idiom gain. `goal fix` agrees: it
+  emits `skipped: [result-sig] Load has a non-propagating return; not
+  auto-converted to Result`. Refuse.
+
+### `GoTypesChecker.Check` stays `([]Diagnostic, error)` — NOT converted to Result
+- **Kind:** refusal (with reason)
+- **Refused:** converting the `TypeChecker.Check(pkg *project.Package) ([]Diagnostic,
+  error)` interface method (checker.goal) to a Result-returning signature.
+- **Why:** `Check` is pinned by the `TypeChecker` interface — the seam's entire
+  purpose is a swappable interface so a native goal checker can replace the
+  go/types crutch WITHOUT changing any caller (checker.goal doc). The oracle suite
+  pins it directly: `var _ TypeChecker = GoTypesChecker{}` (checker_test.go:33) and
+  `got, err := tc.Check(pkg)` / `_, err := tc.Check(bad)` (checker_test.go:63,84,99)
+  consume it as a two-value method through the interface. Its lone propagation
+  `p, err := Load(pkg); if err != nil { return nil, err }` IS pure, but the
+  backend emitter requires a `?`'s host to be Result-returning; making `Check`
+  Result would change the interface contract and break every consumer. `goal fix`
+  only emits an advisory `suggestion: [call-site]` here (not a `skipped`, not a
+  diff) — advisory, not auto-convertible. Refuse.
+
+### `litClass` stays `type litClass int` + iota — NOT converted to `enum`
+- **Kind:** refusal (with reason)
+- **Refused:** expressing the `litClass` iota block (`classElided`/`classGeneric`,
+  nozero.goal) as a goal `enum`.
+- **Why:** there is NO switch over `litClass`, so AC's "switch-over-in-file-enum →
+  `match`" has no candidate (the only switch in nozero.goal is a TYPE switch over
+  `go/ast` node types — `ast.IndexExpr`/`IndexListExpr` — which is foreign and
+  unsealable per US-007 §9). `litClass` is consumed via `kind == classGeneric`
+  (litMessage) and produced via a numeric `return 0, false` (litClassOf's default).
+  A goal `enum` lowers to a sealed interface with NO integer identity (US-005 / §01),
+  so `==` comparison and the `return 0` literal would both break — a behavior
+  change, not a behavior-preserving idiom gain. Same "keep as iota int" verdict as
+  `token.Kind` (US-005) and the ast modifiers (US-007). Refuse.
+
+### Verification
+`goal fix selfhost/typecheck/*.goal` → **no source diff** on any of the five files.
+The only stderr is the deliberate non-auto-convertible reports: `skipped:
+[result-sig]` on `Load` (non-propagating return) and advisory `suggestion:
+[call-site]` on `Load` and `Check` — neither is an auto-conversion, so AC-2 (zero
+remaining auto-convertible propagation sites) holds with no source change. The
+selfhost port gate (`internal/selfhost` port_test) transpiles `selfhost/typecheck`
+and runs the copied `internal/typecheck` depth tests against it; `task check`
+(incl. that port gate + `internal/typecheck`) green; `task build` green; `task
+fixpoint` → FIXPOINT OK (`selfhost/typecheck/*.go` byte-identical across
+goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.

@@ -5093,3 +5093,42 @@
   - US-011 (backend) and US-012 (typecheck) are the remaining audits with real
     fallible surface; US-013 is the final whole-tree sweep.
 ---
+
+## [2026-06-29T13:30:00Z] - US-012 (self-host idiomatic PRD)
+- Step 3 of 3 (idiomatic audit), EIGHTH and FINAL package: selfhost/typecheck
+  (772 LOC: checker/typecheck/implements/mustuse/nozero.goal). Outcome: a
+  DOCUMENTED REFUSAL (no .goal source change), mirroring the pure-refusal packages
+  (token/lexer/ast/parser US-005..US-008, project/pipeline US-010) rather than the
+  conversion audits (sema US-009, backend US-011).
+- Package survey: the ONLY two error-returning functions are (1) exported `Load`
+  (typecheck.goal) and (2) the `TypeChecker`-interface method `GoTypesChecker.Check`
+  (checker.goal). EVERY depth check (CheckImplements/CheckMustUse/CheckNoZeroValue)
+  returns []Diagnostic with NO error — zero fallible surface. Helper predicates are
+  bool / comma-ok (mustUseFieldKind, litClassOf, litFieldKeys) — not `?` sites.
+- REFUSALS (all recorded in DECISIONS.md "US-012 (typecheck)"):
+  - `Load` stays (*Package, error): all internal propagation WRAPS context
+    (fmt.Errorf "%w") so `?` (propagates UNCHANGED) is a behavior change; its
+    callees (backend.TranspilePackage, parser.ParseFile) are Go-tuples not Result
+    so nothing to `?`; exported + oracle-pinned (6 `p,err:=Load(...)` test sites) +
+    in-tree caller Check, so the US-009 byte-identical-emit trick (no callers AND no
+    oracle test) does NOT apply. goal fix agrees: `skipped: [result-sig]`.
+  - `Check` stays ([]Diagnostic, error): TypeChecker interface method (pinned by
+    `var _ TypeChecker = GoTypesChecker{}` + tc.Check two-value calls); its lone
+    `return nil, err` is PURE but the emitter requires a `?`-host to be Result, and
+    making Check Result breaks the interface contract. goal fix emits only an
+    advisory `suggestion` (not a skip, not a diff).
+  - `litClass` stays type int + iota: no switch over it (the only switch is a TYPE
+    switch over go/ast nodes); consumed via `== classGeneric` + numeric `return 0` —
+    enum lowers to a sealed interface with no int identity, breaking both.
+- Files changed: DECISIONS.md (refusal section), prd.json (passes:true),
+  progress.txt. NO selfhost/typecheck/*.goal change.
+- Learnings for future iterations:
+  - A go/types-style depth-checker harness concentrates ALL fallibility in its
+    exported Load entry + the swappable checker interface method; the actual checks
+    are pure []Diagnostic producers. So such a package has ~zero intra-package `?`
+    surface by construction — expect a refusal, like the parser accumulator (US-008).
+  - Machine check for a refusal package: `goal fix <pkg>/*.goal` must produce no
+    diff; a `skipped: [result-sig]` (refused) and a `suggestion: [call-site]`
+    (advisory) both satisfy AC-2 because neither is an auto-conversion.
+  - US-012 done leaves only US-013 (final whole-tree sweep + self-host proof).
+---
