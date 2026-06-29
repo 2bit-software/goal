@@ -350,3 +350,120 @@ func TestPortedSemaPackage(t *testing.T) {
 		t.Fatalf("existing sema tests failed against the transpiled package: %v", err)
 	}
 }
+
+// discoverPorted is a small helper for the project/pipeline ports: it discovers
+// the single goal package under ../../selfhost/<name> and asserts its package
+// name, failing the test on any deviation.
+func discoverPorted(t *testing.T, name string) *project.Package {
+	t.Helper()
+	pkgs, err := project.Discover("../../selfhost/" + name)
+	if err != nil {
+		t.Fatalf("discovering selfhost/%s: %v", name, err)
+	}
+	if len(pkgs) != 1 {
+		t.Fatalf("selfhost/%s: got %d packages, want exactly 1", name, len(pkgs))
+	}
+	pkg := pkgs[0]
+	if pkg.Name != name {
+		t.Fatalf("selfhost/%s: package name = %q, want %q", name, pkg.Name, name)
+	}
+	return pkg
+}
+
+// TestPortedProjectPackage validates US-010 (project half): the project package
+// reimplemented as goal source under selfhost/project transpiles to compiling Go
+// (the US-002 smoke gate, with os, io/fs, path/filepath, fmt, sort, strings
+// passing through as foreign imports and the in-module parser import resolving
+// against the ported parser) AND passes the existing internal/project tests
+// against the transpiled output (behavioral equivalence — directory-grouped
+// package discovery).
+//
+// project imports goal/internal/parser directly; the transpiled parser in turn
+// imports goal/internal/lexer and goal/internal/ast (which import token), so the
+// layout and deps carry token, lexer, ast, parser even though project names only
+// parser. The behavioral gate runs project_test.go, which is stdlib-only
+// (os/path/filepath/testing) and builds its fixtures in temp dirs, so it is
+// self-contained in the harness's throwaway temp module.
+func TestPortedProjectPackage(t *testing.T) {
+	tokenPkg := discoverPorted(t, "token")
+	lexerPkg := discoverPorted(t, "lexer")
+	astPkg := discoverPorted(t, "ast")
+	parserPkg := discoverPorted(t, "parser")
+	projectPkg := discoverPorted(t, "project")
+
+	// Criterion 2: transpiles via the US-002 smoke gate and the generated Go
+	// compiles. The layout carries project plus its parser dependency (and
+	// parser's transitive lexer/ast/token) so the in-module imports resolve.
+	layout := map[string]*project.Package{
+		"internal/token":   tokenPkg,
+		"internal/lexer":   lexerPkg,
+		"internal/ast":     astPkg,
+		"internal/parser":  parserPkg,
+		"internal/project": projectPkg,
+	}
+	if err := selfhost.BuildTranspiled(layout); err != nil {
+		t.Fatalf("ported project failed the transpile-and-build gate: %v", err)
+	}
+
+	// Criterion 3: the existing project tests pass against the transpiled
+	// package, with the ported token, lexer, ast, and parser packages transpiled
+	// in as its in-module dependencies.
+	deps := map[string]*project.Package{
+		"internal/token":  tokenPkg,
+		"internal/lexer":  lexerPkg,
+		"internal/ast":    astPkg,
+		"internal/parser": parserPkg,
+	}
+	if err := selfhost.BuildAndTest("internal/project", projectPkg, []string{"../project/project_test.go"}, deps); err != nil {
+		t.Fatalf("existing project tests failed against the transpiled package: %v", err)
+	}
+}
+
+// TestPortedPipelinePackage validates US-010 (pipeline half): the pipeline
+// package reimplemented as goal source under selfhost/pipeline transpiles to
+// compiling Go (the US-002 smoke gate, with the in-module ast, parser, token
+// imports resolving against the ported packages) AND passes the existing
+// internal/pipeline tests against the transpiled output (behavioral equivalence
+// — the //line source-position map).
+//
+// sourcemap.goal imports ast, parser, token directly; the transpiled parser in
+// turn imports lexer, so the layout and deps carry lexer too. pipeline.goal is
+// pure output types with no imports. The behavioral gate runs sourcemap_test.go
+// (white-box, strings/testing only — self-contained); pipeline_test.go is
+// excluded because it imports goal/internal/backend and goal/internal/corpus and
+// reads the repo-relative corpus manifest fixture, which is absent from the
+// harness's throwaway temp module (same exclusion spirit as the prior ports'
+// fixture-dependent suites).
+func TestPortedPipelinePackage(t *testing.T) {
+	tokenPkg := discoverPorted(t, "token")
+	lexerPkg := discoverPorted(t, "lexer")
+	astPkg := discoverPorted(t, "ast")
+	parserPkg := discoverPorted(t, "parser")
+	pipelinePkg := discoverPorted(t, "pipeline")
+
+	// Criterion 2: transpiles via the US-002 smoke gate and the generated Go
+	// compiles. The layout carries pipeline plus its ast, parser, token
+	// dependencies (and lexer, pulled in by the transpiled parser).
+	layout := map[string]*project.Package{
+		"internal/token":    tokenPkg,
+		"internal/lexer":    lexerPkg,
+		"internal/ast":      astPkg,
+		"internal/parser":   parserPkg,
+		"internal/pipeline": pipelinePkg,
+	}
+	if err := selfhost.BuildTranspiled(layout); err != nil {
+		t.Fatalf("ported pipeline failed the transpile-and-build gate: %v", err)
+	}
+
+	// Criterion 3: the existing self-contained pipeline tests pass against the
+	// transpiled package; pipeline_test.go is excluded (backend/corpus/manifest).
+	deps := map[string]*project.Package{
+		"internal/token":  tokenPkg,
+		"internal/lexer":  lexerPkg,
+		"internal/ast":    astPkg,
+		"internal/parser": parserPkg,
+	}
+	if err := selfhost.BuildAndTest("internal/pipeline", pipelinePkg, []string{"../pipeline/sourcemap_test.go"}, deps); err != nil {
+		t.Fatalf("existing pipeline tests failed against the transpiled package: %v", err)
+	}
+}

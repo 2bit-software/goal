@@ -4445,3 +4445,44 @@
     BuildTranspiled layout AND the BuildAndTest deps map, keyed by module-relative
     dir; the harness transpiles each into the same temp `module goal`.
 ---
+
+## [2026-06-29T05:00:00Z] - US-010 (self-host phase 4)
+- Ported internal/project and internal/pipeline to goal-native source under
+  selfhost/project and selfhost/pipeline (verbatim copies: project.go ->
+  project.goal; pipeline.go + sourcemap.go -> pipeline.goal + sourcemap.goal).
+  Go superset = valid goal; zero bare match/enum/assert identifier collisions
+  (only comment hits), so no source edits were needed.
+- project imports goal/internal/parser; pipeline/sourcemap imports ast, parser,
+  token (pipeline.go is pure output types, no imports). The transpiled parser
+  pulls in lexer/ast/token, so both ports carry token, lexer, ast, parser in the
+  BuildTranspiled layout AND BuildAndTest deps even though neither names lexer.
+- Added internal/selfhost/port_test.go:TestPortedProjectPackage and
+  TestPortedPipelinePackage, plus a small discoverPorted(t, name) helper that
+  Discovers ../../selfhost/<name> and asserts the package name (collapses the
+  repeated Discover+name-check boilerplate the earlier port tests spell out).
+  COMPILE gate via BuildTranspiled over the full layout; BEHAVIORAL gate via
+  BuildAndTest with deps {token,lexer,ast,parser}.
+- Behavioral gate runs the self-contained suites: project_test.go (stdlib-only,
+  builds fixtures in temp dirs) and pipeline's sourcemap_test.go (white-box,
+  strings/testing only). Excluded pipeline_test.go — it imports
+  goal/internal/backend + goal/internal/corpus and reads the repo-relative corpus
+  manifest fixture, absent from the harness's throwaway temp module (same
+  exclusion spirit as US-007/US-008/US-009 fixture-dependent suites).
+- Files: selfhost/project/project.goal, selfhost/pipeline/{pipeline,sourcemap}.goal
+  (new); internal/selfhost/port_test.go (two tests + helper); prd.json (US-010
+  passes:true); progress.txt. Initiative artifacts under
+  history/20260629-feature-us-010-port-project-and-pipeline-packages-to-goal/.
+- Verify: go test ./internal/selfhost -run 'TestPortedProjectPackage|TestPortedPipelinePackage'
+  green; task check + task build green; task fixpoint green (FIXPOINT OK —
+  selfhost/project + selfhost/pipeline auto-covered by project.Discover,
+  byte-identical across goal-c-1/goal-c-2 emission, no harness change).
+- Learnings for future iterations:
+  - A package whose tests are split into a self-contained white-box suite
+    (sourcemap_test.go, package pipeline) and a heavy black-box suite
+    (pipeline_test.go, package pipeline_test importing backend/corpus) ports
+    cleanly by including only the white-box half in the behavioral gate.
+  - discoverPorted(t, name) is now the shared helper for selfhost port tests;
+    reuse it for US-011+ (backend) instead of re-spelling the Discover loop.
+  - Only US-011 (backend) and the typecheck/main stories remain before the
+    full build-path fixpoint (US-012).
+---

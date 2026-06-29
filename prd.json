@@ -134,7 +134,7 @@
         "The existing project and pipeline tests pass against the transpiled packages"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Small (147 + 173 LOC), combined into one story. project depends on parser; pipeline is output types + source map."
     },
     {
