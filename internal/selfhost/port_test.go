@@ -467,3 +467,67 @@ func TestPortedPipelinePackage(t *testing.T) {
 		t.Fatalf("existing pipeline tests failed against the transpiled package: %v", err)
 	}
 }
+
+// TestPortedBackendPackage validates US-001: the backend package (the compiler's
+// largest, ~5k LOC across arity/backend/doctest/emit/lower/package) reimplemented
+// verbatim as goal source under selfhost/backend transpiles to compiling Go (the
+// smoke gate, with the in-module token, ast, parser, sema, project, pipeline
+// imports resolving against the ported packages and the foreign go/format,
+// go/importer, go/token, go/types imports passing through) AND passes the
+// existing internal/backend tests against the transpiled output (behavioral
+// equivalence — the emitter, lowering, arity resolution, and doctest harness).
+//
+// backend imports token, ast, parser, sema, project, pipeline directly; the
+// transpiled parser/sema/project/pipeline in turn import goal/internal/lexer, so
+// the layout carries lexer too. The behavioral gate runs the self-contained
+// backend_selfhost_test.go suite (the subset split out of backend_test.go that
+// depends on neither the corpus harness nor repo-relative ../../features/testdata
+// fixtures, both absent from the harness's throwaway temp module — same exclusion
+// spirit as the prior ports' fixture-dependent suites). The test's working
+// directory is internal/selfhost, so the goal sources are at
+// ../../selfhost/{token,lexer,ast,parser,sema,project,pipeline,backend} and the
+// existing backend tests are at ../backend.
+func TestPortedBackendPackage(t *testing.T) {
+	tokenPkg := discoverPorted(t, "token")
+	lexerPkg := discoverPorted(t, "lexer")
+	astPkg := discoverPorted(t, "ast")
+	parserPkg := discoverPorted(t, "parser")
+	semaPkg := discoverPorted(t, "sema")
+	projectPkg := discoverPorted(t, "project")
+	pipelinePkg := discoverPorted(t, "pipeline")
+	backendPkg := discoverPorted(t, "backend")
+
+	// Criterion 2: transpiles via the smoke gate and the generated Go compiles.
+	// The layout carries backend plus its full in-module dependency closure so
+	// the in-module imports resolve; the go/* foreign imports pass through.
+	layout := map[string]*project.Package{
+		"internal/token":    tokenPkg,
+		"internal/lexer":    lexerPkg,
+		"internal/ast":      astPkg,
+		"internal/parser":   parserPkg,
+		"internal/sema":     semaPkg,
+		"internal/project":  projectPkg,
+		"internal/pipeline": pipelinePkg,
+		"internal/backend":  backendPkg,
+	}
+	if err := selfhost.BuildTranspiled(layout); err != nil {
+		t.Fatalf("ported backend failed the transpile-and-build gate: %v", err)
+	}
+
+	// Criterion 3: the existing self-contained backend tests pass against the
+	// transpiled package, with the ported dependency closure transpiled in. The
+	// behavioral test file (package backend_test) imports goal/internal/backend
+	// and goal/internal/project, both present in the temp module.
+	deps := map[string]*project.Package{
+		"internal/token":    tokenPkg,
+		"internal/lexer":    lexerPkg,
+		"internal/ast":      astPkg,
+		"internal/parser":   parserPkg,
+		"internal/sema":     semaPkg,
+		"internal/project":  projectPkg,
+		"internal/pipeline": pipelinePkg,
+	}
+	if err := selfhost.BuildAndTest("internal/backend", backendPkg, []string{"../backend/backend_selfhost_test.go"}, deps); err != nil {
+		t.Fatalf("existing backend tests failed against the transpiled package: %v", err)
+	}
+}

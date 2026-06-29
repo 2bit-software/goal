@@ -54,6 +54,18 @@
   (keyed by module-relative dir like "internal/token") so they are transpiled
   into the same temp module; pass nil for a leaf like token. BuildTranspiled
   already takes a multi-entry layout — list every dep package there too.
+- Porting a package whose tests live in ONE monolithic *_test.go that mixes
+  self-contained tests with corpus/fixture-dependent ones (e.g. internal/backend):
+  PHYSICALLY SPLIT the fixture-free subset into its own real *_test.go in the same
+  package (move, never copy — same external test package means duplicate function
+  names would clash under `task check`). The split file becomes BuildAndTest's
+  behavioral-gate input; the fixture tests stay behind and run under `task check`
+  where the real ../../features/testdata + corpus exist. Compute each side's Go
+  imports by string-stripping the file first — these test files embed goal source
+  in string literals (`os.ReadFile`, `func add(...)`), which produce false-positive
+  import/func detections otherwise. Also: a behavioral test file may import a ported
+  package beyond the package's own deps (backend_selfhost_test.go imports project),
+  which must then be in BuildAndTest's deps map.
 - Adding a package under selfhost/ is automatically covered by `task fixpoint`:
   project.Discover walks the whole selfhost tree, so both bootstrap stages emit
   the new package and the diff stays byte-identical — no harness change per port.
@@ -4485,4 +4497,50 @@
     reuse it for US-011+ (backend) instead of re-spelling the Discover loop.
   - Only US-011 (backend) and the typecheck/main stories remain before the
     full build-path fixpoint (US-012).
+---
+
+## [2026-06-29T03:25:00Z] - US-001 (self-host idiomatic PRD)
+- Ported internal/backend to goal-native source under selfhost/backend (verbatim
+  copies of the 6 non-test files: arity/backend/doctest/emit/lower/package.go ->
+  *.goal; ~4,957 LOC incl. tests, ~3,441 non-test). Go superset = valid goal; ZERO
+  bare match/enum/assert identifier collisions (every hit is string-literal error
+  text in e.fail("...") or a token.MATCH/token.ENUM constant), so no source edits.
+  This is the verbatim RENAME only — idiomatization is US-004 (autofix)/US-011.
+- backend's in-module deps: token, ast, parser, sema, project, pipeline (+ lexer
+  transitively via parser/sema/project/pipeline). Foreign passthrough: fmt,
+  go/format, go/importer, go/token, go/types, strconv, strings, unicode.
+- Split internal/backend/backend_test.go: the 12 fixture-free tests moved into a
+  new internal/backend/backend_selfhost_test.go (package backend_test) so the
+  behavioral gate can copy a corpus-free, compilable suite into the harness's
+  throwaway temp module. The 30 corpus/fixture-dependent tests stay in
+  backend_test.go (which keeps the os/corpus imports; project import dropped since
+  only the moved tests used it as Go code). Imports per side were computed by
+  string-stripping the file first (the test file embeds goal source in literals,
+  e.g. `os.ReadFile`/`func add(...)`, which otherwise produce false-positive import
+  detections and a top-level-func miscount).
+- Added internal/selfhost/port_test.go:TestPortedBackendPackage via discoverPorted:
+  COMPILE gate BuildTranspiled over the 8-entry layout {token,lexer,ast,parser,
+  sema,project,pipeline,backend}; BEHAVIORAL gate BuildAndTest("internal/backend",
+  backendPkg, ["../backend/backend_selfhost_test.go"], deps={the 7 deps}).
+- Files: selfhost/backend/*.goal (6 new); internal/backend/backend_selfhost_test.go
+  (new) + internal/backend/backend_test.go (split); internal/selfhost/port_test.go
+  (backend test); prd.json (US-001 passes:true, PRD swapped to idiomatic plan);
+  progress.txt. Initiative artifacts under
+  history/20260629-refactor-us-001-rename-backend-package-to-selfhost/.
+- Verify: go test ./internal/selfhost -run TestPortedBackendPackage green; task
+  check + task build green; task fixpoint green (FIXPOINT OK — selfhost/backend
+  auto-covered by project.Discover, byte-identical across goal-c-1/goal-c-2, no
+  harness change).
+- Learnings for future iterations:
+  - A monolithic test file mixing self-contained and corpus/fixture tests ports by
+    PHYSICALLY SPLITTING the self-contained subset into its own real *_test.go file
+    (not duplicating — same package backend_test, so duplicate symbols would clash
+    under task check). The split file is then the behavioral-gate input. This is the
+    one-file analogue of US-009 selecting sema's already-separate self-contained
+    suites.
+  - When a ported package's behavioral test file imports a ported package OTHER than
+    its own deps (here backend_selfhost_test.go imports goal/internal/project), that
+    package must be in BuildAndTest's deps map even if it's already a backend dep.
+  - Only US-002 (typecheck rename) and US-003 (wire main onto selfhost) remain
+    before the verbatim self-host is complete.
 ---

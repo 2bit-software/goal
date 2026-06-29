@@ -1,180 +1,181 @@
 {
   "project": "goal",
-  "branchName": "ralph/self-host-phase-4",
-  "description": "Phase 4 self-host: close the front-end gaps, stand up the 3-stage bootstrap + byte-identical fixpoint, then port the compiler proper (token..backend, then typecheck) to goal leaf-to-root until a goal-built compiler compiles itself and passes the corpus. See SELF-HOST-RESEARCH.md.",
+  "branchName": "ralph/self-host-idiomatic",
+  "description": "Make the self-hosted goal compiler idiomatic goal, not transpiled Go: (1) finish renaming internal/*.go -> selfhost/*.goal, (2) run `goal fix` across everything to mechanically idiomatize error handling into Result/?, (3) audit each package to use goal idioms (enum, match, sealed interface, derive/from, ...defaults). Gated throughout by behavioral tests, the corpus, and the byte-identical fixpoint. See SELF-HOST-RESEARCH.md and [[goal-selfhost-must-be-idiomatic]].",
   "verifyCommands": [
     "task check",
-    "task build"
+    "task build",
+    "task fixpoint"
   ],
   "userStories": [
     {
       "id": "US-001",
-      "title": "Fix iota const-block miscompile",
-      "description": "As the self-host effort, I need idiomatic Go enum const blocks to transpile correctly so that the compiler's own iota-based declarations (e.g. internal/token) survive a round-trip.",
+      "title": "Rename backend package to selfhost",
+      "description": "As the self-host effort, I need internal/backend mirrored into selfhost/backend as goal source so that step 1 (rename) covers the largest package.",
       "acceptanceCriteria": [
-        "Transpiling `const ( Red Color = iota; Green; Blue )` emits Go where Green and Blue are bare const names that repeat the iota initializer, NOT `Green Blue` collapsed into a name+type",
-        "The transpiled output of an idiomatic iota enum compiles with `go build`",
-        "A regression test (corpus transpile case or backend test) pins the corrected emission and fails on the old name+type collapse"
+        "selfhost/backend holds the backend package as .goal files mirroring internal/backend (reserved-word identifier collisions like enum/match/assert renamed as needed)",
+        "The transpile-and-build smoke gate compiles selfhost/backend and its ported deps",
+        "The existing backend tests (minus those needing repo-relative fixtures) pass against the transpiled package"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "GATING — confirmed silent miscompile (exit 0): `const(Red Color=iota; Green; Blue)` -> `const(Red Color=iota; Green Blue)`, losing Blue's value. Lives in the parser GenDecl/ValueSpec path + backend const emission. Nothing self-hosts until this is fixed; internal/token depends on it."
+      "notes": "Step 1 of 3 (rename). This is the verbatim rename only — idiomatic upgrades come in US-004 (autofix) and US-011 (audit). 3,441 LOC; may need splitting by emit.go/lower.go if it exceeds one context window. token..pipeline are already renamed; backend and typecheck remain."
     },
     {
       "id": "US-002",
-      "title": "Add per-package transpile-and-build smoke gate",
-      "description": "As the self-host effort, I need a gate that transpiles each in-scope compiler package and compiles the output so that silent transpile defects (which the checker does not flag) are caught by `go build`.",
+      "title": "Rename typecheck package to selfhost",
+      "description": "As the self-host effort, I need internal/typecheck mirrored into selfhost/typecheck as goal source so that the rename step is complete for every in-scope package.",
       "acceptanceCriteria": [
-        "A test or `task` target transpiles each in-scope package's source through the goal front-end and runs `go build` (and where practical the package's existing tests) on the generated Go",
-        "The gate covers at least token, lexer, ast, parser, sema, project, pipeline, backend",
-        "The gate is green after US-001 and fails if any covered package transpiles to non-compiling Go"
+        "selfhost/typecheck holds the typecheck package as .goal files mirroring internal/typecheck (go/types, go/importer, go/ast, go/parser pass through as foreign imports)",
+        "The smoke gate compiles selfhost/typecheck and its ported deps",
+        "The existing typecheck depth tests (minus those needing repo-relative fixtures) pass against the transpiled package"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "The compiler source is already valid goal (Go superset), so the gate can feed internal/<pkg>/*.go (as .goal) through goalc/goal build. This is the verification harness every later port story reuses. `go build` is the real gate because the checker stays silent on miscompiles (that is how US-001 was found)."
+      "passes": false,
+      "notes": "Step 1 of 3 (rename), final package. 772 LOC."
     },
     {
       "id": "US-003",
-      "title": "Support generic function declarations",
-      "description": "As a goal author, I need top-level generic function declarations to parse and transpile so that the language is complete enough to express any compiler code without restriction.",
+      "title": "Wire self-host main onto ported packages",
+      "description": "As the self-host effort, I need the selfhost compiler main to import the selfhost packages (not internal/*) so that the goal-built compiler is genuinely self-contained and the fixpoint covers the whole compiler.",
       "acceptanceCriteria": [
-        "`func Identity[T any](x T) T { return x }` parses without error (no `expected (, found [`)",
-        "ast.FuncType carries a TypeParams field and the backend emits the type-parameter list",
-        "The generic function transpiles to valid Go that `go build` accepts, with a test covering a constrained param (e.g. [T comparable])"
+        "selfhost/main.goal imports selfhost/{token,lexer,ast,parser,sema,project,pipeline,backend} rather than any internal/* package",
+        "The bootstrap builds goal-c-1 and goal-c-2 from the self-contained selfhost tree",
+        "task fixpoint passes (goal-c-1 and goal-c-2 emit byte-identical Go for the compiler's own source) and the goal-built compiler passes the corpus transpile + behavioral tiers"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Localized ~3-spot fix: parser.go:347 parseFuncDecl must call the existing atTypeParams/parseTypeParams (parser.go:281,296,307); add TypeParams to ast.FuncType (only TypeSpec has one, ast.go:261); emit in funcDecl/funcSig (backend/emit.go:360,439). Compiler uses zero generic funcs, so this is completeness, not gating."
+      "passes": false,
+      "notes": "Completes the verbatim self-host: a working goal-built compiler that compiles itself. This is the differential ORACLE for the idiomatic passes that follow — keep it green at every later step."
     },
     {
       "id": "US-004",
-      "title": "Stand up bootstrap and fixpoint harness",
-      "description": "As the self-host effort, I need the 3-stage bootstrap and byte-identical fixpoint check wired as repeatable targets so that every ported package can be validated against the trust proof from the start.",
+      "title": "Run the autofixer across selfhost",
+      "description": "As the self-host effort, I need `goal fix` applied to every selfhost package so that manual (T,error) propagation is mechanically idiomatized into Result/? before the hand audit.",
       "acceptanceCriteria": [
-        "A `selfhost/` directory holds a `package main` goal program (a goalc/goal-build equivalent), even if initially a thin skeleton",
-        "Taskfile `bootstrap` and `fixpoint` targets run the stage-0 -> goal-c-1 -> goal-c-2 sequence and `diff -r` the Go emitted by goal-c-1 and goal-c-2 for the compiler's own source",
-        "Running the fixpoint target exits 0 (byte-identical) against the current skeleton"
+        "`goal fix --inplace` is run across all selfhost/*.goal and the resulting changes are committed",
+        "Re-running `goal fix` over selfhost produces no further changes (the autofix has reached its fixed point)",
+        "After the autofix, task check, task build, task fixpoint, and the corpus behavioral tier are all green"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "No selfhost dir or bootstrap target exists today. Stage-0 = ./bin/goal[c]; goal-c-1 = goal-written compiler built by stage-0; goal-c-2 = built by goal-c-1; fixpoint = goal-c-1 and goal-c-2 emit identical Go. CLI contract must match stage-0 (build --emit / stdin goalc). See SELF-HOST-RESEARCH.md §5."
+      "passes": false,
+      "notes": "Step 2 of 3 (autofix everything). goal fix auto-converts (T,error)+manual `if err!=nil` into Result[T,error]+`?` (resultsig/propagate rules); it only REPORTS switch->match and never touches enums/interfaces/conversions — those are the US-005+ audit. This story also dogfoods goal fix itself on real compiler code; if it miscompiles, fix that here."
     },
     {
       "id": "US-005",
-      "title": "Port token package to goal",
-      "description": "As the self-hosted compiler, I need internal/token reimplemented in goal so that the leaf of the dependency DAG is goal-native.",
+      "title": "Idiomatic audit: token",
+      "description": "As a goal author, I need selfhost/token to use goal idioms so that token kinds are expressed as the language intends.",
       "acceptanceCriteria": [
-        "selfhost/token holds the token package as goal source",
-        "It transpiles via the smoke gate (US-002) and the generated Go compiles",
-        "The existing token tests pass against the transpiled package"
+        "iota-based token-kind const blocks are expressed as a goal `enum` where it fits, or the deliberate decision not to is recorded in DECISIONS.md",
+        "No manual `if err != nil { return ..., err }` propagation remains that `goal fix` would flag (goal fix reports none for the package)",
+        "token tests pass against the transpiled package and task fixpoint stays green"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "361 LOC, leaf (no internal deps). Exercises the US-001 iota fix directly (token kinds are an iota enum)."
+      "passes": false,
+      "notes": "Step 3 of 3 (idiomatic audit), one package per story. Start small (token) to establish the audit pattern."
     },
     {
       "id": "US-006",
-      "title": "Port lexer package to goal",
-      "description": "As the self-hosted compiler, I need internal/lexer reimplemented in goal so that tokenization is goal-native.",
+      "title": "Idiomatic audit: lexer",
+      "description": "As a goal author, I need selfhost/lexer to use goal idioms so that tokenization reads as idiomatic goal.",
       "acceptanceCriteria": [
-        "selfhost/lexer holds the lexer as goal source importing the ported token package",
-        "It transpiles and the generated Go compiles (unicode, unicode/utf8 pass through)",
-        "The existing lexer tests pass against the transpiled package"
+        "switch statements over an in-file enum are converted to `match`, and fallible helpers return Result/Option with `?` propagation where natural",
+        "goal fix reports no remaining auto-convertible propagation sites in the package",
+        "lexer tests pass against the transpiled package and task fixpoint stays green"
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "514 LOC; depends on token. Foreign imports unicode/unicode/utf8 pass through."
+      "passes": false,
+      "notes": "Step 3 (audit)."
     },
     {
       "id": "US-007",
-      "title": "Port ast package to goal",
-      "description": "As the self-hosted compiler, I need internal/ast reimplemented in goal so that node definitions and Walk are goal-native.",
+      "title": "Idiomatic audit: ast",
+      "description": "As a goal author, I need selfhost/ast to use goal idioms so that node kinds and traversal are expressed idiomatically.",
       "acceptanceCriteria": [
-        "selfhost/ast holds the ast package as goal source importing the ported token package",
-        "It transpiles and the generated Go compiles",
-        "The existing ast tests pass against the transpiled package"
+        "Node-kind groups expressed as Go interfaces are evaluated for `sealed interface`/`enum` representation, with conversions or a recorded DECISIONS.md rationale; switch-over-node-kind becomes `match` where it fits",
+        "goal fix reports no remaining auto-convertible propagation sites in the package",
+        "ast tests pass against the transpiled package and task fixpoint stays green"
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "1,988 LOC; depends on token. dump.go uses reflect for debug Sexpr — drop it from the self-hosted build or rewrite as an explicit node switch (not on the compile path)."
+      "passes": false,
+      "notes": "Step 3 (audit). Largest idiomatic opportunity (sealed interfaces + match over node kinds) and largest risk — keep the US-003 verbatim oracle as the behavioral reference. May need splitting."
     },
     {
       "id": "US-008",
-      "title": "Port parser package to goal",
-      "description": "As the self-hosted compiler, I need internal/parser reimplemented in goal so that source-to-AST is goal-native.",
+      "title": "Idiomatic audit: parser",
+      "description": "As a goal author, I need selfhost/parser to use goal idioms so that parse error handling uses Result/?.",
       "acceptanceCriteria": [
-        "selfhost/parser holds the parser as goal source importing the ported token, lexer, ast packages",
-        "It transpiles and the generated Go compiles",
-        "The existing parser tests pass against the transpiled package"
+        "Parser functions returning (node, error) use Result with `?` propagation; switch-over-enum becomes `match` where it fits",
+        "goal fix reports no remaining auto-convertible propagation sites in the package",
+        "parser tests pass against the transpiled package and task fixpoint stays green"
       ],
       "priority": 8,
-      "passes": true,
-      "notes": "1,765 LOC; hand-written recursive descent with precedence climbing. Depends on token, lexer, ast. May be large for one context window — if so, split by parser.go vs goal_*.go."
+      "passes": false,
+      "notes": "Step 3 (audit). Result/? is the headline idiom here."
     },
     {
       "id": "US-009",
-      "title": "Port sema package to goal",
-      "description": "As the self-hosted compiler, I need internal/sema reimplemented in goal so that resolution and checking are goal-native.",
+      "title": "Idiomatic audit: sema",
+      "description": "As a goal author, I need selfhost/sema to use goal idioms so that resolution and checking use Result/Option and enums.",
       "acceptanceCriteria": [
-        "selfhost/sema holds the sema package as goal source importing the ported token, ast, parser packages",
-        "It transpiles and the generated Go compiles (go/parser, go/format, go/types pass through as foreign imports)",
-        "The existing sema tests pass against the transpiled package"
+        "Fallible resolution/check functions use Result/Option with `?`; diagnostic/mode kinds expressed as enums + match where they fit",
+        "goal fix reports no remaining auto-convertible propagation sites in the package",
+        "sema tests pass against the transpiled package and task fixpoint stays green"
       ],
       "priority": 9,
-      "passes": true,
-      "notes": "2,695 LOC; multi-pass resolve + check + foreign + ?-inference. foreign.go imports go/parser/go/format/go/types — confirmed they pass through. Large; may need splitting by file group (resolve, check-family, foreign)."
+      "passes": false,
+      "notes": "Step 3 (audit). 12 files; may need splitting by resolve/check-family/foreign."
     },
     {
       "id": "US-010",
-      "title": "Port project and pipeline packages to goal",
-      "description": "As the self-hosted compiler, I need internal/project and internal/pipeline reimplemented in goal so that discovery and output types are goal-native.",
+      "title": "Idiomatic audit: project and pipeline",
+      "description": "As a goal author, I need selfhost/project and selfhost/pipeline to use goal idioms.",
       "acceptanceCriteria": [
-        "selfhost/project and selfhost/pipeline hold those packages as goal source",
-        "Both transpile and the generated Go compiles (io/fs, os, path/filepath pass through)",
-        "The existing project and pipeline tests pass against the transpiled packages"
+        "Fallible discovery/output functions use Result/Option with `?` where natural",
+        "goal fix reports no remaining auto-convertible propagation sites in either package",
+        "project and pipeline tests pass against the transpiled packages and task fixpoint stays green"
       ],
       "priority": 10,
-      "passes": true,
-      "notes": "Small (147 + 173 LOC), combined into one story. project depends on parser; pipeline is output types + source map."
+      "passes": false,
+      "notes": "Step 3 (audit). Small packages combined."
     },
     {
       "id": "US-011",
-      "title": "Port backend package to goal",
-      "description": "As the self-hosted compiler, I need internal/backend reimplemented in goal so that AST-to-Go emission is goal-native.",
+      "title": "Idiomatic audit: backend",
+      "description": "As a goal author, I need selfhost/backend to use goal idioms so that emission code reads as idiomatic goal.",
       "acceptanceCriteria": [
-        "selfhost/backend holds the backend as goal source importing the ported token, ast, parser, sema, project, pipeline packages",
-        "It transpiles and the generated Go compiles (go/format, go/types, go/importer pass through)",
-        "The existing backend tests and the corpus transpile + behavioral tiers pass against the transpiled backend"
+        "Fallible emit/format functions use Result with `?`; switch-over-node/enum in the emitter becomes `match` where it fits",
+        "goal fix reports no remaining auto-convertible propagation sites in the package",
+        "backend tests and the corpus transpile + behavioral tiers pass against the transpiled backend, and task fixpoint stays green"
       ],
       "priority": 11,
       "passes": false,
-      "notes": "3,441 LOC; the largest and gnarliest (stateful emitter, ~100 methods, all goal-specific lowerings). Ported last against a fully working ported front-end, with the corpus as control. Likely needs splitting by emit.go vs lower.go vs the rest."
+      "notes": "Step 3 (audit). Largest package; may need splitting by emit.go/lower.go."
     },
     {
       "id": "US-012",
-      "title": "Self-host the build path and prove fixpoint",
-      "description": "As the self-host effort, I need the goal-written compiler to compile itself so that the byte-identical fixpoint trust proof holds for the build path.",
+      "title": "Idiomatic audit: typecheck",
+      "description": "As a goal author, I need selfhost/typecheck to use goal idioms.",
       "acceptanceCriteria": [
-        "selfhost/ exposes a goal-written goalc/goal-build main wired to the ported token..backend packages",
-        "The US-004 fixpoint target passes: goal-c-1 and goal-c-2 emit byte-identical Go for the compiler's own source",
-        "The goal-built compiler passes the corpus transpile + behavioral conformance tiers"
+        "Fallible depth-check functions use Result/Option with `?` where natural",
+        "goal fix reports no remaining auto-convertible propagation sites in the package",
+        "typecheck depth tests pass against the transpiled package and task fixpoint stays green"
       ],
       "priority": 12,
       "passes": false,
-      "notes": "The milestone. Covers the build/transpile path (token..backend); typecheck (the goal check depth stage) follows in US-013. This is where self-host is actually achieved for the transpiler."
+      "notes": "Step 3 (audit)."
     },
     {
       "id": "US-013",
-      "title": "Port typecheck and self-host goal check",
-      "description": "As the self-hosted compiler, I need internal/typecheck reimplemented in goal so that the depth-check path of `goal check` is also goal-native.",
+      "title": "Final idiomatic sweep and self-host proof",
+      "description": "As the self-host effort, I need a whole-compiler check that no plain-Go patterns remain and the idiomatic compiler still self-hosts, so that the dogfooding is complete and proven.",
       "acceptanceCriteria": [
-        "selfhost/typecheck holds the typecheck package as goal source (go/types, go/importer, go/ast, go/parser pass through as foreign imports)",
-        "It transpiles, the generated Go compiles, and the existing typecheck depth tests pass against it",
-        "The goal-built compiler runs `goal check` over the corpus check cases with the same diagnostics as the Go-built compiler, and the fixpoint still holds with typecheck included"
+        "Running `goal fix` across the entire selfhost tree reports zero remaining auto-convertible propagation sites, and any deliberately-Go constructs are recorded in DECISIONS.md",
+        "task fixpoint passes for the fully idiomatic compiler (goal-c-1 and goal-c-2 byte-identical)",
+        "The goal-built idiomatic compiler passes the full corpus transpile + behavioral + check tiers"
       ],
       "priority": 13,
       "passes": false,
-      "notes": "772 LOC; deferrable past the build-path fixpoint (US-012). Extends self-host from `goal build` to `goal check`. go/types et al. import as passthrough — no shelling out needed."
+      "notes": "Closes the loop: the compiler is written in idiomatic goal AND compiles itself to a byte-identical fixpoint while passing the corpus."
     }
   ]
 }
