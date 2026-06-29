@@ -16,15 +16,12 @@ import (
 // diagnostics. It is the single-file analogue of AnalyzePackageInDir: it parses
 // src, resolves the file's own facts, and runs every sema check. Cross-file and
 // foreign facts are not resolved (use AnalyzePackageInDir for a whole package). A
-// parse error is returned; a rejected program surfaces as Error-severity
-// diagnostics, not as a returned error.
-func Analyze(src string) ([]Diagnostic, error) {
-	file, err := parser.ParseFile(src)
-	if err != nil {
-		return nil, err
-	}
+// parse error propagates as the Result's `error`; a rejected program surfaces as
+// Error-severity diagnostics in the Ok value, not as a propagated error.
+func Analyze(src string) Result[[]Diagnostic, error] {
+	file := parser.ParseFile(src)?
 	info := Resolve(file)
-	return Check(file, info), nil
+	return Result.Ok(Check(file, info))
 }
 
 // HasErrors reports whether any diagnostic in diags is Error severity (a rejected

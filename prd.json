@@ -122,7 +122,7 @@
         "sema tests pass against the transpiled package and task fixpoint stays green"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Step 3 (audit). 12 files; may need splitting by resolve/check-family/foreign."
     },
     {

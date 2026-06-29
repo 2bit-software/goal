@@ -134,6 +134,23 @@
   does not apply and the audit is a documented refusal (US-008). Recovery-by-
   accumulation is behavior-load-bearing (it emits ALL errors + a partial AST), so
   manufacturing (T,error) returns just to apply `?` would NOT be behavior-preserving.
+- Converting a (T,error) function to `Result[T, error]` (open-E) + `?` is
+  BYTE-IDENTICAL at the emit boundary: open-E Result lowers to native `(T, error)`,
+  and `f()?` lowers to `v, err := f(); if err != nil { return zero, err }`, and
+  `return Result.Ok(x)` lowers to `return x, nil`. So such a conversion is safe on
+  an EXPORTED selfhost function PROVIDED the function has no in-tree callers and no
+  oracle test pins it (grep `Func(` across selfhost/** + the copied internal/<pkg>/
+  *_test.go) — the emitted Go signature is unchanged, the fixpoint stays
+  byte-identical, and no cross-package edit is needed. This is how US-009 converted
+  sema.Analyze (its only fitting site). Construction syntax is `Result.Ok(x)` /
+  `Result.Err(e)`; propagation is postfix `f(x)?`.
+- comma-ok `(T, bool)` helpers whose inner `err != nil` is SWALLOWED to a
+  control-flow bool (two distinct failures -> one bool the caller branches on) are
+  NOT Result/Option/`?` sites: `?` has nothing to propagate and Option changes the
+  (T,bool) contract. `goal fix` emits an advisory `suggestion: [call-site]` for
+  these but produces NO source diff, so AC-2 ("no remaining auto-convertible
+  propagation sites") still holds with the suggestion present — a `suggestion` is
+  not an auto-conversion, only a `skipped`/no-diff matters for the machine check.
 
 ## [2026-06-28T23:25:00Z] - US-008 (checker-onto-ast PRD)
 - Migrated internal/project and internal/pipeline/sourcemap off the internal/scan
@@ -4897,4 +4914,49 @@
     per the US-004 result-sig skips; expect genuine conversions there, unlike the
     leaf packages token/lexer/ast/parser which all bottomed out at documented
     refusals.
+---
+
+## [2026-06-29T10:30:00Z] - US-009 (self-host idiomatic PRD)
+- Step 3 of 3 (idiomatic audit), fifth package: selfhost/sema (12 files). sema is
+  the FIRST ported package with a genuine fallible (T,error)/Result surface (per
+  the US-004 result-sig skips + the US-008 carry-forward note). Unlike the leaf
+  packages (token/lexer/ast/parser, all pure refusals), this audit makes ONE
+  genuine behavior-preserving Result/? conversion and refuses the rest with reason.
+- CONVERTED sema.Analyze: `([]Diagnostic, error)` -> `Result[[]Diagnostic, error]`,
+  propagating the parse step with `parser.ParseFile(src)?` and returning success
+  via `return Result.Ok(Check(file, info))`. This is the ONLY fitting site: Analyze
+  has a real (T,error) propagation site AND zero consumers anywhere in selfhost AND
+  zero oracle tests (no analyze_test in the sema behavioral gate), so the
+  conversion needs no caller/test edits. Open-E Result lowers to native (T,error),
+  so the emitted Go is byte-identical (`func Analyze(src string) (ok []Diagnostic,
+  err error) { file, err := parser.ParseFile(src); if err != nil { return ok, err }
+  ...; return Check(file, info), nil }`) — same public signature, fixpoint stays
+  byte-identical. This is the first Result/? in selfhost EXECUTABLE source.
+- REFUSED (recorded in DECISIONS.md "US-009 (sema)"): EnrichForeign ([]error
+  accumulator), DefaultResolver (DirResolver-type + oracle-pinned), foreignDecls
+  (4-value + accumulator caller), goListResolve (tail-return at exported boundary),
+  AnalyzePackageInDir/With (exported + oracle-pinned + 3-value); constIntLit/
+  moduleResolve/readModulePath (comma-ok control-flow bool, err swallowed);
+  Mode/Severity (exported ordered iota ints, consumed cross-package by == and
+  sema.Mode/sema.Severity(x) conversions in backend/typecheck/lsp); no switch->match
+  (no in-file enum; Diagnostic.Code/Feature are strings).
+- Machine check (AC-2): `goal fix selfhost/sema/*.goal` -> no source diff on any
+  file (Analyze no longer appears in the report now that it is Result-returning);
+  remaining stderr is only the documented non-auto-convertible skips + advisory
+  call-site suggestions. Zero auto-convertible sites remain.
+- Files: selfhost/sema/analyze.goal (Analyze -> Result/?), DECISIONS.md (US-009
+  section), prd.json (US-009 passes:true), progress.txt. Initiative artifacts under
+  history/20260629-refactor-us-009-idiomatic-audit-sema/.
+- Verify: go test ./internal/selfhost -run TestPortedSemaPackage green; task check
+  green (incl. selfhost port gate + internal/sema); task build green; task fixpoint
+  FIXPOINT OK (selfhost/sema/*.go byte-identical across goal-c-1/goal-c-2).
+- Learnings for future iterations:
+  - See the two new Codebase Patterns bullets: (1) an open-E (T,error)->Result/?
+    conversion is byte-identical at the emit boundary, so it is SAFE even on an
+    exported selfhost function with no in-tree callers and no oracle test; (2) a
+    comma-ok (T,bool) helper that swallows err to a control-flow bool is NOT a
+    Result/Option/? site, and a `goal fix` `suggestion` (vs `skipped`) does not
+    violate AC-2 as long as there is no source diff.
+  - US-010 (project + pipeline) and US-011 (backend) are the remaining audits with
+    real fallible surface; US-012 (typecheck) and US-013 (final sweep) close it.
 ---

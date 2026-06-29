@@ -2195,3 +2195,128 @@ the transpiled `selfhost/parser` against `internal/parser/parser_test.go`, plus
 `internal/parser`) green; `task build` green; `task fixpoint` → FIXPOINT OK
 (`selfhost/parser/*.go` byte-identical across goal-c-1/goal-c-2). The
 `selfhost/parser` `.goal` source is unchanged.
+
+## self-host idiomatic audit — US-009 (sema)
+
+> US-009 of the **self-host idiomatic** PRD (`prd.json`): the per-package
+> idiomatic audit of `selfhost/sema` (12 files: analyze, assert, check, convert,
+> fields, foreign, implements, mustuse, package, question, resolve, sema). sema is
+> the FIRST ported package with a genuine fallible `(T, error)` surface (the
+> US-004 result-sig SKIPs and the US-008 carry-forward note both name it). Unlike
+> US-005..US-008 (which were pure refusals), this audit makes ONE genuine
+> behavior-preserving Result/`?` conversion and refuses the rest with reason.
+> Pattern unchanged: classify each Go-ism against the goal idiom it could become,
+> convert where it FITS (intra-package, behavior-preserving, no cross-package
+> caller edits, no oracle-pinned signature change), record refusals here.
+
+### `Analyze` converted to `Result[[]Diagnostic, error]` with `?` — the one fitting site
+- **Kind:** conversion
+- **Did:** `Analyze(src string) ([]Diagnostic, error)` → `Analyze(src string)
+  Result[[]Diagnostic, error]`, propagating the parse step with
+  `parser.ParseFile(src)?` and returning success via
+  `return Result.Ok(Check(file, info))` (was `file, err := parser.ParseFile(src);
+  if err != nil { return nil, err }` … `return Check(file, info), nil`).
+- **Why it FITS:** (1) `Analyze` has a real `(T, error)` propagation site
+  (`parser.ParseFile` returns `(*ast.File, error)` = open-E ModeResult), which is
+  exactly what `?` is for (feature-05). (2) It has **zero consumers anywhere in the
+  selfhost tree** and **zero oracle tests** (no `analyze_test` is in the sema
+  behavioral gate; grep finds no `Analyze(` call in `selfhost/**` or the copied
+  `internal/sema/*_test.go`), so the conversion needs **no caller or test edits**.
+  (3) Behavior is preserved EXACTLY: open-E `Result[T, error]` lowers to native
+  `(T, error)`, so the emitted Go is `func Analyze(src string) (ok []Diagnostic,
+  err error) { file, err := parser.ParseFile(src); if err != nil { return ok, err
+  } … return Check(file, info), nil }` — the same two-value `([]Diagnostic, error)`
+  public signature and the same propagation, just spelled idiomatically in goal
+  source. The fixpoint stays byte-identical (both bootstrap stages emit this same
+  form). This is the canonical "exported function whose emitted signature is
+  unchanged" case: changing the goal-source idiom does NOT change the oracle-pinned
+  emitted API.
+
+### Exported, oracle-pinned, cross-package APIs stay `(T, error)`/`[]error` — NOT converted
+- **Kind:** refusal (with reason)
+- **Refused:** converting `EnrichForeign`, `DefaultResolver`, `AnalyzePackageInDir`,
+  `AnalyzePackageInDirWith` to Result.
+- **Why:** each is exported and either consumed cross-package or pinned by the
+  US-003 verbatim oracle tests, so a signature change would require out-of-scope
+  cross-package/cross-file edits:
+  - `EnrichForeign(…) []error` is an **error-ACCUMULATOR** (it appends per-import
+    errors and `continue`s — `errs = append(errs, err)`), not a `(T, error)`
+    propagation site; `?` cannot apply to a function that returns a list of
+    *collected* errors. `package.go` calls it (in-package) and `foreign_test.go`
+    pins its `[]error` shape.
+  - `DefaultResolver(importPath, fromDir string) (string, error)` **is the value
+    assigned to the exported `DirResolver` func type** (`resolve = DefaultResolver`)
+    and `foreign_test.go` passes resolvers of that exact type. Converting it to
+    Result breaks the `DirResolver` contract and the tests. `goal fix` already
+    SKIPs it ("non-propagating return").
+  - `AnalyzePackageInDir ([][]Diagnostic, error)` / `AnalyzePackageInDirWith
+    ([][]Diagnostic, []error, error)` are exported and pinned by `package_test.go`;
+    the `With` variant returns **three** values (a Result holds one success value)
+    and `InDir` calls it three-valued, so `?` cannot apply. `goal fix` SKIPs both
+    ("non-propagating return" / "returns multiple non-error values").
+
+### Unexported helpers `foreignDecls` / `goListResolve` stay `(…​, error)` — NOT converted
+- **Kind:** refusal (with reason)
+- **Refused:** converting these two internal helpers to Result.
+- **Why:** `foreignDecls(dir, alias) (structs, funcs, methods map…, err error)`
+  returns **four values** (three maps + error); a Result holds one success value
+  (would need a struct bundle), and its sole caller `EnrichForeign` **accumulates**
+  the error rather than propagating it, so there is no `?` call site even if it were
+  bundled. `goListResolve(…) (string, error)` is **tail-returned** by the exported
+  `DefaultResolver` (`return goListResolve(...)`, which stays `(string, error)`), a
+  non-propagating boundary where `?` cannot apply — exactly the `goal fix` SKIP.
+
+### comma-ok value helpers stay `(T, bool)` — NOT converted to Option
+- **Kind:** refusal (with reason)
+- **Refused:** converting `constIntLit (int64, bool)`, `moduleResolve
+  (string, bool)`, `readModulePath (string, bool)` to `Option`.
+- **Why:** these are **comma-ok control-flow** helpers: each maps two distinct
+  failures (e.g. "not a BasicLit" vs "ParseInt failed"; "no go.mod" vs "no module
+  directive"; "no enclosing module" vs "path outside module") onto a **single bool
+  the in-file caller branches on** (`if v, ok := f(…); ok { … }`). The inner
+  `err != nil` is deliberately *swallowed to a bool*, not propagated — `?` has
+  nothing to propagate and `Option` would change the `(T, bool)` contract the
+  in-file callers consume. This is the established comma-ok refusal (US-005). The
+  remaining `goal fix` output for these is an advisory `suggestion: [call-site]`
+  ("manual error handling in X … convert its signature to use ?"), NOT an
+  auto-conversion: `goal fix` produces **no source diff**, so AC-2 ("no remaining
+  auto-convertible propagation sites") holds.
+
+### `Mode` and `Severity` stay `type X int` + iota — NOT converted to `enum`
+- **Kind:** refusal (with reason)
+- **Refused:** rewriting `Mode` (ModeNone/ModeResult/ModeResultClosed/ModeOption)
+  and `Severity` (Error/Warning) as goal `enum`s.
+- **Why:** both are **exported, ordered iota ints** consumed cross-package by `==`
+  and numeric conversion: `sig.Mode == sema.ModeResultClosed` and
+  `calleeMode(…) sema.Mode` in `selfhost/backend` (lower.goal, emit.goal);
+  `Severity: sema.Error/Warning`, the `sema.Severity` field type, and
+  `sema.Severity(x)` numeric conversions in `selfhost/typecheck` (and lsp). A goal
+  `enum` lowers to a boxed sealed interface (§8.1), not an `int`, so `==`,
+  ordering, and the numeric conversions all break and every cross-package consumer
+  would need a coordinated edit — out of scope for a single-package story. This is
+  the same canonical "ordered/comparable iota int, keep as-is" case as `token.Kind`
+  (US-005) and `FuncMod`/`ChanDir` (US-007).
+
+### No `switch`→`match` applies — `selfhost/sema` declares no in-file `enum`
+- **Kind:** refusal (with reason)
+- **Refused:** converting the package's `switch` statements to `match`.
+- **Why:** AC-1 scopes the conversion to "switch over an in-file enum", and sema
+  declares **no `enum`** of its own (it *resolves and checks* enum syntax in other
+  source). Its switches are over `token.Kind` (`type Kind int`, not an enum per
+  US-005), type-switches over `ast` category interfaces (cannot be sealed per
+  US-007), `Mode`, and strings — none a closed-enum scrutinee (§02-match §228). The
+  diagnostic kinds `Diagnostic.Code` and `Diagnostic.Feature` are stable **string**
+  identifiers, not enum kinds, so they are not enum/match candidates either.
+
+### Verification
+`goal fix selfhost/sema/*.goal` → no content diff on any file (`Analyze` no longer
+appears in the report at all now that it is Result-returning); the only stderr is
+the deliberately non-auto-convertible SKIPs (DefaultResolver, goListResolve,
+AnalyzePackageInDir/With) and advisory call-site suggestions (EnrichForeign,
+foreignDecls, moduleResolve, readModulePath, constIntLit, AnalyzePackageInDirWith)
+— zero auto-convertible sites remain. `go test ./internal/selfhost -run
+TestPortedSemaPackage` green (the transpiled `selfhost/sema` with the Result/`?`
+`Analyze` compiles and passes the copied `internal/sema` behavioral suites).
+`task check` (incl. the selfhost port gate + `internal/sema`) green; `task build`
+green; `task fixpoint` → FIXPOINT OK (`selfhost/sema/*.go` byte-identical across
+goal-c-1/goal-c-2). Only `selfhost/sema/analyze.goal` changed.
