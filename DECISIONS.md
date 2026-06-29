@@ -2000,3 +2000,108 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
   (they are infallible and ILLEGAL is the deliberate in-band signal); an
   `Option[Kind]` rewrite of the `Lookup` call site (not a propagation site;
   breaks the oracle test — same as the US-005 token decision).
+
+## self-host idiomatic audit — US-007 (ast)
+
+> US-007 of the **self-host idiomatic** PRD (`prd.json`): the per-package
+> idiomatic audit of `selfhost/ast` (ast.goal, goal_decl.goal, goal_expr.goal,
+> goal_stmt.goal, walk.goal). This is the highest idiomatic-opportunity package
+> (sealed interfaces + match over node kinds) and the highest risk. Follows the
+> US-005 (token) / US-006 (lexer) pattern: classify each Go-ism against the goal
+> idiom it could become, convert where it FITS and is behavior-preserving, and
+> record refusals-with-reason here. Outcome: a recorded DECISION with **no
+> `.goal` source change** — every candidate's only behavior-preserving form lies
+> outside `selfhost/ast`, so converting would break the US-003 verbatim
+> self-host oracle and/or ripple out of this story's scope.
+
+### The node category interfaces stay plain Go interfaces — NOT goal `sealed interface`
+- **Kind:** refusal (with reason)
+- **Refused:** rewriting `Node` / `Decl` / `Stmt` / `Expr` / `Spec`
+  (the `go/ast`-mirrored marker interfaces in `selfhost/ast/ast.goal`) into goal
+  `sealed interface` declarations.
+- **Why:** these *are* the conceptual sealed interfaces of the AST — closed sets
+  of node types kept package-private by the unexported markers `declNode()` /
+  `stmtNode()` / `exprNode()` / `specNode()`. But converting them is neither
+  behavior-preserving nor in-scope:
+  1. **Public-API break (oracle).** A goal `sealed interface` lowers to the
+     §8.1 encoding: the explicit marker methods are replaced by a synthesized
+     `isNAME()` marker, and every concrete node struct must be re-spelled with
+     an `implements NAME for T` clause (or `type T struct implements NAME`).
+     That changes the package's surface the **US-003 verbatim self-host oracle**
+     pins — `selfhost/ast` is modeled byte-for-byte on `go/ast` and its ported
+     `internal/ast` tests run against the transpiled package unchanged.
+  2. **§9 switch-coexistence blast radius (out of scope).** Per DECISIONS
+     §02-match ("Switch-coexistence", §228), a plain `switch` on a closed
+     enum/sealed value is a **compile error** in the live `sema` checker. The
+     consumers of these category interfaces — `selfhost/sema` (check, resolve,
+     question, fields, mustuse, foreign, assert, convert, implements),
+     `selfhost/backend` (lower, emit), and `selfhost/parser` (parser,
+     goal_construct) — dispatch on them with **dozens of plain
+     `switch n := x.(type)` type-switches**. Sealing `Node`/`Expr`/`Stmt`/`Decl`
+     would turn every one of those into a closed-switch compile error, forcing a
+     tree-wide `switch`→`match` conversion that is explicitly **outside US-007**
+     (scoped to `selfhost/ast` only).
+- **Over:** sealing only `Decl`/`Stmt`/`Expr`/`Spec` (same §9 problem, same
+  oracle problem, smaller only in degree); a "sealed interface with no
+  implementors-rewrite" (not expressible — the §8.1 encoding requires the
+  `implements` clauses).
+
+### `Walk`'s type-switch stays a Go type-switch — NOT `match`
+- **Kind:** refusal (with reason)
+- **Refused:** rewriting `Walk`'s `switch n := node.(type)` over the ~60 node
+  kinds (`selfhost/ast/walk.goal`) into a goal `match`.
+- **Why:** goal `match` is reserved for a **closed enum / sealed-interface
+  scrutinee** (§02-match §228); a `match` over node kinds is only legal once
+  `Node` is a `sealed interface`. Since sealing `Node` is refused above (oracle
+  break + §9 cross-package blast radius), its `match` form has no legal
+  scrutinee and the type-switch must remain a plain `switch`. The traversal is
+  behavior-identical either way; `match` would buy exhaustiveness checking only
+  at the cost of the refused interface conversion.
+- **Over:** a `match node { *Ident => …, … }` rewrite (no closed scrutinee type
+  to match on; would not compile without first sealing `Node`).
+
+### `FuncMod` and `ChanDir` stay iota `const` blocks — NOT goal `enum`s
+- **Kind:** refusal (with reason)
+- **Refused:** rewriting `type FuncMod int` + `const ( FuncPlain … iota; FuncFrom;
+  FuncDerive )` (goal_decl.goal) and `type ChanDir int` + `const ( SendRecv …
+  iota; SendOnly; RecvOnly )` (ast.goal) into goal `enum`s.
+- **Why:** both are public, `go/ast`-style **ordered integer** enumerations the
+  oracle pins, and both are consumed cross-package by patterns a goal `enum`
+  (which lowers to a *boxed sealed interface*, not an `int`, per §01-enums/§8.1)
+  cannot serve:
+  1. **`==`/`!=` comparison.** `selfhost/sema` reads `FuncMod` with equality
+     tests — `fn.Mod != ast.FuncPlain` (question.goal), `fd.Mod != ast.FuncDerive`
+     (convert.goal), `d.Mod == ast.FuncFrom || d.Mod == ast.FuncDerive`
+     (resolve.goal). Enum values are boxed interface values, not comparable
+     integers, so these comparisons would not survive the conversion.
+  2. **Plain `switch` over the value (§9).** `selfhost/backend/emit.goal` does a
+     plain `switch fn.Mod { case ast.FuncPlain, ast.FuncFrom: … case
+     ast.FuncDerive: … }`; `sema/resolve.goal` and `backend/emit.goal` do plain
+     `switch` over `ChanType.Dir` (`case ast.RecvOnly: … case ast.SendOnly: …`).
+     Sealing these into enums makes each a §9 closed-enum-plain-switch **compile
+     error** in `sema` — and all sit in packages **outside US-007's scope**.
+  This is the same canonical "ordered/comparable iota int, keep as-is" case as
+  `token.Kind` (US-005): the goal `enum` is the idiom for a *closed, unordered,
+  payload-or-not* variant set matched with `match`; `FuncMod`/`ChanDir` are
+  *ordered, comparable, payload-free integer modifiers* that Go `iota` already
+  expresses idiomatically and that goal inherits verbatim. This is the AC-1
+  "deliberate decision not to … recorded in DECISIONS.md" branch.
+- **Over:** converting `FuncMod`/`ChanDir` and also rewriting every consuming
+  `==`/`switch` in sema/backend/parser to `match` (out of US-007 scope; changes
+  the oracle-pinned representation from `int`).
+
+### No Result/Option/`?` conversion applies — `selfhost/ast` has no fallible function
+- **Kind:** assumption
+- **Chose:** leave `selfhost/ast`'s `.goal` source unchanged beyond this ledger
+  entry.
+- **Why:** the package is **pure AST data plus the total `Walk` traversal** — it
+  declares **no function that returns `error`** (the only "error" in the source
+  is the word inside a doc comment on `IndexListExpr`). There is therefore **no
+  manual `if err != nil` propagation** for `goal fix` to idiomatize into
+  Result/`?`, and `Walk` is total (a nil node is a no-op; unknown kinds simply
+  fall through). `goal fix selfhost/ast/*.goal` produces **no diff and reports
+  nothing** across all five files — AC-2 ("goal fix reports no remaining
+  auto-convertible propagation sites") already holds.
+- **Over:** an `Option`/`Result` rewrite of the `Pos()`/`End()` accessors or the
+  `walk*` helpers (all infallible; returning a sentinel `token.Pos{}` is the
+  deliberate in-band signal, mirroring `go/ast`).
