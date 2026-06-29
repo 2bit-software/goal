@@ -1,6 +1,13 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- Project skills live in `.morse-code/skills/<name>/` (SKILL.md + scripts/ +
+  references/), NOT `.claude/skills/` — `.claude/` is ignored by the user's GLOBAL
+  gitignore (~/.config/git/ignore) so anything under it is uncommittable. The repo
+  only ignores `.morse-code/state.json` + `.morse-code/initiative.json`, so the
+  rest of `.morse-code/` IS tracked. Verify with `git check-ignore -v <path>`
+  before placing committable content. macOS ships bash 3.2 — no `mapfile`; use a
+  `while IFS= read -r` loop in helper scripts.
 - goal reserves three words beyond Go's keywords: `match`, `enum`, `assert`
   (implements/sealed/from/derive are contextual keywords, NOT reserved). Go source
   that uses any of these EXACT words as an identifier is valid Go but rejected by
@@ -5774,3 +5781,41 @@
     auto-applied conversion, so a tree with only those = autofixer-idiomatic.
   - ./bin/goal is the full CLI (build|run|check|fix|fmt|ai|lsp); ./bin/goal-c-1/-c-2
     are the bootstrap selfhost binaries with only `build --emit`.
+
+## 2026-06-29T21:46:34Z - SEAM-007
+- Built the go->goal upgrade skill: a repeatable, scoped (one .go file OR one
+  go.mod package) pipeline that upgrades existing Go to idiomatic goal. Encodes
+  the full SEAM-002..006 pipeline: scope guard -> rename (.go->.goal) -> goal fix
+  autofix -> manual idioms (iota->enum, type-switch over closed iface->sealed +
+  exhaustive match, method-on-would-be-enum->free label fn, fallible (T,error)->
+  Result/?) -> verify+report. Dogfooded end-to-end on a purpose-made package.
+- Files changed:
+  - .morse-code/skills/go-to-goal-upgrade/SKILL.md (frontmatter + 5-step pipeline
+    + scope rules + idiom catalogue + carry-forward gotchas + report template)
+  - .morse-code/skills/go-to-goal-upgrade/scripts/scope-guard.sh (FILE/PACKAGE/
+    MODULE classifier; refuses multi-package module, exit 2)
+  - .morse-code/skills/go-to-goal-upgrade/scripts/rename.sh (.go->.goal; keeps
+    package clause; preserves build-tag comments; flags match/enum/assert
+    bare-identifier collisions, comments stripped to avoid false positives)
+  - .morse-code/skills/go-to-goal-upgrade/references/idiom-catalogue.md
+  - .morse-code/skills/go-to-goal-upgrade/references/example-walkthrough.md
+  - .morse-code/skills/go-to-goal-upgrade/examples/before/shapes.go (Go source)
+  - .morse-code/skills/go-to-goal-upgrade/examples/after/shapes.goal (idiomatic,
+    goal check + goal build GREEN)
+  - prd.json (SEAM-007 passes:true); history/20260629-feature-seam-007-*/ artifacts
+- Learnings for future iterations:
+  - Skills location: .morse-code/skills/ is committable; .claude/ is globally
+    gitignored. Always git check-ignore before choosing a path.
+  - goal fix is deliberately conservative: it SKIPS lifting an exported signature
+    (callers it cannot see) and a non-propagating return (result-sig skip). Those
+    skips are the hand-off to the manual idiom step, not failures — the dogfood
+    proves this exact boundary (ParseDim + MakeRect skipped by fix, lifted by hand).
+  - Verified lowerings: enum -> interface{ isE() } + per-variant structs +
+    markers; match over sealed -> Go type switch (default = unreachable panic);
+    sealed interface -> iface + isName() marker per implementor (cascades through
+    embeds); Result[T,error] -> native (T,error); x := f()? -> err!=nil early
+    return. The ? round-trips back to the original manual propagation (behavior-
+    preserving proof).
+  - The skill lives outside the Go build tree, so task check/build/fixpoint are
+    unaffected; all three stayed green (FIXPOINT OK).
+---

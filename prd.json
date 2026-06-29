@@ -195,7 +195,7 @@
         "task check, task build, task fixpoint remain green (the skill itself adds no regressions)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Requested by the user mid-run: a one-command go->goal upgrader scoped to a single package or single file. Culmination of the PRD — encodes the autofixer pass plus the manual idiom transforms proven in SEAM-002 (enum from iota), SEAM-003 (enum + method->free-fn), SEAM-004 (seal + type-switch->match), SEAM-005 (Result/? API). Carry-forward gotchas the skill must encode: enum zero value is nil; enums can't carry methods; value-position match lowering constraints; cross-package idioms rely on SEAM-CAP/CAP-2 (whole-program enum facts). Build this AFTER SEAM-006 (the proof). Keep scope to one go.mod package or one file, matching the per-package fix model."
     }
   ]
