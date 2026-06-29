@@ -1461,6 +1461,10 @@ func (e *emitter) returnStmt(s *ast.ReturnStmt) {
 		// `return <body>`: a type-switch for an enum, the Result (T, error) /
 		// closed-E sum fork for a Result, and the Option *T nil-check for an Option.
 		if m, ok := s.Results[0].(*ast.MatchExpr); ok {
+			if isSealedMatch(m) {
+				e.sealedMatch(m, posReturn, "")
+				return
+			}
 			switch q := matchQualifier(m); {
 			case q == "Result":
 				e.resultMatch(m, posReturn, "")
@@ -1514,7 +1518,7 @@ func (e *emitter) tryVarMatch(d ast.Decl) bool {
 		return false
 	}
 	q := matchQualifier(m)
-	if q != "Result" && q != "Option" && enumOf(e.info, q) == nil {
+	if !isSealedMatch(m) && q != "Result" && q != "Option" && enumOf(e.info, q) == nil {
 		return false
 	}
 	name := vs.Names[0].Name
@@ -1530,6 +1534,8 @@ func (e *emitter) tryVarMatch(d ast.Decl) bool {
 // surrounding `var name T` declaration; here each arm body is wrapped per pos.
 func (e *emitter) matchValue(m *ast.MatchExpr, q string, pos matchPos, name string) {
 	switch {
+	case isSealedMatch(m):
+		e.sealedMatch(m, pos, name)
 	case q == "Result":
 		e.resultMatch(m, pos, name)
 	case q == "Option":
@@ -1561,7 +1567,7 @@ func (e *emitter) tryAssignMatch(s *ast.AssignStmt) bool {
 		return false
 	}
 	q := matchQualifier(m)
-	if q != "Result" && q != "Option" && enumOf(e.info, q) == nil {
+	if !isSealedMatch(m) && q != "Result" && q != "Option" && enumOf(e.info, q) == nil {
 		return false
 	}
 	typ, ok := e.inferMatchType(m)
@@ -2021,6 +2027,10 @@ func recvBaseType(x ast.Expr) string {
 // if/else split (§8.3/§8.4). Enum and value-position match are later stories
 // (US-036) and yield a descriptive error here.
 func (e *emitter) matchStmt(m *ast.MatchExpr) {
+	if isSealedMatch(m) {
+		e.sealedMatch(m, posStmt, "")
+		return
+	}
 	switch q := matchQualifier(m); q {
 	case "Result":
 		e.resultMatch(m, posStmt, "")
@@ -2144,6 +2154,80 @@ func (e *emitter) armWrap(body ast.Node, pos matchPos, name string) {
 	default:
 		e.armBody(body)
 	}
+}
+
+// sealedMatch lowers a `match` over a sealed-interface scrutinee to a Go
+// type-switch on the scrutinee's dynamic type, with one concrete `case *T:` per
+// type-pattern arm (the implementor type rendered directly). It is the
+// sealed-interface counterpart of enumMatch: a proven-exhaustive match (no `_` arm)
+// lowers to a panicking default; an explicit `_` rest arm becomes a real default.
+// The guard variable (`switch v := subj.(type)`) is introduced only when some arm
+// binds and uses the type-narrowed value.
+func (e *emitter) sealedMatch(m *ast.MatchExpr, pos matchPos, name string) {
+	usesBinding := false
+	for _, arm := range m.Arms {
+		if tp, ok := arm.Pattern.(*ast.TypePattern); ok && tp.Binding != nil && usesIdent(arm.Body, tp.Binding.Name) {
+			usesBinding = true
+			break
+		}
+	}
+
+	guard := ""
+	e.p("switch ")
+	if usesBinding {
+		guard = e.gensym("v")
+		e.p(guard + " := ")
+	}
+	e.expr(m.Subject)
+	e.p(".(type) {\n")
+
+	var restArm *ast.MatchArm
+	for _, arm := range m.Arms {
+		tp, ok := arm.Pattern.(*ast.TypePattern)
+		if !ok {
+			if _, isRest := arm.Pattern.(*ast.RestPattern); isRest {
+				restArm = arm
+			}
+			continue
+		}
+		if tp.Type == nil {
+			e.fail("sealed match arm has no concrete type")
+			return
+		}
+		e.p("case ")
+		e.expr(tp.Type)
+		e.p(":\n")
+		e.emitSealedArm(arm, tp, guard, pos, name)
+		e.p("\n")
+	}
+
+	e.p("default:\n")
+	if restArm != nil {
+		e.emitSealedArm(restArm, nil, guard, pos, name)
+	} else {
+		e.p(fmt.Sprintf("panic(%q)", "unreachable: non-exhaustive sealed match (compiler invariant violated)"))
+	}
+	e.p("\n}")
+}
+
+// emitSealedArm emits one type-switch clause body for a sealed match: it renames
+// the arm's narrowed-value binding to the guard variable (so the body's references
+// to the binding read the type-narrowed value), then emits the arm body wrapped for
+// the match position. Unlike emitEnumArm there is no enum payload field set to
+// expose — the narrowed value IS the binding.
+func (e *emitter) emitSealedArm(arm *ast.MatchArm, tp *ast.TypePattern, guard string, pos matchPos, name string) {
+	binding := ""
+	if tp != nil && tp.Binding != nil {
+		binding = tp.Binding.Name
+	}
+	if binding != "" {
+		if e.renames == nil {
+			e.renames = map[string]string{}
+		}
+		e.renames[binding] = guard
+		defer delete(e.renames, binding)
+	}
+	e.armWrap(arm.Body, pos, name)
 }
 
 // resultMatch lowers `match scrut { Result.Ok(v) => …; Result.Err(e) => … }` to

@@ -367,6 +367,30 @@ func TestWalkGoalExprChildren(t *testing.T) {
 		visits := collect(spread)
 		assertChildren(t, visits, spread, defaultsIdent)
 	}
+
+	// Type pattern over a sealed-interface scrutinee: *Lit(l)
+	patIdent := &Ident{Name: "Lit"}
+	patStar := &StarExpr{X: patIdent}
+	typeBinding := &Ident{Name: "l"}
+	typePattern := &TypePattern{
+		Type:    patStar,
+		Lparen:  token.Pos{Offset: 4, Line: 1, Col: 5},
+		Binding: typeBinding,
+		Rparen:  token.Pos{Offset: 6, Line: 1, Col: 7},
+	}
+	{
+		visits := collect(typePattern)
+		assertChildren(t, visits, typePattern, patStar, typeBinding)
+	}
+	// A TypePattern (sealed type pattern) is a distinct node type from a
+	// VariantPattern (enum variant tag), so a type-pattern match never collides with
+	// an enum match.
+	if tpKind := fmt.Sprintf("%T", typePattern); tpKind != "*ast.TypePattern" {
+		t.Errorf("type-pattern node type = %s, want *ast.TypePattern", tpKind)
+	}
+	if fmt.Sprintf("%T", typePattern) == fmt.Sprintf("%T", variantPattern) {
+		t.Fatalf("TypePattern and VariantPattern share a node type; they must be distinct")
+	}
 }
 
 func contains(list []Node, target Node) bool {

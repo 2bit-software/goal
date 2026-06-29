@@ -39,6 +39,11 @@ func (info *Info) Merge(o *Info) {
 	maps.Copy(info.FuncSignatures, o.FuncSignatures)
 	maps.Copy(info.Enums, o.Enums)
 	maps.Copy(info.Sealed, o.Sealed)
+	for iface, impls := range o.SealedImpls {
+		for _, t := range impls {
+			info.addImplementor(iface, t)
+		}
+	}
 	maps.Copy(info.Structs, o.Structs)
 	maps.Copy(info.FromRegistry, o.FromRegistry)
 	maps.Copy(info.Methods, o.Methods)
@@ -56,6 +61,7 @@ func Resolve(f *ast.File) *Info {
 		FuncSignatures: map[string]FuncSig{},
 		Enums:          map[string]*Enum{},
 		Sealed:         map[string]bool{},
+		SealedImpls:    map[string][]string{},
 		Structs:        map[string][]Field{},
 		FromRegistry:   map[[2]string]ConvEntry{},
 		Methods:        map[string][]Method{},
@@ -86,6 +92,21 @@ func Resolve(f *ast.File) *Info {
 		}
 	}
 	return info
+}
+
+// addImplementor records that concrete type `impl` implements interface `iface`,
+// appending to the implementor registry without duplicating an entry (so a union
+// across a package's files stays a set).
+func (info *Info) addImplementor(iface, impl string) {
+	if info.SealedImpls == nil {
+		info.SealedImpls = map[string][]string{}
+	}
+	for _, existing := range info.SealedImpls[iface] {
+		if existing == impl {
+			return
+		}
+	}
+	info.SealedImpls[iface] = append(info.SealedImpls[iface], impl)
 }
 
 // resolveEnum records an enum and its variants (with payload fields) plus the
@@ -133,6 +154,16 @@ func (info *Info) resolveTypeDecl(d *ast.GenDecl) {
 		case *ast.StructType:
 			if t.Fields != nil {
 				info.Structs[ts.Name.Name] = structFields(t.Fields)
+			}
+			// `type T struct implements I { … }` registers T as an implementor of I,
+			// building the sealed-interface implementor registry (consulted for sealed
+			// I; inert for ordinary I). The pointer form `*T` is the value a sealed
+			// `match`/type-switch dispatches on, so store it as "*T".
+			if t.Implements != nil {
+				iface := exprName(t.Implements.Type)
+				if iface != "" {
+					info.addImplementor(iface, "*"+ts.Name.Name)
+				}
 			}
 		case *ast.InterfaceType:
 			info.resolveInterface(ts.Name.Name, t)

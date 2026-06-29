@@ -96,6 +96,16 @@ type Info struct {
 	Enums map[string]*Enum
 	// Sealed is the set of interface names declared `sealed interface`.
 	Sealed map[string]bool
+	// SealedImpls is the implementor registry: an interface name mapped to the
+	// concrete types that name it in an `implements` clause (`type T struct
+	// implements I`). It is kept distinct from Sealed because `implements` clauses
+	// also target ordinary (non-sealed) interfaces, whose feature-07 satisfaction
+	// CheckImplements verifies by short-circuiting on `Sealed[iface]`; folding the
+	// two together would make an ordinary `implements` target look sealed and skip
+	// that check. Only entries whose key is also in Sealed form the sealed-interface
+	// implementor registry a sealed `match` is checked and lowered against; other
+	// entries are inert. Unioned across a package's files by Merge.
+	SealedImpls map[string][]string
 	// Structs maps a `type X struct {…}` name to its ordered fields.
 	Structs map[string][]Field
 	// FromRegistry maps a (source type, target type) pair to the conversion func

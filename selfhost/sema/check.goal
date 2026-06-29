@@ -95,8 +95,16 @@ func CheckExhaustive(file *ast.File, info *Info) []Diagnostic {
 }
 
 // checkOneMatch checks a single MatchExpr. The enum is resolved from the arm
-// qualifiers, not the scrutinee, so the result is position-independent.
+// qualifiers, not the scrutinee, so the result is position-independent. A match
+// whose arms are type patterns (over a sealed-interface scrutinee) is checked
+// against the implementor registry instead (checkOneSealedMatch).
 func checkOneMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
+	for _, arm := range m.Arms {
+		if _, ok := arm.Pattern.(*ast.TypePattern); ok {
+			return checkOneSealedMatch(m, info)
+		}
+	}
+
 	enumName := "" // the enum named by the qualified arms
 	covered := map[string]bool{}
 	hasRest := false
@@ -162,6 +170,112 @@ func checkOneMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 		Message: fmt.Sprintf("non-exhaustive `match` on enum `%s`: missing variant%s %s — handle %s, or add a `_` rest-arm to dismiss the rest",
 			enumDecl.Name, plural(len(missing)), quoteVariants(enumDecl.Name, missing), pronoun(len(missing))),
 	}}
+}
+
+// checkOneSealedMatch checks a `match` whose arms are type patterns over a
+// sealed-interface scrutinee. The sealed interface is resolved from the implementor
+// registry (the concrete type named by the first type-pattern arm), so the check is
+// position-independent like the enum path. A match that omits a registered
+// implementor (and has no `_` rest-arm) is an Error — the §9 switch-coexistence rule
+// makes a plain type-switch on a sealed value illegal, so the match must be the
+// exhaustive replacement. When the sealed interface cannot be resolved in-file (e.g.
+// a cross-package sealed type — CAP-3c), completeness is unprovable, so the check
+// defers with a located Warning rather than risk a false rejection.
+func checkOneSealedMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
+	covered := map[string]bool{}
+	hasRest := false
+	firstType := ""
+	for _, arm := range m.Arms {
+		switch p := arm.Pattern.(type) {
+		case *ast.RestPattern:
+			hasRest = true
+		case *ast.TypePattern:
+			name := typeString(p.Type)
+			if name == "" {
+				continue
+			}
+			if firstType == "" {
+				firstType = name
+			}
+			covered[name] = true
+		}
+	}
+	if firstType == "" {
+		return nil
+	}
+
+	iface := sealedInterfaceOf(info, firstType)
+	if iface == "" {
+		return []Diagnostic{{
+			Pos:      m.Match,
+			Severity: Severity.Warning,
+			Feature:  "02-match",
+			Code:     "unresolved-match-sealed",
+			Message: fmt.Sprintf("cannot verify exhaustiveness of `match` on `%s`: no same-package sealed interface declares it as an implementor — exhaustiveness deferred",
+				firstType),
+		}}
+	}
+
+	// An explicit `_` rest-arm is a deliberate opt-out of exhaustiveness (spec §8.2).
+	if hasRest {
+		return nil
+	}
+
+	missing := missingImplementors(info.SealedImpls[iface], covered)
+	if len(missing) == 0 {
+		return nil
+	}
+	return []Diagnostic{{
+		Pos:      m.Match,
+		Severity: Severity.Error,
+		Feature:  "02-match",
+		Code:     "non-exhaustive-match",
+		Message: fmt.Sprintf("non-exhaustive `match` on sealed interface `%s`: missing implementor%s %s — handle %s, or add a `_` rest-arm to dismiss the rest",
+			iface, plural(len(missing)), quoteImplementors(missing), pronoun(len(missing))),
+	}}
+}
+
+// sealedInterfaceOf returns the sealed interface that registers concrete type
+// `impl` (e.g. "*Ident") as an implementor, or "" when no same-package sealed
+// interface does. Only interfaces in Sealed are considered, so an ordinary
+// interface's `implements` relation never masquerades as a sealed match target.
+func sealedInterfaceOf(info *Info, impl string) string {
+	if info == nil || info.SealedImpls == nil {
+		return ""
+	}
+	for iface, impls := range info.SealedImpls {
+		if !info.Sealed[iface] {
+			continue
+		}
+		for _, t := range impls {
+			if t == impl {
+				return iface
+			}
+		}
+	}
+	return ""
+}
+
+// missingImplementors returns the registered implementors not in the covered set,
+// in registration order.
+func missingImplementors(impls []string, covered map[string]bool) []string {
+	var missing []string
+	for _, t := range impls {
+		if !covered[t] {
+			missing = append(missing, t)
+		}
+	}
+	return missing
+}
+
+// quoteImplementors renders missing implementor types as backtick-quoted,
+// comma-separated, in registration order — naming exactly the patterns to add.
+func quoteImplementors(types []string) string {
+	quoted := make([]string, len(types))
+	for i, t := range types {
+		quoted[i] = "`" + t + "`"
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // collectMatches returns every MatchExpr in the file in source order.

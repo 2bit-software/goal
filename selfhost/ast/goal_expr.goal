@@ -106,6 +106,41 @@ func (p *RestPattern) End() token.Pos {
 }
 func (*RestPattern) exprNode() {}
 
+// TypePattern is a type-pattern arm over a sealed-interface scrutinee:
+// `*Ident => …` (matching the concrete implementor type), or `*Ident(x) => …`
+// binding the narrowed value to `x`. Type is the concrete implementor type
+// expression (typically a *StarExpr over an *Ident); Binding is the narrowed-value
+// variable, or nil. It is a different node type from VariantPattern (an enum
+// variant tag) and RestPattern (the `_` catch-all): a `match` whose arms are
+// TypePatterns lowers to a Go type-switch with concrete `case *T:` labels (the
+// sealed-interface match), not the §8.1 `Enum_Variant` enum match.
+type TypePattern struct {
+	Type    Expr      // the concrete implementor type: a *StarExpr / *Ident / *SelectorExpr
+	Lparen  token.Pos // position of "("; zero for an unbound pattern
+	Binding *Ident    // bound narrowed value; or nil
+	Rparen  token.Pos // position of ")"; zero for an unbound pattern
+}
+
+func (p *TypePattern) Pos() token.Pos {
+	if p.Type != nil {
+		return p.Type.Pos()
+	}
+	return token.Pos{}
+}
+func (p *TypePattern) End() token.Pos {
+	if p.Rparen != (token.Pos{}) {
+		return token.Pos{Offset: p.Rparen.Offset + 1, Line: p.Rparen.Line, Col: p.Rparen.Col + 1}
+	}
+	if p.Binding != nil {
+		return p.Binding.End()
+	}
+	if p.Type != nil {
+		return p.Type.End()
+	}
+	return token.Pos{}
+}
+func (*TypePattern) exprNode() {}
+
 // UnwrapExpr is the postfix `?` unwrap operator: `f(x)?`, `a.b?`. Modeling it as
 // a dedicated node lets the parser produce it from the expression precedence
 // table and lets lowering expand it with a real gensym.

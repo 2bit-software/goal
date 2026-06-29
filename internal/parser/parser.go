@@ -44,6 +44,7 @@ type parser struct {
 	pos     int           // index of the current token
 	errs    []error       // accumulated parse errors
 	exprLev int           // <0 while parsing a control-clause header (suppresses composite-literal braces)
+	armBody bool          // true while parsing a value-position match-arm body (stops a binary expr at a newline-leading operator, so a following `*T` type-pattern arm is not absorbed as a multiplication)
 }
 
 // ParseFile tokenizes src and parses it into an *ast.File. It returns the parse
@@ -1128,6 +1129,13 @@ func (p *parser) parseBinary(minPrec int) ast.Expr {
 	for {
 		opPrec := precedence(p.kind())
 		if opPrec < minPrec {
+			return x
+		}
+		// In a value-position match-arm body, a binary operator that begins a new
+		// source line ends the body: Go's implicit-semicolon rule never starts a
+		// continuation with an infix operator, so a newline-leading `*` (etc.) opens
+		// the next arm (a `*T` type pattern) rather than multiplying the body.
+		if p.armBody && p.onNewLine() {
 			return x
 		}
 		op := p.advance()

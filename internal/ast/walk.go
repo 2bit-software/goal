@@ -120,6 +120,11 @@ func Walk(v Visitor, node Node) {
 		}
 	case *RestPattern:
 		// no children
+	case *TypePattern:
+		walkExpr(v, n.Type)
+		if n.Binding != nil {
+			Walk(v, n.Binding)
+		}
 	case *UnwrapExpr:
 		walkExpr(v, n.X)
 	case *VariantLit:

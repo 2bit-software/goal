@@ -21,6 +21,7 @@ var diagnosticCatalog = []diagDoc{
 	// 02-match
 	{"non-exhaustive-match", "02-match", "error", "a `match` on an enum omits a variant and has no `_` rest-arm."},
 	{"unresolved-match-enum", "02-match", "warning", "the matched value's enum type can't be resolved lexically; deferred to the typed stage."},
+	{"unresolved-match-sealed", "02-match", "warning", "a type-pattern `match` names a concrete type no same-package sealed interface registers as an implementor; exhaustiveness deferred."},
 	// 03-result
 	{"dropped-result", "03-result", "error", "a `Result`-returning call's value is discarded instead of handled or propagated."},
 	{"discarded-result-error", "03-result", "error", "the error arm of a `Result` is dropped (typed stage)."},

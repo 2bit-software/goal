@@ -3119,3 +3119,64 @@ gain. (Confirms / refines the US-008..US-012 refusals.)
 - `task build` green. No golden regeneration needed — goldens test the unchanged
   internal/ Go compiler, not the selfhost tree; the emitted selfhost Go signatures
   are byte-identical (verified in `_bootstrap/fb/selfhost/...`).
+
+## SEAM-CAP-3b — type-pattern match over a same-package sealed interface
+
+CAP-3 part 2 of 3: `match` now lowers a SEALED-INTERFACE scrutinee (same package)
+to a Go type-switch with concrete `case *T:` labels — the language feature that lets
+`switch x := n.(type)` become an exhaustive `match`. CAP-3a (commit d79ebee) made
+sealed interfaces preserve method signatures; this story adds the match capability.
+Cross-package implementor propagation is CAP-3c (next), explicitly out of scope.
+
+Four gaps closed, mirrored in BOTH internal/ (live Go transpiler) and selfhost/
+(.goal mirror compiled by the port gate):
+
+1. Implementor registry. `sema.Info` gains `SealedImpls map[string][]string`
+   (interface name → implementor concrete types, stored as `*T`), built in
+   resolve.go `resolveTypeDecl` from `StructType.Implements` clauses and unioned
+   (deduped) across a package's files in `Info.Merge`. DECISION: keep the existing
+   `Sealed map[string]bool` (sealedness) rather than fold it into the registry.
+   Rationale — `implements` clauses also target ORDINARY (non-sealed) interfaces,
+   whose feature-07 satisfaction `CheckImplements` verifies by short-circuiting on
+   `Sealed[iface]`; a single presence-keyed `map[string][]string` would make an
+   ordinary `implements` target look sealed and SKIP that check (a corpus
+   regression). Sealedness and has-implementors are distinct facts, so two fields.
+   `SealedImpls` holds the implements relation for ALL interfaces; it is consulted
+   only for keys that are also in `Sealed` (the reverse-lookup `sealedInterfaceOf`),
+   so non-sealed entries are inert.
+
+2. Parser. New `ast.TypePattern{Type, Lparen, Binding, Rparen}` (distinct from
+   `VariantPattern`/`RestPattern`). `parsePattern` routes a `*`-leading arm to
+   `parseTypePattern` (`*T` or `*T(binding)`); a bare-ident arm stays a variant
+   pattern, so enum/Result/Option matches are unchanged. A NEW parser field
+   `armBody` makes a value-position arm body stop its binary expression at a
+   newline-leading operator — Go's implicit-semicolon rule never starts a
+   continuation with an infix operator, so a newline-leading `*` opens the next
+   `*T` arm instead of being absorbed as `body * T` (the one genuine grammar
+   ambiguity type patterns introduce). Targeted to arm bodies to keep the fixpoint
+   safe.
+
+3. Backend. New `sealedMatch`/`emitSealedArm` lowering (lower.go `isSealedMatch`;
+   emit.go), DISTINCT from `enumMatch`: it emits `switch [guard :=] subj.(type)`
+   with `case *T:` per type-pattern arm (rendered via the type expr), a `_`-rest →
+   `default`, else a panicking default; the narrowed binding is renamed to the guard
+   (no enum field-set machinery — the narrowed value IS the binding). Dispatched
+   from matchStmt / returnStmt / tryVarMatch / tryAssignMatch / matchValue ahead of
+   the matchQualifier checks.
+
+4. Sema exhaustiveness. `checkOneMatch` routes a type-pattern match to
+   `checkOneSealedMatch`, which resolves the sealed interface from the registry and
+   requires every implementor covered or a `_` rest-arm — else a
+   `non-exhaustive-match` Error (consistent with the §9 switch-coexistence rule). An
+   unresolvable sealed type (e.g. cross-package — CAP-3c) defers with a new
+   `unresolved-match-sealed` Warning (added to the guide catalog + AI-KNOWLEDGE
+   bootstrap golden) rather than a false rejection.
+
+Proof: internal/backend/sealed_match_test.go (lowering shape + behavioral build/run
+identical to the reference `switch x := n.(type)`); internal/sema/sealed_match_test.go
+(exhaustive ok, non-exhaustive Error naming the missing `*T`, `_`-rest ok, unresolved
+defers); internal/ast/ast_test.go (TypePattern node identity + walk).
+
+Gates: `task check`, `task build`, `task fixpoint` (FIXPOINT OK — stage1==stage2 on
+the new parser/sema/backend source) all green; corpus behavioral tier unchanged
+(the feature is additive — no existing match shape changes).

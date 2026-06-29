@@ -215,6 +215,20 @@ func matchQualifier(m *ast.MatchExpr) string {
 	return ""
 }
 
+// isSealedMatch reports whether m is a type-pattern match over a sealed-interface
+// scrutinee — i.e. any arm is a TypePattern (`*Ident => …`). Such a match lowers via
+// the sealedMatch path (a Go type-switch with concrete `case *T:` labels), distinct
+// from the enum path (which emits §8.1 `Enum_Variant` case labels). A `_` rest-arm
+// alone is not a sealed match; at least one concrete type-pattern arm must be present.
+func isSealedMatch(m *ast.MatchExpr) bool {
+	for _, arm := range m.Arms {
+		if _, ok := arm.Pattern.(*ast.TypePattern); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // usesIdent reports whether the subtree rooted at n references an identifier
 // named name. It is used to decide whether a match arm captures its payload
 // binding (so an unused Ok value is discarded with `_` rather than declared and

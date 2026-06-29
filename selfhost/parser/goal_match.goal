@@ -56,7 +56,12 @@ func (p *parser) parseMatchArm() *ast.MatchArm {
 	case startsArmStmt(p.kind()):
 		arm.Body = p.parseStmt()
 	default:
+		// A value-position arm body stops at a newline-leading binary operator so a
+		// following `*T` type-pattern arm is not absorbed as a multiplication.
+		prev := p.armBody
+		p.armBody = true
 		arm.Body = p.parseExpr()
+		p.armBody = prev
 	}
 	return arm
 }
@@ -75,14 +80,37 @@ func startsArmStmt(k token.Kind) bool {
 	return false
 }
 
-// parsePattern parses a match-arm pattern: the catch-all `_` rest pattern or a
-// variant pattern.
+// parsePattern parses a match-arm pattern: the catch-all `_` rest pattern, a
+// type pattern over a sealed-interface scrutinee (`*Ident`, `*Ident(x)`), or an
+// enum variant pattern. A pattern that opens with `*` is a pointer type pattern
+// (the §8.1 sealed-interface implementors are pointer types); anything else stays
+// an enum variant pattern, so existing enum/Result/Option matches are unaffected.
 func (p *parser) parsePattern() ast.Expr {
 	if p.at(token.IDENT) && p.cur().Lit == "_" {
 		t := p.advance()
 		return &ast.RestPattern{Underscore: t.Pos}
 	}
+	if p.at(token.MUL) {
+		return p.parseTypePattern()
+	}
 	return p.parseVariantPattern()
+}
+
+// parseTypePattern parses a type-pattern arm `*T` or `*T(binding)` over a
+// sealed-interface scrutinee. The type is a full type expression (a `*T`
+// StarExpr); an optional parenthesized identifier binds the narrowed value.
+func (p *parser) parseTypePattern() ast.Expr {
+	tp := &ast.TypePattern{Type: p.parseType()}
+	if p.at(token.LPAREN) {
+		lp := p.advance()
+		tp.Lparen = lp.Pos
+		if p.at(token.IDENT) {
+			tp.Binding = p.ident()
+		}
+		rp := p.expect(token.RPAREN)
+		tp.Rparen = rp.Pos
+	}
+	return tp
 }
 
 // parseVariantPattern parses `Enum.Variant`, `Enum.Variant(binding)`, or a bare

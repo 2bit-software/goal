@@ -106,7 +106,7 @@
         "task check, task build, task fixpoint all green; corpus behavioral unchanged"
       ],
       "priority": 3.2,
-      "passes": false,
+      "passes": true,
       "notes": "CAP-3 part 2 of 3. The core language feature. Gaps #2 and #3 from the SEAM-004 analysis. Depends on CAP-3a."
     },
     {

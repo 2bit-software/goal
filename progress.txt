@@ -123,6 +123,24 @@
   "keep as iota" case as token.Kind even without array-index/range uses, because
   ==/plain-switch consumption + the `int` representation make a boxed enum a
   behavior break.
+- `match` arm patterns are three distinct AST nodes: VariantPattern (enum
+  `Enum.Variant`, lead token IDENT), RestPattern (`_`), and TypePattern (sealed-
+  interface type pattern `*T`/`*T(x)`, lead token `*`). The backend routes by
+  pattern SHAPE, not scrutinee type: isSealedMatch(m) (any TypePattern arm) selects
+  the sealedMatch lowering (a Go type-switch with `case *T:` labels), else
+  matchQualifier picks Result/Option/enum — keeping dispatch position-independent
+  across matchStmt/returnStmt/tryVarMatch/tryAssignMatch/matchValue. Sealedness
+  (sema.Info.Sealed bool) and the implementor registry (sema.Info.SealedImpls,
+  iface→`*T` set from `implements` clauses) are SEPARATE maps: `implements` also
+  binds ordinary interfaces (feature-07 CheckImplements short-circuits sealed ones),
+  so a single presence-keyed map would skip that check. Implementors stored as `*T`
+  so the registry value == the case-label render == the type-pattern string.
+- Value-position `match` arm bodies introduce a grammar ambiguity ONLY for patterns
+  whose lead token is also a binary operator (`*`,`-`,`+`,`&`,`<-`): `body \n *T`
+  parses as `body * T`. Fix = Go ASI (a binary operator never begins a continuation
+  line), applied targeted via a parser `armBody` flag that stops parseBinary when
+  `armBody && onNewLine()`. Set it around the value-position arm-body parseExpr only,
+  to keep the fixpoint safe.
 - A recursive-descent parser written in the error-ACCUMULATOR style (a
   `parser.errs []error` field appended by an `errorf` recorder; internal helpers
   return a bare AST node / nil and never `error`; the exported entry point joins
@@ -5516,4 +5534,57 @@
     a temp `module goal` and `go test` a file that assigns the implementor to an
     interface-typed var and calls the method — if the signature were dropped the
     test fails to COMPILE, not silently pass (pattern from crosspkg_goal_enum_test).
+---
+
+## 2026-06-29T19:30:00Z - SEAM-CAP-3b
+- Implemented type-pattern `match` over a same-package SEALED INTERFACE (CAP-3 part
+  2 of 3): `match n { *Lit(l) => …; *Neg(g) => … }` now lowers to a Go type-switch
+  with concrete `case *T:` labels — the feature that lets `switch x := n.(type)`
+  become an exhaustive `match`. Same-package only; cross-package is CAP-3c.
+- Four gaps closed, mirrored line-for-line in BOTH internal/ (Go) and selfhost/
+  (.goal, compiled by the port gate):
+  1. Implementor registry: sema.Info gains `SealedImpls map[string][]string`
+     (iface → implementor `*T` set), built in resolve.go resolveTypeDecl from
+     `StructType.Implements`, unioned+deduped in Info.Merge. KEPT `Sealed
+     map[string]bool` separate (NOT folded into the registry) — `implements` also
+     targets ordinary interfaces verified by CheckImplements via `Sealed[iface]`;
+     conflating would skip that feature-07 check (corpus regression). SealedImpls is
+     consulted only for keys also in Sealed.
+  2. Parser: new `ast.TypePattern` node (distinct from Variant/RestPattern);
+     parsePattern routes `*`-leading arms to parseTypePattern (`*T`/`*T(x)`). New
+     parser field `armBody` stops a value-position arm body's binary expr at a
+     newline-leading operator (Go ASI never starts a continuation with an infix op),
+     so `body \n *T` is the next arm, not `body * T`.
+  3. Backend: new sealedMatch/emitSealedArm (lower.go isSealedMatch; emit.go),
+     DISTINCT from enumMatch — emits `switch [v :=] subj.(type)` + `case *T:` per
+     arm, `_`→default else panicking default; binding renamed to the guard.
+     Dispatched from matchStmt/returnStmt/tryVarMatch/tryAssignMatch/matchValue.
+  4. Sema: checkOneSealedMatch enforces full-implementor coverage or `_`, else
+     `non-exhaustive-match` Error; unresolvable sealed type defers with a new
+     `unresolved-match-sealed` Warning (added to guide catalog + AI-KNOWLEDGE golden).
+- Files: internal/{ast/goal_expr.go,ast/walk.go,ast/ast_test.go,parser/goal_match.go,
+  parser/parser.go,sema/sema.go,sema/resolve.go,sema/check.go,backend/lower.go,
+  backend/emit.go,guide/catalog.go} + selfhost mirrors (ast/{goal_expr,walk}.goal,
+  parser/{goal_match,parser}.goal, sema/{sema,resolve,check}.goal,
+  backend/{lower,emit}.goal); new tests internal/backend/sealed_match_test.go +
+  internal/sema/sealed_match_test.go; AI-KNOWLEDGE-BOOTSTRAP.md, DECISIONS.md,
+  prd.json. Initiative: history/20260629-feature-seam-cap-3b-sealed-interface-match/.
+- Gates: task check green; task build green; task fixpoint FIXPOINT OK (stage1==stage2
+  on the new parser/sema/backend source); corpus behavioral tier unchanged (additive).
+- Learnings for future iterations:
+  - Type patterns introduce ONE grammar ambiguity: a value-position arm body
+    followed by a newline-leading `*T` parses as multiplication. The general fix is
+    Go ASI (a binary operator never begins a line); gating parseBinary on
+    `armBody && onNewLine()` is the targeted, fixpoint-safe form. Any new pattern
+    whose lead token is also a binary operator (`*`,`-`,`+`,`&`,`<-`) hits this.
+  - Sealedness (`Sealed`) and the implementor registry (`SealedImpls`) are SEPARATE
+    facts: `implements` clauses also bind ordinary interfaces, and CheckImplements
+    short-circuits sealed ones — do not unify the two maps.
+  - Implementors are stored as `*T` so the registry value equals both the type-switch
+    `case` label render and the type-pattern type string — exhaustiveness compares
+    rendered strings directly, no extra normalization.
+  - CAP-3c is now unblocked: same-package sealed match works; the remaining gap is
+    propagating SealedImpls across .goal packages (extend the SEAM-CAP-2 foreign
+    goal-source reading path, which today projects enums only). SEAM-004 (seal AST +
+    convert ~43 type-switches) depends on 3c.
 ---

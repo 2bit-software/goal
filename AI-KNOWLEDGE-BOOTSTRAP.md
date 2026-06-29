@@ -1107,6 +1107,7 @@ The full set of stable codes the checker can emit:
 
 - `[non-exhaustive-match]` (error) — a `match` on an enum omits a variant and has no `_` rest-arm.
 - `[unresolved-match-enum]` (warning) — the matched value's enum type can't be resolved lexically; deferred to the typed stage.
+- `[unresolved-match-sealed]` (warning) — a type-pattern `match` names a concrete type no same-package sealed interface registers as an implementor; exhaustiveness deferred.
 
 **03-result**
 
