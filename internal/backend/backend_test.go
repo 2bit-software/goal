@@ -1473,3 +1473,38 @@ const (
 		}
 	}
 }
+
+// TestASTEngineEmitsGenericFuncDecls is the round-trip witness for top-level
+// generic function declarations (US-003): a type-parameter list after the name
+// must parse without `expected (, found [`, survive emission, and produce valid
+// Go (with go/format standing in for `go build` acceptance). Both an
+// unconstrained `[T any]` and a constrained `[K comparable, V any]` param list
+// are exercised.
+func TestASTEngineEmitsGenericFuncDecls(t *testing.T) {
+	const src = `package p
+
+func Identity[T any](x T) T {
+	return x
+}
+
+func Keys[K comparable, V any](m map[K]V) []K {
+	out := []K{}
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+`
+	out, err := backend.Transpile(src)
+	if err != nil {
+		t.Fatalf("Transpile: %v", err)
+	}
+	if _, err := format.Source([]byte(out.Go)); err != nil {
+		t.Fatalf("engine output is not valid Go: %v\n--- output ---\n%s", err, out.Go)
+	}
+	for _, want := range []string{"Identity[T any]", "Keys[K comparable, V any]"} {
+		if !strings.Contains(out.Go, want) {
+			t.Fatalf("expected emitted Go to contain %q, got:\n%s", want, out.Go)
+		}
+	}
+}

@@ -225,6 +225,9 @@ func Walk(v Visitor, node Node) {
 			Walk(v, n.Methods)
 		}
 	case *FuncType:
+		if n.TypeParams != nil {
+			Walk(v, n.TypeParams)
+		}
 		if n.Params != nil {
 			Walk(v, n.Params)
 		}

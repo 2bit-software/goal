@@ -441,6 +441,12 @@ func (e *emitter) funcSig(t *ast.FuncType) {
 		e.fail("function has no signature")
 		return
 	}
+	// A generic function's type-parameter list prints between the name and the
+	// value parameters, e.g. `func Identity[T any](x T) T`. Mirror the TypeSpec
+	// type-parameter emission.
+	if t.TypeParams != nil {
+		e.fieldList(t.TypeParams, "[", "]")
+	}
 	e.fieldList(t.Params, "(", ")")
 	if t.Results != nil && len(t.Results.List) > 0 {
 		e.p(" ")

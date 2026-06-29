@@ -635,9 +635,10 @@ func (*InterfaceType) exprNode() {}
 
 // FuncType is a function signature: parameters and results.
 type FuncType struct {
-	Func    token.Pos  // position of "func" keyword (may be zero for methods)
-	Params  *FieldList // parameters
-	Results *FieldList // results; or nil
+	Func       token.Pos  // position of "func" keyword (may be zero for methods)
+	TypeParams *FieldList // generic type parameters in "[...]"; nil when non-generic
+	Params     *FieldList // parameters
+	Results    *FieldList // results; or nil
 }
 
 func (e *FuncType) Pos() token.Pos {

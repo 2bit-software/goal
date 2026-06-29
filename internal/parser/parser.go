@@ -368,6 +368,14 @@ func (p *parser) parseFuncDecl() *ast.FuncDecl {
 		fd.Recv = p.parseParamList()
 	}
 	fd.Name = p.ident()
+	// A generic (non-method) function carries a type-parameter list between its
+	// name and its value parameters, e.g. `func Identity[T any](x T) T`. Reuse the
+	// same atTypeParams/parseTypeParams helpers as generic type declarations. Go
+	// forbids type parameters on methods, so this only applies when there is no
+	// receiver.
+	if fd.Recv == nil && p.atTypeParams() {
+		ft.TypeParams = p.parseTypeParams()
+	}
 	ft.Params = p.parseParamList()
 	ft.Results = p.parseResults(ft.Params.Closing)
 	fd.Type = ft
