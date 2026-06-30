@@ -1,0 +1,60 @@
+package lsp
+
+import "encoding/json"
+
+// This file is a temporary bridge for the US-016 server-lifecycle port. server.goal's
+// message dispatch references the query-feature and diagnostics handlers that are ported in
+// US-017 (hover, definition, references, diagnostics, semantictokens). Go requires every
+// referenced symbol to be defined for the package to compile, so the forward-dependencies are
+// provided here as inert stubs: they let `go build ./internal/compiler/lsp/...` succeed (the
+// US-016 AC-1 build gate) and keep the initialize/initialized/shutdown handshake — which never
+// touches them — byte-identical to the legacy server. US-017 DELETES this file when it lands
+// the real diagnostics.goal/definition.goal/hover.goal/references.goal/semantictokens.goal.
+
+// openFile is an open document resolved to its filesystem path. The real definition (and the
+// package-view diagnostics path that produces it) arrives with US-017's diagnostics port.
+type openFile struct {
+	uri     string
+	path    string
+	text    string
+	version int
+}
+
+// compile analyzes a buffer and publishes diagnostics. Stub: US-017 (diagnostics) supplies the
+// package-view analysis. The handshake handlers never reach this path.
+func (s *Server) compile(uri, text string, version int) {}
+
+// publish sends a textDocument/publishDiagnostics notification. Stub: US-017 (diagnostics).
+func (s *Server) publish(uri string, version int, diags []Diagnostic) {}
+
+// openFilesInDir returns the open documents whose file lives directly in dir, keyed by URI.
+// Stub: US-017 (diagnostics) supplies the real package-view merge.
+func (s *Server) openFilesInDir(dir string) map[string]openFile {
+	return map[string]openFile{}
+}
+
+// definition answers a textDocument/definition request. Stub: US-017 (definition).
+func (s *Server) definition(raw json.RawMessage) *Location {
+	return nil
+}
+
+// hover answers a textDocument/hover request. Stub: US-017 (hover).
+func (s *Server) hover(raw json.RawMessage) *Hover {
+	return nil
+}
+
+// references answers a textDocument/references request. Stub: US-017 (references).
+func (s *Server) references(raw json.RawMessage) []Location {
+	return []Location{}
+}
+
+// rename answers a textDocument/rename request. Stub: US-017 (references).
+func (s *Server) rename(raw json.RawMessage) *WorkspaceEdit {
+	return nil
+}
+
+// semanticTokens answers a textDocument/semanticTokens/full request. Stub: US-017
+// (semantictokens).
+func (s *Server) semanticTokens(raw json.RawMessage) SemanticTokens {
+	return SemanticTokens{Data: []uint{}}
+}
