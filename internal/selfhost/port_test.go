@@ -659,3 +659,37 @@ func TestPortedGoalfmtPackage(t *testing.T) {
 		t.Fatalf("existing goalfmt tests failed against the transpiled package: %v", err)
 	}
 }
+
+// TestPortedTexteditPackage validates US-007: the edit-primitives package
+// reimplemented as goal source under internal/compiler/textedit transpiles to
+// compiling Go (the smoke gate — textedit is a LEAF that imports only stdlib
+// sort/strings/unicode, so the layout is the single package and there are no
+// in-module deps to transpile alongside) AND produces the same resulting text as
+// the legacy package for the same edits. The behavioral gate runs the
+// self-contained textedit_selfhost_test.go suite, whose pinned byte-identical
+// outputs (Splice spans, IsLineStart/NextNewline scanning, LeadIdent/IsIdent,
+// SplitAssign, IsStmtKeyword, BaseType, ZeroLit) are the AC-2 parity oracle —
+// the identical file runs against the legacy package under `task check`. The
+// test's working directory is internal/selfhost, so the goal source is at
+// ../../internal/compiler/textedit and the existing tests are at ../textedit.
+func TestPortedTexteditPackage(t *testing.T) {
+	texteditPkg := discoverPorted(t, "textedit")
+
+	// Criterion 1: transpiles via the smoke gate and the generated Go compiles.
+	// A leaf package, so the layout is textedit alone; sort, strings and unicode
+	// pass through as foreign stdlib imports.
+	layout := map[string]*project.Package{
+		"internal/compiler/textedit": texteditPkg,
+	}
+	if err := selfhost.BuildTranspiled(layout); err != nil {
+		t.Fatalf("ported textedit failed the transpile-and-build gate: %v", err)
+	}
+
+	// Criterion 2: the self-contained textedit tests pass against the transpiled
+	// package. Leaf package => no dependency closure to transpile (nil deps). The
+	// behavioral test file pins byte-identical edit results, proving same-input
+	// same-output parity with the legacy package.
+	if err := selfhost.BuildAndTest("internal/compiler/textedit", texteditPkg, []string{"../textedit/textedit_selfhost_test.go"}, nil); err != nil {
+		t.Fatalf("existing textedit tests failed against the transpiled package: %v", err)
+	}
+}

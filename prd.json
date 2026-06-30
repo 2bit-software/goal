@@ -97,7 +97,7 @@
         "The textedit behavior matches the legacy package on a fixture set of edit applications (same resulting text for the same edits)."
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Leaf helper (168 LOC), unblocks fix."
     },
     {

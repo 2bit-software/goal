@@ -113,6 +113,14 @@
   package) and feed THAT to BuildAndTest; the fixture suite stays behind under
   `task check`. A test pinning a byte-identical `want` doubles as the output-parity
   oracle when run against the transpiled package.
+- LEAF tooling port (package imports only stdlib, no goal/internal deps): simplest
+  Phase-2 shape — cp internal/<pkg>/*.go -> internal/compiler/<pkg>/*.goal VERBATIM
+  (no import repoint), `task generate`, then a port test with a SINGLE-package
+  layout and nil BuildAndTest deps. If the legacy package has NO test file, WRITE a
+  self-contained stdlib-only <pkg>_selfhost_test.go in the LEGACY dir with pinned
+  byte-identical `want` values — one file then proves parity on BOTH the legacy
+  package (`task check`) and the transpiled one (BuildAndTest). cp via Bash does NOT
+  trip the verify-generated PostToolUse hook (only Edit/Write do).
 - The lexer strips newlines/implicit semicolons, so the parser reconstructs
   spec/decl boundaries structurally. Where Go relies on the newline=semicolon
   rule (e.g. a bare const continuation vs a Name+Type spec), use token line
@@ -6054,4 +6062,48 @@
     TestIdempotentOverCorpus after the move, so no import pruning was needed — but
     always re-run `go test ./internal/<pkg>/...` after a monolithic split to catch
     a now-unused import or a dup symbol.
+---
+
+## 2026-06-30T18:10:00Z - US-007
+- Ported the lexer-independent edit-primitives package internal/textedit to goal
+  source: added internal/compiler/textedit/{textedit.goal,types.goal} as VERBATIM
+  copies of the legacy internal/textedit/{textedit.go,types.go} (Go superset = valid
+  goal; textedit is a LEAF importing only stdlib sort/strings/unicode, so NO
+  goal/internal -> goal/internal/compiler repointing was needed; no bare
+  match/enum/assert identifier collisions — those words appear only in string
+  literals/comments). `task generate` emitted the committed colocated
+  internal/compiler/textedit/{textedit.go,types.go} (DO NOT EDIT header). Second
+  Phase-2 tooling package; unblocks the fix port (US-010).
+- Authored internal/textedit/textedit_selfhost_test.go (NEW, package textedit,
+  stdlib testing only): table-driven cases pinning byte-identical results for
+  Splice (single/empty/unsorted/overlap-skip spans), IsLineStart, NextNewline,
+  LeadIdent, IsIdent, SplitAssign, IsStmtKeyword, BaseType, ZeroLit. textedit had
+  NO pre-existing test file, so this self-contained suite IS the AC-2 parity oracle
+  — it runs against the legacy package under `task check` and against the transpiled
+  package via BuildAndTest; identical pinned output on both sides proves same-input
+  same-output edit parity.
+- Added TestPortedTexteditPackage to internal/selfhost/port_test.go: compile gate
+  (BuildTranspiled over a single-package layout — leaf) + behavioral gate
+  (BuildAndTest over ../textedit/textedit_selfhost_test.go with nil deps — leaf has
+  no in-module dependency closure to transpile alongside).
+- Files changed: internal/compiler/textedit/{textedit.goal,types.goal,textedit.go,
+  types.go} (new), internal/textedit/textedit_selfhost_test.go (new),
+  internal/selfhost/port_test.go (+TestPortedTexteditPackage), prd.json (US-007
+  passes:true), progress.txt.
+- Verification: `go build ./internal/compiler/textedit/...` OK; TestPortedTexteditPackage
+  PASS; `task check` GREEN (vet + verify-generated drift gate + full test);
+  `task fixpoint` FIXPOINT OK.
+- Learnings for future iterations:
+  - LEAF tooling port (no in-module imports) is the simplest shape of the Phase-2
+    recipe: cp *.go -> *.goal verbatim (no import repoint), `task generate`, then a
+    port test with a SINGLE-package layout and nil deps. Use this template for the
+    other leaf helpers (US-008 cap also imports only stdlib).
+  - When the legacy package ships NO test file, the port still needs a behavioral
+    oracle: WRITE a self-contained stdlib-only *_selfhost_test.go in the LEGACY
+    package dir (so it also guards the legacy package under `task check`) and feed
+    it to BuildAndTest. Pinning byte-identical `want` values makes one file satisfy
+    "same resulting text for the same edits" on both compilers at once.
+  - cp via Bash does NOT trip the verify-generated PostToolUse hook (only Edit/Write
+    do), so copying the .goal then running `task generate` before any Edit avoids the
+    transient "Only in .../textedit: <file>.go" red the goalfmt port hit.
 ---
