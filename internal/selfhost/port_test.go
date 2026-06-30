@@ -603,3 +603,59 @@ func TestPortedTypecheckPackage(t *testing.T) {
 		t.Fatalf("existing typecheck tests failed against the transpiled package: %v", err)
 	}
 }
+
+// TestPortedGoalfmtPackage validates US-006: the goalfmt formatter reimplemented as
+// goal source under internal/compiler/goalfmt transpiles to compiling Go (the smoke
+// gate, with strings passing through as a foreign import and the in-module lexer,
+// parser, token imports resolving against the ported packages) AND passes the
+// existing internal/goalfmt behavior tests against the transpiled output (behavioral
+// equivalence — byte-identical formatting and idempotence).
+//
+// goalfmt imports lexer, parser, token directly; the transpiled parser in turn
+// imports goal/internal/compiler/ast (and lexer/token), so the layout and deps carry
+// ast too even though goalfmt names only lexer/parser/token. The behavioral gate runs
+// the self-contained format_selfhost_test.go suite (TestPreservesComments,
+// TestReindentsAndIsStable — which pins byte-identical output, AC-2 — and
+// TestRejectsUnparseable, all asserting idempotence, AC-3). format_test.go's
+// TestIdempotentOverCorpus is excluded because it imports goal/internal/corpus and
+// reads the repo-relative corpus manifest, absent from the harness's throwaway temp
+// module (same exclusion spirit as the prior ports' fixture-dependent suites). The
+// test's working directory is internal/selfhost, so the goal sources are at
+// ../../internal/compiler/{token,lexer,ast,parser,goalfmt} and the existing goalfmt
+// tests are at ../goalfmt.
+func TestPortedGoalfmtPackage(t *testing.T) {
+	tokenPkg := discoverPorted(t, "token")
+	lexerPkg := discoverPorted(t, "lexer")
+	astPkg := discoverPorted(t, "ast")
+	parserPkg := discoverPorted(t, "parser")
+	goalfmtPkg := discoverPorted(t, "goalfmt")
+
+	// Criterion 2: transpiles via the smoke gate and the generated Go compiles.
+	// The layout carries goalfmt plus its lexer, parser, token dependencies (and
+	// ast, pulled in by the transpiled parser); the strings foreign import passes
+	// through.
+	layout := map[string]*project.Package{
+		"internal/compiler/token":   tokenPkg,
+		"internal/compiler/lexer":   lexerPkg,
+		"internal/compiler/ast":     astPkg,
+		"internal/compiler/parser":  parserPkg,
+		"internal/compiler/goalfmt": goalfmtPkg,
+	}
+	if err := selfhost.BuildTranspiled(layout); err != nil {
+		t.Fatalf("ported goalfmt failed the transpile-and-build gate: %v", err)
+	}
+
+	// Criterion 3: the existing self-contained goalfmt tests pass against the
+	// transpiled package, with the ported dependency closure transpiled in. The
+	// behavioral test file (package goalfmt, strings + testing only) pins
+	// byte-identical formatting output and idempotence.
+	deps := map[string]*project.Package{
+		"internal/compiler/token":  tokenPkg,
+		"internal/compiler/lexer":  lexerPkg,
+		"internal/compiler/ast":    astPkg,
+		"internal/compiler/parser": parserPkg,
+	}
+	if err := selfhost.BuildAndTest("internal/compiler/goalfmt", goalfmtPkg, []string{"../goalfmt/format_selfhost_test.go"}, deps); err != nil {
+		t.Fatalf("existing goalfmt tests failed against the transpiled package: %v", err)
+	}
+}

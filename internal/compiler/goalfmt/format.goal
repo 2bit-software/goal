@@ -1,0 +1,143 @@
+// Package goalfmt is the engine behind `goal fmt`: a canonical, comment-preserving
+// source formatter for .goal files. It gives goal the deterministic layout gofmt
+// gives Go, so diffs stay small and style is settled.
+//
+// Design (the governing constraint): the goal parser DROPS // and /* comments —
+// they are not represented on the AST — so a formatter that printed the bare AST
+// would silently delete every comment. goalfmt therefore does NOT pretty-print the
+// tree. It parses only as a validity gate (well-formed goal is formatted; malformed
+// source is reported and left untouched, mirroring internal/fix's conservative
+// contract), then reformats by rewriting the RAW SOURCE lines: it normalizes only
+// insignificant whitespace — leading indentation (one tab per delimiter-nesting
+// depth), trailing whitespace, and runs of blank lines — while emitting every other
+// byte (comments, string contents, operator spacing, struct-field alignment)
+// verbatim.
+//
+// Nesting depth is computed over the LEXER token stream (internal/lexer.Tokens), not
+// by counting raw characters, so a brace inside a comment or string literal never
+// miscounts indentation. Because only whitespace the lexer skips is touched, the
+// token stream — hence the AST and the program's meaning — is invariant across
+// formatting, and re-lexing the output re-derives identical indentation: the
+// formatter is idempotent by construction (Source(Source(s)) == Source(s)).
+package goalfmt
+
+import (
+	"strings"
+
+	"goal/internal/compiler/lexer"
+	"goal/internal/compiler/parser"
+	"goal/internal/compiler/token"
+)
+
+// Source formats goal source and returns the canonical form. It preserves every
+// comment and all intra-line content verbatim, normalizing only leading
+// indentation, trailing whitespace, and blank-line runs, and is idempotent. It
+// returns the parse error (and "" output) for source that does not parse — goalfmt
+// never guesses at malformed input.
+func Source(src string) (string, error) {
+	if _, err := parser.ParseFile(src); err != nil {
+		return "", err
+	}
+	return reindent(src), nil
+}
+
+// reindent rewrites src's leading indentation from delimiter-nesting depth, trims
+// trailing whitespace, collapses blank-line runs, and ends with exactly one newline.
+// It assumes src has already been validated by [Source]. All non-whitespace bytes are
+// emitted verbatim from the original source lines.
+func reindent(src string) string {
+	lines := strings.Split(src, "\n")
+	n := len(lines)
+
+	// Per 1-based line bookkeeping derived from the token stream.
+	startDepth := make([]int, n+2)  // delimiter depth at the line's start
+	firstCloser := make([]bool, n+2) // the line's first token is ) ] or }
+	seen := make([]bool, n+2)        // the line carries at least one token
+	protected := make([]bool, n+2)   // continuation line of a multi-line token: keep verbatim
+	noTrimRight := make([]bool, n+2) // start line of a multi-line token: keep trailing bytes
+
+	depth := 0
+	for _, t := range lexer.Tokens(src) {
+		if t.Kind == token.EOF {
+			break
+		}
+		line := t.Pos.Line
+		if line >= 1 && line <= n && !seen[line] {
+			seen[line] = true
+			startDepth[line] = depth
+			firstCloser[line] = isCloser(t.Kind)
+		}
+		// A token whose text spans newlines (multi-line string/comment) must keep its
+		// continuation lines byte-for-byte, and its start line must not be right-trimmed
+		// (trailing bytes there may be significant string content).
+		if nl := strings.Count(t.Lit, "\n"); nl > 0 && line >= 1 {
+			if line <= n {
+				noTrimRight[line] = true
+			}
+			for i := 1; i <= nl && line+i <= n; i++ {
+				protected[line+i] = true
+			}
+		}
+		switch {
+		case isOpener(t.Kind):
+			depth++
+		case isCloser(t.Kind):
+			depth--
+		}
+	}
+
+	out := make([]string, 0, n)
+	for i := 1; i <= n; i++ {
+		raw := lines[i-1]
+		if protected[i] {
+			out = append(out, raw)
+			continue
+		}
+		body := strings.TrimLeft(raw, " \t")
+		if !noTrimRight[i] {
+			body = strings.TrimRight(body, " \t")
+		}
+		if body == "" {
+			out = append(out, "")
+			continue
+		}
+		d := startDepth[i]
+		if firstCloser[i] && d > 0 {
+			d--
+		}
+		out = append(out, strings.Repeat("\t", d)+body)
+	}
+
+	out = collapseBlanks(out)
+	return strings.Join(out, "\n") + "\n"
+}
+
+// collapseBlanks drops leading and trailing blank lines and reduces every interior
+// run of blank lines to a single blank line. It is a fixed point: applying it to its
+// own output is a no-op.
+func collapseBlanks(lines []string) []string {
+	out := make([]string, 0, len(lines))
+	prevBlank := true // treat the start as blank so leading blanks are dropped
+	for _, ln := range lines {
+		blank := ln == ""
+		if blank && prevBlank {
+			continue
+		}
+		out = append(out, ln)
+		prevBlank = blank
+	}
+	for len(out) > 0 && out[len(out)-1] == "" {
+		out = out[:len(out)-1]
+	}
+	return out
+}
+
+// isOpener reports whether k opens a delimiter group: ( [ {.
+func isOpener(k token.Kind) bool {
+	return k == token.LPAREN || k == token.LBRACK || k == token.LBRACE
+}
+
+// isCloser reports whether k closes a delimiter group: ) ] }.
+func isCloser(k token.Kind) bool {
+	return k == token.RPAREN || k == token.RBRACK || k == token.RBRACE
+}

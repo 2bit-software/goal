@@ -85,7 +85,7 @@
         "Re-formatting already-formatted goal source with the goal-built goalfmt is idempotent."
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Smallest tooling package (143 LOC); plain-Go-superset port first, no idiom rewrite. Start of Phase 2."
     },
     {

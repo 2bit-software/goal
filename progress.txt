@@ -98,6 +98,21 @@
   (the InScope smoke gate) is SEPARATE — it transpiles the LEGACY internal/<pkg>/*.go
   via ReadPackage("../"+name) and was untouched. Any earlier "selfhost/" path in
   these notes now means "internal/compiler/".
+- Phase-2 TOOLING ports (goalfmt onward) reuse the IDENTICAL internal/compiler
+  port harness as the compiler ports — no harness change. Recipe: copy
+  internal/<pkg>/*.go -> internal/compiler/<pkg>/*.goal (grep bare
+  match/enum/assert first; repoint goal/internal/* -> goal/internal/compiler/*),
+  run `task generate` to emit the colocated .go BEFORE any `task check` (the
+  verify-generated hook fails on a .goal with no fresh .go), then add a
+  TestPorted<Pkg>Package to internal/selfhost/port_test.go using discoverPorted +
+  BuildTranspiled (compile gate) + BuildAndTest (behavioral gate). `task generate`
+  and `task fixpoint` need NO edit: both tree-walk internal/compiler, so a new
+  package is emitted/diffed automatically. When the legacy test file mixes a
+  corpus/fixture-dependent suite with self-contained ones, MOVE (not copy) the
+  self-contained subset into a new <pkg>_selfhost_test.go (same external test
+  package) and feed THAT to BuildAndTest; the fixture suite stays behind under
+  `task check`. A test pinning a byte-identical `want` doubles as the output-parity
+  oracle when run against the transpiled package.
 - The lexer strips newlines/implicit semicolons, so the parser reconstructs
   spec/decl boundaries structurally. Where Go relies on the newline=semicolon
   rule (e.g. a bare const continuation vs a Name+Type spec), use token line
@@ -6001,4 +6016,42 @@
   - cmd/goal-gen is US-005 transition scaffolding; US-022 removes/folds it. Its
     `build --emit` mode duplicates internal/compiler/main.go on purpose so the binary
     exercises project+pipeline+backend, satisfying AC1's three-package wording.
+---
+
+## 2026-06-30T17:40:00Z - US-006
+- Ported the goalfmt formatter to goal source: added
+  internal/compiler/goalfmt/format.goal (verbatim Go-superset copy of
+  internal/goalfmt/format.go with imports repointed goal/internal/{lexer,parser,
+  token} -> goal/internal/compiler/{lexer,parser,token}). `task generate` emitted
+  the committed colocated internal/compiler/goalfmt/format.go (DO NOT EDIT header).
+  First Phase-2 tooling package on the self-hosted toolchain.
+- Split internal/goalfmt/format_test.go: MOVED the three self-contained behavior
+  tests (TestPreservesComments, TestReindentsAndIsStable, TestRejectsUnparseable)
+  into new internal/goalfmt/format_selfhost_test.go (package goalfmt, strings+testing
+  only) so the port gate has a self-contained behavioral input; TestIdempotentOverCorpus
+  (imports goal/internal/corpus, reads ../../corpus/manifest.json) stayed behind.
+- Added TestPortedGoalfmtPackage to internal/selfhost/port_test.go: compile gate
+  (BuildTranspiled over token/lexer/ast/parser/goalfmt) + behavioral gate
+  (BuildAndTest over ../goalfmt/format_selfhost_test.go with token/lexer/ast/parser
+  deps). TestReindentsAndIsStable's byte-identical `want` is the AC-2 parity oracle;
+  all three moved tests assert idempotence (AC-3).
+- Files changed: internal/compiler/goalfmt/{format.goal,format.go} (new),
+  internal/goalfmt/format_selfhost_test.go (new), internal/goalfmt/format_test.go
+  (trimmed), internal/selfhost/port_test.go (+TestPortedGoalfmtPackage), prd.json
+  (US-006 passes:true), progress.txt.
+- Verification: `go build ./internal/compiler/...` OK; `task check` GREEN
+  (vet + verify-generated drift gate + full test); `task fixpoint` FIXPOINT OK;
+  TestPortedGoalfmtPackage PASS.
+- Learnings for future iterations:
+  - goalfmt closes over {lexer,parser,token} directly but the transpiled parser
+    pulls in ast, so the port-gate layout/deps MUST also carry ast (the same
+    transitive-dep rule the compiler ports hit). `strings` passes through as a
+    foreign import.
+  - The verify-generated PostToolUse hook fires on the Write of format.goal before
+    format.go exists -> one EXPECTED red ("Only in .../goalfmt: format.go"); fixed
+    by `task generate`. Sequence .goal-write -> generate -> rest, per the US-004 note.
+  - format_test.go's imports (os/path/filepath/sort/strings) all remained used by
+    TestIdempotentOverCorpus after the move, so no import pruning was needed — but
+    always re-run `go test ./internal/<pkg>/...` after a monolithic split to catch
+    a now-unused import or a dup symbol.
 ---
