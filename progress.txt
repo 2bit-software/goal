@@ -64,6 +64,18 @@
   selfhost.BuildTranspiled(layout) keyed by module-relative dir ("internal/<pkg>")
   to verify any package's transpile compiles — `go build` is the real gate because
   the checker is silent on miscompiles. Reused by every later port story.
+- Porting a NON-LEAF file that dispatches into handlers owned by a LATER story (found
+  in US-016: lsp server.goal calls definition/hover/references/diagnostics handlers
+  ported in US-017): Go won't compile the package until every referenced symbol is
+  DEFINED, so a "port this subset AND it builds" AC fails for a subset that calls
+  forward. Bridge with an inert stub file (exact legacy signatures, zero-value returns,
+  e.g. us017_stubs.goal) that the later story DELETES when it lands the real handlers.
+  Two corollaries: (1) adding source files to an already-ported package can flip it from
+  leaf to non-leaf and BREAK a sibling self-host gate whose layout assumed a leaf — after
+  any port re-run ALL of that package's gates (`go test ./internal/selfhost -run
+  'TestPorted<Pkg>'`), not just the new one; (2) the enum-drift trap (below) surfaces at
+  `go build`, NOT at `task generate` — the backend emits .go from any syntactically-valid
+  .goal, so ALWAYS `go build ./internal/compiler/<pkg>/...` after generating.
 - Zero-dependency project: tests use stdlib `testing` only (no testify).
 - Verify with `task check` (go vet + full `go test ./...`) and `task build`.
   A PostToolUse hook runs `task check` after every Edit, so a multi-file refactor
@@ -6570,4 +6582,68 @@
   - A ported leaf with FOREIGN stdlib imports (vs cap/textedit which had none)
     still uses the nil-deps BuildAndTest path; the foreign imports pass through the
     throwaway temp `module goal` unchanged.
+---
+
+## [2026-06-30T20:29:00Z] - US-016 (self-host-flip PRD)
+- Ported the LSP server loop + lifecycle handlers to goal source under
+  internal/compiler/lsp: server.goal (the readMessage loop, handle() dispatch,
+  didOpen/didChange/didClose, reply/replyNull/replyError/notify/write, NewServer/
+  NewServerWithIO/osDirReader), symbols.goal (documentSymbol outline), codeaction.goal
+  (the source.fixAll.goal idiomatize action via fix.File). These are exactly the
+  three files US-016 AC-1 names.
+- KEY: server.goal's dispatch references 8 handlers + the openFile type that live in
+  US-017 files (diagnostics: compile/publish/openFilesInDir/openFile; query features:
+  definition/hover/references/rename/semanticTokens). Go requires every referenced
+  symbol to be DEFINED for the package to compile, so a partial port that calls into
+  un-ported files does NOT build standalone (unlike US-015's transport subset, which
+  referenced nothing forward). Bridged with us017_stubs.goal: inert stubs with the
+  exact legacy signatures returning zero values. They satisfy AC-1's `go build` gate
+  without changing the handshake (which never reaches them). US-017 DELETES
+  us017_stubs.goal when it lands the real diagnostics/definition/hover/references/
+  semantictokens ports.
+- enum-drift recurrence (3rd time, see Codebase Patterns): symbols.goal's legacy
+  `switch decl.Mod { case ast.FuncFrom: ... case ast.FuncDerive: ... }` does NOT
+  transpile — the ported internal/compiler/ast models FuncMod as a goal `enum` that
+  lowers to a sealed interface (ast.FuncMod_FuncFrom/_FuncDerive structs). Rewrote to
+  `switch decl.Mod.(type) { case ast.FuncMod_FuncFrom: ... }`. The build error surfaces
+  at `go build` (undefined: ast.FuncFrom), NOT at transpile time — the goal backend
+  emits the .go from .goal regardless, so always `go build ./internal/compiler/<pkg>/...`
+  after `task generate`, never trust a clean generate alone.
+- The lsp package is NO LONGER A LEAF after US-016: server imports project+sema,
+  symbols imports ast/parser/token, codeaction imports fix. So BuildTranspiled (which
+  compiles the WHOLE package dir) needs the full closure {token,lexer,ast,parser,sema,
+  project,textedit,fix}. This BROKE the existing US-015 TestPortedLspPackage (layout was
+  {lsp} alone) — adding source files to a ported package can break a sibling gate, so
+  re-run the package's OTHER self-host gates after a port. Extracted an lspClosure(t)
+  helper (discovers the closure once) and widened TestPortedLspPackage's layout+deps;
+  added TestPortedLspServer using the same helper.
+- AC-2 oracle: internal/lsp/server_handshake_test.go (new, package lsp) scripts
+  initialize -> initialized -> shutdown -> exit through NewServer and pins the
+  capability advertisement (textDocumentSync:1, documentSymbolProvider,
+  source.fixAll.goal, semanticTokensProvider, definition/hover/references/rename
+  providers, serverInfo goal-lsp/0.1.0) + the `"result":null` shutdown reply. Own
+  `frameMsg` helper (server_test.go already defines `frame`, would clash in package
+  lsp). It runs against the legacy package under `task check` AND is fed to
+  TestPortedLspServer.BuildAndTest against the goal-built package — the same-input
+  same-output handshake parity. The didOpen->publishDiagnostics path
+  (TestServerPublishesDiagnosticsOnOpen) is NOT gated here: it needs the real
+  compile/publish that US-017 (diagnostics) ports; stubbed compile would fail it.
+- Files changed: internal/compiler/lsp/{server,symbols,codeaction,us017_stubs}.{goal,go}
+  (new), internal/lsp/server_handshake_test.go (new), internal/selfhost/port_test.go
+  (lspClosure helper + widened TestPortedLspPackage + new TestPortedLspServer),
+  prd.json (US-016 passes:true), progress.txt.
+- Verification: go build ./internal/compiler/lsp OK; TestServerHandshakeScript PASS
+  (legacy); TestPortedLspPackage + TestPortedLspServer PASS (goal-built); `task check`
+  green (vet + verify-generated drift gate + full test); `task fixpoint` FIXPOINT OK.
+  Commit 323c3d4.
+- Learnings for future iterations:
+  - When a story ports the file that DISPATCHES to handlers ported in a LATER story,
+    the package can't build standalone — stub the forward-deps (exact signatures, zero
+    returns) in a clearly-named bridge file the later story deletes. This is the only
+    way to honor an AC that says "ports <subset> AND generates .go that builds" when
+    the subset isn't self-contained.
+  - Adding source files to an already-ported package can break that package's OTHER
+    self-host gates (a leaf becomes a non-leaf). After any port, run ALL of the
+    package's self-host gates, not just the new one (`go test ./internal/selfhost
+    -run 'TestPortedLsp'`).
 ---

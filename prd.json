@@ -205,8 +205,8 @@
         "The initialize/initialized/shutdown handshake from the goal-built server matches the legacy server responses on a scripted session."
       ],
       "priority": 16,
-      "passes": false,
-      "notes": "~499 LOC. Depends on US-015."
+      "passes": true,
+      "notes": "~499 LOC. Depends on US-015. DONE: ported server.go/symbols.go/codeaction.go verbatim to internal/compiler/lsp/*.goal; `task generate` emits colocated .go that builds. server.goal's dispatch references US-017 handlers (definition/hover/references/rename/semanticTokens/compile/publish/openFilesInDir + openFile type) — these are inert forward-dep stubs in us017_stubs.goal so `go build` succeeds (AC-1); US-017 DELETES that file when it lands the real handlers. symbols.goal hit the ast.FuncMod enum-drift (ported ast lowers FuncMod to a sealed interface) so the legacy `switch decl.Mod { case ast.FuncFrom }` became a type switch over ast.FuncMod_FuncFrom/_FuncDerive. The package gained sema/project/fix imports (no longer a leaf): TestPortedLspPackage's gate widened to the full closure (token,lexer,ast,parser,sema,project,textedit,fix) via new lspClosure helper. AC-2 oracle: new internal/lsp/server_handshake_test.go scripts initialize/initialized/shutdown/exit and pins capability advertisement + null shutdown reply; TestPortedLspServer feeds it to the goal-built package (byte-identical to legacy under `task check`). The didOpen->publishDiagnostics path is US-017 and NOT gated here. `task check` + `task fixpoint` green. Commit 323c3d4."
     },
     {
       "id": "US-017",
