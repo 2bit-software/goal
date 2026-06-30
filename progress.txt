@@ -6276,3 +6276,59 @@
     few lines PAST the real trigger (the deref-append failure surfaced on the `=` of
     a later statement, not the construct that broke ASI).
 ---
+
+## [2026-06-30T18:50:00Z] - US-011 (self-host-flip PRD)
+- Ported the interpreter's runtime FOUNDATION (internal/interp value/env/host/
+  assert) to goal source under internal/compiler/interp. value.goal (Value/Kind/
+  StructValue/MapValue/FuncValue/Variant + constructors + Field/Equal/String) and
+  host.goal/assert.goal had their in-module `goal/internal/ast` import repointed to
+  `goal/internal/compiler/ast`; env.goal is verbatim (no imports). A verbatim copy
+  of each .go to .goal — these four files are plain-Go-superset (no bare reserved
+  words match/enum/assert except in comments/type names; no non-first-statement
+  `*ptr =` deref-assignment), so NO behavior-preserving rewrites were needed
+  (unlike US-010's fix port).
+- KEY ENTANGLEMENT: host.goal's evalHostCall and assert.goal's execAssert are
+  *Interp methods referencing the evaluator/driver symbols ported LATER (eval.go
+  -> US-012, interp.go -> US-013): Interp, evalExpr, emitStdout, panicSignal,
+  CapabilityError. A package of only the four US-011 files cannot build. Added a
+  TRANSITIONAL internal/compiler/interp/interp.goal SKELETON supplying the minimal
+  surface host/assert touch: Interp{imports,caps,stdout}, panicSignal+Error,
+  CapabilityError+Error, emitStdout (all verbatim from interp.go), and a
+  PLACEHOLDER evalExpr returning a "not yet ported (US-012)" error. The value/env
+  behavioral gate never calls evalExpr, so the placeholder is inert here.
+- Added TestPortedInterpPackage to internal/selfhost/port_test.go: compile gate
+  (BuildTranspiled over token/ast/cap/interp — interp imports ast(->token) + cap;
+  NO lexer needed since ast imports only token) + behavioral gate (BuildAndTest
+  over ../interp/value_test.go + ../interp/env_test.go with deps token/ast/cap).
+  Those two test files are package-interp white-box, stdlib-only, self-contained —
+  the AC-2 parity oracle for construction/equality/Kind and scope/lookup/assign.
+  host_test.go/assert_test.go are EXCLUDED: they drive whole programs through the
+  real evaluator (absent until US-012/013).
+- Files changed: internal/compiler/interp/{value,env,host,assert,interp}.{goal,go}
+  (new), internal/selfhost/port_test.go (+TestPortedInterpPackage), prd.json
+  (US-011 passes:true), progress.txt. (morse-code history/ artifacts gitignored.)
+- Verification: `go build ./internal/compiler/interp/...` OK; TestPortedInterpPackage
+  PASS; `task check` GREEN (vet + verify-generated drift gate + full test);
+  `task fixpoint` FIXPOINT OK. interp is not in main.goal's bootstrap closure, so
+  generate/verify-generated/fixpoint cover it via the existing internal/compiler
+  tree-walk with no Taskfile edit (same as fix in US-010).
+- Learnings for future iterations:
+  - US-012 (port eval.go -> eval.goal) MUST DELETE the placeholder evalExpr in
+    interp.goal — eval.goal defines the real one (same-receiver same-name method
+    would otherwise duplicate-declare). US-013 (port interp.go -> interp.goal)
+    EXPANDS the skeleton: fold in (do NOT re-declare) Interp/panicSignal/
+    CapabilityError/emitStdout, and grow the Interp struct from the 3-field
+    skeleton to the full field set (file/info/root/methods/derives/fnStack/caps/
+    stdout/imports).
+  - Splitting one Go package across multiple port stories means EVERY checkpoint
+    needs the type that the method-bearing files hang off of. The cheapest way to
+    keep the package buildable mid-split is a skeleton file defining the shared
+    struct + the exact methods/fields the already-ported files reference, with
+    not-yet-ported methods as loud-refusal placeholders. Name it after the file
+    that will eventually own those symbols (interp.goal) so the later story
+    "expands" rather than "introduces".
+  - A clean plain-Go-superset port (no reserved-word/parser-gap rewrites) is the
+    fast path: `sed` the in-module import repoint, `cp` the rest, `task generate`,
+    `go build ./internal/compiler/<pkg>/...`. Reserve the US-010-style helper/
+    predicate rewrites for files that actually trip the front-end.
+---

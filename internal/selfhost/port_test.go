@@ -816,3 +816,68 @@ func TestPortedFixPackage(t *testing.T) {
 		t.Fatalf("existing fix tests failed against the transpiled package: %v", err)
 	}
 }
+
+// TestPortedInterpPackage validates US-011: the interpreter's runtime foundation
+// — the value model (value.goal), lexical environment (env.goal), host-function
+// bridge (host.goal), and assert evaluation (assert.goal) — reimplemented as
+// goal source under internal/compiler/interp transpiles to compiling Go (the
+// smoke gate, with the in-module ast, token, cap imports resolving against the
+// ported packages and the foreign errors/fmt/io/os/sort/strconv/strings imports
+// passing through) AND passes the existing internal/interp value/env tests
+// against the transpiled output (behavioral equivalence — Value construction,
+// equality, Kind, and Env scope/lookup/assign).
+//
+// host.goal's evalHostCall and assert.goal's execAssert are *Interp methods that
+// reference the evaluator/driver symbols ported later (eval.go -> US-012,
+// interp.go -> US-013). So the goal-sourced package builds at the US-011
+// checkpoint, internal/compiler/interp/interp.goal is a transitional skeleton
+// supplying the minimal Interp/panicSignal/CapabilityError/emitStdout surface
+// plus a placeholder evalExpr (US-012 deletes it). The behavioral gate runs the
+// AC-2 oracle — value_test.go (package interp, testing-only) and env_test.go
+// (package interp, errors+testing) — both white-box and self-contained; the
+// identical files run against the legacy package under `task check`.
+// host_test.go and assert_test.go are excluded because they drive whole programs
+// through the real evaluator, which is not ported until US-012/US-013.
+//
+// interp imports ast (-> token) and cap directly; cap is a leaf and ast imports
+// only token, so the layout/deps carry token, ast, cap. The test's working
+// directory is internal/selfhost, so the goal sources are at
+// ../../internal/compiler/{token,ast,cap,interp} and the existing interp tests
+// are at ../interp.
+func TestPortedInterpPackage(t *testing.T) {
+	tokenPkg := discoverPorted(t, "token")
+	astPkg := discoverPorted(t, "ast")
+	capPkg := discoverPorted(t, "cap")
+	interpPkg := discoverPorted(t, "interp")
+
+	// Criterion 1: transpiles via the smoke gate and the generated Go compiles.
+	// The layout carries interp plus its ast, token, cap dependencies so the
+	// in-module imports resolve; the stdlib foreign imports pass through.
+	layout := map[string]*project.Package{
+		"internal/compiler/token":  tokenPkg,
+		"internal/compiler/ast":    astPkg,
+		"internal/compiler/cap":    capPkg,
+		"internal/compiler/interp": interpPkg,
+	}
+	if err := selfhost.BuildTranspiled(layout); err != nil {
+		t.Fatalf("ported interp failed the transpile-and-build gate: %v", err)
+	}
+
+	// Criterion 2: the existing interp value/env tests pass against the
+	// transpiled package, with the ported token, ast, cap packages transpiled in
+	// as its in-module dependencies. value_test.go pins per-kind construction and
+	// equality; env_test.go pins scope/lookup/assign and NotFoundError — the
+	// same-input same-output parity oracle with the legacy package.
+	deps := map[string]*project.Package{
+		"internal/compiler/token": tokenPkg,
+		"internal/compiler/ast":   astPkg,
+		"internal/compiler/cap":   capPkg,
+	}
+	testFiles := []string{
+		"../interp/value_test.go",
+		"../interp/env_test.go",
+	}
+	if err := selfhost.BuildAndTest("internal/compiler/interp", interpPkg, testFiles, deps); err != nil {
+		t.Fatalf("existing interp value/env tests failed against the transpiled package: %v", err)
+	}
+}

@@ -1,0 +1,101 @@
+package interp
+
+// TRANSITIONAL SKELETON (US-011).
+//
+// US-011 ports the interpreter's runtime VALUE model (value.goal), lexical
+// ENVIRONMENT (env.goal), host-function bridge (host.goal), and assert
+// evaluation (assert.goal). Two of those — host.goal's evalHostCall and
+// assert.goal's execAssert — are methods on *Interp and reference the
+// evaluator/driver symbols that live in eval.go (US-012) and interp.go
+// (US-013): the Interp type itself, evalExpr, emitStdout, panicSignal, and
+// CapabilityError.
+//
+// So that the goal-sourced internal/compiler/interp package BUILDS at the
+// US-011 checkpoint, this file supplies the minimal subset of those symbols
+// host.goal/assert.goal touch. emitStdout, panicSignal, and CapabilityError are
+// faithful ports of internal/interp/interp.go. evalExpr is a PLACEHOLDER: the
+// value/env behavioral gate never calls it, and it returns a loud, named
+// refusal so nothing silently evaluates to a zero Value before the real
+// evaluator lands.
+//
+// HAND-OFF:
+//   - US-012 (port eval.go -> eval.goal) MUST DELETE the placeholder evalExpr
+//     below; eval.goal defines the real one.
+//   - US-013 (port interp.go -> interp.goal) EXPANDS this skeleton with the full
+//     Interp struct, constructor, Run, and the remaining driver — folding in
+//     (not re-declaring) Interp/panicSignal/CapabilityError/emitStdout.
+
+import (
+	"fmt"
+	"io"
+	"os"
+
+	"goal/internal/compiler/ast"
+	"goal/internal/compiler/cap"
+	"goal/internal/compiler/token"
+)
+
+// Interp is the goscript tree-walking interpreter. The US-013 port fills in the
+// full field set (file/info/root/methods/derives/fnStack/...); the skeleton
+// carries only the fields the US-011 surface (host.goal, assert.goal,
+// emitStdout) references.
+type Interp struct {
+	// imports maps each imported package's local name to its import path, so a
+	// selector call `pkg.Sym(...)` can be recognized as a host-package call and
+	// routed to the host-function bridge (host.goal).
+	imports map[string]string
+
+	// caps is the capability/authority set that mediates every host effect.
+	caps cap.CapabilitySet
+
+	// stdout is the interpreter's configurable standard-output sink; nil means
+	// os.Stdout.
+	stdout io.Writer
+}
+
+// panicSignal is the non-local control signal raised by the `panic` builtin. It
+// rides the (… error) return channel; NO loop, switch, or call boundary
+// recovers it: it propagates straight up to Run and out to the host. It carries
+// the panic operand value.
+type panicSignal struct {
+	value Value
+}
+
+// Error implements error so panicSignal can ride the (… error) return channel.
+func (p panicSignal) Error() string { return "interp: panic: " + p.value.String() }
+
+// CapabilityError is the located, named refusal raised when a host effect is
+// attempted without the granting capability.
+type CapabilityError struct {
+	Cap cap.Capability
+	Pos token.Pos
+}
+
+// Error renders the located, named capability-denied message.
+func (e CapabilityError) Error() string {
+	return fmt.Sprintf("interp: %s: capability denied: %s not granted", e.Pos.String(), e.Cap)
+}
+
+// emitStdout routes a standard-output write through the cap.Stdout authority:
+// when the interpreter's capability set grants Stdout it performs
+// write(ip.stdout) (the configurable sink, defaulting to os.Stdout), returning
+// write's error; when denied it returns a CapabilityError naming cap.Stdout at
+// the effect's source position.
+func (ip *Interp) emitStdout(pos token.Pos, write func(io.Writer) error) error {
+	if !ip.caps.Has(cap.Stdout) {
+		return CapabilityError{Cap: cap.Stdout, Pos: pos}
+	}
+	w := ip.stdout
+	if w == nil {
+		w = os.Stdout
+	}
+	return write(w)
+}
+
+// evalExpr is a US-011 PLACEHOLDER. The real expression evaluator is ported in
+// US-012 (eval.goal), which must delete this stub. The US-011 value/env
+// behavioral gate does not exercise it; it returns a loud, named refusal so no
+// caller silently receives a zero Value before the evaluator exists.
+func (ip *Interp) evalExpr(expr ast.Expr, scope *Env) (Value, error) {
+	return Value{}, fmt.Errorf("interp: evalExpr not yet ported (US-012)")
+}

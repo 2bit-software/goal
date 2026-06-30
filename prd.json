@@ -145,7 +145,7 @@
         "Value construction, equality, and environment scope/lookup from the goal-built code match the legacy package on a fixture set of value/env operations."
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "interp is 3722 LOC, split across three stories (US-011/012/013). This is the ~660 LOC foundation."
     },
     {
