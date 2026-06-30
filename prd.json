@@ -230,8 +230,8 @@
         "The goal and goalc binaries still produce identical output to the pre-repoint binaries on a corpus smoke set."
       ],
       "priority": 18,
-      "passes": false,
-      "notes": "Start of Phase 3 (the flip). Repoint before deletion so the switch is isolated and reviewable."
+      "passes": true,
+      "notes": "Start of Phase 3 (the flip). Repoint before deletion so the switch is isolated and reviewable. DONE: repointed all cmd/* ported imports to goal/internal/compiler/* — cmd/goal (11 imports), cmd/goalc (backend,sema), cmd/goal-wasm (backend), cmd/build-playground (backend; byexample stays Go). cmd/corpus-gen untouched (only Go-only corpus). One API-drift fix: compiler/sema models Severity as a sealed interface (Severity_Error/Severity_Warning, no comparable consts), so `d.Severity == sema.Error` became `_, ok := d.Severity.(sema.Severity_Error)` (cmd/goalc:78, cmd/goal:532) and the checkDiag render `%s` on severity became `sema.SeverityLabel(d.severity)` (cmd/goal:631 — SeverityLabel returns the same 'error'/'warning' as legacy String, so output is byte-identical). cmd/goal:594 `sema.Severity(d.Severity)` stayed valid: compiler/typecheck.Diagnostic.Severity is ALREADY compiler/sema.Severity, making it an identity conversion. AC-3 parity verified: pre- vs post-repoint goalc (transpile/doctest/check over 40 files) and goal check (over 12 package dirs, exercising the severity-render path) are byte-identical incl. exit codes. `go build ./cmd/...`, `GOOS=js GOARCH=wasm go build ./cmd/goal-wasm`, `go test ./cmd/...`, `task check`, `task fixpoint` all green."
     },
     {
       "id": "US-019",

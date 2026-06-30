@@ -6714,3 +6714,42 @@
   - Force the single-file diagnostics path (no filesystem) with a non-`file:` URI
     (e.g. `untitled:`): uriToPath fails -> compileSingle -> sema.Analyze -> publish.
 ---
+
+## 2026-06-30T21:10:00Z - US-018
+- Repointed every cmd/* import of a ported package from goal/internal/<pkg> to
+  goal/internal/compiler/<pkg>, so the shipped goal & goalc binaries (and the
+  dev tools) run on the goal-sourced compiler. Start of Phase 3 (the flip).
+- Files changed:
+  - cmd/goal/main.go: 11 imports (backend, fix, goalfmt, guide, interp, lsp,
+    parser, pipeline, project, sema, typecheck) -> compiler/*; severity drift
+    fixes at lines 532 and 631.
+  - cmd/goalc/main.go: backend, sema -> compiler/*; severity drift fix at l.78.
+  - cmd/goal-wasm/main_wasm.go: backend -> compiler/backend.
+  - cmd/build-playground/main.go: backend -> compiler/backend (byexample stays).
+  - prd.json (US-018 passes:true), progress.txt.
+  - cmd/corpus-gen NOT touched (only Go-only internal/corpus).
+- Learnings for future iterations:
+  - sema.Severity drift bites the CONSUMERS too, not just ports: the legacy
+    internal/sema.Severity is a comparable int (sema.Error/sema.Warning with a
+    String() method); the compiler port internal/compiler/sema.Severity is a
+    sealed interface (Severity_Error{}/Severity_Warning{}, no consts, no
+    String()). When repointing any caller, (1) `x == sema.Error` ->
+    `_, ok := x.(sema.Severity_Error); ok`, and (2) `%s`/fmt of a Severity ->
+    `sema.SeverityLabel(x)` (returns the same "error"/"warning", so rendered
+    output stays byte-identical — parity-safe). Grep callers for
+    `sema\.(Error|Warning)\b` and `%[sv].*[Ss]everity` before repointing.
+  - An identity type conversion survives the drift: cmd/goal:594
+    `sema.Severity(d.Severity)` still compiles because compiler/typecheck
+    .Diagnostic.Severity is ALREADY compiler/sema.Severity (T(x) where x is T is
+    a valid no-op conversion). Don't "fix" these — they're inert.
+  - Repoint ALL of a single binary's ported imports together so its type graph
+    stays single-sourced (no legacy+compiler type mixing within one binary).
+    Dev tools whose unported deps (byexample) don't share types with the ported
+    dep (backend) are safe to repoint piecemeal.
+  - Cheap, decisive parity oracle for a flip: build the pre-edit binary first
+    (working tree is the baseline), then diff old-vs-new stdout+stderr+exit code
+    over a corpus/feature sweep. goalc covers transpile+doctest+check; `goal
+    check <dir>` additionally exercises AnalyzePackageInDir + the severity-render
+    path. wasm cmd carries //go:build js && wasm so it's excluded from host
+    ./... — verify it with `GOOS=js GOARCH=wasm go build ./cmd/goal-wasm`.
+---

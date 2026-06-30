@@ -22,17 +22,17 @@ import (
 	"sort"
 	"strings"
 
-	"goal/internal/backend"
-	"goal/internal/fix"
-	"goal/internal/goalfmt"
-	"goal/internal/guide"
-	"goal/internal/interp"
-	"goal/internal/lsp"
-	"goal/internal/parser"
-	"goal/internal/pipeline"
-	"goal/internal/project"
-	"goal/internal/sema"
-	"goal/internal/typecheck"
+	"goal/internal/compiler/backend"
+	"goal/internal/compiler/fix"
+	"goal/internal/compiler/goalfmt"
+	"goal/internal/compiler/guide"
+	"goal/internal/compiler/interp"
+	"goal/internal/compiler/lsp"
+	"goal/internal/compiler/parser"
+	"goal/internal/compiler/pipeline"
+	"goal/internal/compiler/project"
+	"goal/internal/compiler/sema"
+	"goal/internal/compiler/typecheck"
 )
 
 // guideCommands describes the binary's subcommands. It is the single source the
@@ -529,7 +529,7 @@ func cmdCheck(root string, out, errOut io.Writer) error {
 		sortDiags(diags)
 		for _, d := range diags {
 			fmt.Fprintln(errOut, d.render())
-			if d.severity == sema.Error {
+			if _, ok := d.severity.(sema.Severity_Error); ok {
 				total++
 			}
 		}
@@ -628,7 +628,7 @@ type checkDiag struct {
 // render formats the finding as `file:line:col: severity: [code] message`, matching both
 // stages' native rendering.
 func (d checkDiag) render() string {
-	return fmt.Sprintf("%s:%d:%d: %s: [%s] %s", d.file, d.line, d.col, d.severity, d.code, d.message)
+	return fmt.Sprintf("%s:%d:%d: %s: [%s] %s", d.file, d.line, d.col, sema.SeverityLabel(d.severity), d.code, d.message)
 }
 
 // sortDiags orders findings by file, then line, then column, for stable output.

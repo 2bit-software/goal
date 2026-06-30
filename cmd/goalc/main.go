@@ -7,8 +7,8 @@ import (
 	"io"
 	"os"
 
-	"goal/internal/backend"
-	"goal/internal/sema"
+	"goal/internal/compiler/backend"
+	"goal/internal/compiler/sema"
 )
 
 func main() {
@@ -75,7 +75,7 @@ func run(args []string, stdin io.Reader, out, errOut io.Writer) error {
 func countErrors(diags []sema.Diagnostic) int {
 	n := 0
 	for _, d := range diags {
-		if d.Severity == sema.Error {
+		if _, ok := d.Severity.(sema.Severity_Error); ok {
 			n++
 		}
 	}
