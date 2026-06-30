@@ -17,7 +17,9 @@ features/_cut/*/transpiler/transpiler
 .morse-code/initiative.json
 morse-code.local.yaml
 .morse-code
-./history
+
+# Loop initiative history / archived PRDs (local-only, not shared)
+/history/
 
 # Generated playground artifacts (rebuild with scripts/build-site.sh)
 /site/goal.wasm
