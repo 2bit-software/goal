@@ -243,8 +243,8 @@
         "`go build ./...`, full `go test ./...`, the corpus behavioral tier, and `task fixpoint` are all green."
       ],
       "priority": 19,
-      "passes": false,
-      "notes": "Irreversible point. Test/dev infra that stays Go: corpus, byexample, internal/selfhost harness, cmd/corpus-gen, cmd/build-playground."
+      "passes": true,
+      "notes": "Irreversible point. Test/dev infra that stays Go: corpus, byexample, internal/selfhost harness, cmd/corpus-gen, cmd/build-playground. DONE (commit 83671c5): deleted all 16 legacy internal/<pkg> dirs; repointed the only external Go consumers (internal/corpus, internal/selfhost/selfhost.go) to goal/internal/compiler/*. Enum drift: corpus/check_runner.go `d.Severity == sema.Error` -> `_, isError := d.Severity.(sema.Severity_Error)` (compiler sema models Severity as a sealed interface, same as US-018). Retired the selfhost legacy-parity tests (port_test.go + the InScope smoke gate) since their oracle (legacy source) is gone; kept selfhost.go + TestGateFailsOnNonCompilingTranspile. GOTCHA: the foreign-derive corpus case imported the on-disk fixture internal/pipeline/testdata/extpkg, deleted with the legacy package — relocated it to internal/corpus/testdata/extpkg, repointed testdata/package/foreign-derive/{conv.goal,pkg.json}, and regenerated corpus/manifest.json via `go run ./cmd/corpus-gen`. `task check` (incl. corpus behavioral tier) + `task fixpoint` (FIXPOINT OK) green. US-020 promotes internal/compiler/<pkg> -> internal/<pkg>; US-022 removes scaffolding (cmd/goal-gen)."
     },
     {
       "id": "US-020",

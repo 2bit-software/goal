@@ -1,6 +1,35 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- Deleting a legacy package can orphan an on-disk TESTDATA FIXTURE that a
+  surviving corpus case resolves by import path (found in US-019): the
+  foreign-derive corpus case imported `goal/internal/pipeline/testdata/extpkg`,
+  a fixture that lived under the deleted `internal/pipeline`. The corpus resolver
+  maps a `goal/<path>` import to the on-disk dir `<path>` at transpile time, AND
+  the package-mode build step re-copies that dir via the case's pkg.json `imports`
+  map — so a deleted fixture fails first as a transpile error ("derive make:
+  target field not sourced") then, once relocated, as a build-wiring error ("no
+  .go files in <old path>") until the manifest is regenerated. Before deleting any
+  `internal/<pkg>`, grep `testdata/extpkg|testdata/` references in testdata/*,
+  corpus/manifest.json, and *.goal cases. Relocate the fixture to surviving infra
+  the case owns (e.g. internal/corpus/testdata/extpkg), repoint the case's
+  `.goal` import + `pkg.json`, then REGENERATE the manifest with
+  `go run ./cmd/corpus-gen` (it indexes testdata into corpus/manifest.json — never
+  hand-edit the manifest). Keep fixtures OUT of internal/compiler: `task
+  verify-generated` diffs internal/compiler against a fresh emit, so any non-emitted
+  file there fails the drift gate.
+- Corpus + selfhost are the ONLY external Go consumers of the compiler packages
+  once cmd/* is repointed (US-018): when flipping imports
+  goal/internal/<pkg> -> goal/internal/compiler/<pkg>, repoint per-SPECIFIC-package
+  path (not a blanket goal/internal/ -> goal/internal/compiler/) so sibling infra
+  paths (goal/internal/corpus, /byexample, /selfhost) are untouched. The compiler
+  twins are API-compatible with the legacy packages EXCEPT sealed-interface enums:
+  the only drift hit in US-019 was sema.Severity (compare -> type assertion), same
+  as US-018. The internal/selfhost harness LIBRARY (selfhost.go: BuildTranspiled/
+  BuildAndTest/ReadPackage) stays Go and is repointed; its legacy-PARITY tests
+  (port_test.go, the InScope smoke gate) are retired because their oracle is the
+  deleted legacy source — the corpus behavioral tier + `task fixpoint` are the
+  post-flip correctness gates.
 - goal front-end gap (found in US-010): a `*ptr = ...` deref-assignment statement
   parses ONLY as the FIRST statement in its block. When it follows another
   statement the lexer inserts no semicolon before the leading `*`, so the parser
@@ -6752,4 +6781,41 @@
     check <dir>` additionally exercises AnalyzePackageInDir + the severity-render
     path. wasm cmd carries //go:build js && wasm so it's excluded from host
     ./... — verify it with `GOOS=js GOARCH=wasm go build ./cmd/goal-wasm`.
+---
+
+## 2026-06-30T21:34:00Z - US-019
+- Deleted the legacy hand-written Go transpiler: removed all 16 legacy
+  internal/<pkg> dirs (token, lexer, ast, parser, sema, project, pipeline,
+  backend, typecheck, goalfmt, textedit, cap, guide, fix, interp, lsp). goal
+  source under internal/compiler/<pkg> is now the only source of the toolchain.
+- Repointed the only external Go consumers to the compiler twins:
+  internal/corpus/* and internal/selfhost/selfhost.go now import
+  goal/internal/compiler/* (per-specific-package sed, leaving corpus/byexample/
+  selfhost sibling paths untouched).
+- Files changed: deleted the 16 internal/<pkg> trees (~178 files); edited
+  internal/corpus/* imports + internal/corpus/check_runner.go (Severity drift);
+  internal/selfhost/selfhost.go (imports) + selfhost_test.go (dropped the legacy
+  InScope smoke gate, kept TestGateFailsOnNonCompilingTranspile); deleted
+  internal/selfhost/port_test.go (legacy-parity oracle); relocated the
+  foreign-derive fixture to internal/corpus/testdata/extpkg/types.go and
+  repointed testdata/package/foreign-derive/{conv.goal,pkg.json}; regenerated
+  corpus/manifest.json. Commit 83671c5.
+- Learnings for future iterations:
+  - Enum drift: compiler/sema models Severity as a sealed interface
+    (Severity_Error/Severity_Warning, no comparable const), so corpus's
+    `d.Severity == sema.Error` became `_, isError := d.Severity.(sema.Severity_Error)`
+    — identical remedy to US-018's cmd repoint. It was the ONLY drift in the
+    repointed consumers; the twins are otherwise API-compatible.
+  - GOTCHA (now a top-block pattern): deleting internal/pipeline orphaned the
+    on-disk fixture internal/pipeline/testdata/extpkg that the foreign-derive
+    corpus case resolves by import path. Surfaced as a transpile error first,
+    then a build-wiring error from the STALE corpus/manifest.json. Fix: relocate
+    the fixture to surviving infra the case owns, repoint conv.goal + pkg.json,
+    and regenerate the manifest with `go run ./cmd/corpus-gen`. Keep such
+    fixtures out of internal/compiler (verify-generated drift gate diffs it).
+  - The internal/selfhost harness library stays but its legacy-parity tests are
+    retired post-flip — the corpus behavioral tier + `task fixpoint` are the
+    correctness oracles now.
+  - history/ is gitignored in this repo, so morse-code initiative artifacts are
+    NOT committed; the commit carries only source/test/fixture changes.
 ---
