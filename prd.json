@@ -46,7 +46,7 @@
         "Generated files carry a 'Code generated ... DO NOT EDIT.' header line."
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Generated .go resolves at the same import path as the .goal source (goal/internal/compiler/<pkg>) within module goal, so no separate module/-C trick is needed."
     },
     {
