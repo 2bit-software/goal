@@ -5935,3 +5935,32 @@
   - macOS bash 3.2 in the Taskfile cmd: `find ... | while IFS= read -r f` (no
     mapfile). `${f#prefix}` strips the emit dir prefix portably.
 ---
+
+## 2026-06-30T17:09:00Z - US-004
+- Added `task verify-generated`, a drift gate that re-emits the goal compiler
+  source to a scratch tree (_bootstrap/verify), prepends the SAME fixed
+  generated header `task generate` uses, then two-way `diff -r -x '*.goal'`
+  against the committed internal/compiler tree. Wired it into `task check`
+  (between vet and test) so the universal pre-commit gate fails on any drift
+  between committed generated Go and the .goal source.
+- Files changed: Taskfile.yml (new verify-generated target + check wiring),
+  prd.json (US-004 passes:true), progress.txt. Committed 94808d6.
+- Verification: verify-generated EXIT 0 on the clean tree ("generated Go is up
+  to date"); appended a marker to internal/compiler/token/token.go -> EXIT
+  non-zero with diff printed, then reverted; `task check` EXIT 0 and its log
+  shows verify-generated ran inside it; `task fixpoint` "FIXPOINT OK".
+- Learnings for future iterations:
+  - The drift gate works because emit is deterministic and the header is a fixed
+    literal (US-003). `diff -r -x '*.goal'` is two-way: it catches changed,
+    added, AND removed generated .go (not just edits), and the `-x '*.goal'`
+    excludes the colocated source so the regenerated .go-only tree compares
+    cleanly against the committed .goal+.go tree.
+  - The PostToolUse `task check` hook now runs verify-generated on EVERY edit.
+    Consequence for later port stories (US-006+): after editing a *.goal source
+    you MUST run `task generate` to refresh the colocated .go before the next
+    edit, or the hook's verify-generated will (correctly) fail on the stale .go.
+    Order an in-flight refactor so generate runs before check sees it green.
+  - `task clean` already removes _bootstrap, so the verify scratch dir
+    (_bootstrap/verify) needs no separate cleanup target; the task rm -rf's it
+    on success and clean covers a failed mid-run.
+---

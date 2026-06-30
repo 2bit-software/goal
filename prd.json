@@ -59,7 +59,7 @@
         "`task check` invokes `task verify-generated` so the drift gate runs in the universal gate for all later stories."
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Folding verify-generated into task check (rather than verifyCommands) keeps US-001..003 from referencing a command that did not yet exist."
     },
     {
