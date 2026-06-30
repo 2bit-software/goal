@@ -6647,3 +6647,70 @@
     package's self-host gates, not just the new one (`go test ./internal/selfhost
     -run 'TestPortedLsp'`).
 ---
+
+## [2026-06-30T21:40:00Z] - US-017 (self-host-flip PRD)
+- Ported the LSP query features (legacy internal/lsp hover.go, definition.go,
+  references.go, diagnostics.go, semantictokens.go) verbatim to goal source under
+  internal/compiler/lsp/*.goal and DELETED the US-016 forward-dep bridge
+  us017_stubs.{goal,go}: the five ported files now SUPPLY the real openFile type +
+  compile/publish/openFilesInDir/definition/hover/references/rename/semanticTokens
+  symbols the stub file had inerted. This completes the lsp port and Phase 2.
+- Port mechanics = the established recipe: cp legacy .go -> .goal, sed-repoint
+  `goal/internal/` -> `goal/internal/compiler/`, `task generate`, then ALWAYS
+  `go build ./internal/compiler/lsp/...` (enum-drift surfaces at build, not generate).
+- TWO drift fixes were required (both predicted by grepping the 5 files first):
+  - sema.Severity sealed-interface drift (4th occurrence, see Codebase Patterns):
+    diagnostics.goal's `if d.Severity == sema.Warning` does not compile against the
+    ported sema (Severity is an enum -> sealed interface Severity_Error/_Warning, no
+    comparable consts). Rewrote to a comma-ok assertion:
+    `if _, ok := d.Severity.(sema.Severity_Warning); ok`.
+  - goal reserved word `enum` used as an IDENTIFIER: the refVariant PARAMETER
+    `enum ast.Expr` (definition/hover/references) -> `enumExpr`; and in references.goal
+    the symKey STRUCT FIELD `enum string` + its 3 struct-literal sites
+    (`enum: en`/`enum: id.Name`) -> `enumName`. Comments/strings containing the word
+    `enum` are harmless (only bare identifiers collide).
+  - rangeOf was already ported in symbols.goal (US-016); definition/references just
+    CALL it — do NOT redefine (would be a duplicate-decl build error).
+- AC-2 parity oracle: internal/lsp/features_parity_test.go (package lsp, NEW). One
+  self-contained file driving all five features via the public/white-box surface
+  (resolveHover/resolveDefinition/computeSemanticTokens directly; references/rename
+  via s.references/s.rename after feeding initialize+didOpen and letting EOF end Run;
+  diagnostics via didOpen with an `untitled:` URI -> compileSingle -> publish, no
+  filesystem). Every assertion is DERIVED from the fixture (offsets resolved at
+  runtime, fp* helper prefix to avoid clashing with the other lsp test files), so the
+  IDENTICAL file holds on BOTH the legacy package (`task check`) and the goal-built
+  package (new TestPortedLspFeatures via BuildTranspiled+BuildAndTest) — that
+  two-package agreement is the parity proof.
+- WHY a fresh oracle instead of feeding the legacy feature *_test.go (US-016
+  precedent): the legacy lsp test suite is a tightly-coupled white-box web AND two
+  files touch drifted surface that cannot compile against the ported package:
+  diagnostics_test.go uses sema.Error/sema.Warning value consts; references_test.go
+  reads the renamed symKey.enum field; server_test.go depends on diagnostics_test's
+  nonExhaustiveSrc; and hover/definition/references/semantictokens tests share
+  helpers (offsetOfNth/cursorAt in definition_test, testServer/fakeResolver in
+  package_test, frame in server_test). Untangling that web is far more fragile than
+  one derived-assertion oracle. The legacy tests stay UNTOUCHED under `task check`.
+- lspClosure (US-016) needed NO change: the ported query files import only
+  ast/parser/sema/project/token/lexer, all already in the closure. Re-ran ALL three
+  lsp gates (TestPortedLspPackage/Server/Features) — all green (a port can break a
+  sibling gate, so never run only the new one).
+- Files changed: internal/compiler/lsp/{diagnostics,definition,hover,references,
+  semantictokens}.{goal,go} (new), internal/compiler/lsp/us017_stubs.{goal,go}
+  (deleted), internal/lsp/features_parity_test.go (new), internal/selfhost/port_test.go
+  (+TestPortedLspFeatures), prd.json (US-017 passes:true), progress.txt.
+- Verification: `task generate` + `go build ./internal/compiler/lsp/...` OK;
+  go test ./internal/lsp -run Parity (7 PASS, legacy); go test ./internal/selfhost
+  -run TestPortedLsp (Package/Server/Features all PASS, goal-built); `task check`
+  EXIT 0 (vet + verify-generated drift gate + full test); `task fixpoint` FIXPOINT OK.
+- Learnings for future iterations:
+  - When porting a package whose legacy white-box tests consume drifted surface
+    (sealed-interface enums) or renamed reserved-word identifiers, do NOT try to feed
+    them through BuildAndTest. Write ONE self-contained parity oracle with assertions
+    DERIVED from the fixture (not pinned magic numbers) so the same file is valid
+    against both the legacy and the goal-built package — the cross-package agreement
+    IS the parity proof. Query a server handler directly by feeding initialize+didOpen
+    and letting EOF return Run (docs persist; didClose not sent), then call the
+    unexported handler with json.Marshal'd params.
+  - Force the single-file diagnostics path (no filesystem) with a non-`file:` URI
+    (e.g. `untitled:`): uriToPath fails -> compileSingle -> sema.Analyze -> publish.
+---

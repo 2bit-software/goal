@@ -1,0 +1,256 @@
+package lsp
+
+import (
+	"encoding/json"
+	"strings"
+
+	"goal/internal/compiler/ast"
+	"goal/internal/compiler/parser"
+)
+
+// definition answers a textDocument/definition request: it resolves the symbol referenced
+// under the cursor to the range of its declaration in the same document, via the AST symbol
+// graph. It is best-effort — an unknown URI, a position over no resolvable symbol, or source
+// that does not parse yields a null result (a nil *Location marshals to JSON null), matching
+// the document-symbol and semantic-token contracts.
+func (s *Server) definition(raw json.RawMessage) *Location {
+	var p DefinitionParams
+	if !s.decode(raw, &p, "definition") {
+		return nil
+	}
+	text, _, ok := s.buffer(p.TextDocument.URI)
+	if !ok {
+		return nil
+	}
+	target, ok := resolveDefinition(text, p.Position.Line, p.Position.Character)
+	if !ok {
+		return nil
+	}
+	return &Location{URI: p.TextDocument.URI, Range: target}
+}
+
+// resolveDefinition parses src, builds its declaration index and a map of reference spans, and
+// returns the declaration range of the reference covering the 0-based (line, char) cursor. It
+// reports ok=false when the cursor is out of range, the source does not parse, or no recorded
+// reference covers it.
+func resolveDefinition(src string, line, char int) (Range, bool) {
+	off, ok := offsetForPosition(src, line, char)
+	if !ok {
+		return Range{}, false
+	}
+	file, err := parser.ParseFile(src)
+	if err != nil || file == nil {
+		return Range{}, false
+	}
+	idx := buildDeclIndex(src, file)
+	refs := collectRefs(src, file, idx)
+	for _, r := range refs {
+		if off >= r.start && off < r.end {
+			return r.target, true
+		}
+	}
+	return Range{}, false
+}
+
+// declIndex is the name-keyed declaration table — the AST symbol graph's declaration half.
+// Each entry maps a top-level symbol name to the range of its declaring identifier, which a
+// reference resolves to. Variants are keyed by their enclosing enum so the same variant tag in
+// two enums stays distinct.
+type declIndex struct {
+	funcs    map[string]Range            // function/method name -> name range
+	types    map[string]Range            // type/enum/sealed/alias name -> name range
+	variants map[string]map[string]Range // enum name -> variant name -> variant-name range
+}
+
+// buildDeclIndex walks the file's top-level declarations and records each declared name's
+// range. It is built before references are collected so a reference to a symbol declared later
+// in the file still resolves.
+func buildDeclIndex(src string, file *ast.File) declIndex {
+	idx := declIndex{
+		funcs:    map[string]Range{},
+		types:    map[string]Range{},
+		variants: map[string]map[string]Range{},
+	}
+	put := func(m map[string]Range, name *ast.Ident) {
+		if name != nil && name.Name != "" {
+			m[name.Name] = identRange(src, name)
+		}
+	}
+	for _, d := range file.Decls {
+		switch decl := d.(type) {
+		case *ast.FuncDecl:
+			put(idx.funcs, decl.Name)
+		case *ast.EnumDecl:
+			put(idx.types, decl.Name)
+			if decl.Name == nil || decl.Name.Name == "" {
+				continue
+			}
+			vm := map[string]Range{}
+			for _, vr := range decl.Variants {
+				if vr.Name != nil && vr.Name.Name != "" {
+					vm[vr.Name.Name] = identRange(src, vr.Name)
+				}
+			}
+			idx.variants[decl.Name.Name] = vm
+		case *ast.SealedInterfaceDecl:
+			put(idx.types, decl.Name)
+		case *ast.GenDecl:
+			for _, sp := range decl.Specs {
+				if ts, ok := sp.(*ast.TypeSpec); ok {
+					put(idx.types, ts.Name)
+				}
+			}
+		}
+	}
+	return idx
+}
+
+// defRef is one resolved reference: the byte span [start,end) of the referencing identifier and
+// the declaration range it points at.
+type defRef struct {
+	start, end int
+	target     Range
+}
+
+// collectRefs walks the AST and records, for each identifier that refers to a top-level symbol,
+// the declaration it resolves to. References are keyed by their structural parent (a call's
+// callee, a selector over a known enum, a variant construction/pattern, and type-position
+// identifiers), mirroring the semantic-token role visitor, so the same identifier text is never
+// guessed at out of context.
+func collectRefs(src string, file *ast.File, idx declIndex) []defRef {
+	v := &refVisitor{src: src, idx: idx}
+	ast.Walk(v, file)
+	return v.refs
+}
+
+type refVisitor struct {
+	src  string
+	idx  declIndex
+	refs []defRef
+}
+
+func (v *refVisitor) Visit(n ast.Node) ast.Visitor {
+	switch d := n.(type) {
+	case *ast.CallExpr:
+		switch fun := d.Fun.(type) {
+		case *ast.Ident:
+			v.refFunc(fun)
+		case *ast.SelectorExpr:
+			v.refFunc(fun.Sel) // method call x.Foo()
+		}
+	case *ast.SelectorExpr:
+		v.refEnumSelector(d.X, d.Sel) // Enum.Variant in expression position
+	case *ast.VariantLit:
+		v.refVariant(d.Enum, d.Variant)
+	case *ast.VariantPattern:
+		v.refVariant(d.Enum, d.Variant)
+	case *ast.Field:
+		v.refType(d.Type)
+	case *ast.PayloadField:
+		v.refType(d.Type)
+	case *ast.ValueSpec:
+		v.refType(d.Type)
+	case *ast.TypeSpec:
+		v.refType(d.Type)
+	case *ast.ImplementsClause:
+		v.refType(d.Type)
+	}
+	return v
+}
+
+// refFunc records a reference to a function/method declaration named by ident.
+func (v *refVisitor) refFunc(ident *ast.Ident) {
+	if ident == nil {
+		return
+	}
+	if r, ok := v.idx.funcs[ident.Name]; ok {
+		v.record(ident, r)
+	}
+}
+
+// refType records a reference to a top-level type when e is a bare type-name identifier.
+// Composite type expressions (slices, maps, pointers) are left unresolved for this milestone.
+func (v *refVisitor) refType(e ast.Expr) {
+	id, ok := e.(*ast.Ident)
+	if !ok {
+		return
+	}
+	if r, ok := v.idx.types[id.Name]; ok {
+		v.record(id, r)
+	}
+}
+
+// refEnumSelector resolves an Enum.Variant selector: the X identifier to its enum declaration
+// and, when X is a known enum, the Sel identifier to the matching variant. A selector whose X
+// is not a known enum (a package or variable) is left to other handlers.
+func (v *refVisitor) refEnumSelector(x ast.Expr, sel *ast.Ident) {
+	id, ok := x.(*ast.Ident)
+	if !ok {
+		return
+	}
+	if r, ok := v.idx.types[id.Name]; ok {
+		v.record(id, r)
+	}
+	if vm, ok := v.idx.variants[id.Name]; ok && sel != nil {
+		if r, ok := vm[sel.Name]; ok {
+			v.record(sel, r)
+		}
+	}
+}
+
+// refVariant resolves a variant construction/pattern: the enum identifier to its declaration
+// and the variant tag to its declaration within that enum.
+func (v *refVisitor) refVariant(enumExpr ast.Expr, variant *ast.Ident) {
+	id, ok := enumExpr.(*ast.Ident)
+	if !ok {
+		return
+	}
+	if r, ok := v.idx.types[id.Name]; ok {
+		v.record(id, r)
+	}
+	if vm, ok := v.idx.variants[id.Name]; ok && variant != nil {
+		if r, ok := vm[variant.Name]; ok {
+			v.record(variant, r)
+		}
+	}
+}
+
+// record appends a reference covering ident's byte span and pointing at target.
+func (v *refVisitor) record(ident *ast.Ident, target Range) {
+	if ident == nil || ident.Name == "" {
+		return
+	}
+	v.refs = append(v.refs, defRef{
+		start:  ident.Pos().Offset,
+		end:    ident.End().Offset,
+		target: target,
+	})
+}
+
+// identRange is the protocol range of an identifier's name.
+func identRange(src string, id *ast.Ident) Range {
+	return rangeOf(src, id.Pos().Offset, id.End().Offset)
+}
+
+// offsetForPosition converts a 0-based line/character position into a byte offset into src, the
+// inverse of check.OffsetToPosition. It reports ok=false for a line beyond the end of the file
+// or a negative coordinate; a character past the end of its line is clamped to len(src). Source
+// is ASCII, so a character index equals a byte index within a line.
+func offsetForPosition(src string, line, char int) (int, bool) {
+	if line < 0 || char < 0 {
+		return 0, false
+	}
+	start := 0
+	for cur := 0; cur < line; cur++ {
+		nl := strings.IndexByte(src[start:], '\n')
+		if nl < 0 {
+			return 0, false
+		}
+		start += nl + 1
+	}
+	off := start + char
+	if off > len(src) {
+		off = len(src)
+	}
+	return off, true
+}

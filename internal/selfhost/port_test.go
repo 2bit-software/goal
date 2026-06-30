@@ -1044,3 +1044,45 @@ func TestPortedLspServer(t *testing.T) {
 		t.Fatalf("the lsp server handshake oracle failed against the transpiled package: %v", err)
 	}
 }
+
+// TestPortedLspFeatures validates US-017: the LSP query features (legacy
+// internal/lsp hover.go, definition.go, references.go, diagnostics.go,
+// semantictokens.go) reimplemented as goal source under internal/compiler/lsp
+// transpile to compiling Go (the smoke gate) AND produce responses matching the
+// legacy package for hover, go-to-definition, find-references, rename, semantic
+// tokens, and the diagnostics publish path. With US-017 the us017_stubs.goal
+// forward-dependency bridge from US-016 is deleted: the five ported files now
+// supply the real definition/hover/references/rename/semanticTokens/compile/
+// publish/openFilesInDir symbols.
+//
+// The behavioral gate runs features_parity_test.go (package lsp), a
+// self-contained oracle that drives all five features through the public/
+// white-box surface with assertions DERIVED from the fixture source (no pinned
+// magic offsets), deliberately avoiding the two drifted surfaces that block the
+// legacy feature *_test.go files from compiling against the goal-built package:
+// it names no sema severity constant (the goal-built sema models Severity as a
+// sealed interface, not the legacy comparable consts) and reads no unexported
+// symKey.enum field (renamed enumName in the port). The identical file runs
+// against the legacy package under `task check`, so its two-package agreement is
+// the AC-2 parity proof. The lsp closure is unchanged from US-016 (the ported
+// query files import only ast/parser/sema/project/token/lexer, all already in
+// lspClosure).
+func TestPortedLspFeatures(t *testing.T) {
+	layout, deps := lspClosure(t)
+	lspPkg := layout["internal/compiler/lsp"]
+
+	// Criterion 1: transpiles via the smoke gate and the generated Go compiles —
+	// the whole lsp package now including the real query-feature handlers (the
+	// us017_stubs.goal bridge is gone).
+	if err := selfhost.BuildTranspiled(layout); err != nil {
+		t.Fatalf("ported lsp query features failed the transpile-and-build gate: %v", err)
+	}
+
+	// Criterion 2: the feature parity oracle passes against the transpiled
+	// package, with the ported dependency closure transpiled in — proving the
+	// goal-built hover/definition/references/rename/semantic-tokens/diagnostics
+	// responses match the legacy package's on the same fixtures.
+	if err := selfhost.BuildAndTest("internal/compiler/lsp", lspPkg, []string{"../lsp/features_parity_test.go"}, deps); err != nil {
+		t.Fatalf("the lsp feature parity oracle failed against the transpiled package: %v", err)
+	}
+}

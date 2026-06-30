@@ -217,8 +217,8 @@
         "The existing lsp feature tests pass against the goal-built lsp (parity with the legacy responses on the test fixtures)."
       ],
       "priority": 17,
-      "passes": false,
-      "notes": "~1422 LOC. Completes the lsp port and Phase 2. Depends on US-016."
+      "passes": true,
+      "notes": "~1422 LOC. Completes the lsp port and Phase 2. Depends on US-016. DONE: ported hover/definition/references(+rename)/diagnostics/semantictokens verbatim to internal/compiler/lsp/*.goal and DELETED the US-016 us017_stubs.goal bridge (the five files now supply openFile/compile/publish/openFilesInDir/definition/hover/references/rename/semanticTokens). Two drift fixes: diagnostics.goal's `d.Severity == sema.Warning` -> comma-ok assertion `d.Severity.(sema.Severity_Warning)` (ported sema models Severity as a sealed interface); goal reserved word `enum` renamed (refVariant param -> enumExpr in 3 files; symKey field + 3 literals -> enumName in references.goal). rangeOf reused from symbols.goal (US-016), not redefined. AC-2 oracle: internal/lsp/features_parity_test.go (7 tests, self-contained, assertions derived from the fixture, NO sema consts / NO symKey field) passes against the legacy package under `task check` AND the goal-built package via new TestPortedLspFeatures (internal/selfhost/port_test.go, reuses lspClosure). The tightly-coupled legacy feature *_test.go web was NOT fed verbatim (diagnostics_test uses sema.Error/Warning; references_test reads symKey.enum; server_test depends on diagnostics_test) — same precedent as US-016's fresh handshake oracle. `task check` + `task fixpoint` green. The lsp port is now complete; US-018 repoints cmd/* and US-019 deletes legacy internal/lsp."
     },
     {
       "id": "US-018",
