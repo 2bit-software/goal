@@ -1,7 +1,7 @@
 package corpus
 
 import (
-	"goal/internal/sema"
+	"goal/internal/compiler/sema"
 )
 
 // SemaCheck is the AST-based checker the corpus judges against the inline // want

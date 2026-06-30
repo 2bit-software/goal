@@ -1,6 +1,6 @@
 {
   "name": "conv",
   "imports": {
-    "goal/internal/pipeline/testdata/extpkg": "internal/pipeline/testdata/extpkg"
+    "goal/internal/corpus/testdata/extpkg": "internal/corpus/testdata/extpkg"
   }
 }

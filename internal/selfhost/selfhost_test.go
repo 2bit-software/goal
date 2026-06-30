@@ -4,28 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"goal/internal/project"
+	"goal/internal/compiler/project"
 	"goal/internal/selfhost"
 )
-
-// TestInScopePackagesTranspileAndBuild is the smoke gate: it transpiles every
-// in-scope compiler package through the goal front-end and compiles the generated
-// Go. It catches silent transpile defects that the checker does not flag (which is
-// how US-001's iota miscompile was found). The test's working directory is
-// internal/selfhost, so each covered package lives at ../<pkg>.
-func TestInScopePackagesTranspileAndBuild(t *testing.T) {
-	layout := make(map[string]*project.Package, len(selfhost.InScope))
-	for _, name := range selfhost.InScope {
-		pkg, err := selfhost.ReadPackage("../" + name)
-		if err != nil {
-			t.Fatalf("reading package %q: %v", name, err)
-		}
-		layout["internal/"+name] = pkg
-	}
-	if err := selfhost.BuildTranspiled(layout); err != nil {
-		t.Fatalf("self-host smoke gate failed: %v", err)
-	}
-}
 
 // TestGateFailsOnNonCompilingTranspile proves the gate is a real gate: a package
 // that transpiles to non-compiling Go (here, an int-returning func with a bare

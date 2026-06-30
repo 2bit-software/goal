@@ -14,10 +14,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"goal/internal/backend"
-	"goal/internal/parser"
-	"goal/internal/pipeline"
-	"goal/internal/project"
+	"goal/internal/compiler/backend"
+	"goal/internal/compiler/parser"
+	"goal/internal/compiler/pipeline"
+	"goal/internal/compiler/project"
 )
 
 // InScope lists the compiler packages the smoke gate covers, by directory name

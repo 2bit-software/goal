@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"goal/internal/interp"
+	"goal/internal/compiler/interp"
 )
 
 // RunInterp executes one [KindDoctest] Case behaviorally through the goscript

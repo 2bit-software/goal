@@ -3,7 +3,7 @@ package corpus
 import (
 	"testing"
 
-	"goal/internal/backend"
+	"goal/internal/compiler/backend"
 )
 
 // manifestPath is the committed corpus manifest, relative to this package

@@ -1,6 +1,6 @@
 package conv
 
-import ext "goal/internal/pipeline/testdata/extpkg"
+import ext "goal/internal/corpus/testdata/extpkg"
 
 type Local struct {
 	ID    string

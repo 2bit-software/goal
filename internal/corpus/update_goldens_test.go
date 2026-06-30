@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"goal/internal/backend"
+	"goal/internal/compiler/backend"
 )
 
 // updateGoldens, when set, makes TestUpdateGoldens rewrite every exact-tier

@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"goal/internal/sema"
+	"goal/internal/compiler/sema"
 )
 
 // wantMarkerRe matches an inline expectation marker on a source line:
@@ -67,7 +67,10 @@ func RunCheck(root string, c Case, ck func(src string) ([]sema.Diagnostic, error
 			}
 		}
 		// An Error with no marker on its line is an unexpected rejection.
-		if d.Severity == sema.Error && len(wants[line]) == 0 {
+		// compiler/sema models Severity as a sealed interface, so test the
+		// concrete variant rather than comparing against a const.
+		_, isError := d.Severity.(sema.Severity_Error)
+		if isError && len(wants[line]) == 0 {
 			return fmt.Errorf("corpus: case %q: unexpected error at line %d: [%s] %s",
 				c.ID, line, d.Code, d.Message)
 		}

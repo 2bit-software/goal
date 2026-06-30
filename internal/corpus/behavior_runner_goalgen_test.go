@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"goal/internal/pipeline"
+	"goal/internal/compiler/pipeline"
 )
 
 // goalGenTranspiler drives a goal-built compiler binary (cmd/goal-gen, compiled

@@ -3,7 +3,7 @@ package corpus
 import (
 	"testing"
 
-	"goal/internal/backend"
+	"goal/internal/compiler/backend"
 )
 
 // TestDoctestRunner runs every doctest case in the committed manifest against

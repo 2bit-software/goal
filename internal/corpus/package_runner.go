@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"goal/internal/pipeline"
-	"goal/internal/project"
+	"goal/internal/compiler/pipeline"
+	"goal/internal/compiler/project"
 )
 
 // PackageTranspiler lowers a multi-file goal package to its Go output. It is the

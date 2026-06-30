@@ -860,7 +860,7 @@
           "testdata/package/foreign-derive/conv.goal"
         ],
         "imports": {
-          "goal/internal/pipeline/testdata/extpkg": "internal/pipeline/testdata/extpkg"
+          "goal/internal/corpus/testdata/extpkg": "internal/corpus/testdata/extpkg"
         }
       }
     },
