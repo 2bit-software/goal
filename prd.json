@@ -32,7 +32,7 @@
         "The ./selfhost directory no longer exists."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Mechanical move + import rewrite. Verified by `task fixpoint` (universal gate) staying green from the new path."
     },
     {

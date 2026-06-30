@@ -1,0 +1,61 @@
+// This file implements goal's variant CONSTRUCTION surface (REWRITE-ARCHITECTURE
+// §1.4): labeled-argument construction and composite-literal spread. These are
+// the value-producing counterparts to the destructuring patterns in
+// goal_match.go, and are kept structurally distinct from ordinary Go calls and
+// composite literals so the three meanings of `Enum.Variant(x)` never collide
+// (see ast/goal_expr.go).
+//
+//   - A call whose argument list contains at least one `Label: Value` argument
+//     is variant construction, parsed into an *ast.VariantLit with *ast.LabeledArg
+//     arguments (`Status.Active(since: now())`). A call with only positional
+//     arguments stays an ordinary *ast.CallExpr.
+//   - A leading `...X` element inside a composite literal is an *ast.SpreadElement
+//     (`...defaults`, `...derive(e)`), distinct from Go's trailing variadic call
+//     spread.
+package parser
+
+import (
+	"goal/internal/compiler/ast"
+	"goal/internal/compiler/token"
+)
+
+// parseCallArg parses one argument of a call. A `Label: Value` form (an
+// identifier immediately followed by a colon) is a labeled argument used in
+// variant construction; anything else is an ordinary positional expression.
+func (p *parser) parseCallArg() ast.Expr {
+	if p.at(token.IDENT) && p.peekKind() == token.COLON {
+		label := p.ident()
+		colon := p.expect(token.COLON)
+		return &ast.LabeledArg{Label: label, Colon: colon.Pos, Value: p.parseExpr()}
+	}
+	return p.parseExpr()
+}
+
+// makeVariantLit converts an already-parsed call (a fun applied to a labeled
+// argument list) into an *ast.VariantLit. The construction target's final dotted
+// segment is the variant tag; the prefix (if any) is the enum reference (an
+// *ast.Ident or, when further qualified, an *ast.SelectorExpr).
+func (p *parser) makeVariantLit(fun ast.Expr, lparen token.Pos, args []ast.Expr, rparen token.Pos) *ast.VariantLit {
+	vl := &ast.VariantLit{Lparen: lparen, Args: args, Rparen: rparen}
+	match fun {
+		*ast.SelectorExpr(f) => {
+			vl.Enum = f.X
+			vl.Variant = f.Sel
+		}
+		*ast.Ident(f) => {
+			vl.Variant = f
+		}
+		_ => {
+			p.errorf(fun.Pos(), "invalid variant construction target %T", fun)
+		}
+	}
+	return vl
+}
+
+// parseSpreadElement parses a `...X` composite-literal element into an
+// *ast.SpreadElement: `...defaults` (X is the `defaults` ident) or `...derive(e)`
+// (X is the `derive(e)` call).
+func (p *parser) parseSpreadElement() ast.Expr {
+	e := p.expect(token.ELLIPSIS)
+	return &ast.SpreadElement{Ellipsis: e.Pos, X: p.parseExpr()}
+}

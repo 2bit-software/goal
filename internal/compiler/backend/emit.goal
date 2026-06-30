@@ -1,0 +1,2551 @@
+package backend
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"goal/internal/compiler/ast"
+	"goal/internal/compiler/sema"
+	"goal/internal/compiler/token"
+)
+
+// emitter renders the plain-Go subset of the goal AST to Go source text. It is
+// backend/go: US-026 seeded it with the ordinary-Go nodes a no-goal-specific
+// fixture exercises, and US-032 completed the ordinary-Go statement set (notably
+// expression switch / case clauses) so the emitter covers the whole Go subset
+// the parser produces (package/import/func/var/const/type plus every statement,
+// expression, and type form). Any node it does not handle — every goal-specific
+// node (enum/match/`?`/construct/spread/assert, from/derive modifiers) — yields a
+// descriptive error, since those are lowered by later stories (US-033+).
+//
+// The emitter does not format: it emits syntactically valid, token-correct Go
+// (balanced braces, spaces between tokens), and the Formatter normalizes layout
+// afterward. So readability here is irrelevant; only parseability matters.
+type emitter struct {
+	b   strings.Builder
+	err error
+	// info carries the resolved semantic facts the goal-construct lowering reads
+	// (enums, sealed interfaces); nil-safe — the plain-Go subset ignores it.
+	info *sema.Info
+	// pointerRecv is the set of type names with a pointer-receiver method, used to
+	// address an `implements` assertion as `(*T)(nil)` rather than `T{}`.
+	pointerRecv map[string]bool
+	// fnKind is the enclosing function's Result/Option kind, so a `return
+	// Result.Ok/Err` / `return Option.Some/None` constructor lowers to the native
+	// (T, error) pair / pointer form. roNone outside a Result/Option function.
+	fnKind roKind
+	// renames maps an identifier to its replacement within the currently-emitting
+	// match arm body (e.g. an Ok binding `cfg` -> a gensym `v`). Empty outside a
+	// match arm; consulted by the Ident emission.
+	renames map[string]string
+	// armBinding / armFields scope an enum match arm's payload binding: armBinding
+	// is the source binding name (e.g. `a`) and armFields the variant's field-name
+	// set, so a field access on the binding (`a.since`) exports to the generated Go
+	// field (`<guard>.Since`). Both empty/nil outside an enum match arm.
+	armBinding string
+	armFields  map[string]bool
+	// fileIdents is the set of identifiers used anywhere in the file; it seeds each
+	// function's gensym collision set so a generated name never clashes with source.
+	fileIdents map[string]bool
+	// taken is the in-scope identifier set for the current function — fileIdents
+	// plus every name already minted by gensym in this function. Reset per funcDecl.
+	taken map[string]bool
+	// okName / errName are the current open-E Result function's generated success
+	// and error return names (scope-aware, no `__goal_` prefix). A Result `?` and a
+	// `return Result.Ok/Err` propagate through them; empty outside such a function.
+	okName, errName string
+	// closedT / closedE are the current closed-E Result function's success and error
+	// type names (the T and E in Result[T, E], E != error). The closed-E sum
+	// constructors and `?` propagation render `Ok[closedT, closedE]{…}` /
+	// `Err[closedT, closedE]{…}` from them; empty outside a closed-E function.
+	closedT, closedE string
+	// typeDecls maps each in-file `type X …` name to its underlying form ("struct",
+	// "interface", or an alias's underlying type text), so the §8.5 `...defaults`
+	// zero recovery can resolve a field type through alias chains. Built once per
+	// file by buildTypeDecls; the AST-native replacement for analyze's TypeDecls.
+	typeDecls map[string]string
+	// suppressPrelude tells file() not to emit the closed-E Result prelude inline.
+	// The package driver sets it so the shared prelude is emitted once for the whole
+	// package (in goal_prelude.go) rather than once per file. False for single-file.
+	suppressPrelude bool
+	// arity resolves the result count of package-qualified `?` callees (e.g.
+	// os.MkdirAll, toml.Unmarshal) through the file's imports, so an error-only
+	// call is not over-destructured. Nil-safe; falls back to stdlibErrorOnly.
+	arity *arityResolver
+	// usedOptionHelper records that a non-addressable value-position `Option.Some(x)`
+	// was lowered to a goalSome(...) call, so the boxing helper (optionPrelude) is
+	// appended to the file. Set by tryOptionValue; read by file()/the package driver.
+	usedOptionHelper bool
+	// recvTypes maps each receiver/parameter identifier of the current function to
+	// its base type name (star- and qualifier-stripped), so a `recv.M()?` callee can
+	// be resolved through the receiver's method set (info.Methods / info.Interfaces).
+	// Reset per funcDecl; nil outside a function body.
+	recvTypes map[string]string
+}
+
+// emitFile renders a whole *ast.File to Go source text, lowering goal-specific
+// constructs through info, or returns the first unsupported-node error
+// encountered.
+func emitFile(f *ast.File, info *sema.Info) (string, error) {
+	src, _, err := emitFileWith(f, info, false)
+	return src, err
+}
+
+// emitFileWith is emitFile with the prelude-suppression knob the package driver
+// uses: when suppressPrelude is true, the closed-E Result prelude and the Option
+// boxing helper are NOT emitted inline (the package emits shared copies instead).
+// Single-file emit passes false. It also reports usedOption — whether the file
+// produced a goalSome(...) call — so the package driver can emit the shared boxing
+// helper exactly once when any of its files needs it.
+func emitFileWith(f *ast.File, info *sema.Info, suppressPrelude bool) (src string, usedOption bool, err error) {
+	e := emitter{info: info, pointerRecv: pointerReceiverSet(f), fileIdents: fileIdentSet(f), suppressPrelude: suppressPrelude}
+	e.arity = newArityResolver(f)
+	e.typeDecls = e.buildTypeDecls(f)
+	e.file(f)
+	if e.err != nil {
+		return "", false, e.err
+	}
+	return e.b.String(), e.usedOptionHelper, nil
+}
+
+// gensym returns a fresh identifier built from want that collides with no name in
+// scope for the current function, reserving it for the rest of the function. It is
+// the scope-aware replacement for the magic `__goal_` prefix (US-035): the `?`
+// propagation and match lowerings name their temporaries through it, so a
+// generated name can never shadow a source identifier (e.g. a user's own `err`).
+func (e *emitter) gensym(want string) string {
+	if e.taken == nil {
+		e.taken = map[string]bool{}
+	}
+	name := want
+	for i := 1; e.taken[name]; i++ {
+		name = want + strconv.Itoa(i)
+	}
+	e.taken[name] = true
+	return name
+}
+
+// newScope returns a fresh copy of the file's identifier set — the collision base
+// for one function's gensyms, so names minted in one function do not perturb the
+// next.
+func (e *emitter) newScope() map[string]bool {
+	s := make(map[string]bool, len(e.fileIdents))
+	for k := range e.fileIdents {
+		s[k] = true
+	}
+	return s
+}
+
+// fail records the first error; subsequent emit calls short-circuit on it.
+func (e *emitter) fail(format string, args ...any) {
+	if e.err == nil {
+		e.err = fmt.Errorf("backend: "+format, args...)
+	}
+}
+
+func (e *emitter) p(s string) {
+	if e.err == nil {
+		e.b.WriteString(s)
+	}
+}
+
+func (e *emitter) file(f *ast.File) {
+	if f == nil || f.Name == nil {
+		e.fail("file has no package name")
+		return
+	}
+	e.p("package ")
+	e.p(f.Name.Name)
+	e.p("\n\n")
+	// A printf-message `assert` lowers to `fmt.Sprintf`, so the file needs the fmt
+	// import. Inject it once, right after the package clause (imports must precede
+	// other declarations), when the file uses fmt but does not already import it.
+	if needsFmtImport(f) && !importsPkg(f, "fmt") {
+		e.p("import \"fmt\"\n\n")
+	}
+	// When any function returns a closed-E Result, the generic sum encoding
+	// (resultPrelude, §8.1) must be in scope. It is emitted once, after the import
+	// declarations (imports must precede other decls) and before the first non-import
+	// declaration that may use it.
+	preludeDone := e.suppressPrelude || !needsResultPrelude(e.info)
+	for _, d := range f.Decls {
+		if !preludeDone && !isImportDecl(d) {
+			e.p(resultPrelude)
+			e.p("\n\n")
+			preludeDone = true
+		}
+		e.decl(d)
+		e.p("\n\n")
+	}
+	if !preludeDone {
+		// The file is all imports (or empty); emit the prelude after them.
+		e.p(resultPrelude)
+		e.p("\n\n")
+	}
+	// The Option boxing helper is appended last (package-level decls are
+	// order-independent) and only when a goalSome call was actually emitted into a
+	// value position; suppressPrelude (package mode) defers it to a shared file.
+	if !e.suppressPrelude && e.usedOptionHelper {
+		e.p(optionPrelude)
+		e.p("\n\n")
+	}
+}
+
+// isImportDecl reports whether d is an `import` declaration (so the closed-E
+// prelude can be placed after imports but before other declarations).
+func isImportDecl(d ast.Decl) bool {
+	gd, ok := d.(*ast.GenDecl)
+	return ok && gd.Tok.String() == "import"
+}
+
+func (e *emitter) decl(d ast.Decl) {
+	match d {
+		*ast.GenDecl(d) => {
+			e.genDecl(d)
+			// A struct `implements` clause lowers to a separate marker/assertion decl
+			// emitted right after the type declaration (the clause itself is dropped
+			// from the struct by structType).
+			e.implementsMarkers(d)
+		}
+		*ast.FuncDecl(d) => {
+			e.funcDecl(d)
+		}
+		*ast.EnumDecl(d) => {
+			e.enumDecl(d)
+		}
+		*ast.SealedInterfaceDecl(d) => {
+			e.sealedInterfaceDecl(d)
+		}
+		_ => {
+			e.fail("unsupported declaration %T", d)
+		}
+	}
+}
+
+// enumDecl lowers a goal `enum` to the §8.1 closed-sum encoding: a marker
+// interface, one struct per variant, and a marker method per variant. The
+// variants come from the resolved sema.Enum so a field type carrying an embedded
+// comma is rendered correctly.
+func (e *emitter) enumDecl(d *ast.EnumDecl) {
+	if d.Name == nil {
+		e.fail("enum declaration has no name")
+		return
+	}
+	en := enumOf(e.info, d.Name.Name)
+	if en == nil {
+		e.fail("enum %s not resolved", d.Name.Name)
+		return
+	}
+	e.p(genEnum(en))
+}
+
+// sealedInterfaceDecl lowers `sealed interface Name { methods }` to a Go interface
+// that preserves the declared method signatures alongside the synthesized marker
+// method, e.g. `type Name interface { Pos() Position; End() Position; isName() }`.
+// An empty body keeps the compact marker-only form `type Name interface{ isName() }`
+// (byte-identical to the prior lowering, so self-host fixpoint is unaffected).
+func (e *emitter) sealedInterfaceDecl(d *ast.SealedInterfaceDecl) {
+	if d.Name == nil {
+		e.fail("sealed interface declaration has no name")
+		return
+	}
+	if d.Methods == nil || len(d.Methods.List) == 0 {
+		e.p(genSealedInterface(d.Name.Name))
+		return
+	}
+	e.p("type " + d.Name.Name + " interface {\n")
+	for _, m := range d.Methods.List {
+		e.interfaceMethod(m)
+		e.p("\n")
+	}
+	e.p("is" + d.Name.Name + "()\n}")
+}
+
+// implementsMarkers emits the §8.5 marker/assertion for every struct in d that
+// carries an `implements` clause: a sealed interface yields the marker method
+// `func (T) isI() {}`; an ordinary interface yields the compile-time assertion
+// `var _ I = T{}` (or `var _ I = (*T)(nil)` when T has a pointer-receiver method).
+func (e *emitter) implementsMarkers(d *ast.GenDecl) {
+	for _, s := range d.Specs {
+		ts, ok := s.(*ast.TypeSpec)
+		if !ok || ts.Name == nil {
+			continue
+		}
+		st, ok := ts.Type.(*ast.StructType)
+		if !ok || st.Implements == nil {
+			continue
+		}
+		e.p("\n\n")
+		e.implementsMarker(ts.Name.Name, st.Implements)
+	}
+}
+
+func (e *emitter) implementsMarker(typeName string, clause *ast.ImplementsClause) {
+	iface := typeExprName(clause.Type)
+	if iface == "" {
+		e.fail("implements clause on %s has an unsupported interface type %T", typeName, clause.Type)
+		return
+	}
+	switch {
+	case isSealed(e.info, iface):
+		e.p(genMarkerMethod(typeName, iface))
+		// A nested sealed hierarchy needs a marker per embedded sealed interface:
+		// `implements B` where sealed B embeds sealed A must also emit isA(), since
+		// B's Go interface folds in A's method set (including the isA() marker).
+		for _, emb := range sealedEmbeds(e.info, iface) {
+			e.p("\n\n")
+			e.p(genMarkerMethod(typeName, emb))
+		}
+	case e.pointerRecv[typeName]:
+		e.p(fmt.Sprintf("var _ %s = (*%s)(nil)", iface, typeName))
+	default:
+		e.p(fmt.Sprintf("var _ %s = %s{}", iface, typeName))
+	}
+}
+
+// typeExprName renders a (possibly qualified) type name expression — an *Ident
+// (`Shape`), a *SelectorExpr (`io.Writer`), or a pointer to one — to its text, or
+// "" if the shape is unsupported.
+func typeExprName(x ast.Expr) string {
+	match x {
+		*ast.Ident(x) => {
+			return x.Name
+		}
+		*ast.SelectorExpr(x) => {
+			base := typeExprName(x.X)
+			if base == "" || x.Sel == nil {
+				return ""
+			}
+			return base + "." + x.Sel.Name
+		}
+		*ast.StarExpr(x) => {
+			inner := typeExprName(x.X)
+			if inner == "" {
+				return ""
+			}
+			return "*" + inner
+		}
+		_ => {
+			return ""
+		}
+	}
+}
+
+func (e *emitter) genDecl(d *ast.GenDecl) {
+	e.p(d.Tok.String())
+	e.p(" ")
+	multi := len(d.Specs) > 1
+	if multi {
+		e.p("(\n")
+	}
+	for _, s := range d.Specs {
+		e.spec(s)
+		e.p("\n")
+	}
+	if multi {
+		e.p(")")
+	}
+}
+
+func (e *emitter) spec(s ast.Spec) {
+	match s {
+		*ast.ImportSpec(s) => {
+			if s.Name != nil {
+				e.p(s.Name.Name)
+				e.p(" ")
+			}
+			if s.Path != nil {
+				e.p(s.Path.Value)
+			}
+		}
+		*ast.ValueSpec(s) => {
+			e.identList(s.Names)
+			if s.Type != nil {
+				e.p(" ")
+				e.expr(s.Type)
+			}
+			if len(s.Values) > 0 {
+				e.p(" = ")
+				e.exprList(s.Values)
+			}
+		}
+		*ast.TypeSpec(s) => {
+			if s.Name != nil {
+				e.p(s.Name.Name)
+			}
+			if s.TypeParams != nil {
+				e.fieldList(s.TypeParams, "[", "]")
+			}
+			e.p(" ")
+			if s.Assign != (token.Pos{}) {
+				e.p("= ")
+			}
+			e.expr(s.Type)
+		}
+		_ => {
+			e.fail("unsupported spec %T", s)
+		}
+	}
+}
+
+func (e *emitter) funcDecl(d *ast.FuncDecl) {
+	// A `derive func` is expanded wholesale into a generated conversion function
+	// (§12); it has no ordinary body to emit, so deriveDecl owns the whole
+	// declaration and returns. A `from func` (and a plain func) emits as an
+	// ordinary Go function: the `from` marker is compile-time only (its
+	// source->target registration lives in sema.FromRegistry), with no syntactic
+	// residue, so its body lowers through the ordinary emitter paths below.
+	isDerive := match d.Mod {
+		ast.FuncMod.FuncPlain => false
+		ast.FuncMod.FuncFrom => false
+		ast.FuncMod.FuncDerive => true
+	}
+	if isDerive {
+		e.deriveDecl(d)
+		return
+	}
+	// Enter the function's gensym scope: seed the collision set with the source's
+	// identifiers and, for an open-E Result function, mint the success/error return
+	// names up front so the signature and the body's `?`/match lowering reference
+	// them identically. A closed-E Result function records its T/E so the sum
+	// constructors and `?` propagation render the Ok/Err carriers. All saved/restored
+	// so a sibling function starts clean (and a nested func literal cannot leak its
+	// kind or names outward).
+	kind, _ := resultOptionKind(d.Type)
+	var closedT, closedE string
+	if t, eType, ok := e.closedResultTE(d); ok {
+		kind, closedT, closedE = roResultClosed, t, eType
+	}
+	prevKind, prevOk, prevErr, prevTaken := e.fnKind, e.okName, e.errName, e.taken
+	prevClosedT, prevClosedE := e.closedT, e.closedE
+	prevRecvTypes := e.recvTypes
+	e.fnKind, e.taken, e.okName, e.errName = kind, e.newScope(), "", ""
+	e.closedT, e.closedE = closedT, closedE
+	e.recvTypes = e.buildRecvTypes(d)
+	if kind == roResultOpen {
+		e.okName = e.gensym("ok")
+		e.errName = e.gensym("err")
+	}
+	defer func() {
+		e.fnKind, e.okName, e.errName, e.taken = prevKind, prevOk, prevErr, prevTaken
+		e.closedT, e.closedE = prevClosedT, prevClosedE
+		e.recvTypes = prevRecvTypes
+	}()
+
+	e.p("func ")
+	if d.Recv != nil {
+		e.fieldList(d.Recv, "(", ")")
+		e.p(" ")
+	}
+	if d.Name != nil {
+		e.p(d.Name.Name)
+	}
+	e.funcSig(d.Type)
+	if d.Body != nil {
+		e.p(" ")
+		e.block(d.Body)
+	}
+}
+
+// closedResultTE reports the T and E type texts of a closed-E Result[T, E] return
+// (E a named type, not error). It prefers the resolved signature for a plain
+// function and falls back to the declaration's own result-type AST for a method —
+// sema keys methods by receiver, not in FuncSignatures, so the name lookup alone
+// would miss them and leave the body's Result.Ok/Err constructors unlowered.
+func (e *emitter) closedResultTE(d *ast.FuncDecl) (t, eType string, ok bool) {
+	if d.Name != nil && e.info != nil && e.info.FuncSignatures != nil {
+		if sig, found := e.info.FuncSignatures[d.Name.Name]; found {
+			isClosed := match sig.Mode {
+				sema.Mode.ModeResultClosed => true
+				sema.Mode.ModeResult => false
+				sema.Mode.ModeOption => false
+				sema.Mode.ModeNone => false
+			}
+			if isClosed {
+				return sig.T, sig.E, true
+			}
+		}
+	}
+	il, isList := closedResultType(d.Type)
+	if !isList {
+		return "", "", false
+	}
+	return e.exprText(il.Indices[0]), e.exprText(il.Indices[1]), true
+}
+
+// funcSig emits the parameter and result lists of a signature.
+func (e *emitter) funcSig(t *ast.FuncType) {
+	if t == nil {
+		e.fail("function has no signature")
+		return
+	}
+	// A generic function's type-parameter list prints between the name and the
+	// value parameters, e.g. `func Identity[T any](x T) T`. Mirror the TypeSpec
+	// type-parameter emission.
+	if t.TypeParams != nil {
+		e.fieldList(t.TypeParams, "[", "]")
+	}
+	e.fieldList(t.Params, "(", ")")
+	if t.Results != nil && len(t.Results.List) > 0 {
+		e.p(" ")
+		// An open-E Result[T, error] return lowers to native named Go returns
+		// (ok T, err error, scope-aware gensyms): the named success return makes the
+		// Err-path zero value available without synthesizing a type-specific zero
+		// literal (§8.3). An Option[T] return needs no special case here — it falls
+		// through to the IndexExpr lowering, which renders *T.
+		if kind, success := resultOptionKind(t); kind == roResultOpen {
+			// In a function declaration these names are minted by funcDecl; in a
+			// bodyless context (an interface method, a func-type expression) there is
+			// no body to agree with, so fall back to plain unused named returns.
+			ok, errn := e.okName, e.errName
+			if ok == "" {
+				ok = "ok"
+			}
+			if errn == "" {
+				errn = "err"
+			}
+			e.p("(" + ok + " ")
+			e.expr(success)
+			e.p(", " + errn + " error)")
+			return
+		}
+		// Multiple results, or a single named result, need parentheses; a single
+		// unnamed result does not. gofmt will drop redundant parens, so we always
+		// parenthesize when there is more than one field or any field is named.
+		if len(t.Results.List) > 1 || len(t.Results.List[0].Names) > 0 {
+			e.fieldList(t.Results, "(", ")")
+		} else {
+			e.expr(t.Results.List[0].Type)
+		}
+	}
+}
+
+// fieldList emits a comma-separated, parenthesized field list — the form used by
+// parameter, result, and receiver lists. Struct fields and interface methods are
+// NOT comma-separated (commas there are a Go syntax error gofmt cannot repair);
+// they go through structType / interfaceType, which newline-separate instead.
+func (e *emitter) fieldList(fl *ast.FieldList, open, close string) {
+	e.p(open)
+	if fl != nil {
+		for i, f := range fl.List {
+			if i > 0 {
+				e.p(", ")
+			}
+			e.field(f)
+		}
+	}
+	e.p(close)
+}
+
+// structType emits a struct type. Fields are newline-separated (a comma between
+// struct fields is a Go syntax error); gofmt then aligns them. A goal
+// `implements` clause is dropped here — the satisfaction marker/assertion it
+// implies is emitted as a separate decl by implementsMarkers — so the struct
+// itself renders as plain Go.
+func (e *emitter) structType(x *ast.StructType) {
+	e.p("struct {\n")
+	if x.Fields != nil {
+		for _, f := range x.Fields.List {
+			e.field(f)
+			e.p("\n")
+		}
+	}
+	e.p("}")
+}
+
+// interfaceType emits an interface type. Each element is on its own line: a named
+// method renders as `Name(params) results` (no `func` keyword), an embedded
+// interface as its type name.
+func (e *emitter) interfaceType(x *ast.InterfaceType) {
+	e.p("interface {\n")
+	if x.Methods != nil {
+		for _, m := range x.Methods.List {
+			e.interfaceMethod(m)
+			e.p("\n")
+		}
+	}
+	e.p("}")
+}
+
+// interfaceMethod emits a single interface element (no trailing newline): a named
+// method renders as `Name(params) results` (no `func` keyword), an embedded
+// interface as its type name. Shared by interfaceType and sealedInterfaceDecl.
+func (e *emitter) interfaceMethod(m *ast.Field) {
+	if len(m.Names) > 0 {
+		e.identList(m.Names)
+		if ft, ok := m.Type.(*ast.FuncType); ok {
+			e.funcSig(ft)
+		} else if m.Type != nil {
+			e.p(" ")
+			e.expr(m.Type)
+		}
+	} else if m.Type != nil {
+		e.expr(m.Type)
+	}
+}
+
+func (e *emitter) field(f *ast.Field) {
+	if len(f.Names) > 0 {
+		e.identList(f.Names)
+		e.p(" ")
+	}
+	if f.Type != nil {
+		e.expr(f.Type)
+	}
+	if f.Tag != nil {
+		e.p(" ")
+		e.p(f.Tag.Value)
+	}
+}
+
+func (e *emitter) block(b *ast.BlockStmt) {
+	e.p("{\n")
+	for _, s := range b.List {
+		e.stmt(s)
+		e.p("\n")
+	}
+	e.p("}")
+}
+
+func (e *emitter) stmt(s ast.Stmt) {
+	match s {
+		*ast.BlockStmt(s) => {
+			e.block(s)
+		}
+		*ast.ExprStmt(s) => {
+			// A statement-position `match` over a Result/Option lowers to an if/else
+			// split (§8.3/§8.4); a bare `expr?` discards the unwrapped value and
+			// propagates only the failure; any other expression statement emits verbatim.
+			match s.X {
+				*ast.MatchExpr(x) => {
+					e.matchStmt(x)
+				}
+				*ast.UnwrapExpr(x) => {
+					e.unwrap("_", x, true)
+				}
+				_ => {
+					e.expr(s.X)
+				}
+			}
+		}
+		*ast.AssignStmt(s) => {
+		// `name := match …` over an enum lowers to a `var name T` declaration (T
+		// inferred from the arm bodies) followed by a value-position type-switch whose
+		// arms assign `name = <body>`. Mirrors the explicitly-typed `var name T = match`
+		// form (tryVarMatch); the only difference is the result type is inferred.
+		if e.tryAssignMatch(s) {
+			return
+		}
+		// `name := expr?` / `_ := expr?` lowers the `?` propagation (§3.7, §8.3): the
+		// unwrapped value binds to name (or is discarded), the failure early-returns.
+		if len(s.Rhs) == 1 {
+			if u, ok := s.Rhs[0].(*ast.UnwrapExpr); ok {
+				name := "_"
+				if len(s.Lhs) == 1 {
+					if id, ok := s.Lhs[0].(*ast.Ident); ok {
+						name = id.Name
+					}
+				}
+				e.unwrap(name, u, name == "_")
+				return
+			}
+		}
+		e.exprList(s.Lhs)
+		e.p(" ")
+		e.p(s.Tok.String())
+		e.p(" ")
+		e.exprList(s.Rhs)
+		}
+		*ast.IncDecStmt(s) => {
+			e.expr(s.X)
+			e.p(s.Tok.String())
+		}
+		*ast.ReturnStmt(s) => {
+			e.returnStmt(s)
+		}
+		*ast.IfStmt(s) => {
+			e.ifStmt(s)
+		}
+		*ast.ForStmt(s) => {
+			e.forStmt(s)
+		}
+		*ast.RangeStmt(s) => {
+			e.rangeStmt(s)
+		}
+		*ast.SwitchStmt(s) => {
+			e.switchStmt(s)
+		}
+		*ast.TypeSwitchStmt(s) => {
+			e.typeSwitchStmt(s)
+		}
+		*ast.SelectStmt(s) => {
+			e.selectStmt(s)
+		}
+		*ast.SendStmt(s) => {
+			e.expr(s.Chan)
+			e.p(" <- ")
+			e.expr(s.Value)
+		}
+		*ast.LabeledStmt(s) => {
+			e.p(s.Label.Name)
+			e.p(":\n")
+			e.stmt(s.Stmt)
+		}
+		*ast.DeclStmt(s) => {
+			// `var name T = match …` over an enum lowers to a `var name T` declaration
+			// followed by a value-position type-switch whose arms assign `name = <body>`.
+			if e.tryVarMatch(s.Decl) {
+				return
+			}
+			e.decl(s.Decl)
+		}
+		*ast.DeferStmt(s) => {
+			e.p("defer ")
+			e.expr(s.Call)
+		}
+		*ast.GoStmt(s) => {
+			e.p("go ")
+			e.expr(s.Call)
+		}
+		*ast.BranchStmt(s) => {
+			e.p(s.Tok.String())
+			if s.Label != nil {
+				e.p(" ")
+				e.p(s.Label.Name)
+			}
+		}
+		*ast.AssertStmt(s) => {
+			e.assertStmt(s)
+		}
+		*ast.EmptyStmt => {
+			// nothing
+		}
+		_ => {
+			e.fail("unsupported statement %T", s)
+		}
+	}
+}
+
+// assertStmt lowers a goal `assert` to a runtime guard `if !(<cond>) { panic(...) }`
+// (§4.3/§8.6). Unlike the erased static guarantees, the check survives into the
+// generated Go; the panic message always carries the source-expression text (the
+// located-feedback rule), and the printf-message form appends
+// `: " + fmt.Sprintf(fmt, args…)`. Mirrors internal/pass.Assert but reads the
+// parsed Cond/Msg/Args rather than re-scanning the source line.
+func (e *emitter) assertStmt(s *ast.AssertStmt) {
+	if s.Cond == nil {
+		e.fail("assert statement has no condition")
+		return
+	}
+	condText := e.exprText(s.Cond)
+	e.p("if !(")
+	e.expr(s.Cond)
+	e.p(") { panic(")
+	if s.Msg == nil {
+		e.p(strconv.Quote("assertion failed: " + condText))
+	} else {
+		e.p(strconv.Quote("assertion failed: " + condText + ": "))
+		e.p(" + fmt.Sprintf(")
+		e.expr(s.Msg)
+		for _, a := range s.Args {
+			e.p(", ")
+			e.expr(a)
+		}
+		e.p(")")
+	}
+	e.p(") }")
+}
+
+func (e *emitter) ifStmt(s *ast.IfStmt) {
+	e.p("if ")
+	if s.Init != nil {
+		e.stmt(s.Init)
+		e.p("; ")
+	}
+	e.expr(s.Cond)
+	e.p(" ")
+	e.block(s.Body)
+	if s.Else != nil {
+		e.p(" else ")
+		e.stmt(s.Else)
+	}
+}
+
+func (e *emitter) forStmt(s *ast.ForStmt) {
+	e.p("for ")
+	if s.Init != nil || s.Post != nil {
+		if s.Init != nil {
+			e.stmt(s.Init)
+		}
+		e.p("; ")
+		if s.Cond != nil {
+			e.expr(s.Cond)
+		}
+		e.p("; ")
+		if s.Post != nil {
+			e.stmt(s.Post)
+		}
+		e.p(" ")
+	} else if s.Cond != nil {
+		e.expr(s.Cond)
+		e.p(" ")
+	}
+	e.block(s.Body)
+}
+
+// switchStmt emits an expression switch: an optional init statement, an optional
+// tag expression, and a brace block of case/default clauses. Like the if/for
+// headers, the tag is just an expression and the clauses carry their own
+// statement lists; gofmt normalizes the layout afterward.
+func (e *emitter) switchStmt(s *ast.SwitchStmt) {
+	e.p("switch ")
+	if s.Init != nil {
+		e.stmt(s.Init)
+		e.p("; ")
+	}
+	if s.Tag != nil {
+		e.expr(s.Tag)
+		e.p(" ")
+	}
+	e.p("{\n")
+	if s.Body != nil {
+		for _, c := range s.Body.List {
+			cc, ok := c.(*ast.CaseClause)
+			if !ok {
+				e.fail("unsupported switch body element %T (expected case clause)", c)
+				return
+			}
+			e.caseClause(cc)
+		}
+	}
+	e.p("}")
+}
+
+// caseClause emits one clause of a switch: "case e1, e2:" (a non-empty
+// expression list) or "default:" (an empty list), followed by the clause's
+// statement list.
+func (e *emitter) caseClause(c *ast.CaseClause) {
+	if len(c.List) > 0 {
+		e.p("case ")
+		e.exprList(c.List)
+		e.p(":\n")
+	} else {
+		e.p("default:\n")
+	}
+	for _, s := range c.Body {
+		e.stmt(s)
+		e.p("\n")
+	}
+}
+
+// typeSwitchStmt emits a type switch: "switch [init;] [v :=] x.(type) { ... }".
+// The guard (Assign) is an ExprStmt holding the x.(type) assertion or an
+// AssignStmt "v := x.(type)"; the body reuses caseClause, whose case lists are
+// the asserted types.
+func (e *emitter) typeSwitchStmt(s *ast.TypeSwitchStmt) {
+	e.p("switch ")
+	if s.Init != nil {
+		e.stmt(s.Init)
+		e.p("; ")
+	}
+	e.stmt(s.Assign)
+	e.p(" {\n")
+	if s.Body != nil {
+		for _, c := range s.Body.List {
+			cc, ok := c.(*ast.CaseClause)
+			if !ok {
+				e.fail("unsupported type-switch body element %T (expected case clause)", c)
+				return
+			}
+			e.caseClause(cc)
+		}
+	}
+	e.p("}")
+}
+
+// selectStmt emits a select statement and its comm clauses.
+func (e *emitter) selectStmt(s *ast.SelectStmt) {
+	e.p("select {\n")
+	if s.Body != nil {
+		for _, c := range s.Body.List {
+			cc, ok := c.(*ast.CommClause)
+			if !ok {
+				e.fail("unsupported select body element %T (expected comm clause)", c)
+				return
+			}
+			e.commClause(cc)
+		}
+	}
+	e.p("}")
+}
+
+// commClause emits one clause of a select: "case <send-or-recv>:" or "default:",
+// followed by the clause's statement list.
+func (e *emitter) commClause(c *ast.CommClause) {
+	if c.Comm != nil {
+		e.p("case ")
+		e.stmt(c.Comm)
+		e.p(":\n")
+	} else {
+		e.p("default:\n")
+	}
+	for _, s := range c.Body {
+		e.stmt(s)
+		e.p("\n")
+	}
+}
+
+func (e *emitter) rangeStmt(s *ast.RangeStmt) {
+	e.p("for ")
+	if s.Key != nil {
+		e.expr(s.Key)
+		if s.Value != nil {
+			e.p(", ")
+			e.expr(s.Value)
+		}
+		e.p(" ")
+		e.p(s.Tok.String())
+		e.p(" ")
+	}
+	e.p("range ")
+	e.expr(s.X)
+	e.p(" ")
+	e.block(s.Body)
+}
+
+func (e *emitter) expr(x ast.Expr) {
+	// An Option construction (`Option.None` / `Option.Some(x)`) produced in any
+	// value position — a var/assign RHS, a call argument, a struct field, or a
+	// slice/map element — lowers to its `*T` pointer encoding here, so optional
+	// values compose anywhere, not only at a direct return or Result.Ok payload.
+	if e.tryOptionValue(x) {
+		return
+	}
+	match x {
+		*ast.Ident(x) => {
+			// A match-arm binding rename (e.g. the Ok payload `cfg` -> a gensym `v`)
+			// applies here; outside a renaming arm, renames is empty.
+			if r, ok := e.renames[x.Name]; ok {
+				e.p(r)
+			} else {
+				e.p(x.Name)
+			}
+		}
+		*ast.BasicLit(x) => {
+			e.p(x.Value)
+		}
+		*ast.ParenExpr(x) => {
+			e.p("(")
+			e.expr(x.X)
+			e.p(")")
+		}
+		*ast.UnaryExpr(x) => {
+			e.p(x.Op.String())
+			e.expr(x.X)
+		}
+		*ast.BinaryExpr(x) => {
+			e.expr(x.X)
+			e.p(" ")
+			e.p(x.Op.String())
+			e.p(" ")
+			e.expr(x.Y)
+		}
+		*ast.SelectorExpr(x) => {
+			e.selectorExpr(x)
+		}
+		*ast.VariantLit(x) => {
+			e.variantLit(x)
+		}
+		*ast.StarExpr(x) => {
+			e.p("*")
+			e.expr(x.X)
+		}
+		*ast.IndexExpr(x) => {
+			e.indexExpr(x)
+		}
+		*ast.IndexListExpr(x) => {
+			e.expr(x.X)
+			e.p("[")
+			e.exprList(x.Indices)
+			e.p("]")
+		}
+		*ast.SliceExpr(x) => {
+			e.sliceExpr(x)
+		}
+		*ast.CallExpr(x) => {
+			e.expr(x.Fun)
+			e.p("(")
+			e.exprList(x.Args)
+			if x.Ellipsis.IsValid() {
+				e.p("...")
+			}
+			e.p(")")
+		}
+		*ast.TypeAssertExpr(x) => {
+			e.expr(x.X)
+			e.p(".(")
+			if x.Type == nil {
+				e.p("type")
+			} else {
+				e.expr(x.Type)
+			}
+			e.p(")")
+		}
+		*ast.KeyValueExpr(x) => {
+			e.expr(x.Key)
+			e.p(": ")
+			e.expr(x.Value)
+		}
+		*ast.CompositeLit(x) => {
+			e.compositeLit(x)
+		}
+		*ast.FuncLit(x) => {
+			e.p("func")
+			e.funcSig(x.Type)
+			e.p(" ")
+			e.block(x.Body)
+		}
+		// Type expressions.
+		*ast.ArrayType(x) => {
+			e.p("[")
+			if x.Len != nil {
+				e.expr(x.Len)
+			}
+			e.p("]")
+			e.expr(x.Elt)
+		}
+		*ast.MapType(x) => {
+			e.p("map[")
+			e.expr(x.Key)
+			e.p("]")
+			e.expr(x.Value)
+		}
+		*ast.StructType(x) => {
+			e.structType(x)
+		}
+		*ast.InterfaceType(x) => {
+			e.interfaceType(x)
+		}
+		*ast.FuncType(x) => {
+			e.p("func")
+			e.funcSig(x)
+		}
+		*ast.ChanType(x) => {
+			e.chanType(x)
+		}
+		*ast.Ellipsis(x) => {
+			e.p("...")
+			if x.Elt != nil {
+				e.expr(x.Elt)
+			}
+		}
+		_ => {
+			e.fail("unsupported expression %T", x)
+		}
+	}
+}
+
+// selectorExpr emits a selector, lowering a data-less enum variant reference —
+// local (`Status.Pending`) or package-qualified (`pkg.Enum.Variant`), both of which
+// parse to a SelectorExpr — to its construction encoding `key(key_Variant{})`. The
+// guard (enumRef) requires the base to name a resolved enum whose variant set contains
+// the selector, so ordinary selectors (`io.Writer`, `c.n`) are emitted unchanged.
+func (e *emitter) selectorExpr(x *ast.SelectorExpr) {
+	if key, ok := enumRef(x.X); ok && x.Sel != nil {
+		// A data-less variant reference, local (`Status.Pending`) or package-qualified
+		// (`pkg.Enum.Variant`), lowers to its §8.1 construction `key(key_Variant{})`.
+		if en := enumOf(e.info, key); en != nil && en.VSet[x.Sel.Name] {
+			e.p(fmt.Sprintf("%s(%s_%s{})", key, key, x.Sel.Name))
+			return
+		}
+	}
+	e.expr(x.X)
+	e.p(".")
+	if x.Sel != nil {
+		// A field access on the current enum match arm's payload binding
+		// (`a.since`) addresses the generated, exported struct field
+		// (`<guard>.Since`); the binding ident itself is rewritten by renames.
+		if id, ok := x.X.(*ast.Ident); ok && id.Name == e.armBinding && e.armFields[x.Sel.Name] {
+			e.p(exported(x.Sel.Name))
+			return
+		}
+		e.p(x.Sel.Name)
+	}
+}
+
+// variantLit emits a payload variant construction `Enum.V(label: x)` as its
+// encoding `Enum(Enum_V{Label: x})`: labels are exported and argument values are
+// emitted recursively, so a nested construction in a payload lowers for free.
+func (e *emitter) variantLit(x *ast.VariantLit) {
+	key, ok := enumRef(x.Enum)
+	if !ok || enumOf(e.info, key) == nil {
+		e.fail("unsupported variant construction (enum not resolved): %T", x.Enum)
+		return
+	}
+	if x.Variant == nil {
+		e.fail("variant construction has no variant tag")
+		return
+	}
+	e.p(fmt.Sprintf("%s(%s_%s{", key, key, x.Variant.Name))
+	for i, a := range x.Args {
+		if i > 0 {
+			e.p(", ")
+		}
+		la, ok := a.(*ast.LabeledArg)
+		if !ok {
+			e.fail("unsupported non-labeled variant argument %T", a)
+			return
+		}
+		if la.Label != nil {
+			e.p(exported(la.Label.Name))
+			e.p(": ")
+		}
+		e.expr(la.Value)
+	}
+	e.p("})")
+}
+
+// exprText renders an expression to its Go source text without writing it to the
+// main output — used for the `assert` panic message (the source-expression text)
+// and an alias's underlying type. It renders through a fresh sub-emitter that shares
+// the lowering context (info/renames/typeDecls), so a copied-Builder panic from
+// swapping e.b is avoided and any lowering inside the expression is applied.
+func (e *emitter) exprText(x ast.Expr) string {
+	sub := &emitter{
+		info:        e.info,
+		pointerRecv: e.pointerRecv,
+		renames:     e.renames,
+		armBinding:  e.armBinding,
+		armFields:   e.armFields,
+		fileIdents:  e.fileIdents,
+		typeDecls:   e.typeDecls,
+	}
+	sub.expr(x)
+	return sub.b.String()
+}
+
+// buildTypeDecls maps each in-file `type X …` to its underlying form: "struct",
+// "interface", or — for an alias — the rendered underlying type text. The §8.5
+// `...defaults` zero recovery resolves a field type through these alias chains. It
+// is the AST-native replacement for analyze.Tables.TypeDecls (token-scanned).
+func (e *emitter) buildTypeDecls(f *ast.File) map[string]string {
+	m := map[string]string{}
+	if f == nil {
+		return m
+	}
+	for _, d := range f.Decls {
+		gd, ok := d.(*ast.GenDecl)
+		if !ok || gd.Tok.String() != "type" {
+			continue
+		}
+		for _, s := range gd.Specs {
+			ts, ok := s.(*ast.TypeSpec)
+			if !ok || ts.Name == nil {
+				continue
+			}
+			match ts.Type {
+				*ast.StructType => {
+					m[ts.Name.Name] = "struct"
+				}
+				*ast.InterfaceType => {
+					m[ts.Name.Name] = "interface"
+				}
+				_ => {
+					m[ts.Name.Name] = e.exprText(ts.Type)
+				}
+			}
+		}
+	}
+	return m
+}
+
+// compositeLit emits a composite literal, expanding a `...defaults` spread element
+// (§8.5) into explicit per-field zero values for the struct's omitted fields so the
+// generated literal is complete. Every other element emits verbatim; a non-`defaults`
+// spread (`...derive`) is a later story (US-039).
+func (e *emitter) compositeLit(x *ast.CompositeLit) {
+	if x.Type != nil {
+		e.expr(x.Type)
+	}
+	e.p("{")
+	first := true
+	sep := func() {
+		if !first {
+			e.p(", ")
+		}
+		first = false
+	}
+	for _, el := range x.Elts {
+		if sp, ok := el.(*ast.SpreadElement); ok {
+			id, ok := sp.X.(*ast.Ident)
+			if !ok || id.Name != "defaults" {
+				e.fail("unsupported spread element in composite literal: only `...defaults` is lowered (`...derive` is a later story)")
+				return
+			}
+			for _, entry := range e.defaultEntries(x) {
+				sep()
+				e.p(entry)
+			}
+			continue
+		}
+		sep()
+		e.expr(el)
+	}
+	e.p("}")
+}
+
+// defaultEntries returns the `name: <zero>` entries a `...defaults` element expands
+// to: one per declared struct field not already set in the literal, each filled with
+// its type's safe Go zero. A field whose zero is unsafe (a nil pointer/map/chan/func,
+// a sum type, or a method-bearing interface) is a located error, not a silent zero.
+// Mirrors internal/pass.Defaults over the resolved AST + sema facts.
+func (e *emitter) defaultEntries(x *ast.CompositeLit) []string {
+	id, ok := x.Type.(*ast.Ident)
+	if !ok {
+		e.fail("`...defaults` is not inside a named struct literal")
+		return nil
+	}
+	fields, ok := structFieldsOf(e.info, id.Name)
+	if !ok {
+		e.fail("`...defaults` for unknown struct type %q (no `type %s struct{…}` in this file)", id.Name, id.Name)
+		return nil
+	}
+	present := presentFieldNames(x.Elts)
+	var entries []string
+	for _, f := range fields {
+		if present[f.Name] {
+			continue
+		}
+		if reason := zeroSafety(f.Type, e.typeDecls, e.info, 0); reason != "" {
+			e.fail("`...defaults` cannot default field `%s` of type `%s`: %s", f.Name, f.Type, reason)
+			return nil
+		}
+		entries = append(entries, fmt.Sprintf("%s: %s", f.Name, zeroLit(f.Type, e.typeDecls, 0)))
+	}
+	return entries
+}
+
+// deriveOverride is one entry of a bodied derive func's returned composite
+// literal: a verbatim `Field: expr` override (Value), or a `Field: _` skip
+// (Skip), keyed by the target field Name.
+type deriveOverride struct {
+	Name  string
+	Skip  bool
+	Value ast.Expr
+}
+
+// deriveDecl lowers a goal `derive func name(src S) T` (§12) into a generated Go
+// conversion function: it declares `var out T`, assigns each target field from
+// its same-named source field via resolveField (identity, a registered leaf
+// conversion, or container recursion), and returns out. A bodied derive may
+// override fields verbatim, skip a field with `_`, and fill the rest with
+// `...derive(src)`. Reads the resolved struct fields and from-registry off
+// sema.Info, never the source text (FR-6). Mirrors internal/pass.Derive.
+func (e *emitter) deriveDecl(d *ast.FuncDecl) {
+	if d.Name == nil || d.Type == nil {
+		e.fail("derive func has no name or signature")
+		return
+	}
+	if d.Type.Params == nil || len(d.Type.Params.List) == 0 ||
+		len(d.Type.Params.List[0].Names) == 0 {
+		e.fail("derive %s: needs a single named source parameter", d.Name.Name)
+		return
+	}
+	srcName := d.Type.Params.List[0].Names[0].Name
+	srcType := typeExprString(d.Type.Params.List[0].Type)
+	tgtType, fallible, ok := deriveTarget(d.Type.Results)
+	if !ok {
+		e.fail("derive %s: cannot determine target type from result list", d.Name.Name)
+		return
+	}
+	overrides := e.deriveOverrides(d.Body)
+	e.genConversion(d.Name.Name, srcName, srcType, tgtType, fallible, overrides)
+}
+
+// deriveOverrides reads the `Field: expr` / `Field: _` entries from a bodied
+// derive func's returned composite literal (ignoring the `...derive(src)` fill
+// marker, which is implicit). A bodyless derive has no overrides.
+func (e *emitter) deriveOverrides(body *ast.BlockStmt) []deriveOverride {
+	if body == nil {
+		return nil
+	}
+	for _, s := range body.List {
+		ret, ok := s.(*ast.ReturnStmt)
+		if !ok || len(ret.Results) != 1 {
+			continue
+		}
+		cl, ok := ret.Results[0].(*ast.CompositeLit)
+		if !ok {
+			continue
+		}
+		var out []deriveOverride
+		for _, el := range cl.Elts {
+			kv, ok := el.(*ast.KeyValueExpr)
+			if !ok {
+				continue // the `...derive(src)` SpreadElement is the implicit fill
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			if id, ok := kv.Value.(*ast.Ident); ok && id.Name == "_" {
+				out = append(out, deriveOverride{Name: key.Name, Skip: true})
+				continue
+			}
+			out = append(out, deriveOverride{Name: key.Name, Value: kv.Value})
+		}
+		return out
+	}
+	return nil
+}
+
+// genConversion emits the generated Go conversion function for a derive. It
+// writes the signature, declares `var out T`, emits the explicit overrides first
+// (skipping `_`), then resolves every unoverridden target field from its
+// same-named source field, and returns out (`, nil` when fallible). A pointer
+// source is nil-guarded (a nil source yields the zero target). An unresolvable
+// field is a located error, never a silent zero. Mirrors
+// internal/pass.genConversion over sema facts.
+func (e *emitter) genConversion(name, srcName, srcType, tgtType string, fallible bool, overrides []deriveOverride) {
+	tgtVal := derefType(tgtType)
+	tgtFields, ok := structFieldsOf(e.info, tgtVal)
+	if !ok {
+		e.fail("derive %s: unknown target struct %q (no `type %s struct{…}` in this file)", name, tgtType, tgtVal)
+		return
+	}
+	srcFields, _ := structFieldsOf(e.info, derefType(srcType))
+
+	overridden := map[string]bool{}
+	for _, o := range overrides {
+		overridden[strings.ToLower(o.Name)] = true
+	}
+
+	retVar := "out"
+	if strings.HasPrefix(strings.TrimSpace(tgtType), "*") {
+		retVar = "&out" // pointer target: built as a value, returned by address
+	}
+	returnStmt := "return " + retVar
+	if fallible {
+		returnStmt = "return " + retVar + ", nil"
+	}
+
+	// Signature.
+	e.p("func " + name + "(" + srcName + " " + srcType + ") ")
+	if fallible {
+		e.p("(" + tgtType + ", error)")
+	} else {
+		e.p(tgtType)
+	}
+	e.p(" {\n")
+	e.p("var out " + tgtVal + "\n")
+
+	// A pointer source may be nil; a nil source yields the zero target rather than
+	// panicking on field access.
+	if strings.HasPrefix(strings.TrimSpace(srcType), "*") {
+		e.p("if " + srcName + " == nil {\n" + returnStmt + "\n}\n")
+	}
+
+	// One error name for the whole (fallible) function; reused via `:=` per field
+	// (each field introduces a fresh value temp on the LHS, so the redeclaration is
+	// legal). Scope-aware so it never collides with a source identifier.
+	errName := ""
+	if fallible {
+		errName = e.gensym("err")
+	}
+
+	// Explicit overrides first; `_` leaves the field at its zero.
+	for _, o := range overrides {
+		if o.Skip {
+			continue
+		}
+		e.p("out." + o.Name + " = " + e.exprText(o.Value) + "\n")
+	}
+
+	// `...derive(src)`: remaining target fields, resolved through the registry.
+	for _, f := range tgtFields {
+		if overridden[strings.ToLower(f.Name)] {
+			continue
+		}
+		sf, found := findSemaField(srcFields, f.Name)
+		if !found {
+			e.fail("derive %s: target field %q of %s is not sourced from %s (add an explicit `%s: …` or a `from func`)", name, f.Name, tgtType, srcType, f.Name)
+			return
+		}
+		// genConversion is void and reports via e.fail, so this consumer uses `match`:
+		// the Err arm turns resolveField's error into a located e.fail, never `?`.
+		match e.resolveField("out."+f.Name, srcName+"."+sf.Name, sf.Type, f.Type, fallible, errName) {
+		Result.Ok(stmts) => {
+			for _, s := range stmts {
+				e.p(s + "\n")
+			}
+		}
+		Result.Err(err) => {
+			e.fail("derive %s, field %q: %v", name, f.Name, err)
+			return
+		}
+		}
+	}
+
+	e.p(returnStmt + "\n}")
+}
+
+// resolveField returns the Go statements assigning a converted source field to a
+// target field, choosing the strategy by (source type -> target type): identity,
+// a registered leaf conversion (total or fallible), pointer/Option recursion,
+// slice/array/map container recursion, or nested in-package struct recursion. An
+// unresolvable pair is an error (no field is silently zeroed). Mirrors
+// internal/pass.resolveField over sema facts; temporaries are scope-aware
+// gensyms (errName is the function's shared error name for the fallible path).
+func (e *emitter) resolveField(dst, srcExpr, sf, tf string, fallibleOK bool, errName string) Result[[]string, error] {
+	reg := e.info.FromRegistry
+	sf, tf = strings.TrimSpace(sf), strings.TrimSpace(tf)
+	if sf == tf {
+		return Result.Ok([]string{fmt.Sprintf("%s = %s", dst, srcExpr)})
+	}
+	if entry, ok := reg[[2]string{sf, tf}]; ok {
+		if !entry.Fallible {
+			return Result.Ok([]string{fmt.Sprintf("%s = %s(%s)", dst, entry.Name, srcExpr)})
+		}
+		if !fallibleOK {
+			return Result.Err(fmt.Errorf("conversion %s->%s is fallible; declare the derive func returning (T, error)", sf, tf))
+		}
+		v := e.gensym("v")
+		return Result.Ok([]string{
+			fmt.Sprintf("%s, %s := %s(%s)", v, errName, entry.Name, srcExpr),
+			fmt.Sprintf("if %s != nil {\nreturn out, %s\n}", errName, errName),
+			fmt.Sprintf("%s = %s", dst, v),
+		})
+	}
+	// Pointer / Option recursion: *A -> *B (and Option[A] -> Option[B]) when A -> B
+	// resolves total. A nil source stays the nil target; a non-nil one is converted
+	// and re-addressed.
+	if si, ok := ptrInner(sf); ok {
+		ti, ok := ptrInner(tf)
+		if !ok {
+			return Result.Err(fmt.Errorf("no conversion %s -> %s in scope", sf, tf))
+		}
+		elem := elemConv(si, ti, reg)?
+		v := e.gensym("p")
+		return Result.Ok([]string{
+			fmt.Sprintf("if %s != nil {\n%s := %s\n%s = &%s\n}", srcExpr, v, elem("*"+srcExpr), dst, v),
+		})
+	}
+	// Built-in slice recursion: []A -> []B when A -> B resolves total.
+	if strings.HasPrefix(sf, "[]") && strings.HasPrefix(tf, "[]") {
+		elem := elemConv(sf[2:], tf[2:], reg)?
+		i := e.gensym("i")
+		return Result.Ok([]string{
+			fmt.Sprintf("%s = make(%s, len(%s))", dst, tf, srcExpr),
+			fmt.Sprintf("for %s := range %s {\n%s = %s\n}", i, srcExpr, dst+"["+i+"]", elem(srcExpr+"["+i+"]")),
+		})
+	}
+	// Fixed-array recursion: [N]A -> [N]B (same length) when A -> B resolves total.
+	if sn, se, ok := arrElem(sf); ok {
+		tn, te, ok := arrElem(tf)
+		if !ok || sn != tn {
+			return Result.Err(fmt.Errorf("no conversion %s -> %s in scope", sf, tf))
+		}
+		elem := elemConv(se, te, reg)?
+		i := e.gensym("i")
+		return Result.Ok([]string{
+			fmt.Sprintf("for %s := range %s {\n%s = %s\n}", i, srcExpr, dst+"["+i+"]", elem(srcExpr+"["+i+"]")),
+		})
+	}
+	// Map recursion: map[K]A -> map[K]B (same key type) when A -> B resolves total.
+	if sk, sv, ok := mapKV(sf); ok {
+		tk, tv, ok := mapKV(tf)
+		if !ok || sk != tk {
+			return Result.Err(fmt.Errorf("no conversion %s -> %s in scope", sf, tf))
+		}
+		elem := elemConv(sv, tv, reg)?
+		k, v := e.gensym("k"), e.gensym("v")
+		return Result.Ok([]string{
+			fmt.Sprintf("%s = make(%s, len(%s))", dst, tf, srcExpr),
+			fmt.Sprintf("for %s, %s := range %s {\n%s[%s] = %s\n}", k, v, srcExpr, dst, k, elem(v)),
+		})
+	}
+	// Nested in-package struct recursion: A -> B when both are structs in this file.
+	// Build the target in a temp field-by-field, then assign it.
+	if _, srcStruct := structFieldsOf(e.info, sf); srcStruct {
+		if _, tgtStruct := structFieldsOf(e.info, tf); tgtStruct {
+			v := e.gensym("s")
+			stmts := []string{fmt.Sprintf("var %s %s", v, tf)}
+			body := e.deriveBody(v, srcExpr, sf, tf, fallibleOK, errName)?
+			stmts = append(stmts, body...)
+			return Result.Ok(append(stmts, fmt.Sprintf("%s = %s", dst, v)))
+		}
+	}
+	return Result.Err(fmt.Errorf("no conversion %s -> %s in scope", sf, tf))
+}
+
+// deriveBody emits the field-by-field assignments converting srcType to tgtType
+// into the already-declared dstVar — the recursion core for a nested struct
+// field. Every target field must be sourced (same name) and resolvable, or the
+// conversion is refused. Mirrors internal/pass.deriveBody over sema facts.
+func (e *emitter) deriveBody(dstVar, srcExpr, srcType, tgtType string, fallible bool, errName string) Result[[]string, error] {
+	tgtFields, ok := structFieldsOf(e.info, tgtType)
+	if !ok {
+		return Result.Err(fmt.Errorf("unknown target struct %q", tgtType))
+	}
+	srcFields, _ := structFieldsOf(e.info, srcType)
+	var stmts []string
+	for _, f := range tgtFields {
+		sf, found := findSemaField(srcFields, f.Name)
+		if !found {
+			return Result.Err(fmt.Errorf("nested field %q of %s is not sourced from %s", f.Name, tgtType, srcType))
+		}
+		// resolveField's error is wrapped here with the nested-field context, so this
+		// consumer uses `match` rather than `?` (a bare `?` would drop the wrap).
+		match e.resolveField(dstVar+"."+f.Name, srcExpr+"."+sf.Name, sf.Type, f.Type, fallible, errName) {
+		Result.Ok(s) => { stmts = append(stmts, s...) }
+		Result.Err(err) => { return Result.Err(fmt.Errorf("nested field %q: %w", f.Name, err)) }
+		}
+	}
+	return Result.Ok(stmts)
+}
+
+// indexExpr emits a single-index expression, lowering an `Option[T]` type to its
+// pointer encoding `*T` (§8.4). The guard requires the base to be the `Option`
+// type name, so ordinary indexing (`xs[0]`) and other generic instantiations are
+// emitted unchanged.
+func (e *emitter) indexExpr(x *ast.IndexExpr) {
+	if id, ok := x.X.(*ast.Ident); ok && id.Name == "Option" {
+		e.p("*")
+		e.expr(x.Index)
+		return
+	}
+	e.expr(x.X)
+	e.p("[")
+	e.expr(x.Index)
+	e.p("]")
+}
+
+// returnStmt emits a return, lowering a Result/Option constructor in the
+// enclosing function (§8.3/§8.4) to the native (T, error) pair / pointer form.
+func (e *emitter) returnStmt(s *ast.ReturnStmt) {
+	if len(s.Results) == 1 {
+		// `return match …` lowers to a value-position split whose arms each
+		// `return <body>`: a type-switch for an enum, the Result (T, error) /
+		// closed-E sum fork for a Result, and the Option *T nil-check for an Option.
+		if m, ok := s.Results[0].(*ast.MatchExpr); ok {
+			if isSealedMatch(m) {
+				e.sealedMatch(m, posReturn, "")
+				return
+			}
+			switch q := matchQualifier(m); {
+			case q == "Result":
+				e.resultMatch(m, posReturn, "")
+				return
+			case q == "Option":
+				e.optionMatch(m, posReturn, "")
+				return
+			case enumOf(e.info, q) != nil:
+				e.enumMatch(m, posReturn, "")
+				return
+			}
+		}
+		switch e.fnKind {
+		case roResultOpen:
+			if e.emitResultReturn(s.Results[0]) {
+				return
+			}
+		case roOption:
+			if e.emitOptionReturn(s.Results[0]) {
+				return
+			}
+		case roResultClosed:
+			if e.emitClosedResultReturn(s.Results[0]) {
+				return
+			}
+		}
+	}
+	e.p("return")
+	if len(s.Results) > 0 {
+		e.p(" ")
+		e.exprList(s.Results)
+	}
+}
+
+// tryVarMatch lowers a `var name T = match …` declaration over an enum: it emits
+// the `var name T` declaration and then the value-position type-switch, returning
+// true when it handled the decl. It only claims a single-name, single-value,
+// explicitly-typed var whose value is an enum match; any other decl is left for
+// the ordinary decl emitter.
+func (e *emitter) tryVarMatch(d ast.Decl) bool {
+	gd, ok := d.(*ast.GenDecl)
+	if !ok || gd.Tok.String() != "var" || len(gd.Specs) != 1 {
+		return false
+	}
+	vs, ok := gd.Specs[0].(*ast.ValueSpec)
+	if !ok || len(vs.Names) != 1 || vs.Type == nil || len(vs.Values) != 1 {
+		return false
+	}
+	m, ok := vs.Values[0].(*ast.MatchExpr)
+	if !ok {
+		return false
+	}
+	q := matchQualifier(m)
+	if !isSealedMatch(m) && q != "Result" && q != "Option" && enumOf(e.info, q) == nil {
+		return false
+	}
+	name := vs.Names[0].Name
+	e.p("var " + name + " ")
+	e.expr(vs.Type)
+	e.p("\n")
+	e.matchValue(m, q, posVar, name)
+	return true
+}
+
+// matchValue lowers a value-position (return/var) match over a Result, Option, or
+// enum, dispatching on the already-computed qualifier q. The caller has emitted any
+// surrounding `var name T` declaration; here each arm body is wrapped per pos.
+func (e *emitter) matchValue(m *ast.MatchExpr, q string, pos matchPos, name string) {
+	switch {
+	case isSealedMatch(m):
+		e.sealedMatch(m, pos, name)
+	case q == "Result":
+		e.resultMatch(m, pos, name)
+	case q == "Option":
+		e.optionMatch(m, pos, name)
+	default:
+		e.enumMatch(m, pos, name)
+	}
+}
+
+// tryAssignMatch lowers a short-var/assignment `name := match …` (or `name =
+// match …`) over an enum: it infers the result type from the arm bodies, emits a
+// `var name T` declaration, then the value-position type-switch whose arms assign
+// `name = <body>`. It only claims a single-name, single-value assignment whose
+// value is an enum match with an inferable result type; any other assignment is
+// left for the ordinary `?`/assignment emitter. The inference mirrors
+// internal/pass.inferMatchType: the arms must all be one string literal, one bool
+// literal, or constructions of one and the same enum — a wrong guess would
+// silently miscompile, so anything else keeps the explicit deferral.
+func (e *emitter) tryAssignMatch(s *ast.AssignStmt) bool {
+	if len(s.Lhs) != 1 || len(s.Rhs) != 1 {
+		return false
+	}
+	id, ok := s.Lhs[0].(*ast.Ident)
+	if !ok {
+		return false
+	}
+	m, ok := s.Rhs[0].(*ast.MatchExpr)
+	if !ok {
+		return false
+	}
+	q := matchQualifier(m)
+	if !isSealedMatch(m) && q != "Result" && q != "Option" && enumOf(e.info, q) == nil {
+		return false
+	}
+	typ, ok := e.inferMatchType(m)
+	if !ok {
+		e.fail("value-position `%s := match` needs an inferable result type (arms are not all one enum, string, or bool); annotate it as `var %s T = match ...` or use `return match ...`", id.Name, id.Name)
+		return true
+	}
+	e.p("var " + id.Name + " " + typ + "\n")
+	e.matchValue(m, q, posVar, id.Name)
+	return true
+}
+
+// inferMatchType infers the result type of a value-position `name := match` from
+// its arm bodies, for the bounded set of shapes whose type is recoverable
+// structurally: every arm (rest included) must be a string literal, a bool
+// literal, or a construction of one and the same enum, and all arms must agree.
+// It returns ("", false) for anything else so the caller keeps the located
+// deferral rather than guess. Mirrors internal/pass.inferMatchType over the AST.
+func (e *emitter) inferMatchType(m *ast.MatchExpr) (string, bool) {
+	inferred := ""
+	for _, arm := range m.Arms {
+		kind, ok := e.armBodyType(arm.Body)
+		if !ok {
+			return "", false
+		}
+		switch {
+		case inferred == "":
+			inferred = kind
+		case inferred != kind:
+			return "", false
+		}
+	}
+	return inferred, inferred != ""
+}
+
+// armBodyType classifies one match arm body into a result type, for the inferable
+// shapes only: a lone string literal -> "string", a lone true/false -> "bool", and
+// a whole-body enum construction (`Enum.Variant` SelectorExpr or `Enum.Variant(…)`
+// VariantLit of a resolved enum) -> the enum's name. Any other body (numeric,
+// identifier, call, compound expression) is not inferable.
+func (e *emitter) armBodyType(body ast.Node) (string, bool) {
+	match body {
+		*ast.BasicLit(b) => {
+			if b.Kind == token.STRING {
+				return "string", true
+			}
+		}
+		*ast.Ident(b) => {
+			if b.Name == "true" || b.Name == "false" {
+				return "bool", true
+			}
+		}
+		*ast.SelectorExpr(b) => {
+			// A data-less variant reference `Enum.Variant` or `pkg.Enum.Variant`.
+			if key, ok := enumRef(b.X); ok && b.Sel != nil {
+				if en := enumOf(e.info, key); en != nil && en.VSet[b.Sel.Name] {
+					return key, true
+				}
+			}
+		}
+		*ast.VariantLit(b) => {
+			// A payload variant construction `Enum.Variant(field: v)` or `pkg.Enum.Variant(...)`.
+			if key, ok := enumRef(b.Enum); ok && enumOf(e.info, key) != nil {
+				return key, true
+			}
+		}
+		_ => {}
+	}
+	return "", false
+}
+
+// emitResultReturn lowers `return Result.Ok(X)` -> `return X, nil` and
+// `return Result.Err(X)` -> `return ok, X` (the function's named zero success
+// return). It reports whether it handled the expression.
+func (e *emitter) emitResultReturn(x ast.Expr) bool {
+	call, ok := x.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel == nil {
+		return false
+	}
+	if base, ok := sel.X.(*ast.Ident); !ok || base.Name != "Result" {
+		return false
+	}
+	switch sel.Sel.Name {
+	case "Ok":
+		// A nested Option value (Result[Option[T], error]) must lower to its
+		// pointer form rather than emit `Option.Some/None` verbatim.
+		if len(call.Args) == 1 {
+			if expr, ok := e.optionValueExpr(call.Args[0]); ok {
+				e.p("return " + expr + ", nil")
+				return true
+			}
+		}
+		e.p("return ")
+		e.exprList(call.Args)
+		e.p(", nil")
+		return true
+	case "Err":
+		e.p("return " + e.okName + ", ")
+		e.exprList(call.Args)
+		return true
+	}
+	return false
+}
+
+// optionValueExpr lowers an Option construction to its `*T` pointer encoding
+// (§8.4) and returns the resulting Go expression text: `nil` for `Option.None`,
+// `&x` for an addressable `Option.Some(x)`, or a boxed `&<gensym>` after emitting
+// `<gensym> := x` for any other argument. It reports false when x is not an
+// Option construction. This is the single Option-construction lowering, used both
+// for a direct Option return and for an Option value nested in a `Result.Ok(…)`
+// payload — so the construction lowers identically wherever it is produced.
+func (e *emitter) optionValueExpr(x ast.Expr) (string, bool) {
+	if sel, ok := x.(*ast.SelectorExpr); ok {
+		if base, ok := sel.X.(*ast.Ident); ok && base.Name == "Option" && sel.Sel != nil && sel.Sel.Name == "None" {
+			return "nil", true
+		}
+	}
+	call, ok := x.(*ast.CallExpr)
+	if !ok {
+		return "", false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel == nil || sel.Sel.Name != "Some" {
+		return "", false
+	}
+	if base, ok := sel.X.(*ast.Ident); !ok || base.Name != "Option" {
+		return "", false
+	}
+	if len(call.Args) != 1 {
+		return "", false
+	}
+	if _, ok := call.Args[0].(*ast.Ident); ok {
+		return "&" + e.exprText(call.Args[0]), true
+	}
+	some := e.gensym("some")
+	e.p(some + " := ")
+	e.expr(call.Args[0])
+	e.p("\n")
+	return "&" + some, true
+}
+
+// tryOptionValue lowers an Option construction appearing in a value position to its
+// `*T` pointer encoding (§8.4) directly into the output, and reports whether it
+// handled x. `Option.None` -> `nil`; `Option.Some(ident)` -> `&ident` (addressable);
+// `Option.Some(other)` -> `goalSome(other)`, the boxing helper (optionPrelude),
+// since a non-addressable argument cannot be address-taken as a pure expression and
+// the single-pass emitter cannot hoist a temporary here. Unlike optionValueExpr
+// (which may emit a preceding `tmp :=` statement and is used at statement-position
+// returns / Result.Ok payloads), this stays a self-contained expression so it is
+// valid in any value position — a call argument, struct field, or slice/map element.
+func (e *emitter) tryOptionValue(x ast.Expr) bool {
+	kind, arg, ok := optionConstruction(x)
+	if !ok {
+		return false
+	}
+	switch kind {
+	case "none":
+		e.p("nil")
+	case "some-addr":
+		e.p("&")
+		e.expr(arg)
+	default: // "some-box"
+		e.usedOptionHelper = true
+		e.p("goalSome(")
+		e.expr(arg)
+		e.p(")")
+	}
+	return true
+}
+
+// emitOptionReturn lowers `return Option.None/Some(x)` to its pointer form. It
+// reports whether it handled the expression.
+func (e *emitter) emitOptionReturn(x ast.Expr) bool {
+	expr, ok := e.optionValueExpr(x)
+	if !ok {
+		return false
+	}
+	e.p("return " + expr)
+	return true
+}
+
+// emitClosedResultReturn lowers `return Result.Ok(X)` / `return Result.Err(X)` in
+// a closed-E Result function to the §8.1 sum constructor
+// `return Ok[T, E]{Value: X}` / `return Err[T, E]{Value: X}` (T/E are the enclosing
+// function's closedT/closedE). The argument X is emitted recursively, so a nested
+// construction (e.g. `ParseError.Empty`) lowers for free. It reports whether it
+// handled the expression.
+func (e *emitter) emitClosedResultReturn(x ast.Expr) bool {
+	call, ok := x.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel == nil {
+		return false
+	}
+	if base, ok := sel.X.(*ast.Ident); !ok || base.Name != "Result" {
+		return false
+	}
+	switch sel.Sel.Name {
+	case "Ok":
+		e.p(fmt.Sprintf("return Ok[%s, %s]{Value: ", e.closedT, e.closedE))
+	case "Err":
+		e.p(fmt.Sprintf("return Err[%s, %s]{Value: ", e.closedT, e.closedE))
+	default:
+		return false
+	}
+	e.exprList(call.Args)
+	e.p("}")
+	return true
+}
+
+// unwrap lowers a postfix `?` (ast.UnwrapExpr) at statement position: `name :=
+// expr?` binds the unwrapped value, a bare `expr?` or `_ := expr?` discards it,
+// and either way the enclosing function's failure (the Err / None) is
+// early-returned (§3.7, §8.3). All temporaries are scope-aware gensyms — there is
+// no `__goal_` prefix (US-035).
+func (e *emitter) unwrap(name string, u *ast.UnwrapExpr, discard bool) {
+	switch e.fnKind {
+	case roResultOpen:
+		e.unwrapResult(name, u, discard)
+	case roOption:
+		e.unwrapOption(name, u, discard)
+	case roResultClosed:
+		e.unwrapClosed(name, u, discard)
+	default:
+		e.fail("`?` outside a Result- or Option-returning function")
+	}
+}
+
+// unwrapClosed lowers `?` in a closed-E Result function (§8.3 fork): it type-
+// switches the callee's Ok/Err sum, binds the unwrapped value into name on Ok, and
+// on Err returns the enclosing function's own closed-E Err carrying the failure.
+// When the callee's error type differs from the enclosing function's, the declared
+// `from func` conversion (sema.FromRegistry) is applied to the propagated value.
+func (e *emitter) unwrapClosed(name string, u *ast.UnwrapExpr, discard bool) {
+	sig, ok := e.calleeSig(u.X)
+	// sig is a zero FuncSig (nil Mode) when !ok, so use a nil-safe `_` rest-arm.
+	isClosed := match sig.Mode {
+		sema.Mode.ModeResultClosed => true
+		_ => false
+	}
+	if !ok || !isClosed {
+		e.fail("closed-E `?` needs a closed-E Result-returning callee")
+		return
+	}
+	guard := e.gensym("r")
+	errValue := guard + ".Value"
+	if sig.E != e.closedE {
+		conv, found := e.info.FromRegistry[[2]string{sig.E, e.closedE}]
+		if !found {
+			e.fail("no `from func` conversion declared for %s -> %s (required to `?` across closed error types)", sig.E, e.closedE)
+			return
+		}
+		errValue = conv.Name + "(" + guard + ".Value)"
+	}
+	lhs := name
+	if discard {
+		lhs = "_"
+	}
+	e.p("var " + lhs + " " + sig.T + "\n")
+	e.p("switch " + guard + " := ")
+	e.expr(u.X)
+	e.p(".(type) {\n")
+	e.p(fmt.Sprintf("case Ok[%s, %s]:\n%s = %s.Value\n", sig.T, sig.E, lhs, guard))
+	e.p(fmt.Sprintf("case Err[%s, %s]:\nreturn Err[%s, %s]{Value: %s}\n", sig.T, sig.E, e.closedT, e.closedE, errValue))
+	e.p(fmt.Sprintf("default:\npanic(%q)\n}", fmt.Sprintf("unreachable: non-exhaustive Result[%s, %s] (compiler invariant violated)", sig.T, sig.E)))
+}
+
+// unwrapResult lowers `?` in an open-E Result function: it destructures the
+// callee's trailing error and, on non-nil, returns the function's own generated
+// (ok, err) pair. The number of values destructured follows the callee's lowered
+// arity — a plain `error`-returning callee yields one value, a `Result` callee two
+// — so an error-only `?` does not over-destructure. An unresolved callee keeps the
+// two-value form.
+func (e *emitter) unwrapResult(name string, u *ast.UnwrapExpr, discard bool) {
+	n := 2
+	if sig, ok := e.calleeSig(u.X); ok && sig.EndsInError && sig.Arity >= 1 {
+		n = sig.Arity
+	}
+	if discard {
+		e.p("if " + strings.Repeat("_, ", n-1) + e.errName + " := ")
+		e.expr(u.X)
+		e.p("; " + e.errName + " != nil {\nreturn " + e.okName + ", " + e.errName + "\n}")
+		return
+	}
+	if sig, ok := e.calleeSig(u.X); ok && sig.Arity != 2 {
+		e.fail("`?` binds a value but the callee returns %d value(s); write a bare `…?` to propagate only the error", sig.Arity)
+		return
+	}
+	e.p(name + ", " + e.errName + " := ")
+	e.expr(u.X)
+	e.p("\nif " + e.errName + " != nil {\nreturn " + e.okName + ", " + e.errName + "\n}")
+}
+
+// unwrapOption lowers `?` in an Option function: it stores the *T result in a fresh
+// pointer temp and, when nil, returns nil; otherwise it dereferences into the
+// bound name. Each `?` site mints its own temp, so chained `?`s never collide.
+func (e *emitter) unwrapOption(name string, u *ast.UnwrapExpr, discard bool) {
+	o := e.gensym("o")
+	if discard {
+		e.p("if " + o + " := ")
+		e.expr(u.X)
+		e.p("; " + o + " == nil {\nreturn nil\n}")
+		return
+	}
+	e.p(o + " := ")
+	e.expr(u.X)
+	e.p("\nif " + o + " == nil {\nreturn nil\n}\n" + name + " := *" + o)
+}
+
+// stdlibErrorOnly is the offline fallback for resolving error-only stdlib calls
+// when the import-based arityResolver cannot load a package (e.g. an isolated
+// single-file transpile with no module context). The resolver handles the general
+// case — any importable package, stdlib or third-party — so this set only needs
+// the common standard-library functions whose sole result is an `error`. Keyed by
+// the conventional unaliased qualifier.
+var stdlibErrorOnly = map[string]bool{
+	"os.Mkdir":       true,
+	"os.MkdirAll":    true,
+	"os.Remove":      true,
+	"os.RemoveAll":   true,
+	"os.Rename":      true,
+	"os.Chmod":       true,
+	"os.Chown":       true,
+	"os.Chdir":       true,
+	"os.Chtimes":     true,
+	"os.Symlink":     true,
+	"os.Link":        true,
+	"os.Truncate":    true,
+	"os.Setenv":      true,
+	"os.Unsetenv":    true,
+	"os.WriteFile":   true,
+	"json.Unmarshal": true,
+	"xml.Unmarshal":  true,
+	"binary.Read":    true,
+	"binary.Write":   true,
+}
+
+// calleeSig returns the resolved signature of the function a `?` scrutinee directly
+// calls, so the destructure arity matches the callee's lowered shape. An in-file
+// function resolves by name through sema; a package-qualified call resolves through
+// stdlibErrorOnly when it names a known error-only stdlib function. It reports
+// false for a non-call or an otherwise-unresolved callee.
+func (e *emitter) calleeSig(x ast.Expr) (sema.FuncSig, bool) {
+	call, ok := x.(*ast.CallExpr)
+	if !ok {
+		return sema.FuncSig{}, false
+	}
+	match call.Fun {
+		*ast.Ident(fn) => {
+			if e.info == nil || e.info.FuncSignatures == nil {
+				return sema.FuncSig{}, false
+			}
+			sig, ok := e.info.FuncSignatures[fn.Name]
+			return sig, ok
+		}
+		*ast.SelectorExpr(fn) => {
+			pkg, ok := fn.X.(*ast.Ident)
+			if !ok || fn.Sel == nil {
+				return sema.FuncSig{}, false
+			}
+		// A `recv.M(...)` whose `recv` is a receiver/parameter resolves through the
+		// receiver's type method set — so a `?` on a method returning a Result (or a
+		// trailing error) sees the real lowered arity. This takes precedence over the
+		// package-qualifier path: a value binding shadows an import of the same name.
+		if sig, ok := e.methodCalleeSig(pkg.Name, fn.Sel.Name); ok {
+			return sig, true
+		}
+		// Prefer a real signature resolved through the file's imports; fall back to
+		// the curated table when the package cannot be loaded here.
+		if a := e.arity.lookup(pkg.Name, fn.Sel.Name); a.resolved && a.endsErr {
+			return sema.FuncSig{Mode: sema.Mode.ModeResult, Arity: a.results, EndsInError: true}, true
+		}
+		if stdlibErrorOnly[pkg.Name+"."+fn.Sel.Name] {
+			return sema.FuncSig{Mode: sema.Mode.ModeResult, Arity: 1, EndsInError: true}, true
+		}
+		return sema.FuncSig{}, false
+		}
+		_ => {}
+	}
+	return sema.FuncSig{}, false
+}
+
+// methodCalleeSig resolves the `?`-relevant signature of method `method` called on
+// a receiver identifier `recv` bound in the current function's receiver/parameter
+// list. It consults the receiver type's concrete method set (info.Methods) and, for
+// an interface-typed receiver, its interface method set (info.Interfaces). It
+// reports false when recv is not a known receiver/parameter, or its type declares no
+// such method here (an imported type's method stays unresolved — and harmlessly
+// keeps the two-value default).
+func (e *emitter) methodCalleeSig(recv, method string) (sema.FuncSig, bool) {
+	if e.info == nil || e.recvTypes == nil {
+		return sema.FuncSig{}, false
+	}
+	typ, ok := e.recvTypes[recv]
+	if !ok || typ == "" {
+		return sema.FuncSig{}, false
+	}
+	for _, m := range e.info.Methods[typ] {
+		if m.Name == method {
+			return m.Return, true
+		}
+	}
+	for _, m := range e.info.Interfaces[typ] {
+		if m.Name == method {
+			return m.Return, true
+		}
+	}
+	return sema.FuncSig{}, false
+}
+
+// buildRecvTypes maps each receiver/parameter identifier of d to its base type name
+// (leading `*` and a generic `[...]` instantiation stripped, e.g. `*Tree[T]` ->
+// `Tree`), so a `recv.M()?` callee can be resolved through the receiver's method
+// set. A package-qualified parameter type (`pkg.Type`) is skipped — its methods are
+// out of file. Returns nil when d has no resolvable receiver/parameter idents.
+func (e *emitter) buildRecvTypes(d *ast.FuncDecl) map[string]string {
+	out := map[string]string{}
+	add := func(fl *ast.FieldList) {
+		if fl == nil {
+			return
+		}
+		for _, f := range fl.List {
+			base := recvBaseType(f.Type)
+			if base == "" {
+				continue
+			}
+			for _, n := range f.Names {
+				if n != nil && n.Name != "" && n.Name != "_" {
+					out[n.Name] = base
+				}
+			}
+		}
+	}
+	add(d.Recv)
+	if d.Type != nil {
+		add(d.Type.Params)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// recvBaseType renders a receiver/parameter type expression to the bare named type a
+// method set is keyed by: a leading `*` is stripped, a generic instantiation reduces
+// to its head name (`Tree[T]` -> `Tree`). A package-qualified type (`pkg.Type`) and
+// any non-named type (slice, map, func, …) yield "" — their methods are not in-file.
+func recvBaseType(x ast.Expr) string {
+	match x {
+		*ast.StarExpr(t) => {
+			return recvBaseType(t.X)
+		}
+		*ast.Ident(t) => {
+			return t.Name
+		}
+		*ast.IndexExpr(t) => {
+			return recvBaseType(t.X)
+		}
+		*ast.IndexListExpr(t) => {
+			return recvBaseType(t.X)
+		}
+		_ => {
+			return ""
+		}
+	}
+}
+
+// matchStmt lowers a statement-position match over a Result or Option to an
+// if/else split (§8.3/§8.4). Enum and value-position match are later stories
+// (US-036) and yield a descriptive error here.
+func (e *emitter) matchStmt(m *ast.MatchExpr) {
+	if isSealedMatch(m) {
+		e.sealedMatch(m, posStmt, "")
+		return
+	}
+	switch q := matchQualifier(m); q {
+	case "Result":
+		e.resultMatch(m, posStmt, "")
+	case "Option":
+		e.optionMatch(m, posStmt, "")
+	default:
+		if enumOf(e.info, q) != nil {
+			e.enumMatch(m, posStmt, "")
+			return
+		}
+		e.fail("unsupported statement-position match on %q (only Result/Option and enum match are lowered)", q)
+	}
+}
+
+// matchPos is where a value-bearing match sits: a statement, in return position,
+// or the initializer of an explicitly-typed `var`. It selects how each lowered
+// arm body is wrapped (see armWrap).
+type matchPos int
+
+const (
+	posStmt   matchPos = iota // statement: arm body emitted as-is
+	posReturn                 // `return match …`: each arm becomes `return <body>`
+	posVar                    // `var name T = match …`: each arm becomes `name = <body>`
+)
+
+// enumMatch lowers a `match` over an enum to a Go type-switch on the scrutinee's
+// dynamic type, over the §8.1 sum encoding (spec §8.2). It mirrors
+// internal/pass.lowerMatch but reads the parsed arms and the variant field sets
+// off the AST / sema.Info instead of scanning tokens. A proven-exhaustive match
+// (no `_` arm) lowers to a panicking default; an explicit `_` rest arm becomes a
+// real default. The guard variable is introduced only when some arm references
+// its payload binding.
+func (e *emitter) enumMatch(m *ast.MatchExpr, pos matchPos, name string) {
+	enumName := matchQualifier(m)
+	en := enumOf(e.info, enumName)
+
+	usesBinding := false
+	for _, arm := range m.Arms {
+		if vp, ok := arm.Pattern.(*ast.VariantPattern); ok && vp.Binding != nil && usesIdent(arm.Body, vp.Binding.Name) {
+			usesBinding = true
+			break
+		}
+	}
+
+	guard := ""
+	e.p("switch ")
+	if usesBinding {
+		guard = e.gensym("v")
+		e.p(guard + " := ")
+	}
+	e.expr(m.Subject)
+	e.p(".(type) {\n")
+
+	var restArm *ast.MatchArm
+	for _, arm := range m.Arms {
+		vp, ok := arm.Pattern.(*ast.VariantPattern)
+		if !ok {
+			if _, isRest := arm.Pattern.(*ast.RestPattern); isRest {
+				restArm = arm
+			}
+			continue
+		}
+		if vp.Variant == nil {
+			e.fail("enum match arm has no variant tag")
+			return
+		}
+		e.p("case " + enumName + "_" + vp.Variant.Name + ":\n")
+		e.emitEnumArm(arm, vp, en, guard, pos, name)
+		e.p("\n")
+	}
+
+	e.p("default:\n")
+	if restArm != nil {
+		e.emitEnumArm(restArm, nil, en, guard, pos, name)
+	} else {
+		e.p(fmt.Sprintf("panic(%q)", fmt.Sprintf("unreachable: non-exhaustive %s (compiler invariant violated)", enumName)))
+	}
+	e.p("\n}")
+}
+
+// emitEnumArm emits one type-switch clause body: it renames the arm's payload
+// binding to the guard variable and exposes the variant field set (so field
+// accesses export), then emits the arm body wrapped for the match position.
+func (e *emitter) emitEnumArm(arm *ast.MatchArm, vp *ast.VariantPattern, en *sema.Enum, guard string, pos matchPos, name string) {
+	binding := ""
+	if vp != nil && vp.Binding != nil {
+		binding = vp.Binding.Name
+	}
+	if binding != "" {
+		if e.renames == nil {
+			e.renames = map[string]string{}
+		}
+		e.renames[binding] = guard
+		prevBinding, prevFields := e.armBinding, e.armFields
+		e.armBinding = binding
+		if en != nil && vp.Variant != nil {
+			e.armFields = en.FieldSet[vp.Variant.Name]
+		} else {
+			e.armFields = nil
+		}
+		defer func() {
+			delete(e.renames, binding)
+			e.armBinding, e.armFields = prevBinding, prevFields
+		}()
+	}
+	e.armWrap(arm.Body, pos, name)
+}
+
+// armWrap emits a match arm body wrapped for its position: a bare body in
+// statement position, `return <body>` in return position, and `name = <body>` in
+// var position. Return/var positions require an expression body (a value-position
+// match's arms are always expressions).
+func (e *emitter) armWrap(body ast.Node, pos matchPos, name string) {
+	switch pos {
+	case posReturn:
+		e.p("return ")
+		e.armBody(body)
+	case posVar:
+		e.p(name + " = ")
+		e.armBody(body)
+	default:
+		e.armBody(body)
+	}
+}
+
+// sealedMatch lowers a `match` over a sealed-interface scrutinee to a Go
+// type-switch on the scrutinee's dynamic type, with one concrete `case *T:` per
+// type-pattern arm (the implementor type rendered directly). It is the
+// sealed-interface counterpart of enumMatch: a proven-exhaustive match (no `_` arm)
+// lowers to a panicking default; an explicit `_` rest arm becomes a real default.
+// The guard variable (`switch v := subj.(type)`) is introduced only when some arm
+// binds and uses the type-narrowed value.
+func (e *emitter) sealedMatch(m *ast.MatchExpr, pos matchPos, name string) {
+	usesBinding := false
+	for _, arm := range m.Arms {
+		if tp, ok := arm.Pattern.(*ast.TypePattern); ok && tp.Binding != nil && usesIdent(arm.Body, tp.Binding.Name) {
+			usesBinding = true
+			break
+		}
+	}
+
+	guard := ""
+	e.p("switch ")
+	if usesBinding {
+		guard = e.gensym("v")
+		e.p(guard + " := ")
+	}
+	e.expr(m.Subject)
+	e.p(".(type) {\n")
+
+	var restArm *ast.MatchArm
+	for _, arm := range m.Arms {
+		tp, ok := arm.Pattern.(*ast.TypePattern)
+		if !ok {
+			if _, isRest := arm.Pattern.(*ast.RestPattern); isRest {
+				restArm = arm
+			}
+			continue
+		}
+		if tp.Type == nil {
+			e.fail("sealed match arm has no concrete type")
+			return
+		}
+		e.p("case ")
+		e.expr(tp.Type)
+		e.p(":\n")
+		e.emitSealedArm(arm, tp, guard, pos, name)
+		e.p("\n")
+	}
+
+	e.p("default:\n")
+	if restArm != nil {
+		e.emitSealedArm(restArm, nil, guard, pos, name)
+	} else {
+		e.p(fmt.Sprintf("panic(%q)", "unreachable: non-exhaustive sealed match (compiler invariant violated)"))
+	}
+	e.p("\n}")
+}
+
+// emitSealedArm emits one type-switch clause body for a sealed match: it renames
+// the arm's narrowed-value binding to the guard variable (so the body's references
+// to the binding read the type-narrowed value), then emits the arm body wrapped for
+// the match position. Unlike emitEnumArm there is no enum payload field set to
+// expose — the narrowed value IS the binding.
+func (e *emitter) emitSealedArm(arm *ast.MatchArm, tp *ast.TypePattern, guard string, pos matchPos, name string) {
+	binding := ""
+	if tp != nil && tp.Binding != nil {
+		binding = tp.Binding.Name
+	}
+	if binding != "" {
+		if e.renames == nil {
+			e.renames = map[string]string{}
+		}
+		e.renames[binding] = guard
+		defer delete(e.renames, binding)
+	}
+	e.armWrap(arm.Body, pos, name)
+}
+
+// resultMatch lowers `match scrut { Result.Ok(v) => …; Result.Err(e) => … }` to
+// `lhs, err := scrut; if err != nil { errBody } else { okBody }`. The destructure
+// value/error names are fresh local gensyms (a statement-position match may sit in
+// a function that is not itself Result-returning, e.g. a plain `handle`, so these
+// are NOT the enclosing function's returns). The Ok binding is renamed to the
+// value gensym (discarded with `_` when unused) and the Err binding to the error
+// gensym, so an arm body that constructs another Result composes through the
+// rename in emitResultReturn.
+func (e *emitter) resultMatch(m *ast.MatchExpr, pos matchPos, name string) {
+	subjectIsClosed := match e.calleeMode(m.Subject) {
+		sema.Mode.ModeResultClosed => true
+		sema.Mode.ModeResult => false
+		sema.Mode.ModeOption => false
+		sema.Mode.ModeNone => false
+	}
+	if subjectIsClosed {
+		e.closedResultMatch(m, pos, name)
+		return
+	}
+	okArm, errArm := armByVariant(m, "Ok"), armByVariant(m, "Err")
+	if okArm == nil || errArm == nil {
+		e.fail("Result match must have both Result.Ok and Result.Err arms")
+		return
+	}
+	val, errVar := e.gensym("v"), e.gensym("err")
+	okBinding := bindingName(okArm.Pattern)
+	okLHS := "_"
+	if okBinding != "" && usesIdent(okArm.Body, okBinding) {
+		okLHS = val
+	}
+	e.p(okLHS + ", " + errVar + " := ")
+	e.expr(m.Subject)
+	e.p("\nif " + errVar + " != nil {\n")
+	e.armBodyRenamedWrap(errArm.Body, bindingName(errArm.Pattern), errVar, pos, name)
+	e.p("\n} else {\n")
+	e.armBodyRenamedWrap(okArm.Body, okBinding, val, pos, name)
+	e.p("\n}")
+}
+
+// closedResultMatch lowers `match scrut { Result.Ok(b) => …; Result.Err(b) => … }`
+// where scrut is a closed-E Result call (§8.3 fork) to a type switch over the
+// Ok[T,E]/Err[T,E] sum. The carried value is aliased `binding := guard.Value` in
+// each arm that uses it; a guard variable is introduced only when some arm uses
+// its binding (an unused guard would not compile). T/E come from the scrutinee
+// callee's signature, and the impossible third case panics (§8.2 wording).
+func (e *emitter) closedResultMatch(m *ast.MatchExpr, pos matchPos, name string) {
+	sig, _ := e.calleeSig(m.Subject)
+	okArm, errArm := armByVariant(m, "Ok"), armByVariant(m, "Err")
+	if okArm == nil || errArm == nil {
+		e.fail("Result match must have both Result.Ok and Result.Err arms")
+		return
+	}
+	okBinding, errBinding := bindingName(okArm.Pattern), bindingName(errArm.Pattern)
+	okUse := okBinding != "" && usesIdent(okArm.Body, okBinding)
+	errUse := errBinding != "" && usesIdent(errArm.Body, errBinding)
+
+	guard := ""
+	e.p("switch ")
+	if okUse || errUse {
+		guard = e.gensym("r")
+		e.p(guard + " := ")
+	}
+	e.expr(m.Subject)
+	e.p(".(type) {\n")
+
+	e.p(fmt.Sprintf("case Ok[%s, %s]:\n", sig.T, sig.E))
+	if okUse {
+		e.p(okBinding + " := " + guard + ".Value\n")
+	}
+	e.armWrap(okArm.Body, pos, name)
+	e.p(fmt.Sprintf("\ncase Err[%s, %s]:\n", sig.T, sig.E))
+	if errUse {
+		e.p(errBinding + " := " + guard + ".Value\n")
+	}
+	e.armWrap(errArm.Body, pos, name)
+	e.p(fmt.Sprintf("\ndefault:\npanic(%q)\n}", fmt.Sprintf("unreachable: non-exhaustive Result[%s, %s] (compiler invariant violated)", sig.T, sig.E)))
+}
+
+// optionMatch lowers `match opt { Option.Some(b) => …; Option.None => … }` to
+// `if o := opt; o != nil { b := *o; someBody } else { noneBody }`, where `o` is a
+// fresh local gensym. The Some binding keeps its name (declared only when used).
+func (e *emitter) optionMatch(m *ast.MatchExpr, pos matchPos, name string) {
+	someArm, noneArm := armByVariant(m, "Some"), armByVariant(m, "None")
+	if someArm == nil || noneArm == nil {
+		e.fail("Option match must have both Option.Some and Option.None arms")
+		return
+	}
+	o := e.gensym("o")
+	e.p("if " + o + " := ")
+	e.expr(m.Subject)
+	e.p("; " + o + " != nil {\n")
+	if b := bindingName(someArm.Pattern); b != "" && usesIdent(someArm.Body, b) {
+		e.p(b + " := *" + o + "\n")
+	}
+	e.armWrap(someArm.Body, pos, name)
+	e.p("\n} else {\n")
+	e.armWrap(noneArm.Body, pos, name)
+	e.p("\n}")
+}
+
+// armByVariant returns the arm whose variant-pattern tag is variant, or nil.
+func armByVariant(m *ast.MatchExpr, variant string) *ast.MatchArm {
+	for _, arm := range m.Arms {
+		if vp, ok := arm.Pattern.(*ast.VariantPattern); ok && vp.Variant != nil && vp.Variant.Name == variant {
+			return arm
+		}
+	}
+	return nil
+}
+
+// bindingName returns a variant pattern's payload binding name, or "".
+func bindingName(p ast.Expr) string {
+	if vp, ok := p.(*ast.VariantPattern); ok && vp.Binding != nil {
+		return vp.Binding.Name
+	}
+	return ""
+}
+
+// calleeMode returns the Result/Option mode of the function a match scrutinee
+// directly calls, so a closed-E Result match is not mis-lowered by the open-E
+// path. It is ModeNone for a non-call scrutinee or an unresolved callee.
+func (e *emitter) calleeMode(x ast.Expr) sema.Mode {
+	call, ok := x.(*ast.CallExpr)
+	if !ok {
+		return sema.Mode.ModeNone
+	}
+	id, ok := call.Fun.(*ast.Ident)
+	if !ok || e.info == nil || e.info.FuncSignatures == nil {
+		return sema.Mode.ModeNone
+	}
+	// A missing map key yields a zero FuncSig whose Mode is nil (the enum zero,
+	// SEAM-003); return ModeNone explicitly so callers can `match` the result safely.
+	sig, found := e.info.FuncSignatures[id.Name]
+	if !found {
+		return sema.Mode.ModeNone
+	}
+	return sig.Mode
+}
+
+// armBodyRenamed emits a match arm body with binding renamed to target for the
+// duration of the body (the rename is scoped to this body alone).
+func (e *emitter) armBodyRenamed(body ast.Node, binding, target string) {
+	if binding != "" {
+		if e.renames == nil {
+			e.renames = map[string]string{}
+		}
+		e.renames[binding] = target
+		defer delete(e.renames, binding)
+	}
+	e.armBody(body)
+}
+
+// armBodyRenamedWrap emits a match arm body with binding renamed to target for the
+// duration of the body (scoped to this body alone), wrapped for its match position
+// (bare in statement position, `return <body>` / `name = <body>` in value
+// position). It is the value-position-aware sibling of armBodyRenamed.
+func (e *emitter) armBodyRenamedWrap(body ast.Node, binding, target string, pos matchPos, name string) {
+	if binding != "" {
+		if e.renames == nil {
+			e.renames = map[string]string{}
+		}
+		e.renames[binding] = target
+		defer delete(e.renames, binding)
+	}
+	e.armWrap(body, pos, name)
+}
+
+// armBody emits a match arm body: a statement/block as a statement, or an
+// expression as an expression statement.
+//
+// SEAM-004: this stays a plain type-switch rather than a `match`. Its cases
+// discriminate across the SIBLING sealed interfaces ast.Stmt and ast.Expr (plus a
+// nil arm) — a single value is tested against two different sealed-category
+// interfaces, not against the concrete *T variants of ONE sealed interface. A goal
+// `match` lowers type patterns as concrete `case *T:` labels, so it cannot express
+// `case ast.Stmt:` / `case ast.Expr:` (interface-typed cases); this is genuinely a
+// plain Go type-switch over interface types, kept as such.
+func (e *emitter) armBody(n ast.Node) {
+	switch b := n.(type) {
+	case nil:
+		// empty arm body
+	case ast.Stmt:
+		e.stmt(b)
+	case ast.Expr:
+		e.expr(b)
+	default:
+		e.fail("unsupported match arm body %T", n)
+	}
+}
+
+func (e *emitter) sliceExpr(x *ast.SliceExpr) {
+	e.expr(x.X)
+	e.p("[")
+	if x.Low != nil {
+		e.expr(x.Low)
+	}
+	e.p(":")
+	if x.High != nil {
+		e.expr(x.High)
+	}
+	if x.Max != nil {
+		e.p(":")
+		e.expr(x.Max)
+	}
+	e.p("]")
+}
+
+func (e *emitter) chanType(x *ast.ChanType) {
+	match x.Dir {
+		ast.ChanDir.RecvOnly => e.p("<-chan ")
+		ast.ChanDir.SendOnly => e.p("chan<- ")
+		ast.ChanDir.SendRecv => e.p("chan ")
+	}
+	e.expr(x.Value)
+}
+
+func (e *emitter) identList(ids []*ast.Ident) {
+	for i, id := range ids {
+		if i > 0 {
+			e.p(", ")
+		}
+		e.p(id.Name)
+	}
+}
+
+func (e *emitter) exprList(xs []ast.Expr) {
+	for i, x := range xs {
+		if i > 0 {
+			e.p(", ")
+		}
+		e.expr(x)
+	}
+}

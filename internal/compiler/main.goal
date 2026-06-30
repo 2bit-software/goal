@@ -1,0 +1,102 @@
+// Command selfhost is the goal-written compiler skeleton: a `goal build --emit`
+// equivalent used by the 3-stage bootstrap and the byte-identical fixpoint trust
+// proof (SELF-HOST-RESEARCH.md §5). It transpiles the goal packages under a path
+// through the same front-end the Go-built compiler uses
+// (goal/internal/compiler/{project,backend,pipeline}) and writes the generated Go under an
+// output directory, mirroring `cmd/goal`'s `--emit` layout so its output is
+// interchangeable with the trusted compiler's.
+//
+// It imports the goal-ported selfhost/* packages (not goal/internal/*), so the
+// whole compiler is built from goal source. The bootstrap emits this tree into a
+// self-contained `module goal` and builds goal-c-1/goal-c-2 from it, making the
+// byte-identical fixpoint a genuine differential self-host proof.
+//
+//	selfhost build --emit=<dir> <path>
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"goal/internal/compiler/backend"
+	"goal/internal/compiler/pipeline"
+	"goal/internal/compiler/project"
+)
+
+func main() {
+	if err := run(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, "selfhost:", err)
+		os.Exit(1)
+	}
+}
+
+// run parses `build --emit=<dir> <path>`, transpiles every goal package under
+// path, and writes the generated Go under dir. The path defaults to ".".
+func run(args []string) error {
+	if len(args) < 1 || args[0] != "build" {
+		return fmt.Errorf("usage: selfhost build --emit=<dir> <path>")
+	}
+	emitDir := ""
+	root := ""
+	gotPath := false
+	for _, a := range args[1:] {
+		switch {
+		case strings.HasPrefix(a, "--emit="):
+			emitDir = strings.TrimPrefix(a, "--emit=")
+		case strings.HasPrefix(a, "-"):
+			return fmt.Errorf("unknown flag %q", a)
+		default:
+			if gotPath {
+				return fmt.Errorf("expected a single path, got extra %q", a)
+			}
+			root, gotPath = a, true
+		}
+	}
+	if emitDir == "" {
+		return fmt.Errorf("selfhost requires --emit=<dir>")
+	}
+	if root == "" {
+		root = "."
+	}
+
+	pkgs, err := project.Discover(root)
+	if err != nil {
+		return err
+	}
+	if len(pkgs) == 0 {
+		return fmt.Errorf("no .goal packages found under %s", root)
+	}
+	for _, pkg := range pkgs {
+		out, err := backend.TranspilePackage(pkg)
+		if err != nil {
+			return err
+		}
+		if err := emitPackage(pkg, out, emitDir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// emitPackage writes a package's generated Go (and any doctest sidecars) under
+// filepath.Join(emitDir, pkg.Dir), matching cmd/goal's emit layout exactly so the
+// output of two bootstrap stages can be compared byte-for-byte.
+func emitPackage(pkg *project.Package, out pipeline.PackageOutput, emitDir string) error {
+	dir := filepath.Join(emitDir, pkg.Dir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	files := []pipeline.GoFile{}
+	files = append(files, out.Files...)
+	files = append(files, out.Tests...)
+	for _, gf := range files {
+		p := filepath.Join(dir, gf.Name)
+		if err := os.WriteFile(p, []byte(gf.Go), 0o644); err != nil {
+			return err
+		}
+		fmt.Println("emitted", p)
+	}
+	return nil
+}

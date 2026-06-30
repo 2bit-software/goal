@@ -87,6 +87,17 @@
   port_test.go) keys packages at "selfhost/<pkg>" and BuildAndTest rewrites
   goal/internal/ -> goal/selfhost/ in the copied internal test files. Keep the
   fixpoint green at every later (idiomatic) step — it is the oracle.
+- US-002 RELOCATED the goal compiler source: ./selfhost is GONE; the goal-written
+  compiler now lives under ./internal/compiler/<pkg> and self-imports
+  goal/internal/compiler/<pkg> (was goal/selfhost/<pkg>). The bootstrap+fixpoint
+  Taskfile targets emit/build ./internal/compiler. The Go port harness
+  (internal/selfhost/) is unchanged in package/import (still goal/internal/selfhost)
+  but its port_test.go now Discovers ../../internal/compiler/<pkg> and keys
+  layout/deps/relDir at "internal/compiler/<pkg>", and selfhost.go rewrites copied
+  white-box tests goal/internal/ -> goal/internal/compiler/. NOTE: selfhost_test.go
+  (the InScope smoke gate) is SEPARATE — it transpiles the LEGACY internal/<pkg>/*.go
+  via ReadPackage("../"+name) and was untouched. Any earlier "selfhost/" path in
+  these notes now means "internal/compiler/".
 - The lexer strips newlines/implicit semicolons, so the parser reconstructs
   spec/decl boundaries structurally. Where Go relies on the newline=semicolon
   rule (e.g. a bare const continuation vs a Name+Type spec), use token line
@@ -5859,4 +5870,35 @@
     artifacts never enter the commit — only the real doc/source/prd changes do.
   - Adopted flip invariants for later stories: COLOCATED .goal+.go per dir;
     B-commit bootstrap; corpus tier is the primary gate post-reference-Go-deletion.
+---
+
+## 2026-06-30T16:45:00Z - US-002
+- Relocated the goal-written compiler from ./selfhost to ./internal/compiler
+  (9 packages: token, lexer, ast, parser, sema, project, pipeline, backend,
+  typecheck, plus main.goal) via `git mv selfhost internal/compiler`.
+- Rewrote goal source self-imports goal/selfhost/ -> goal/internal/compiler/
+  across all 35 importing .goal files (find -exec sed).
+- Repointed Taskfile.yml bootstrap + fixpoint targets (emit source arg and the
+  go build -C package target) from ./selfhost to ./internal/compiler, and
+  updated the stage-1 explanatory comment.
+- Repointed the Go port harness internal/selfhost: port_test.go Discover paths
+  ../../selfhost/<pkg> -> ../../internal/compiler/<pkg> and all layout/deps/relDir
+  map keys "selfhost/<pkg>" -> "internal/compiler/<pkg>"; selfhost.go copied-test
+  import rewrite target goal/selfhost/ -> goal/internal/compiler/.
+- Files changed: internal/compiler/** (moved tree), Taskfile.yml,
+  internal/selfhost/port_test.go, internal/selfhost/selfhost.go, prd.json.
+- Verification: `task check` green (incl. relocated port gate), `task fixpoint`
+  prints FIXPOINT OK (differential self-host from ./internal/compiler).
+- Learnings for future iterations:
+  - The fixpoint target has TWO `./selfhost` occurrences of its own (the fa/fb
+    emits) beyond the bootstrap target's six — grep `./selfhost` across the WHOLE
+    Taskfile, don't assume one block. A missed one fails only at `task fixpoint`,
+    not `task check`.
+  - macOS BSD sed in a `for f in $list` loop mangled (whole list as one arg);
+    `find internal/compiler -name '*.goal' -exec sed -i '' 's#a#b#g' {} +` is the
+    reliable bulk-rewrite form here.
+  - selfhost_test.go (InScope smoke gate over LEGACY internal/<pkg>/*.go) needs NO
+    change on this kind of move — only the .goal-sourced port_test.go does.
+  - US-003 (committed generated Go) and US-021 (docs) operate on internal/compiler;
+    DECISIONS.md still has historical "selfhost/..." prose, deferred to US-021.
 ---

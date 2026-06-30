@@ -51,24 +51,25 @@ tasks:
       - task: build
       - rm -rf _bootstrap
       # stage 1: stage-0 transpiles the goal-written compiler, then Go builds goal-c-1.
-      # The emitted selfhost/* packages import goal/selfhost/*, so the emit dir is
-      # turned into a self-contained `module goal` and built from within it (-C),
-      # making goal-c-1 a genuinely self-hosted compiler (no goal/internal/* deps).
-      - ./bin/goal build --emit=_bootstrap/s1 ./selfhost
+      # The emitted internal/compiler/* packages import goal/internal/compiler/*, so
+      # the emit dir is turned into a self-contained `module goal` and built from
+      # within it (-C), making goal-c-1 a genuinely self-hosted compiler built purely
+      # from goal source (no dependency on the legacy hand-written goal/internal/* Go).
+      - ./bin/goal build --emit=_bootstrap/s1 ./internal/compiler
       - printf 'module goal\n\ngo 1.26\n' > _bootstrap/s1/go.mod
-      - go build -C _bootstrap/s1 -o ../../bin/goal-c-1 ./selfhost
+      - go build -C _bootstrap/s1 -o ../../bin/goal-c-1 ./internal/compiler
       # stage 2: goal-c-1 transpiles the goal-written compiler, then Go builds goal-c-2.
-      - ./bin/goal-c-1 build --emit=_bootstrap/s2 ./selfhost
+      - ./bin/goal-c-1 build --emit=_bootstrap/s2 ./internal/compiler
       - printf 'module goal\n\ngo 1.26\n' > _bootstrap/s2/go.mod
-      - go build -C _bootstrap/s2 -o ../../bin/goal-c-2 ./selfhost
+      - go build -C _bootstrap/s2 -o ../../bin/goal-c-2 ./internal/compiler
 
   fixpoint:
     desc: Prove goal-c-1 and goal-c-2 emit byte-identical Go for the compiler's own source
     deps: [bootstrap]
     cmds:
       - rm -rf _bootstrap/fa _bootstrap/fb
-      - ./bin/goal-c-1 build --emit=_bootstrap/fa ./selfhost
-      - ./bin/goal-c-2 build --emit=_bootstrap/fb ./selfhost
+      - ./bin/goal-c-1 build --emit=_bootstrap/fa ./internal/compiler
+      - ./bin/goal-c-2 build --emit=_bootstrap/fb ./internal/compiler
       - diff -r _bootstrap/fa _bootstrap/fb
       - cmd: echo "FIXPOINT OK"
         silent: true

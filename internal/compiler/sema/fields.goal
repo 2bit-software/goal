@@ -1,0 +1,213 @@
+package sema
+
+// fields.go is the AST reimplementation of internal/check's feature-08
+// (no-zero-value, spec §8) guarantee: every struct or enum-variant composite must
+// name a value for every field, unless it opts out with a complete-by-construction
+// spread. A literal that omits a field without such a spread is an Error.
+//
+// Where the lexical checker (internal/check/fields.go) must reconstruct "is this a
+// struct literal, a block, or a match-arm pattern?" from a flat token stream with
+// brace-span heuristics, this check reads the answer off the parse tree, where the
+// three are distinct node types:
+//
+//   - A struct literal is an *ast.CompositeLit whose Type is a type name.
+//   - A variant construction is an *ast.VariantLit (built by the parser only when a
+//     call carries a labeled argument), never confused with an ordinary call.
+//   - A match-arm payload binding is an *ast.VariantPattern, a DIFFERENT node — so
+//     walking VariantLit alone never mistakes a binding for a construction (the
+//     legacy match_binding_arm false positive is structurally impossible here).
+//
+// Struct tags ride on the AST field, so they never shift field-name parsing; and
+// slice/array/map literals carry a non-Ident Type, so they are never read as struct
+// literals. Diagnostic severities and messages mirror internal/check/fields.go so the
+// corpus's inline // want markers are satisfied unchanged.
+
+import (
+	"fmt"
+	"strings"
+
+	"goal/internal/compiler/ast"
+)
+
+// CheckFields enforces feature-08 (no-zero-value): a struct literal of a known
+// struct, or an enum variant construction, must name every declared field unless it
+// opts out with a `...defaults` (§8.5) or `...derive(src)` (§12) spread. An omission
+// without such a spread is an Error; a keyed literal whose type is not declared in
+// this file is deferred with a located Warning (a false "complete" is worse than an
+// honest "cannot tell here"); a spread-completed literal is clean.
+func CheckFields(file *ast.File, info *Info) []Diagnostic {
+	var diags []Diagnostic
+	ast.Walk(visitorFunc(func(n ast.Node) bool {
+		match n {
+			*ast.CompositeLit(x) => {
+				diags = append(diags, checkStructLit(x, info)...)
+			}
+			*ast.VariantLit(x) => {
+				diags = append(diags, checkVariantLit(x, info)...)
+			}
+			_ => {}
+		}
+		return true
+	}), file)
+	return diags
+}
+
+// checkStructLit checks one composite literal. It acts only on a literal whose type
+// is named at the site as a bare identifier (`T{…}`): a known struct is checked for
+// completeness; an unknown but keyed literal type is deferred with a Warning. A
+// `...defaults`/`...derive(src)` spread makes the literal complete by construction —
+// the owning pass (defaults/derive) fills and validates the unnamed fields — so this
+// check steps aside. Literals with a non-Ident type (slice/array/map element types,
+// `pkg.T{…}`, generic instantiations) and bare `{…}` elements are not this check's to
+// assert and are skipped.
+func checkStructLit(lit *ast.CompositeLit, info *Info) []Diagnostic {
+	name, ok := identName(lit.Type)
+	if !ok {
+		return nil
+	}
+	if litHasSpread(lit) {
+		return nil
+	}
+	present := litKeys(lit)
+	fields, known := info.Structs[name]
+	if !known {
+		// Only defer on something that actually reads like a keyed composite literal;
+		// a non-keyed `IDENT{…}` is a block/conversion/element we cannot and should not
+		// judge.
+		if len(present) == 0 {
+			return nil
+		}
+		return []Diagnostic{{
+			Pos:      lit.Pos(),
+			Severity: Severity.Warning,
+			Feature:  "08-no-zero-value",
+			Code:     "unresolved-literal-type",
+			Message: fmt.Sprintf("cannot verify field completeness of `%s{…}`: type `%s` is not declared in this file — field-completeness deferred",
+				name, name),
+		}}
+	}
+	missing := missingFieldNames(fields, present)
+	if len(missing) == 0 {
+		return nil
+	}
+	return []Diagnostic{{
+		Pos:      lit.Pos(),
+		Severity: Severity.Error,
+		Feature:  "08-no-zero-value",
+		Code:     "missing-field",
+		Message: fmt.Sprintf("struct literal `%s{…}` omits required field%s %s — set %s explicitly, or add `...defaults` to fill the rest with zero values",
+			name, plural(len(missing)), quoteJoin(missing), pronoun(len(missing))),
+	}}
+}
+
+// checkVariantLit checks one enum variant construction `Enum.Variant(label: …)`. It
+// acts only when the enum is declared in this file and names one of its variants. A
+// variant has no `...defaults` escape, so every declared field must be named; a
+// data-less variant is trivially complete. An unknown enum (or a non-variant tag) is
+// skipped silently — the qualifier is not this check's concern.
+func checkVariantLit(lit *ast.VariantLit, info *Info) []Diagnostic {
+	enumName := exprName(lit.Enum)
+	enumDecl := info.Enums[enumName]
+	if enumDecl == nil || lit.Variant == nil {
+		return nil
+	}
+	declared, ok := variantFields(enumDecl, lit.Variant.Name)
+	if !ok || len(declared) == 0 {
+		return nil
+	}
+	present := labeledArgNames(lit.Args)
+	missing := missingFieldNames(declared, present)
+	if len(missing) == 0 {
+		return nil
+	}
+	return []Diagnostic{{
+		Pos:      lit.Pos(),
+		Severity: Severity.Error,
+		Feature:  "08-no-zero-value",
+		Code:     "missing-field",
+		Message: fmt.Sprintf("variant construction `%s.%s(…)` omits required field%s %s — a variant has no `...defaults`; name every field",
+			enumDecl.Name, lit.Variant.Name, plural(len(missing)), quoteJoin(missing)),
+	}}
+}
+
+// identName returns the name of a type expression that is a bare identifier, and
+// whether it was one. A qualified or generic type (SelectorExpr / IndexExpr / etc.)
+// reports ok=false.
+func identName(e ast.Expr) (string, bool) {
+	if id, ok := e.(*ast.Ident); ok {
+		return id.Name, true
+	}
+	return "", false
+}
+
+// litKeys returns the set of field names keyed in a composite literal — the Key of
+// each `*ast.KeyValueExpr` element whose key is an identifier.
+func litKeys(lit *ast.CompositeLit) map[string]bool {
+	present := map[string]bool{}
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		if id, ok := kv.Key.(*ast.Ident); ok {
+			present[id.Name] = true
+		}
+	}
+	return present
+}
+
+// litHasSpread reports whether a composite literal contains a `...X` spread element
+// (`...defaults` / `...derive(src)`), which completes the literal by construction.
+func litHasSpread(lit *ast.CompositeLit) bool {
+	for _, elt := range lit.Elts {
+		if _, ok := elt.(*ast.SpreadElement); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// labeledArgNames returns the set of labels of the `*ast.LabeledArg` arguments in a
+// variant construction's argument list (positional args carry no label).
+func labeledArgNames(args []ast.Expr) map[string]bool {
+	present := map[string]bool{}
+	for _, a := range args {
+		if la, ok := a.(*ast.LabeledArg); ok && la.Label != nil {
+			present[la.Label.Name] = true
+		}
+	}
+	return present
+}
+
+// variantFields returns the declared fields of the named variant of enum, and
+// whether such a variant exists.
+func variantFields(enumDecl *Enum, variant string) ([]Field, bool) {
+	for _, v := range enumDecl.Variants {
+		if v.Name == variant {
+			return v.Fields, true
+		}
+	}
+	return nil, false
+}
+
+// missingFieldNames returns the declared field names not present in the literal, in
+// declaration order (the order an agent reads them in the type declaration).
+func missingFieldNames(declared []Field, present map[string]bool) []string {
+	var missing []string
+	for _, f := range declared {
+		if !present[f.Name] {
+			missing = append(missing, f.Name)
+		}
+	}
+	return missing
+}
+
+// quoteJoin renders names as a comma-separated list of backtick-quoted identifiers in
+// the order given.
+func quoteJoin(names []string) string {
+	quoted := make([]string, len(names))
+	for i, n := range names {
+		quoted[i] = "`" + n + "`"
+	}
+	return strings.Join(quoted, ", ")
+}
