@@ -9,7 +9,7 @@ package main
 import (
 	"syscall/js"
 
-	"goal/internal/compiler/backend"
+	"goal/internal/backend"
 )
 
 // transpile is the JS-callable bridge. It takes one string argument (the .goal

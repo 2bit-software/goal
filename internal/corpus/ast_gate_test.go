@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"goal/internal/compiler/backend"
+	"goal/internal/backend"
 )
 
 // TestASTEngineWholeCorpusBehavioralGate is US-041: the whole-corpus behavioral

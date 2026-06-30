@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"goal/internal/compiler/project"
+	"goal/internal/project"
 	"goal/internal/selfhost"
 )
 

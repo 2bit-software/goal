@@ -1,6 +1,19 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- The committed generated .go is owned by `task generate`, NEVER by hand: for any
+  import-path / identifier rename, edit the .goal source then run `task generate`
+  to re-emit ALL .go. A direct sed of the committed .go does not re-sort the
+  gofmt import block, so a rename that shifts a path's sort position drifts the
+  .go from the regenerated emit and fails `task verify-generated` (found in
+  US-020). The .goal import order is cosmetic — the backend sorts on emit.
+- The drift gate diffs only the .goal-SOURCED packages, which now share internal/
+  with Go-only infra (byexample/corpus/selfhost — no .goal, not emitted). Scope
+  any verify diff to the emitted entries (`for entry in _bootstrap/verify/internal/*`),
+  never a blanket `diff -r internal _bootstrap/...` (the infra dirs false-fail as
+  "Only in internal"). The compiler `main` package is internal/ itself; the lib
+  packages are internal/<pkg>; `goal build ./internal` / `go build ./internal`
+  both target them correctly.
 - Deleting a legacy package can orphan an on-disk TESTDATA FIXTURE that a
   surviving corpus case resolves by import path (found in US-019): the
   foreign-derive corpus case imported `goal/internal/pipeline/testdata/extpkg`,
@@ -6818,4 +6831,51 @@
     correctness oracles now.
   - history/ is gitignored in this repo, so morse-code initiative artifacts are
     NOT committed; the commit carries only source/test/fixture changes.
+---
+
+## 2026-06-30T22:10:00Z - US-020
+- Promoted the goal compiler from its transition home internal/compiler/<pkg> to
+  the final internal/<pkg> layout. git-mv'd all 16 package dirs (ast, backend,
+  cap, fix, goalfmt, guide, interp, lexer, lsp, parser, pipeline, project, sema,
+  textedit, token, typecheck) plus the root entrypoint main.go/main.goal (now at
+  internal/main.{go,goal}). Rewrote every Go import + goal self-import
+  goal/internal/compiler/<pkg> -> goal/internal/<pkg> across 136 source files,
+  and the stale code/build comments, so no 'internal/compiler' path remains in
+  code/Taskfile (only .md docs, which are US-021's scope).
+- Updated Taskfile generate/verify-generated/bootstrap/fixpoint to ./internal.
+  The compiler `main` package now lives at internal/ itself, so bootstrap builds
+  `go build ./internal` and emit discovers the .goal packages under ./internal.
+- Files changed: 138 git renames (internal/compiler/** -> internal/**) carrying
+  both .goal + regenerated .go; Taskfile.yml; cmd/{goal,goalc,goal-wasm,
+  build-playground,goal-gen}/main.go imports; internal/corpus/* + internal/
+  selfhost/selfhost.go(+_test) imports; internal/selfhost/selfhost.go (dropped a
+  now-no-op ReplaceAll of goal/internal/ test imports); prd.json (US-020
+  passes:true); progress.txt.
+- Verification: task generate; task check EXIT 0 (vet + verify-generated drift
+  gate + full test incl. corpus behavioral tier + selfhost); task fixpoint
+  FIXPOINT OK (goal-c-1 vs goal-c-2 byte-identical); go build ./... and
+  GOOS=js GOARCH=wasm go build ./cmd/goal-wasm green.
+- Learnings for future iterations:
+  - Do NOT hand-sed the COMMITTED generated .go for an import-path rename: sed
+    rewrites the path in place but does NOT re-sort the import block, and the
+    backend emits imports gofmt-sorted, so a renamed path that changes sort
+    position (US-020: goal/internal/compiler/backend -> goal/internal/backend now
+    sorts BEFORE the unchanged goal/internal/byexample in guide.go) drifts the
+    committed .go from the regenerated .go and fails `task verify-generated`. Fix:
+    sed the .goal source (and any siblings), then run `task generate` to
+    re-emit ALL .go deterministically — that is the only authority for the
+    committed .go. (The .goal import block order is cosmetic; the emitter sorts.)
+  - When the generated-from-goal packages share internal/ with Go-only infra
+    (byexample/corpus/selfhost have no .goal), a blanket
+    `diff -r internal _bootstrap/verify/internal` drift gate FALSE-FAILS: the
+    emit produces only the compiler packages, so the infra dirs show as
+    "Only in internal". Scope the diff to exactly the emitted entries:
+    `for entry in _bootstrap/verify/internal/*; do diff -r -x '*.goal'
+    "internal/$(basename $entry)" "$entry"; done`. This still catches changed/
+    added/removed generated files within each compiler package + the root main.go.
+  - The compiler's `package main` root entrypoint (main.goal/main.go) promotes to
+    internal/ itself (a package main directory whose siblings are the lib
+    packages + Go-only infra). `goal build ./internal` discovers all .goal
+    packages under it (infra skipped, no .goal); `go build ./internal` builds
+    only the main package in that dir. Both work without a dedicated subdir.
 ---

@@ -7,8 +7,8 @@ import (
 	"io"
 	"os"
 
-	"goal/internal/compiler/backend"
-	"goal/internal/compiler/sema"
+	"goal/internal/backend"
+	"goal/internal/sema"
 )
 
 func main() {

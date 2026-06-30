@@ -256,8 +256,8 @@
         "`go build ./...`, full `go test ./...`, and `task fixpoint` are all green."
       ],
       "priority": 20,
-      "passes": false,
-      "notes": "Optional-but-intended final namespace promotion. If kept simpler, internal/compiler could remain the home; this story realizes the literal 'selfhost into internal, replacing legacy' end-state."
+      "passes": true,
+      "notes": "Optional-but-intended final namespace promotion. If kept simpler, internal/compiler could remain the home; this story realizes the literal 'selfhost into internal, replacing legacy' end-state. DONE: git-mv'd all 16 internal/compiler/<pkg> dirs + main.go/main.goal to internal/<pkg> (main at internal/), rewrote every import / goal self-import goal/internal/compiler/<pkg> -> goal/internal/<pkg> (136 source files) and stale comments, so no 'internal/compiler' path remains in code/build (only .md docs, which are US-021). Updated Taskfile generate/verify-generated/bootstrap/fixpoint to ./internal; verify-generated's diff is now SCOPED to the emitted entries (for entry in _bootstrap/verify/internal/*) because internal/ now co-hosts Go-only infra (byexample/corpus/selfhost) the emit doesn't produce. The compiler `main` package moved to internal/ itself, so bootstrap builds `go build ./internal`. Regenerated all .go via task generate (the sed broke gofmt import ordering in guide.go, e.g. backend now sorts before byexample — regenerate, never hand-sed the committed .go). task check (vet+drift gate+full test incl. corpus behavioral tier) EXIT 0; task fixpoint FIXPOINT OK; go build ./... + wasm build green."
     },
     {
       "id": "US-021",

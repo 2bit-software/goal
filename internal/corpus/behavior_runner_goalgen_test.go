@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"goal/internal/compiler/pipeline"
+	"goal/internal/pipeline"
 )
 
 // goalGenTranspiler drives a goal-built compiler binary (cmd/goal-gen, compiled
-// from the goal-SOURCED goal/internal/compiler/* packages) as the corpus
+// from the goal-SOURCED goal/internal/* packages) as the corpus
 // Transpiler: it shells out `goal-gen transpile -`, feeding the goal source on
 // stdin and capturing the lowered Go on stdout. This is the seam that lets the
 // behavioral tier judge the goal-written front-end exactly as it judges the legacy

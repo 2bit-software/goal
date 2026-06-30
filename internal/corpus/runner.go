@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"goal/internal/compiler/pipeline"
+	"goal/internal/pipeline"
 )
 
 // Transpiler lowers goal source to its transpile output. It is the seam that

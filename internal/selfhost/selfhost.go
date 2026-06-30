@@ -14,10 +14,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"goal/internal/compiler/backend"
-	"goal/internal/compiler/parser"
-	"goal/internal/compiler/pipeline"
-	"goal/internal/compiler/project"
+	"goal/internal/backend"
+	"goal/internal/parser"
+	"goal/internal/pipeline"
+	"goal/internal/project"
 )
 
 // InScope lists the compiler packages the smoke gate covers, by directory name
@@ -159,16 +159,11 @@ func BuildAndTest(relDir string, pkg *project.Package, testFiles []string, deps 
 		if err != nil {
 			return fmt.Errorf("%s: read test file %s: %w", relDir, tf, err)
 		}
-		// The canonical white-box test files live beside the trusted internal/<pkg>
-		// sources and import their siblings as goal/internal/<pkg>. The ported
-		// package under test (and its deps) are written under internal/compiler/<pkg>
-		// and import goal/internal/compiler/<pkg>, so rewrite the copied tests to the
-		// same import paths — otherwise the test's siblings and the package's siblings
-		// would be distinct package instances and fail to type-check. Every
-		// goal/internal/ occurrence in the included (self-contained) suites is an
-		// import or a comment, never a source string literal, so a blanket rewrite is
-		// safe.
-		src = []byte(strings.ReplaceAll(string(src), "goal/internal/", "goal/internal/compiler/"))
+		// The canonical white-box test files live beside the goal compiler
+		// sources at internal/<pkg> and import their siblings as goal/internal/<pkg>;
+		// the transpiled package under test is written at the same import path, so no
+		// import rewrite is needed — the test's siblings and the package's siblings
+		// resolve to one package instance.
 		if err := os.WriteFile(filepath.Join(dest, filepath.Base(tf)), src, 0o644); err != nil {
 			return fmt.Errorf("%s: write test file %s: %w", relDir, tf, err)
 		}

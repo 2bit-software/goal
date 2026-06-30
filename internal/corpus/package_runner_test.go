@@ -3,7 +3,7 @@ package corpus
 import (
 	"testing"
 
-	"goal/internal/compiler/backend"
+	"goal/internal/backend"
 )
 
 // TestPackageRunner runs every Mode=package case in the committed manifest

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"goal/internal/compiler/parser"
+	"goal/internal/parser"
 )
 
 // astParser wraps the AST front-end's parser.ParseFile as a [Parser].

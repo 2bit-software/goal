@@ -3,7 +3,7 @@ package corpus
 import (
 	"testing"
 
-	"goal/internal/compiler/backend"
+	"goal/internal/backend"
 )
 
 // TestCompileRunner is the behavioral conformance tier: every transpile case in

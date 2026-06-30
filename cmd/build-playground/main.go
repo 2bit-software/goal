@@ -19,7 +19,7 @@ import (
 	"regexp"
 	"strings"
 
-	"goal/internal/compiler/backend"
+	"goal/internal/backend"
 	"goal/internal/byexample"
 )
 

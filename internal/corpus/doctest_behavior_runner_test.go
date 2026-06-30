@@ -3,7 +3,7 @@ package corpus
 import (
 	"testing"
 
-	"goal/internal/compiler/backend"
+	"goal/internal/backend"
 )
 
 // TestDoctestExecRunner is the behavioral doctest tier: every doctest case in

@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"goal/internal/compiler/sema"
+	"goal/internal/sema"
 )
 
 // wantMarkerRe matches an inline expectation marker on a source line:

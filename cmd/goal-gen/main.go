@@ -1,5 +1,5 @@
 // Command goal-gen is a thin Go entrypoint over the goal-SOURCED compiler: it
-// imports goal/internal/compiler/{backend,pipeline,project} (the committed Go that
+// imports goal/internal/{backend,pipeline,project} (the committed Go that
 // `task generate` transpiles from the .goal compiler source) and exposes them as a
 // runnable binary. Building it with `go build ./cmd/goal-gen` therefore proves the
 // goal-written compiler compiles end to end, and running it drives the corpus
@@ -20,9 +20,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"goal/internal/compiler/backend"
-	"goal/internal/compiler/pipeline"
-	"goal/internal/compiler/project"
+	"goal/internal/backend"
+	"goal/internal/pipeline"
+	"goal/internal/project"
 )
 
 func main() {
@@ -76,7 +76,7 @@ func readInput(name string, stdin io.Reader) ([]byte, error) {
 
 // runBuild discovers every goal package under <path> and emits its lowered Go under
 // --emit=<dir>, preserving the module-relative directory layout. It mirrors the
-// goal-sourced internal/compiler/main.go entrypoint so the binary exercises
+// goal-sourced internal/main.go entrypoint so the binary exercises
 // project.Discover and backend.TranspilePackage as well as the single-file path.
 func runBuild(args []string) error {
 	emitDir := ""

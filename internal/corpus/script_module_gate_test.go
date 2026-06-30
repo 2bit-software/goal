@@ -23,10 +23,10 @@ import (
 	"strings"
 	"testing"
 
-	"goal/internal/compiler/backend"
-	"goal/internal/compiler/interp"
-	"goal/internal/compiler/parser"
-	"goal/internal/compiler/sema"
+	"goal/internal/backend"
+	"goal/internal/interp"
+	"goal/internal/parser"
+	"goal/internal/sema"
 )
 
 // scriptModuleSample is the sample goscript program. It declares an enum and a

@@ -22,17 +22,17 @@ import (
 	"sort"
 	"strings"
 
-	"goal/internal/compiler/backend"
-	"goal/internal/compiler/fix"
-	"goal/internal/compiler/goalfmt"
-	"goal/internal/compiler/guide"
-	"goal/internal/compiler/interp"
-	"goal/internal/compiler/lsp"
-	"goal/internal/compiler/parser"
-	"goal/internal/compiler/pipeline"
-	"goal/internal/compiler/project"
-	"goal/internal/compiler/sema"
-	"goal/internal/compiler/typecheck"
+	"goal/internal/backend"
+	"goal/internal/fix"
+	"goal/internal/goalfmt"
+	"goal/internal/guide"
+	"goal/internal/interp"
+	"goal/internal/lsp"
+	"goal/internal/parser"
+	"goal/internal/pipeline"
+	"goal/internal/project"
+	"goal/internal/sema"
+	"goal/internal/typecheck"
 )
 
 // guideCommands describes the binary's subcommands. It is the single source the
