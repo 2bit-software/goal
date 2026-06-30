@@ -43,6 +43,19 @@
   (port_test.go, the InScope smoke gate) are retired because their oracle is the
   deleted legacy source — the corpus behavioral tier + `task fixpoint` are the
   post-flip correctness gates.
+- When scrubbing `./selfhost` references (US-021, recurs in US-022): the retired
+  COMPILER directory is the bare `./selfhost` / `selfhost/` token. `internal/selfhost`
+  is a DIFFERENT, surviving package — the Go TEST HARNESS (selfhost.go:
+  BuildTranspiled/BuildAndTest/ReadPackage). Scrub only the bare compiler-dir token;
+  PRESERVE every `internal/selfhost` reference. Verify with
+  `grep -nE "\./selfhost|[^l]selfhost/| selfhost\b"` (excludes the harness) vs
+  `grep -n "internal/selfhost"` (must remain). Also note the live bootstrap path is
+  `./internal` (Taskfile bootstrap/fixpoint build `go build ./internal`), so any stale
+  `goal build ... ./selfhost` snippet maps to `./internal`.
+- Pure-docs stories touch no `.goal`/`.go`: `task generate` is NOT needed and the
+  `task verify-generated` drift gate stays green on its own (it diffs committed `.go`
+  against a fresh emit, which is unchanged). The full gate set is still
+  `task check` + `task verify-generated` + `task fixpoint`.
 - goal front-end gap (found in US-010): a `*ptr = ...` deref-assignment statement
   parses ONLY as the FIRST statement in its block. When it follows another
   statement the lexer inserts no semicolon before the leading `*`, so the parser
@@ -6878,4 +6891,39 @@
     packages + Go-only infra). `goal build ./internal` discovers all .goal
     packages under it (infra skipped, no .goal); `go build ./internal` builds
     only the main package in that dir. Both work without a dedicated subdir.
+---
+
+## 2026-06-30T22:10:00Z - US-021
+- Phase 4 cleanup: updated the project's narrative docs to describe the post-flip
+  single-source layout (goal `.goal` canonical + committed generated `.go` under
+  internal/) and scrubbed the retired `./selfhost` compiler-dir references.
+- AC-1 (Taskfile final internal/ paths) was confirm-only — US-020 already landed
+  it; no Taskfile edit was required.
+- Files changed:
+  - README.md: added a "The self-hosted compiler" section (canonical .goal +
+    committed generated .go, task generate emits, task verify-generated drift-gates;
+    test/dev infra incl. internal/selfhost harness stays Go).
+  - REWRITE-ARCHITECTURE.md: added an "Update — the self-host flip has landed"
+    banner under the Status line (Phase 4-5 self-host vision realized; points to
+    DECISIONS.md US-001).
+  - SELF-HOST-RESEARCH.md: §5 banner ("peer ./selfhost dir" -> "peer top-level
+    directory"), §5 body + bootstrap shell snippet (./selfhost build target ->
+    ./internal, matching the live Taskfile), §8 ("selfhost/ skeleton" -> "internal/
+    compiler skeleton"), §9 ("live selfhost/ tree" -> "live compiler tree (now under
+    internal/)", "39 selfhost .goal files" -> "39 compiler .goal files").
+  - prd.json: US-021 passes:true + notes.
+- Learnings for future iterations:
+  - internal/selfhost (the Go test-harness package) is NOT the retired ./selfhost
+    compiler dir — preserve it; scrub only the bare ./selfhost / selfhost/ token.
+    (Captured in Codebase Patterns.)
+  - A pure-docs story changes no .goal/.go, so task generate is unnecessary and the
+    drift gate stays green; still run the full task check + verify-generated +
+    fixpoint gate set.
+  - Remaining ./selfhost references in DECISIONS.md, SELF-HOST-FLIP-PLAN.md, and
+    internal/sema/foreign.goal comments are the repo-wide scrub owned by US-022
+    (its AC-2 = "No reference to a ./selfhost directory remains anywhere in the
+    repo"), not US-021 (scoped to the three named docs).
+- Verified: task check (EXIT 0), task verify-generated ("generated Go is up to
+  date", EXIT 0), task fixpoint ("FIXPOINT OK", EXIT 0). Doc grep sweep: no bare
+  ./selfhost token in the three docs; internal/selfhost harness refs preserved.
 ---

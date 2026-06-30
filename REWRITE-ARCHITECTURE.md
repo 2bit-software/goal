@@ -2,6 +2,16 @@
 
 Status: **proposal / for sign-off**. Date: 2026-06-26.
 
+> **Update — the self-host flip has landed.** This document is the original
+> architecture proposal; its Phase 4–5 self-host vision is now realized. The goal
+> compiler is itself written in goal: each package under `internal/` is
+> **canonical goal source (`<file>.goal`)** with **committed, generated Go
+> (`<file>.go`)** colocated beside it, emitted by `task generate` and kept honest
+> by the `task verify-generated` drift gate. goal source is the single source of
+> truth for the toolchain, and the legacy hand-written Go transpiler has been
+> removed. See `DECISIONS.md` ("US-001 — self-host flip: adopted layout & trust
+> model") for the adopted layout and trust model.
+
 This document is the output of a research + architecture session. It answers four
 questions the owner posed:
 

@@ -154,7 +154,7 @@ form. Not a blocker, just a contract to honor.
 
 > **SUPERSEDED in part by the self-host flip (see `DECISIONS.md` → "US-001 — self-host
 > flip: adopted layout & trust model").** Two things below are pre-flip framing: (1)
-> the goal compiler no longer lives at a peer `./selfhost` dir — the flip relocates it
+> the goal compiler no longer lives at a peer top-level directory — the flip relocates it
 > *into* the `internal/` namespace as colocated `<file>.goal` source + committed
 > generated `<file>.go`; and (2) the Go build is no longer the *permanent* trust root.
 > The flip adopts the **B-commit** bootstrap (committed generated Go, drift-gated),
@@ -163,25 +163,26 @@ form. Not a blocker, just a contract to honor.
 > below still holds). The 3-stage mechanics and the fixpoint trust gate themselves are
 > unchanged.
 
-No `selfhost/` dir or Taskfile bootstrap target exists yet. The goal-written compiler would be a
-`package main` goal program (a goalc-in-goal) under e.g. `./selfhost`. The classic 3-stage
-bootstrap with the byte-identity trust gate:
+The goal-written compiler now lives in the `internal/` namespace as colocated `<file>.goal`
+source + committed generated `<file>.go`; the compiler `main` is the `package main` at
+`./internal`, and the `task bootstrap` / `task fixpoint` targets run the sequence below. The
+classic 3-stage bootstrap with the byte-identity trust gate:
 
 ```sh
 set -e
 task build                                     # stage 0: trusted Go-built ./bin/goal[c]
 
 # stage 1: build the goal-written compiler USING stage 0
-./bin/goal build --emit=build/s1 ./selfhost    # goal source -> Go
+./bin/goal build --emit=build/s1 ./internal    # goal source -> Go
 go build -o bin/goal-c-1 ./build/s1            # Go -> native goal-c-1
 
 # stage 2: build the goal-written compiler USING goal-c-1
-./bin/goal-c-1 build --emit=build/s2 ./selfhost
+./bin/goal-c-1 build --emit=build/s2 ./internal
 go build -o bin/goal-c-2 ./build/s2            # goal-c-2
 
 # fixpoint: the two goal-built compilers must emit byte-identical Go for their own source
-./bin/goal-c-1 build --emit=fix/a ./selfhost
-./bin/goal-c-2 build --emit=fix/b ./selfhost
+./bin/goal-c-1 build --emit=fix/a ./internal
+./bin/goal-c-2 build --emit=fix/b ./internal
 diff -r fix/a fix/b && echo "FIXPOINT OK"
 ```
 
@@ -236,7 +237,7 @@ expressive enough" from "did I introduce a logic bug rewriting in a new idiom."
 1. **Unit 0 — close the front-end gaps:** fix `iota` const-block mangling (gating) + add a
    "transpile-then-`go build` every in-scope package" smoke gate; optionally fix generic-func
    decls (§4.2).
-2. **Bootstrap harness:** `selfhost/` skeleton (goalc-in-goal `package main`) + Taskfile
+2. **Bootstrap harness:** the `internal/` compiler skeleton (goalc-in-goal `package main`) + Taskfile
    `bootstrap`/`fixpoint` targets running the §5 sequence, even against a stub, so the gate
    exists before code.
 3. **Leaf-to-root port**, one package per unit, each gated on transpile-compile + corpus:
@@ -255,7 +256,7 @@ both de-risked by the corpus control and the existing Go source as oracle.
 Phase 5 (the "dogfood pass" of §8.5) ran as a separate **seam** PRD that relaxed the
 byte-identical-output gate to a fixpoint-self-consistency + corpus-behavioral gate, so
 cross-package idiom changes that alter emitted Go could be re-proven equivalent. The
-before/after below is counted from the live `selfhost/` tree (full per-seam tally in
+before/after below is counted from the live compiler tree (now under `internal/`; full per-seam tally in
 DECISIONS.md "SEAM-006"):
 
 | Idiom | Before (transpiled Go) | After (idiomatic goal) |
@@ -264,7 +265,7 @@ DECISIONS.md "SEAM-006"):
 | AST dispatch | ~36 plain `switch n.(type)` over OPEN interfaces | 27 → exhaustive `match` over a SEALED AST (134 type-pattern arms); 9 documented non-fits |
 | Fallible seam API | `(T,error)` + manual `if err!=nil` | 7 Result-returning APIs, 56 `Result.Ok`/`Err`/`?` sites; remainder documented semantic non-fits |
 
-`goal fix` over all 39 selfhost `.goal` files auto-modifies zero of them (12 result-sig
+`goal fix` over all 39 compiler `.goal` files auto-modifies zero of them (12 result-sig
 refusals + 14 advisory call-site notes, all mapping to documented non-fits) — the autofixer
 agrees the propagating API is idiomatic. `task fixpoint` = FIXPOINT OK on the new source.
 

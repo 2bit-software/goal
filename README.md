@@ -179,6 +179,20 @@ Coverage spans exhaustiveness (02), must-use / dropped `Result` (03, 06), field-
 (10), and conversion totality & From-completeness (12). See `testdata/check/` for the input
 programs each check is expected to flag.
 
+## The self-hosted compiler
+
+goal is written in goal. Every compiler package under `internal/` is colocated
+**canonical goal source (`<file>.goal`)** plus its **committed, generated Go
+(`<file>.go`)**: the `.goal` is the single source of truth, and the `.go` is a
+build artifact the goal toolchain emits beside it. `task generate` regenerates
+the `.go` from the `.goal`, and `task verify-generated` is the drift gate that
+fails if any committed `.go` diverges from a fresh emit. `go build` reads the
+committed `.go`; the goal front-end reads the `.goal`. The hand-written Go
+transpiler that bootstrapped the language is gone — the corpus behavioral tier
+and the `task fixpoint` byte-identity check are the correctness gates. Only the
+test/dev infra (the corpus, `byexample`, and the `internal/selfhost` build
+harness) stays plain Go.
+
 ## Tests
 
 ```bash

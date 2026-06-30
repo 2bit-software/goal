@@ -269,8 +269,8 @@
         "`task check`, `task verify-generated`, and `task fixpoint` all pass."
       ],
       "priority": 21,
-      "passes": false,
-      "notes": "Phase 4 cleanup."
+      "passes": true,
+      "notes": "Phase 4 cleanup. DONE: AC-1 was confirm-only — US-020 already pointed Taskfile generate/verify-generated/bootstrap/fixpoint at ./internal (the only 'selfhost' tokens there are comments about the internal/.../selfhost Go-only infra dir). AC-2: README gained a 'The self-hosted compiler' section, REWRITE-ARCHITECTURE gained an 'Update — the self-host flip has landed' banner, both stating goal source (.goal) is canonical with committed generated Go (.go) under internal/ (task generate emits, task verify-generated drift-gates). SELF-HOST-RESEARCH §5 banner/body+bootstrap-snippet/§8/§9 had their ./selfhost & selfhost/ COMPILER-dir refs scrubbed to the final internal/ layout (bootstrap snippet build target ./selfhost -> ./internal, matching the live Taskfile). GOTCHA: internal/selfhost is the Go TEST HARNESS package, a DIFFERENT thing — its references (SELF-HOST-RESEARCH §1 banner, README note) were deliberately PRESERVED; scrub only the bare ./selfhost / selfhost/ compiler-dir token. No .goal/.go source touched, so task generate was not needed and the drift gate stayed green. task check + task verify-generated + task fixpoint (FIXPOINT OK) all green. The repo-wide ./selfhost scrub (DECISIONS.md, SELF-HOST-FLIP-PLAN.md, internal/sema/foreign.goal comments) and cmd/goal-gen removal remain US-022."
     },
     {
       "id": "US-022",
