@@ -693,3 +693,37 @@ func TestPortedTexteditPackage(t *testing.T) {
 		t.Fatalf("existing textedit tests failed against the transpiled package: %v", err)
 	}
 }
+
+// TestPortedCapPackage validates US-008: the capability/authority model
+// reimplemented as goal source under internal/compiler/cap transpiles to
+// compiling Go (the smoke gate — cap is a LEAF that imports nothing at all, so
+// the layout is the single package and there are no in-module deps to transpile
+// alongside) AND makes the same allow/deny decisions as the legacy package for
+// the same capability checks. The behavioral gate runs the legacy package's own
+// cap_test.go, which is self-contained (stdlib testing only) and exercises
+// GrantAll/DenyAll/Grant membership plus the String enumeration over every
+// defined capability — the identical file runs against the legacy package under
+// `task check`, so it is the AC-2 parity oracle. The test's working directory
+// is internal/selfhost, so the goal source is at ../../internal/compiler/cap and
+// the existing tests are at ../cap.
+func TestPortedCapPackage(t *testing.T) {
+	capPkg := discoverPorted(t, "cap")
+
+	// Criterion 1: transpiles via the smoke gate and the generated Go compiles.
+	// A leaf package with no imports at all, so the layout is cap alone and there
+	// is no dependency closure to transpile.
+	layout := map[string]*project.Package{
+		"internal/compiler/cap": capPkg,
+	}
+	if err := selfhost.BuildTranspiled(layout); err != nil {
+		t.Fatalf("ported cap failed the transpile-and-build gate: %v", err)
+	}
+
+	// Criterion 2: the self-contained cap tests pass against the transpiled
+	// package. Leaf package => no dependency closure to transpile (nil deps). The
+	// behavioral test file pins grant/deny/membership/String results, proving
+	// same-input same-decision parity with the legacy package.
+	if err := selfhost.BuildAndTest("internal/compiler/cap", capPkg, []string{"../cap/cap_test.go"}, nil); err != nil {
+		t.Fatalf("existing cap tests failed against the transpiled package: %v", err)
+	}
+}

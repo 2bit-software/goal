@@ -120,7 +120,12 @@
   self-contained stdlib-only <pkg>_selfhost_test.go in the LEGACY dir with pinned
   byte-identical `want` values — one file then proves parity on BOTH the legacy
   package (`task check`) and the transpiled one (BuildAndTest). cp via Bash does NOT
-  trip the verify-generated PostToolUse hook (only Edit/Write do).
+  trip the verify-generated PostToolUse hook (only Edit/Write do). If the legacy
+  package ALREADY ships a self-contained, stdlib-`testing`-only test that builds
+  its inputs inline (e.g. internal/cap/cap_test.go), reuse it DIRECTLY as
+  BuildAndTest's behavioral input (`../<pkg>/<pkg>_test.go`) — no new
+  *_selfhost_test.go needed. A zero-import leaf (cap imports nothing at all) is the
+  minimal port: verbatim cp, `task generate`, single-package layout, nil deps.
 - The lexer strips newlines/implicit semicolons, so the parser reconstructs
   spec/decl boundaries structurally. Where Go relies on the newline=semicolon
   rule (e.g. a bare const continuation vs a Name+Type spec), use token line
@@ -6106,4 +6111,34 @@
   - cp via Bash does NOT trip the verify-generated PostToolUse hook (only Edit/Write
     do), so copying the .goal then running `task generate` before any Edit avoids the
     transient "Only in .../textedit: <file>.go" red the goalfmt port hit.
+---
+
+## 2026-06-30T18:05:00Z - US-008
+- Ported the capabilities/authority package (internal/cap) to goal source under
+  internal/compiler/cap. cap is the simplest LEAF: it imports NOTHING (no stdlib,
+  no goal/internal deps), so the port is a verbatim cp of cap.go -> cap.goal with
+  no import repoint, `task generate` to emit the colocated cap.go, and a
+  single-package / nil-deps port test.
+- The legacy cap_test.go is already self-contained (stdlib `testing` only) and
+  exhaustively exercises GrantAll/DenyAll/Grant membership + the String
+  enumeration over all 8 capabilities, so it was reused VERBATIM as BuildAndTest's
+  behavioral parity oracle — no new *_selfhost_test.go needed (unlike US-007 where
+  textedit shipped a fixture-mixed suite).
+- Added TestPortedCapPackage to internal/selfhost/port_test.go: compile gate
+  (BuildTranspiled, single-package layout {"internal/compiler/cap": capPkg}) +
+  behavioral gate (BuildAndTest over ../cap/cap_test.go, nil deps).
+- Files changed: internal/compiler/cap/{cap.goal,cap.go} (new),
+  internal/selfhost/port_test.go (+TestPortedCapPackage), prd.json (US-008
+  passes:true), progress.txt.
+- Verification: `go build ./internal/compiler/cap/...` OK; TestPortedCapPackage
+  PASS; `task check` GREEN (vet + verify-generated drift gate + full test);
+  `task fixpoint` FIXPOINT OK.
+- Learnings for future iterations:
+  - When the legacy package ALREADY has a self-contained, stdlib-only test file,
+    reuse it directly as BuildAndTest's behavioral input (path ../<pkg>/<pkg>_test.go)
+    — no need to author a *_selfhost_test.go. Check the legacy test's imports first;
+    if it is `testing`-only and builds its inputs inline, it is harness-ready.
+  - A zero-import leaf (cap imports nothing at all, not even stdlib) is the absolute
+    minimal port: verbatim cp, generate, single-package layout, nil deps. The
+    generated .go gains `//line` directives but the surface is byte-faithful.
 ---

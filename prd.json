@@ -109,7 +109,7 @@
         "Capability allow/deny decisions from the goal-built cap match the legacy package on a fixture set of capability checks."
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Leaf helper (110 LOC), unblocks interp."
     },
     {
