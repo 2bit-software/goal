@@ -817,29 +817,25 @@ func TestPortedFixPackage(t *testing.T) {
 	}
 }
 
-// TestPortedInterpPackage validates US-011 and US-012: the interpreter's runtime
-// foundation — the value model (value.goal), lexical environment (env.goal),
-// host-function bridge (host.goal), assert evaluation (assert.goal) — AND the
-// expression EVALUATOR (eval.goal, US-012), reimplemented as goal source under
-// internal/compiler/interp, transpiles to compiling Go (the smoke gate) AND
-// passes the existing internal/interp value/env tests plus the US-012
-// eval-subset tests against the transpiled output (behavioral equivalence —
-// Value construction/equality/Kind, Env scope/lookup/assign, and the
-// arithmetic/comparison/logical/unary/error evaluation matrix).
+// TestPortedInterpPackage validates US-011, US-012, and US-013: the whole
+// interpreter — the value model (value.goal), lexical environment (env.goal),
+// host-function bridge (host.goal), assert evaluation (assert.goal), the
+// expression EVALUATOR (eval.goal), and now the DRIVER (interp.goal: New/Run/
+// callFunc/callMethod/sigFor/curSig/exec*/match dispatch), value DERIVATION
+// (derive.goal), and DOCTEST runner (doctest.goal) — reimplemented as goal source
+// under internal/compiler/interp, transpiles to compiling Go (the smoke gate) AND
+// passes the FULL legacy goscript + doctest behavioral conformance suite against
+// the transpiled output (behavioral equivalence — whole-program execution,
+// control flow, calls/methods, composites, match/option/result/question, enums,
+// derive conversions, capabilities, builtins, and doctest evaluation).
 //
-// eval.goal (US-012) is the real evaluator but calls driver symbols ported in
-// US-013 (interp.go -> interp.goal, derive.go): callFunc, callMethod, sigFor,
-// curSig, evalDerive, and match dispatch. So the goal-sourced package builds at
-// the US-012 checkpoint, internal/compiler/interp/interp.goal is a transitional
-// skeleton supplying the full Interp struct, panicSignal/returnSignal/
-// CapabilityError/emitStdout, plus loud-refusal placeholders for those driver
-// symbols (US-013 deletes them). The behavioral gate runs the AC-2 oracle —
-// value_test.go and env_test.go (US-011) and eval_subset_test.go (US-012,
-// driver-free: it builds a bare *Interp and drives parsed expressions straight
-// through evalExpr) — all white-box and self-contained; the identical files run
-// against the legacy package under `task check`. host_test.go, assert_test.go,
-// and the legacy eval_test.go are excluded because they drive whole programs
-// through the US-013 driver (New/findMain/Run), not ported until US-013.
+// With US-013 the driver exists, so every legacy interp test that drives whole
+// programs through New/Run is now part of the behavioral gate (the parity
+// oracle). The whole suite is fed together so each white-box cross-file helper
+// resolves; gate_dep_test.go is the only exclusion (it switches on the drifted
+// sema.Severity enum and shells `go list` against the real module path — neither
+// survives the temp self-host module), staying a legacy-only check under
+// `task check`.
 //
 // Because eval.goal imports sema, the interp package now pulls sema (-> ast,
 // parser, token) and parser (-> lexer) in addition to the US-011 ast/token/cap;
@@ -888,12 +884,43 @@ func TestPortedInterpPackage(t *testing.T) {
 		"internal/compiler/sema":   semaPkg,
 		"internal/compiler/cap":    capPkg,
 	}
+	// US-013: the full white-box goscript + doctest conformance suite now runs
+	// against the goal-built interp — the driver (New/Run/callFunc/callMethod/
+	// match dispatch), derivation, and doctest runner are ported, so every legacy
+	// interp test that drives whole programs is exercised against the transpiled
+	// package as the parity oracle. The whole suite is fed together so each
+	// white-box cross-file helper (runProgram, evalProgram, runMainScope, ...)
+	// resolves. gate_dep_test.go is EXCLUDED: it switches on the drifted
+	// sema.Severity enum and shells out `go list` against the real module path —
+	// neither survives the temp self-host module; it stays a legacy-only check.
 	testFiles := []string{
-		"../interp/value_test.go",
+		"../interp/assert_test.go",
+		"../interp/assign_test.go",
+		"../interp/builtins_test.go",
+		"../interp/call_test.go",
+		"../interp/cap_deny_test.go",
+		"../interp/cap_io_test.go",
+		"../interp/composite_test.go",
+		"../interp/control_test.go",
+		"../interp/defaults_test.go",
+		"../interp/derive_test.go",
+		"../interp/doctest_test.go",
+		"../interp/enum_test.go",
 		"../interp/env_test.go",
 		"../interp/eval_subset_test.go",
+		"../interp/eval_test.go",
+		"../interp/gate_test.go",
+		"../interp/host_test.go",
+		"../interp/implements_test.go",
+		"../interp/interp_test.go",
+		"../interp/match_test.go",
+		"../interp/option_test.go",
+		"../interp/question_test.go",
+		"../interp/result_test.go",
+		"../interp/value_match_test.go",
+		"../interp/value_test.go",
 	}
 	if err := selfhost.BuildAndTest("internal/compiler/interp", interpPkg, testFiles, deps); err != nil {
-		t.Fatalf("existing interp value/env and US-012 eval-subset tests failed against the transpiled package: %v", err)
+		t.Fatalf("the full goscript+doctest interp conformance suite failed against the transpiled package: %v", err)
 	}
 }

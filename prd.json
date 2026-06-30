@@ -169,7 +169,7 @@
         "The full goscript and doctest behavioral conformance suites pass against the goal-built interp."
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "~1836 LOC. Completes the interp port. Depends on US-011, US-012."
     },
     {

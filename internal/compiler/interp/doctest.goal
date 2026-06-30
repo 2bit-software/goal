@@ -1,0 +1,120 @@
+package interp
+
+// This file exposes the interpreter's BEHAVIORAL doctest oracle: it evaluates
+// the `///  >>>` examples the parser attached to a program's declarations and
+// reports whether each example's runtime result matches its documented expected
+// value. It is the interpreter-side analogue of the Go backend's doctest tier
+// (which transpiles the program, emits a `_test.go` sidecar, and runs `go test`):
+// instead of compiling, it evaluates each example expression directly through the
+// shared AST + sema front-end and compares the rendered Value to the expected
+// line. The corpus runner (internal/corpus.RunInterp, US-025) drives this so the
+// implementation-independent behavioral tier judges the interpreter on the same
+// yardstick as the Go backend.
+
+import (
+	"fmt"
+	"strings"
+
+	"goal/internal/compiler/ast"
+	"goal/internal/compiler/parser"
+	"goal/internal/compiler/sema"
+)
+
+// DoctestFailure records one doctest example whose evaluated runtime result did
+// not match its documented expected value. It carries enough to identify the
+// offending example loudly: the enclosing function, the input expression, the
+// expected rendering, and the actual rendering.
+type DoctestFailure struct {
+	Func     string // the function whose doc comment carried the example
+	Input    string // the `>>>` input expression text
+	Expected string // the documented expected output (trimmed, lines joined)
+	Got      string // the actual rendered result
+}
+
+// String renders a one-line description of the failure.
+func (f DoctestFailure) String() string {
+	return fmt.Sprintf("doctest %s: %s => got %s, want %s", f.Func, f.Input, f.Got, f.Expected)
+}
+
+// RunDoctests parses and sema-resolves the goal source, constructs an interpreter
+// over the shared AST + sema front-end, and evaluates every `///  >>>` doctest
+// example the parser attached to the program's declarations. For each example it
+// evaluates the input expression against the program's root scope and compares
+// the rendered result (Value.String) against the documented expected value.
+//
+// It returns the slice of examples whose results did not match (failures), the
+// number of examples actually evaluated (ran), and an error only on a structural
+// failure: a parse failure of the source, a parse failure of an example
+// expression, or an evaluation failure (e.g. an undefined symbol). A value
+// mismatch is a returned DoctestFailure, never an error — and never a silent
+// pass.
+func RunDoctests(src string) (failures []DoctestFailure, ran int, err error) {
+	file, err := parser.ParseFile(src)
+	if err != nil {
+		return nil, 0, fmt.Errorf("interp: doctest source parse: %w", err)
+	}
+	info := sema.Resolve(file)
+	ip := New(file, info)
+
+	pkg := "main"
+	if file.Name != nil && file.Name.Name != "" {
+		pkg = file.Name.Name
+	}
+
+	for _, d := range file.Decls {
+		fd, ok := d.(*ast.FuncDecl)
+		if !ok || fd.Name == nil || fd.Doc == nil {
+			continue
+		}
+		for _, dt := range fd.Doc.Doctests {
+			input := strings.TrimSpace(dt.Input)
+			want := strings.TrimSpace(strings.Join(dt.Expected, "\n"))
+			if input == "" || want == "" {
+				continue // malformed (no input or no expected line) — skip
+			}
+			ran++
+			expr, perr := parseDoctestExpr(pkg, input)
+			if perr != nil {
+				return nil, ran, fmt.Errorf("interp: doctest %s %q: %w", fd.Name.Name, input, perr)
+			}
+			val, eerr := ip.evalExpr(expr, ip.root)
+			if eerr != nil {
+				return nil, ran, fmt.Errorf("interp: doctest %s %q: eval: %w", fd.Name.Name, input, eerr)
+			}
+			if got := val.String(); got != want {
+				failures = append(failures, DoctestFailure{
+					Func:     fd.Name.Name,
+					Input:    input,
+					Expected: want,
+					Got:      got,
+				})
+			}
+		}
+	}
+	return failures, ran, nil
+}
+
+// parseDoctestExpr lifts a single goal expression node out of the input text. The
+// parser exposes only ParseFile (there is no ParseExpr), so the expression is
+// wrapped in a minimal function whose body binds it with `:=`, parsed, and the
+// assignment's right-hand expression extracted. A wrap that does not produce the
+// expected shape is a descriptive error rather than a panic.
+func parseDoctestExpr(pkg, input string) (ast.Expr, error) {
+	wrap := "package " + pkg + "\nfunc __doctest__() {\n\t__dt := " + input + "\n}\n"
+	wf, err := parser.ParseFile(wrap)
+	if err != nil {
+		return nil, fmt.Errorf("parse expression: %w", err)
+	}
+	if len(wf.Decls) == 0 {
+		return nil, fmt.Errorf("parse expression: no declaration produced")
+	}
+	fd, ok := wf.Decls[0].(*ast.FuncDecl)
+	if !ok || fd.Body == nil || len(fd.Body.List) == 0 {
+		return nil, fmt.Errorf("parse expression: unexpected wrapper shape")
+	}
+	as, ok := fd.Body.List[0].(*ast.AssignStmt)
+	if !ok || len(as.Rhs) != 1 {
+		return nil, fmt.Errorf("parse expression: expected a single assigned expression")
+	}
+	return as.Rhs[0], nil
+}

@@ -4,6 +4,7 @@ package interp
 
 //line interp.go:4
 import (
+	"errors"
 	"fmt"
 	"goal/internal/compiler/ast"
 	"goal/internal/compiler/cap"
@@ -11,9 +12,53 @@ import (
 	"goal/internal/compiler/token"
 	"io"
 	"os"
+	"sort"
+	"strconv"
+	"strings"
 )
 
-//line interp.goal:42
+//line interp.goal:32
+var ErrNoMain = errors.New("interp: no func main declared")
+
+//line interp.goal:38
+type returnSignal struct {
+	vals []Value
+}
+
+//line interp.goal:43
+func (returnSignal) Error() string {
+	return "interp: return outside function"
+}
+
+//line interp.goal:49
+type breakSignal struct {
+}
+
+//line interp.goal:43
+func (breakSignal) Error() string {
+	return "interp: break outside loop or switch"
+}
+
+//line interp.goal:58
+type continueSignal struct {
+}
+
+//line interp.goal:43
+func (continueSignal) Error() string {
+	return "interp: continue outside loop"
+}
+
+//line interp.goal:69
+type panicSignal struct {
+	value Value
+}
+
+//line interp.goal:43
+func (p panicSignal) Error() string {
+	return "interp: panic: " + p.value.String()
+}
+
+//line interp.goal:79
 type Interp struct {
 	file    *ast.File
 	info    *sema.Info
@@ -26,38 +71,51 @@ type Interp struct {
 	stdout  io.Writer
 }
 
-//line interp.goal:85
-type returnSignal struct {
-	vals []Value
+//line interp.goal:131
+type Option func(*Interp)
+
+//line interp.goal:135
+func WithCapabilities(s cap.CapabilitySet) Option {
+	return func(ip *Interp) {
+		ip.caps = s
+	}
 }
 
-//line interp.goal:90
-func (returnSignal) Error() string {
-	return "interp: return outside function"
+//line interp.goal:141
+func WithStdout(w io.Writer) Option {
+	return func(ip *Interp) {
+		ip.stdout = w
+	}
 }
 
-//line interp.goal:96
-type panicSignal struct {
-	value Value
+//line interp.goal:153
+func New(file *ast.File, info *sema.Info, opts ...Option) *Interp {
+	ip := &Interp{file: file, info: info, root: NewEnv(), methods: map[string]map[string]*ast.FuncDecl{}, imports: map[string]string{}, derives: map[string]*ast.FuncDecl{}}
+	ip.caps = cap.GrantAll()
+	ip.stdout = os.Stdout
+	for _, opt := range opts {
+		if opt != nil {
+			opt(ip)
+		}
+	}
+	ip.registerImports()
+	ip.registerFuncs()
+	ip.registerMethods()
+	return ip
 }
 
-//line interp.goal:90
-func (p panicSignal) Error() string {
-	return "interp: panic: " + p.value.String()
-}
-
-//line interp.goal:105
+//line interp.goal:178
 type CapabilityError struct {
 	Cap cap.Capability
 	Pos token.Pos
 }
 
-//line interp.goal:90
+//line interp.goal:43
 func (e CapabilityError) Error() string {
 	return fmt.Sprintf("interp: %s: capability denied: %s not granted", e.Pos.String(), e.Cap)
 }
 
-//line interp.goal:120
+//line interp.goal:196
 func (ip *Interp) emitStdout(pos token.Pos, write func(io.Writer) error) error {
 	if !ip.caps.Has(cap.Stdout) {
 		return CapabilityError{Cap: cap.Stdout, Pos: pos}
@@ -69,42 +127,904 @@ func (ip *Interp) emitStdout(pos token.Pos, write func(io.Writer) error) error {
 	return write(w)
 }
 
-//line interp.goal:140
+//line interp.goal:212
+func (ip *Interp) registerImports() {
+	if ip.file == nil {
+		return
+	}
+	for _, spec := range ip.file.Imports {
+		if spec == nil || spec.Path == nil {
+			continue
+		}
+		path, err := strconv.Unquote(spec.Path.Value)
+		if err != nil || path == "" {
+			continue
+		}
+		name := ""
+		if spec.Name != nil {
+			name = spec.Name.Name
+		}
+		if name == "" {
+			name = path[strings.LastIndex(path, "/")+1:]
+		}
+		if name == "" || name == "_" || name == "." {
+			continue
+		}
+		ip.imports[name] = path
+	}
+}
+
+//line interp.goal:253
+func isFuncDerive(m ast.FuncMod) bool {
+	_, ok := m.(ast.FuncMod_FuncDerive)
+
+	return ok
+}
+
+//line interp.goal:260
+func isSeverityError(s sema.Severity) bool {
+	_, ok := s.(sema.Severity_Error)
+
+	return ok
+}
+
+//line interp.goal:262
+func (ip *Interp) registerFuncs() {
+	if ip.file == nil {
+		return
+	}
+	for _, d := range ip.file.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Recv != nil || fn.Name == nil {
+			continue
+		}
+		if isFuncDerive(fn.Mod) {
+			ip.derives[fn.Name.Name] = fn
+			continue
+		}
+		if fn.Body == nil {
+			continue
+		}
+		ip.root.Define(fn.Name.Name, FuncDeclVal(fn, ip.root))
+	}
+}
+
+//line interp.goal:287
+func (ip *Interp) registerMethods() {
+	if ip.file == nil {
+		return
+	}
+	for _, d := range ip.file.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Recv == nil || fn.Name == nil || fn.Body == nil {
+			continue
+		}
+		typeName := recvTypeName(fn)
+		if typeName == "" {
+			continue
+		}
+		byName := ip.methods[typeName]
+		if byName == nil {
+			byName = map[string]*ast.FuncDecl{}
+			ip.methods[typeName] = byName
+		}
+		byName[fn.Name.Name] = fn
+	}
+}
+
+//line interp.goal:312
+func recvTypeName(fn *ast.FuncDecl) string {
+	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return ""
+	}
+	t := fn.Recv.List[0].Type
+	if star, ok := t.(*ast.StarExpr); ok {
+		t = star.X
+	}
+	if id, ok := t.(*ast.Ident); ok {
+		return id.Name
+	}
+	return ""
+}
+
+//line interp.goal:328
+func recvName(fn *ast.FuncDecl) string {
+	if fn.Recv == nil || len(fn.Recv.List) == 0 || len(fn.Recv.List[0].Names) == 0 {
+		return ""
+	}
+	return fn.Recv.List[0].Names[0].Name
+}
+
+//line interp.goal:338
+func recvIsPointer(fn *ast.FuncDecl) bool {
+	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return false
+	}
+	_, ok := fn.Recv.List[0].Type.(*ast.StarExpr)
+	return ok
+}
+
+//line interp.goal:358
+func (ip *Interp) Run() error {
+	if err := ip.gate(); err != nil {
+		return err
+	}
+	main := ip.findMain()
+	if main == nil {
+		return ErrNoMain
+	}
+	_, err := ip.callFunc(&FuncValue{Name: "main", Decl: main, Env: ip.root}, nil)
+	return err
+}
+
+//line interp.goal:382
+func (ip *Interp) gate() error {
+	for _, d := range sema.Check(ip.file, ip.info) {
+		if !isSeverityError(d.Severity) {
+			continue
+		}
+		return fmt.Errorf("interp: refused before run: %s: [%s] %s", d.Pos.String(), d.Code, d.Message)
+	}
+	return nil
+}
+
+//line interp.goal:398
 func (ip *Interp) callFunc(fn *FuncValue, args []Value) ([]Value, error) {
-	return nil, fmt.Errorf("interp: function call not yet ported (US-013)")
-}
+	if fn == nil || fn.Decl == nil {
+		name := ""
+		if fn != nil {
+			name = fn.Name
+		}
+		return nil, fmt.Errorf("interp: call of non-callable function value %q", name)
+	}
+	params := flattenParams(fn.Decl.Type)
+	if len(args) != len(params) {
+		return nil, fmt.Errorf("interp: %s expects %d args, got %d", fn.Name, len(params), len(args))
+	}
+	defScope := fn.Env
+	if defScope == nil {
+		defScope = ip.root
+	}
+	scope := defScope.NewChild()
+	for i, name := range params {
+		scope.Define(name, args[i])
+	}
+	ip.fnStack = append(ip.fnStack, ip.sigFor(fn.Name))
+	defer func() {
+		ip.fnStack = ip.fnStack[:len(ip.fnStack)-1]
+	}()
+	if err := ip.execBlock(fn.Decl.Body, scope); err != nil {
+		var ret returnSignal
 
-//line interp.goal:145
-func (ip *Interp) callMethod(decl *ast.FuncDecl, recv Value, args []Value) ([]Value, error) {
-	return nil, fmt.Errorf("interp: method call not yet ported (US-013)")
-}
-
-//line interp.goal:151
-func (ip *Interp) sigFor(name string) sema.FuncSig {
-	return sema.FuncSig{}
-}
-
-//line interp.goal:157
-func (ip *Interp) curSig() (sema.FuncSig, bool) {
-	return sema.FuncSig{}, false
-}
-
-//line interp.goal:162
-func (ip *Interp) evalDerive(decl *ast.FuncDecl, call *ast.CallExpr, scope *Env) ([]Value, error) {
-	return nil, fmt.Errorf("interp: derive evaluation not yet ported (US-013)")
-}
-
-//line interp.goal:168
-func selectMatchArm(m *ast.MatchExpr, subj Value) (*ast.MatchArm, *ast.VariantPattern) {
+		if errors.As(err, &ret) {
+			return ret.vals, nil
+		}
+		return nil, err
+	}
 	return nil, nil
 }
 
-//line interp.goal:173
-func unreachableMatch(subj Value) error {
-	return fmt.Errorf("interp: match dispatch not yet ported (US-013)")
+//line interp.goal:441
+func (ip *Interp) callMethod(decl *ast.FuncDecl, recv Value, args []Value) ([]Value, error) {
+	params := flattenParams(decl.Type)
+	if len(args) != len(params) {
+		return nil, fmt.Errorf("interp: %s.%s expects %d args, got %d", recvTypeName(decl), decl.Name.Name, len(params), len(args))
+	}
+	if !recvIsPointer(decl) {
+		recv = copyStructValue(recv)
+	}
+	scope := ip.root.NewChild()
+	if name := recvName(decl); name != "" && name != "_" {
+		scope.Define(name, recv)
+	}
+	for i, name := range params {
+		scope.Define(name, args[i])
+	}
+	ip.fnStack = append(ip.fnStack, sema.FuncSig{})
+	defer func() {
+		ip.fnStack = ip.fnStack[:len(ip.fnStack)-1]
+	}()
+	if err := ip.execBlock(decl.Body, scope); err != nil {
+		var ret returnSignal
+
+		if errors.As(err, &ret) {
+			return ret.vals, nil
+		}
+		return nil, err
+	}
+	return nil, nil
 }
 
-//line interp.goal:178
+//line interp.goal:475
+func flattenParams(ft *ast.FuncType) []string {
+	if ft == nil || ft.Params == nil {
+		return nil
+	}
+	var names []string
+
+	for _, f := range ft.Params.List {
+		if len(f.Names) == 0 {
+			names = append(names, "")
+			continue
+		}
+		for _, n := range f.Names {
+			names = append(names, n.Name)
+		}
+	}
+	return names
+}
+
+//line interp.goal:494
+func (ip *Interp) findMain() *ast.FuncDecl {
+	if ip.file == nil {
+		return nil
+	}
+	for _, d := range ip.file.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		if fn.Recv != nil || fn.Name == nil {
+			continue
+		}
+		if fn.Name.Name == "main" {
+			return fn
+		}
+	}
+	return nil
+}
+
+//line interp.goal:516
+func (ip *Interp) sigFor(name string) sema.FuncSig {
+	if ip.info == nil || ip.info.FuncSignatures == nil {
+		return sema.FuncSig{}
+	}
+	return ip.info.FuncSignatures[name]
+}
+
+//line interp.goal:526
+func (ip *Interp) curSig() (sema.FuncSig, bool) {
+	if len(ip.fnStack) == 0 {
+		return sema.FuncSig{}, false
+	}
+	return ip.fnStack[len(ip.fnStack)-1], true
+}
+
+//line interp.goal:537
+func (ip *Interp) execBlock(block *ast.BlockStmt, scope *Env) error {
+	if block == nil {
+		return nil
+	}
+	for _, stmt := range block.List {
+		if err := ip.execStmt(stmt, scope); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+//line interp.goal:552
+func (ip *Interp) execStmt(stmt ast.Stmt, scope *Env) error {
+	switch s := stmt.(type) {
+	case *ast.ExprStmt:
+		if m, ok := s.X.(*ast.MatchExpr); ok {
+			return ip.execMatch(m, scope)
+		}
+		if c, ok := s.X.(*ast.CallExpr); ok {
+			_, err := ip.evalCallMulti(c, scope)
+			return err
+		}
+		_, err := ip.evalExpr(s.X, scope)
+		return err
+	case *ast.DeclStmt:
+		return ip.execDecl(s, scope)
+	case *ast.AssignStmt:
+		return ip.execAssign(s, scope)
+	case *ast.ReturnStmt:
+		return ip.execReturn(s, scope)
+	case *ast.IfStmt:
+		return ip.execIf(s, scope)
+	case *ast.ForStmt:
+		return ip.execFor(s, scope)
+	case *ast.RangeStmt:
+		return ip.execRange(s, scope)
+	case *ast.SwitchStmt:
+		return ip.execSwitch(s, scope)
+	case *ast.BranchStmt:
+		return ip.execBranch(s, scope)
+	case *ast.IncDecStmt:
+		return ip.execIncDec(s, scope)
+	case *ast.AssertStmt:
+		return ip.execAssert(s, scope)
+	case *ast.BlockStmt:
+		return ip.execBlock(s, scope.NewChild())
+	case *ast.EmptyStmt:
+		return nil
+	default:
+		return fmt.Errorf("interp: unsupported statement %T", stmt)
+	}
+}
+
+//line interp.goal:605
+func (ip *Interp) execReturn(s *ast.ReturnStmt, scope *Env) error {
+	if len(s.Results) == 1 {
+		if call, ok := s.Results[0].(*ast.CallExpr); ok {
+			vals, err := ip.evalCallMulti(call, scope)
+			if err != nil {
+				return err
+			}
+			return returnSignal{vals: vals}
+		}
+	}
+	vals := make([]Value, 0, len(s.Results))
+	for _, r := range s.Results {
+		v, err := ip.evalExpr(r, scope)
+		if err != nil {
+			return err
+		}
+		vals = append(vals, v)
+	}
+	return returnSignal{vals: vals}
+}
+
+//line interp.goal:630
+func (ip *Interp) execIf(s *ast.IfStmt, scope *Env) error {
+	ifScope := scope.NewChild()
+	if s.Init != nil {
+		if err := ip.execStmt(s.Init, ifScope); err != nil {
+			return err
+		}
+	}
+	cond, err := ip.evalExpr(s.Cond, ifScope)
+	if err != nil {
+		return err
+	}
+	if cond.Kind != KindBool {
+		return fmt.Errorf("interp: if condition must be bool, got %s", cond.Kind)
+	}
+	if cond.Bool {
+		return ip.execBlock(s.Body, ifScope.NewChild())
+	}
+	switch e := s.Else.(type) {
+	case nil:
+		return nil
+	case *ast.BlockStmt:
+		return ip.execBlock(e, ifScope.NewChild())
+	case *ast.IfStmt:
+		return ip.execIf(e, ifScope)
+	default:
+		return ip.execStmt(s.Else, ifScope.NewChild())
+	}
+}
+
+//line interp.goal:667
+func (ip *Interp) execMatch(m *ast.MatchExpr, scope *Env) error {
+	subj, err := ip.evalExpr(m.Subject, scope)
+	if err != nil {
+		return err
+	}
+	if subj.Kind != KindVariant || subj.Variant == nil {
+		return fmt.Errorf("interp: match subject must be a variant, got %s", subj.Kind)
+	}
+	arm, vp := selectMatchArm(m, subj)
+	if arm == nil {
+		return unreachableMatch(subj)
+	}
+	return ip.execArm(arm, vp, subj, scope)
+}
+
+//line interp.goal:687
+func selectMatchArm(m *ast.MatchExpr, subj Value) (*ast.MatchArm, *ast.VariantPattern) {
+	var restArm *ast.MatchArm
+
+	for _, arm := range m.Arms {
+		switch p := arm.Pattern.(type) {
+		case *ast.VariantPattern:
+			if p.Variant != nil && p.Variant.Name == subj.Variant.Tag {
+				return arm, p
+			}
+		case *ast.RestPattern:
+			restArm = arm
+		}
+	}
+	return restArm, nil
+}
+
+//line interp.goal:705
+func unreachableMatch(subj Value) error {
+	return panicSignal{value: StrVal(fmt.Sprintf("unreachable: non-exhaustive match on %s (compiler invariant violated)", subj.Variant.TypeID))}
+}
+
+//line interp.goal:718
 func armScopeFor(vp *ast.VariantPattern, subj Value, scope *Env) *Env {
-	return scope
+	armScope := scope.NewChild()
+	if vp != nil && vp.Binding != nil {
+		bound := subj
+		if subj.Kind == KindVariant && subj.Variant != nil && (subj.Variant.TypeID == resultTypeID || subj.Variant.TypeID == optionTypeID) {
+			if pv, ok := payloadValue(subj.Variant); ok {
+				bound = pv
+			}
+		}
+		armScope.Define(vp.Binding.Name, bound)
+	}
+	return armScope
+}
+
+//line interp.goal:734
+func (ip *Interp) execArm(arm *ast.MatchArm, vp *ast.VariantPattern, subj Value, scope *Env) error {
+	return ip.execArmBody(arm.Body, armScopeFor(vp, subj, scope))
+}
+
+//line interp.goal:742
+func (ip *Interp) execArmBody(body ast.Node, scope *Env) error {
+	switch b := body.(type) {
+	case nil:
+		return nil
+	case ast.Stmt:
+		return ip.execStmt(b, scope)
+	case *ast.CallExpr:
+		_, err := ip.evalCallMulti(b, scope)
+		return err
+	case ast.Expr:
+		_, err := ip.evalExpr(b, scope)
+		return err
+	default:
+		return fmt.Errorf("interp: unsupported match arm body %T", body)
+	}
+}
+
+//line interp.goal:763
+func (ip *Interp) execDecl(s *ast.DeclStmt, scope *Env) error {
+	gen, ok := s.Decl.(*ast.GenDecl)
+	if !ok {
+		return fmt.Errorf("interp: unsupported declaration %T", s.Decl)
+	}
+	if gen.Tok != token.VAR && gen.Tok != token.CONST {
+		return fmt.Errorf("interp: unsupported %s declaration in statement position", gen.Tok)
+	}
+	for _, spec := range gen.Specs {
+		vs, ok := spec.(*ast.ValueSpec)
+		if !ok {
+			return fmt.Errorf("interp: unsupported spec %T in %s declaration", spec, gen.Tok)
+		}
+		switch {
+		case len(vs.Values) == 0:
+			zero := zeroValue(vs.Type)
+			for _, name := range vs.Names {
+				scope.Define(name.Name, zero)
+			}
+		case len(vs.Values) == len(vs.Names):
+			for i, name := range vs.Names {
+				v, err := ip.evalExpr(vs.Values[i], scope)
+				if err != nil {
+					return err
+				}
+				scope.Define(name.Name, v)
+			}
+		default:
+			return fmt.Errorf("interp: %s spec has %d names but %d values", gen.Tok, len(vs.Names), len(vs.Values))
+		}
+	}
+	return nil
+}
+
+//line interp.goal:804
+func (ip *Interp) execAssign(s *ast.AssignStmt, scope *Env) error {
+	if len(s.Lhs) > 1 && len(s.Rhs) == 1 {
+		if call, ok := s.Rhs[0].(*ast.CallExpr); ok {
+			vals, err := ip.evalCallMulti(call, scope)
+			if err != nil {
+				return err
+			}
+			if len(vals) != len(s.Lhs) {
+				return fmt.Errorf("interp: assignment has %d targets but call returned %d values", len(s.Lhs), len(vals))
+			}
+			return ip.bindTargets(s, vals, scope)
+		}
+	}
+	if len(s.Lhs) != len(s.Rhs) {
+		return fmt.Errorf("interp: assignment has %d targets but %d values", len(s.Lhs), len(s.Rhs))
+	}
+	vals := make([]Value, len(s.Rhs))
+	for i, rhs := range s.Rhs {
+		v, err := ip.evalExpr(rhs, scope)
+		if err != nil {
+			return err
+		}
+		vals[i] = v
+	}
+	return ip.bindTargets(s, vals, scope)
+}
+
+//line interp.goal:839
+func (ip *Interp) bindTargets(s *ast.AssignStmt, vals []Value, scope *Env) error {
+	for i, lhs := range s.Lhs {
+		if err := ip.assignTarget(lhs, vals[i], s.Tok, scope); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+//line interp.goal:856
+func (ip *Interp) assignTarget(lhs ast.Expr, v Value, tok token.Kind, scope *Env) error {
+	switch t := lhs.(type) {
+	case *ast.Ident:
+		switch {
+		case tok == token.DEFINE:
+			scope.Define(t.Name, v)
+			return nil
+		case tok == token.ASSIGN:
+			return scope.Assign(t.Name, v)
+		default:
+			cur, err := scope.Lookup(t.Name)
+			if err != nil {
+				return err
+			}
+			res, err := ip.compoundApply(tok, cur, v)
+			if err != nil {
+				return err
+			}
+			return scope.Assign(t.Name, res)
+		}
+	case *ast.IndexExpr:
+		return ip.assignIndex(t, v, tok, scope)
+	case *ast.SelectorExpr:
+		return ip.assignField(t, v, tok, scope)
+	default:
+		return fmt.Errorf("interp: unsupported assignment target %T", lhs)
+	}
+}
+
+//line interp.goal:888
+func (ip *Interp) compoundApply(tok token.Kind, cur, rhs Value) (Value, error) {
+	op, ok := compoundBinOp(tok)
+	if !ok {
+		return Value{}, fmt.Errorf("interp: unsupported assignment operator %s", tok)
+	}
+	return applyBinary(op, cur, rhs)
+}
+
+//line interp.goal:900
+func (ip *Interp) assignIndex(t *ast.IndexExpr, v Value, tok token.Kind, scope *Env) error {
+	if tok == token.DEFINE {
+		return fmt.Errorf("interp: cannot use := with an index target")
+	}
+	recv, err := ip.evalExpr(t.X, scope)
+	if err != nil {
+		return err
+	}
+	idx, err := ip.evalExpr(t.Index, scope)
+	if err != nil {
+		return err
+	}
+	switch recv.Kind {
+	case KindSlice:
+		if idx.Kind != KindInt {
+			return fmt.Errorf("interp: slice index must be int, got %s", idx.Kind)
+		}
+		if idx.Int < 0 || idx.Int >= int64(len(recv.Slice)) {
+			return fmt.Errorf("interp: slice index %d out of range (len %d)", idx.Int, len(recv.Slice))
+		}
+		if tok != token.ASSIGN {
+			res, err := ip.compoundApply(tok, recv.Slice[idx.Int], v)
+			if err != nil {
+				return err
+			}
+			v = res
+		}
+		recv.Slice[idx.Int] = v
+		return nil
+	case KindMap:
+		if recv.Map == nil {
+			return fmt.Errorf("interp: assignment to entry in nil map")
+		}
+		key, err := mapKeyString(idx)
+		if err != nil {
+			return err
+		}
+		if tok != token.ASSIGN {
+			cur, ok := recv.Map.Entries[key]
+			if !ok {
+				return fmt.Errorf("interp: compound assignment to absent map key %q", key)
+			}
+			res, err := ip.compoundApply(tok, cur, v)
+			if err != nil {
+				return err
+			}
+			v = res
+		}
+		recv.Map.Entries[key] = v
+		return nil
+	default:
+		return fmt.Errorf("interp: cannot index-assign %s", recv.Kind)
+	}
+}
+
+//line interp.goal:960
+func (ip *Interp) assignField(t *ast.SelectorExpr, v Value, tok token.Kind, scope *Env) error {
+	if tok == token.DEFINE {
+		return fmt.Errorf("interp: cannot use := with a field target")
+	}
+	recv, err := ip.evalExpr(t.X, scope)
+	if err != nil {
+		return err
+	}
+	if recv.Kind != KindStruct || recv.Struct == nil {
+		return fmt.Errorf("interp: cannot assign field %s on %s", t.Sel.Name, recv.Kind)
+	}
+	if tok != token.ASSIGN {
+		cur, ok := recv.Struct.Fields[t.Sel.Name]
+		if !ok {
+			return fmt.Errorf("interp: %s has no field %s", recv.Struct.TypeID, t.Sel.Name)
+		}
+		res, err := ip.compoundApply(tok, cur, v)
+		if err != nil {
+			return err
+		}
+		v = res
+	}
+	recv.Struct.Fields[t.Sel.Name] = v
+	return nil
+}
+
+//line interp.goal:993
+func (ip *Interp) execFor(s *ast.ForStmt, scope *Env) error {
+	loopScope := scope.NewChild()
+	if s.Init != nil {
+		if err := ip.execStmt(s.Init, loopScope); err != nil {
+			return err
+		}
+	}
+	for {
+		if s.Cond != nil {
+			cond, err := ip.evalExpr(s.Cond, loopScope)
+			if err != nil {
+				return err
+			}
+			if cond.Kind != KindBool {
+				return fmt.Errorf("interp: for condition must be bool, got %s", cond.Kind)
+			}
+			if !cond.Bool {
+				return nil
+			}
+		}
+		if err := ip.execBlock(s.Body, loopScope.NewChild()); err != nil {
+			var brk breakSignal
+
+			if errors.As(err, &brk) {
+				return nil
+			}
+			var cont continueSignal
+
+			if !errors.As(err, &cont) {
+				return err
+			}
+		}
+		if s.Post != nil {
+			if err := ip.execStmt(s.Post, loopScope); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+//line interp.goal:1041
+func (ip *Interp) execRange(s *ast.RangeStmt, scope *Env) error {
+	subject, err := ip.evalExpr(s.X, scope)
+	if err != nil {
+		return err
+	}
+	rangeScope := scope.NewChild()
+	iterate := func(key, val Value) (stop bool, err error) {
+		iterScope := rangeScope.NewChild()
+		if err := ip.rangeBind(s.Key, key, s.Tok, iterScope); err != nil {
+			return true, err
+		}
+		if err := ip.rangeBind(s.Value, val, s.Tok, iterScope); err != nil {
+			return true, err
+		}
+		if err := ip.execBlock(s.Body, iterScope); err != nil {
+			var brk breakSignal
+
+			if errors.As(err, &brk) {
+				return true, nil
+			}
+			var cont continueSignal
+
+			if errors.As(err, &cont) {
+				return false, nil
+			}
+			return true, err
+		}
+		return false, nil
+	}
+	switch subject.Kind {
+	case KindSlice:
+		for i, elem := range subject.Slice {
+			stop, err := iterate(IntVal(int64(i)), elem)
+			if err != nil {
+				return err
+			}
+			if stop {
+				return nil
+			}
+		}
+		return nil
+	case KindMap:
+		if subject.Map == nil {
+			return nil
+		}
+		keys := make([]string, 0, len(subject.Map.Entries))
+		for k := range subject.Map.Entries {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			stop, err := iterate(StrVal(k), subject.Map.Entries[k])
+			if err != nil {
+				return err
+			}
+			if stop {
+				return nil
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("interp: cannot range over %s", subject.Kind)
+	}
+}
+
+//line interp.goal:1110
+func (ip *Interp) rangeBind(target ast.Expr, v Value, tok token.Kind, scope *Env) error {
+	if target == nil {
+		return nil
+	}
+	ident, ok := target.(*ast.Ident)
+	if !ok {
+		return fmt.Errorf("interp: unsupported range target %T", target)
+	}
+	if ident.Name == "_" {
+		return nil
+	}
+	if tok == token.ASSIGN {
+		return scope.Assign(ident.Name, v)
+	}
+	scope.Define(ident.Name, v)
+	return nil
+}
+
+//line interp.goal:1135
+func (ip *Interp) execSwitch(s *ast.SwitchStmt, scope *Env) error {
+	swScope := scope.NewChild()
+	if s.Init != nil {
+		if err := ip.execStmt(s.Init, swScope); err != nil {
+			return err
+		}
+	}
+	var tag Value
+
+	hasTag := s.Tag != nil
+	if hasTag {
+		v, err := ip.evalExpr(s.Tag, swScope)
+		if err != nil {
+			return err
+		}
+		tag = v
+	}
+	var def *ast.CaseClause
+
+	var selected *ast.CaseClause
+
+	if s.Body != nil {
+		for _, stmt := range s.Body.List {
+			cc, ok := stmt.(*ast.CaseClause)
+			if !ok {
+				return fmt.Errorf("interp: unsupported switch clause %T", stmt)
+			}
+			if cc.List == nil {
+				def = cc
+				continue
+			}
+			matched, err := ip.caseMatches(cc, hasTag, tag, swScope)
+			if err != nil {
+				return err
+			}
+			if matched {
+				selected = cc
+				break
+			}
+		}
+	}
+	if selected == nil {
+		selected = def
+	}
+	if selected == nil {
+		return nil
+	}
+	if err := ip.execClauseBody(selected.Body, swScope.NewChild()); err != nil {
+		var brk breakSignal
+
+		if errors.As(err, &brk) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+//line interp.goal:1193
+func (ip *Interp) caseMatches(cc *ast.CaseClause, hasTag bool, tag Value, scope *Env) (bool, error) {
+	for _, expr := range cc.List {
+		v, err := ip.evalExpr(expr, scope)
+		if err != nil {
+			return false, err
+		}
+		if hasTag {
+			if v.Equal(tag) {
+				return true, nil
+			}
+			continue
+		}
+		if v.Kind != KindBool {
+			return false, fmt.Errorf("interp: tagless switch case must be bool, got %s", v.Kind)
+		}
+		if v.Bool {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+//line interp.goal:1218
+func (ip *Interp) execClauseBody(body []ast.Stmt, scope *Env) error {
+	for _, stmt := range body {
+		if err := ip.execStmt(stmt, scope); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+//line interp.goal:1230
+func (ip *Interp) execBranch(s *ast.BranchStmt, scope *Env) error {
+	switch s.Tok {
+	case token.BREAK:
+		return breakSignal{}
+	case token.CONTINUE:
+		return continueSignal{}
+	default:
+		return fmt.Errorf("interp: unsupported branch statement %s", s.Tok)
+	}
+}
+
+//line interp.goal:1245
+func (ip *Interp) execIncDec(s *ast.IncDecStmt, scope *Env) error {
+	ident, ok := s.X.(*ast.Ident)
+	if !ok {
+		return fmt.Errorf("interp: unsupported %s target %T", s.Tok, s.X)
+	}
+	cur, err := scope.Lookup(ident.Name)
+	if err != nil {
+		return err
+	}
+	var one Value
+
+	switch cur.Kind {
+	case KindInt:
+		one = IntVal(1)
+	case KindFloat:
+		one = FloatVal(1)
+	default:
+		return fmt.Errorf("interp: %s requires numeric operand, got %s", s.Tok, cur.Kind)
+	}
+	op := token.ADD
+	if s.Tok == token.DEC {
+		op = token.SUB
+	}
+	res, err := applyBinary(op, cur, one)
+	if err != nil {
+		return err
+	}
+	return scope.Assign(ident.Name, res)
 }

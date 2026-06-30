@@ -28,6 +28,24 @@
   Safe because the ported sema always populates Mode with a concrete variant
   (ModeNone default), so the interface is never nil. Check a dep's ACTUAL ported
   surface (grep internal/compiler/<dep>/*.go) before assuming verbatim API parity.
+  The drift recurs across BOTH source ports AND their dep enums: US-013's interp
+  port hit ast.FuncMod (FuncMod_FuncDerive) and sema.Severity (Severity_Error/
+  Severity_Warning) the same way. Before building any ported file, grep it for
+  `(==|!=)\s*(ast|sema)\.[A-Z]` to find constant comparisons against a now-sealed
+  enum and convert each to an `is<Variant>` type-assertion predicate.
+- Feeding LEGACY white-box *_test.go through internal/selfhost BuildAndTest as a
+  parity oracle (US-013, will recur for the lsp port): the harness rewrites
+  goal/internal/ -> goal/internal/compiler/ in the copied tests, but a test that
+  CONSUMES a drifted enum's legacy comparable-const/iota API (e.g. a
+  `switch d.Severity { case sema.Warning: }` or `x == ast.FuncDerive`) will NOT
+  compile against the ported sealed-interface package. Grep the candidate test
+  files for the drifted surface FIRST; SPLIT any offender (plus its toolchain-
+  bound siblings — e.g. a `go list -deps goal/internal/<pkg>` dependency-envelope
+  test pinned to the real module path) into a legacy-only <pkg>_dep_test.go that
+  stays under `task check`, rather than rewriting the oracle. Feed the REMAINING
+  whole suite to BuildAndTest as ONE set so cross-file white-box helpers
+  (runProgram/evalProgram/runMainScope) resolve; only exclude a file when nothing
+  else references its helpers (`grep -l 'helperName('`).
 - Project skills live in `.morse-code/skills/<name>/` (SKILL.md + scripts/ +
   references/), NOT `.claude/skills/` — `.claude/` is ignored by the user's GLOBAL
   gitignore (~/.config/git/ignore) so anything under it is uncommittable. The repo
@@ -6406,4 +6424,65 @@
     selfhost port_test layout AND deps maps both need the new dep and its
     transitive deps; otherwise BuildTranspiled fails with "package
     goal/internal/compiler/<dep> is not in std".
+---
+
+## [2026-06-30T20:05:00Z] - US-013 (self-host-flip PRD)
+- Completed the interp port: ported the DRIVER (internal/interp/interp.go, 1257
+  LOC), value DERIVATION (derive.go, 461 LOC), and DOCTEST runner (doctest.go,
+  121 LOC) to goal source under internal/compiler/interp. interp.goal REPLACES
+  the US-011/US-012 transitional skeleton wholesale (it is the original interp.go,
+  so it declares Interp/returnSignal/breakSignal/continueSignal/panicSignal/
+  Option/New/CapabilityError/emitStdout + the full driver exactly once, deleting
+  every US-013 placeholder by replacement). derive.goal + doctest.goal are new.
+  `task generate` emits colocated .go; `go build ./internal/compiler/interp/...`
+  and `task check` + `task fixpoint` are green.
+- All three files were clean plain-Go-superset EXCEPT two enum-API-drift sites in
+  interp.goal (the same class US-012 hit with sema.Mode):
+  1. registerFuncs `fn.Mod == ast.FuncDerive` — the ported internal/compiler/ast
+     models FuncMod as a goal `enum` (sealed interface: ast.FuncMod_FuncDerive),
+     so the constant comparison was rewritten to a type-assertion predicate
+     `isFuncDerive(m ast.FuncMod) bool { _, ok := m.(ast.FuncMod_FuncDerive); ... }`.
+  2. gate() `d.Severity != sema.Error` — ported sema models Severity as a goal
+     `enum` (sema.Severity_Error/Severity_Warning), rewritten to
+     `!isSeverityError(d.Severity)` (`_, ok := s.(sema.Severity_Error)`).
+  derive.go/doctest.go had NO drift (only *ast.FuncDecl assertions). Grep
+  `(==|!=) (ast|sema)\.[A-Z]` over a ported file BEFORE building to find these.
+- AC-2 (full goscript+doctest behavioral conformance against the goal-built
+  interp): extended internal/selfhost port_test.go TestPortedInterpPackage
+  testFiles from the US-011/012 trio to the FULL white-box suite (24 files:
+  assert/assign/builtins/call/cap_deny/cap_io/composite/control/defaults/derive/
+  doctest/enum/env/eval/eval_subset/gate/host/implements/interp/match/option/
+  question/result/value/value_match _test.go). deps/layout unchanged (already
+  token/lexer/ast/parser/sema/cap). Now that New/Run exist, every whole-program
+  test runs against the transpiled package as the parity oracle — all pass.
+- ONE legacy test file could NOT go into the behavioral gate and was SPLIT OUT:
+  internal/interp/gate_test.go's TestRunDoesNotBlockOnWarning switches on
+  sema.Warning/sema.Error (drifted enum — would not compile against ported sema)
+  and TestInterpHasNoGoTypesOrTypecheckDep shells `go list -deps
+  goal/internal/interp` (real-module-path structural check). MOVED both (plus the
+  warningProgram const) into a new internal/interp/gate_dep_test.go (legacy-only,
+  runs under task check); gate_test.go keeps the two run-refusal behavioral tests
+  (TestRunRefuses/AllowsExhaustiveMatch) + runProgram, which ARE fed to the gate.
+- Files changed: internal/compiler/interp/{interp,derive,doctest}.{goal,go}
+  (derive/doctest new, interp.goal skeleton->full), internal/interp/gate_test.go
+  (split), internal/interp/gate_dep_test.go (new), internal/selfhost/port_test.go
+  (full-suite gate + doc), prd.json (US-013 passes:true), progress.txt.
+- Verification: go build OK; go test ./internal/interp OK; TestPortedInterpPackage
+  PASS; `task check` exit 0; `task fixpoint` FIXPOINT OK.
+- Learnings for future iterations:
+  - When feeding LEGACY white-box tests through internal/selfhost BuildAndTest as
+    a parity oracle, grep the test files for the ported deps' DRIFTED enum surface
+    (sema.Error/Warning/Severity/Mode, ast.FuncMod/FuncDerive/...) FIRST. A test
+    that consumes the legacy comparable-const/iota API will NOT compile against
+    the ported sealed-interface package even after the goal/internal/ ->
+    goal/internal/compiler/ import rewrite. Split such tests into a legacy-only
+    *_dep_test.go (kept under task check) rather than rewriting the oracle.
+  - Feed the WHOLE white-box suite to BuildAndTest as one set so cross-file
+    helpers (runProgram/evalProgram/runMainScope) resolve; excluding a single
+    file is only safe if nothing else references its helpers (verify with
+    `grep -l 'helperName('`).
+  - This completes Phase-2 interp (US-011/012/013). interp is NOT in main.goal's
+    bootstrap closure, so generate/verify-generated/fixpoint cover it via the
+    internal/compiler tree-walk with no Taskfile edit. Next: US-014 (lsp
+    concurrency spike).
 ---
