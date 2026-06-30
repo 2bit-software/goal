@@ -1,29 +1,29 @@
 package interp
 
-// TRANSITIONAL SKELETON (US-011).
+// TRANSITIONAL SKELETON (US-011, expanded US-012).
 //
-// US-011 ports the interpreter's runtime VALUE model (value.goal), lexical
-// ENVIRONMENT (env.goal), host-function bridge (host.goal), and assert
-// evaluation (assert.goal). Two of those — host.goal's evalHostCall and
-// assert.goal's execAssert — are methods on *Interp and reference the
-// evaluator/driver symbols that live in eval.go (US-012) and interp.go
-// (US-013): the Interp type itself, evalExpr, emitStdout, panicSignal, and
-// CapabilityError.
+// The interpreter package is being ported to goal across three stories:
+//   - US-011: runtime VALUE model (value.goal), lexical ENVIRONMENT (env.goal),
+//     host-function bridge (host.goal), assert evaluation (assert.goal).
+//   - US-012: the expression/statement EVALUATOR (eval.goal) — the real
+//     evalExpr and its expression helpers.
+//   - US-013: the DRIVER (interp.go -> interp.goal) and derivation (derive.go):
+//     New, Run, execBlock/execStmt, callFunc/callMethod, sigFor/curSig, the
+//     register* setup, match dispatch (selectMatchArm/armScopeFor/
+//     unreachableMatch), and evalDerive.
 //
-// So that the goal-sourced internal/compiler/interp package BUILDS at the
-// US-011 checkpoint, this file supplies the minimal subset of those symbols
-// host.goal/assert.goal touch. emitStdout, panicSignal, and CapabilityError are
-// faithful ports of internal/interp/interp.go. evalExpr is a PLACEHOLDER: the
-// value/env behavioral gate never calls it, and it returns a loud, named
-// refusal so nothing silently evaluates to a zero Value before the real
-// evaluator lands.
+// eval.goal (US-012) is the real evaluator, but it calls driver symbols that
+// live in interp.go/derive.go (US-013). So that the goal-sourced
+// internal/compiler/interp package BUILDS at the US-012 checkpoint, this file
+// supplies the full Interp struct plus loud-refusal PLACEHOLDERS for the driver
+// surface eval.goal references. emitStdout, panicSignal, and CapabilityError are
+// faithful ports of internal/interp/interp.go.
 //
-// HAND-OFF:
-//   - US-012 (port eval.go -> eval.goal) MUST DELETE the placeholder evalExpr
-//     below; eval.goal defines the real one.
-//   - US-013 (port interp.go -> interp.goal) EXPANDS this skeleton with the full
-//     Interp struct, constructor, Run, and the remaining driver — folding in
-//     (not re-declaring) Interp/panicSignal/CapabilityError/emitStdout.
+// HAND-OFF to US-013 (port interp.go -> interp.goal): FOLD IN (do NOT
+// re-declare) the Interp struct, panicSignal, CapabilityError, and emitStdout;
+// and DELETE every placeholder below (callFunc, callMethod, sigFor, curSig,
+// evalDerive, selectMatchArm, unreachableMatch, armScopeFor) — interp.goal /
+// derive.goal define the real ones.
 
 import (
 	"fmt"
@@ -32,18 +32,43 @@ import (
 
 	"goal/internal/compiler/ast"
 	"goal/internal/compiler/cap"
+	"goal/internal/compiler/sema"
 	"goal/internal/compiler/token"
 )
 
-// Interp is the goscript tree-walking interpreter. The US-013 port fills in the
-// full field set (file/info/root/methods/derives/fnStack/...); the skeleton
-// carries only the fields the US-011 surface (host.goal, assert.goal,
-// emitStdout) references.
+// Interp is the goscript tree-walking interpreter. The field set is the full
+// shape interp.go carries; US-013 folds in its constructor (New), runner (Run),
+// statement executor, and registration so these fields are populated.
 type Interp struct {
+	// file is the parsed program whose `func main` Run executes.
+	file *ast.File
+
+	// info is the resolved front-end facts (structs, enums, signatures, the
+	// `from` conversion registry) the evaluator reads directly.
+	info *sema.Info
+
+	// root is the top-level lexical scope; per-call and per-block scopes are
+	// NewChild()-ed off it.
+	root *Env
+
+	// methods indexes every method declaration by its receiver type name
+	// (star-stripped) then method name, so a method call x.M(...) can resolve
+	// the concrete declaration for the runtime type of x.
+	methods map[string]map[string]*ast.FuncDecl
+
 	// imports maps each imported package's local name to its import path, so a
 	// selector call `pkg.Sym(...)` can be recognized as a host-package call and
 	// routed to the host-function bridge (host.goal).
 	imports map[string]string
+
+	// derives maps a `derive func` name to its declaration; a call to a derive
+	// name is routed to evalDerive (US-013).
+	derives map[string]*ast.FuncDecl
+
+	// fnStack is the stack of the currently-executing functions' analyzed
+	// signatures (innermost last); a postfix `?` reads the top (curSig) to know
+	// how to propagate.
+	fnStack []sema.FuncSig
 
 	// caps is the capability/authority set that mediates every host effect.
 	caps cap.CapabilitySet
@@ -52,6 +77,17 @@ type Interp struct {
 	// os.Stdout.
 	stdout io.Writer
 }
+
+// returnSignal is the non-local control signal raised by a `return` statement
+// (and by `?` propagation in eval.goal's propagateErr/propagateNone). It rides
+// the (… error) return channel and is recovered at the call boundary. US-013
+// (interp.goal) FOLDS THIS IN — it must not re-declare returnSignal.
+type returnSignal struct {
+	vals []Value
+}
+
+// Error implements error so returnSignal can ride the (… error) return channel.
+func (returnSignal) Error() string { return "interp: return outside function" }
 
 // panicSignal is the non-local control signal raised by the `panic` builtin. It
 // rides the (… error) return channel; NO loop, switch, or call boundary
@@ -92,10 +128,53 @@ func (ip *Interp) emitStdout(pos token.Pos, write func(io.Writer) error) error {
 	return write(w)
 }
 
-// evalExpr is a US-011 PLACEHOLDER. The real expression evaluator is ported in
-// US-012 (eval.goal), which must delete this stub. The US-011 value/env
-// behavioral gate does not exercise it; it returns a loud, named refusal so no
-// caller silently receives a zero Value before the evaluator exists.
-func (ip *Interp) evalExpr(expr ast.Expr, scope *Env) (Value, error) {
-	return Value{}, fmt.Errorf("interp: evalExpr not yet ported (US-012)")
+// --- US-013 DRIVER PLACEHOLDERS ---
+//
+// eval.goal (US-012) references the following driver symbols, which are ported
+// in US-013 (interp.go/derive.go). They are loud-refusal stubs here so the
+// package builds at the US-012 checkpoint; the US-012 evaluation subset gate
+// never exercises function/method calls, signature lookup, derivation, or match
+// dispatch, so the stubs stay inert. US-013 DELETES every one of them.
+
+// callFunc is a US-013 PLACEHOLDER (real one in interp.goal).
+func (ip *Interp) callFunc(fn *FuncValue, args []Value) ([]Value, error) {
+	return nil, fmt.Errorf("interp: function call not yet ported (US-013)")
+}
+
+// callMethod is a US-013 PLACEHOLDER (real one in interp.goal).
+func (ip *Interp) callMethod(decl *ast.FuncDecl, recv Value, args []Value) ([]Value, error) {
+	return nil, fmt.Errorf("interp: method call not yet ported (US-013)")
+}
+
+// sigFor is a US-013 PLACEHOLDER (real one in interp.goal). It returns the
+// none-shaped zero signature; the US-012 subset never reads it.
+func (ip *Interp) sigFor(name string) sema.FuncSig {
+	return sema.FuncSig{}
+}
+
+// curSig is a US-013 PLACEHOLDER (real one in interp.goal). With no driver to
+// push onto fnStack, there is never an enclosing signature at this checkpoint.
+func (ip *Interp) curSig() (sema.FuncSig, bool) {
+	return sema.FuncSig{}, false
+}
+
+// evalDerive is a US-013 PLACEHOLDER (real one in derive.goal).
+func (ip *Interp) evalDerive(decl *ast.FuncDecl, call *ast.CallExpr, scope *Env) ([]Value, error) {
+	return nil, fmt.Errorf("interp: derive evaluation not yet ported (US-013)")
+}
+
+// selectMatchArm is a US-013 PLACEHOLDER (real one in interp.goal). Returning no
+// arm routes evalMatch to the loud unreachableMatch refusal.
+func selectMatchArm(m *ast.MatchExpr, subj Value) (*ast.MatchArm, *ast.VariantPattern) {
+	return nil, nil
+}
+
+// unreachableMatch is a US-013 PLACEHOLDER (real one in interp.goal).
+func unreachableMatch(subj Value) error {
+	return fmt.Errorf("interp: match dispatch not yet ported (US-013)")
+}
+
+// armScopeFor is a US-013 PLACEHOLDER (real one in interp.goal).
+func armScopeFor(vp *ast.VariantPattern, subj Value, scope *Env) *Env {
+	return scope
 }

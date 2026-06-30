@@ -11,6 +11,13 @@
   append(*p, x) }`). Behavior-preserving; the prefix swap `*p = append(*p, ` ->
   `addX(p, ` keeps paren balance so multi-line composite-literal tails are
   untouched. (A proper fix belongs in internal/lexer/parser ASI, a separate story.)
+- macOS ships BSD sed: `\b` word boundaries are NOT supported and silently no-op
+  (the substitution looks like it ran but changes nothing). When renaming a goal
+  reserved word used as an identifier (e.g. `enum` -> `enumDecl`, found in US-012)
+  you cannot do a blanket word-boundary replace anyway — the same word often
+  appears inside error STRING literals ("unknown enum %s") that must stay intact.
+  Anchor on the identifier's syntactic delimiters instead (`enum.` / `enum, ` /
+  `enum *T` / `enum ==`), or use BSD's `[[:<:]]`/`[[:>:]]`. Grep the strings after.
 - A ported dependency may have a DIFFERENT public API than its legacy twin when it
   was made idiomatic first: internal/compiler/sema models `Mode` as a sealed
   interface (`Mode_ModeNone`/`Mode_ModeResult`/`Mode_ModeOption`/...), NOT the
@@ -6331,4 +6338,72 @@
     fast path: `sed` the in-module import repoint, `cp` the rest, `task generate`,
     `go build ./internal/compiler/<pkg>/...`. Reserve the US-010-style helper/
     predicate rewrites for files that actually trip the front-end.
+---
+
+## [2026-06-30T19:08:00Z] - US-012 (self-host-flip PRD)
+- Ported the interpreter's expression EVALUATOR (internal/interp/eval.go, 1177
+  LOC) to goal source: internal/compiler/interp/eval.goal (the real evalExpr +
+  evalMatch/evalUnwrap/evalCompositeLit/evalSelector/evalVariantLit/evalIndex/
+  evalCall/evalBinary/evalUnary/builtins/...). `task generate` emits colocated
+  eval.go; `go build ./internal/compiler/interp/...` and `go vet` are green.
+- THREE behavior-preserving rewrites were needed (eval.go is NOT a clean
+  plain-Go-superset, unlike the US-011 value/env/host/assert files):
+  1. `enum` is a goal RESERVED word but eval.go uses it as a local var of type
+     *sema.Enum (13 sites). Renamed the IDENTIFIER only -> `enumDecl`. CRITICAL:
+     the word "enum" also appears inside error-message STRING literals ("unknown
+     enum %s", "enum %s has no variant") and must NOT be renamed there. Use
+     delimiter-anchored seds (`enum.` / `enum, ` / `enum *sema.Enum` / `enum ==`)
+     that match the identifier's syntactic context but never the strings. Do NOT
+     use `\b` in sed on macOS — BSD sed silently ignores `\b` (it no-ops, looks
+     like success). Use the trailing-delimiter trick or `[[:<:]]`/`[[:>:]]`.
+  2. sema.Mode comparisons: the ported internal/compiler/sema models Mode as a
+     goal `enum`, which the backend lowers to a SEALED INTERFACE
+     (sema.Mode_ModeResult, ...). So eval.go's `sig.Mode == sema.ModeResult`
+     CONSTANT comparisons do not compile. Rewrote them to type-assertion
+     predicates: `func isModeResult(m sema.Mode) bool { _, ok :=
+     m.(sema.Mode_ModeResult); return ok }` (+ isModeResultClosed/isModeOption),
+     EXACTLY the idiom internal/compiler/fix already uses. goal SOURCE accepts the
+     emitted underscore variant name `sema.Mode_ModeResult` as a type-assertion
+     target (proven by fix.goal). Same pattern is in progress.txt's Patterns block.
+  3. eval.goal now imports sema (legacy interp's value/env/host/assert did NOT),
+     so the interp package's transpile/build dep graph GREW: token, lexer, ast,
+     parser, sema, cap (was just token/ast/cap in US-011). The selfhost port test
+     layout/deps had to add lexer/parser/sema.
+- SKELETON EXPANSION (interp.goal): deleted the US-011 placeholder evalExpr (the
+  real one is now in eval.goal); grew the Interp struct from 3 fields to the full
+  set (file/info/root/methods/imports/derives/fnStack/caps/stdout); added the real
+  control-signal type returnSignal (eval.goal's propagateErr/propagateNone CONSTRUCT
+  it) next to panicSignal; and added loud-refusal PLACEHOLDERS for the US-013
+  driver symbols eval.goal calls but does not define: methods callFunc, callMethod,
+  sigFor, curSig, evalDerive, and package funcs selectMatchArm, unreachableMatch,
+  armScopeFor. US-013 MUST delete every placeholder and fold in (not re-declare)
+  Interp/returnSignal/panicSignal/CapabilityError/emitStdout.
+- AC-2 behavioral gate: new internal/interp/eval_subset_test.go — a DRIVER-FREE
+  white-box test that builds a bare `&Interp{}` and a fresh `NewEnv()` scope and
+  drives parsed expressions straight through the real evalExpr (the
+  arithmetic/comparison/logical/short-circuit/unary/error matrix from eval_test.go).
+  It deliberately avoids New/findMain/Run/ip.root (US-013 driver), so it runs at
+  the US-012 checkpoint. It runs BOTH against the legacy package (under `task
+  check`) AND against the goal-built package (internal/selfhost
+  TestPortedInterpPackage, extended with sema/lexer/parser deps + this file). Use
+  UNIQUE test/helper names (subsetExprOf/subsetEval/TestEvalSubset*) — eval_test.go
+  already defines exprOf/evalProgram/TestEval* in the same package.
+- Files changed: internal/compiler/interp/{eval.goal,eval.go (generated),
+  interp.goal,interp.go (generated)} (eval.* new), internal/interp/
+  eval_subset_test.go (new), internal/selfhost/port_test.go
+  (TestPortedInterpPackage layout/deps/testFiles + doc), prd.json (US-012
+  passes:true), progress.txt.
+- Verification: `go build ./internal/compiler/interp/...` OK; go vet OK;
+  TestPortedInterpPackage PASS (transpile-and-build gate + value/env/eval-subset
+  behavioral gate); `task check` GREEN (vet + verify-generated drift gate + full
+  test incl. legacy eval_subset_test.go parity); `task fixpoint` FIXPOINT OK.
+- Learnings for future iterations:
+  - US-013 (port interp.go -> interp.goal, derive.go -> derive.goal) DELETES all
+    of interp.goal's US-013 placeholders and folds in the real driver. The eval
+    package will then evaluate WHOLE programs, so US-013's gate can use the legacy
+    eval_test.go / control_test.go / call_test.go etc. (which need New/Run).
+  - When a ported file pulls in a NEW in-module import (here interp -> sema), the
+    selfhost port_test layout AND deps maps both need the new dep and its
+    transitive deps; otherwise BuildTranspiled fails with "package
+    goal/internal/compiler/<dep> is not in std".
 ---

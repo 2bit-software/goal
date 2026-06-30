@@ -157,7 +157,7 @@
         "A subset of the goscript behavioral conformance suite that exercises evaluation passes against the goal-built interp."
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "eval.go is 1177 LOC, the core of interp. Depends on US-011."
     },
     {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"goal/internal/compiler/ast"
 	"goal/internal/compiler/cap"
+	"goal/internal/compiler/sema"
 	"goal/internal/compiler/token"
 	"io"
 	"os"
@@ -14,33 +15,49 @@ import (
 
 //line interp.goal:42
 type Interp struct {
+	file    *ast.File
+	info    *sema.Info
+	root    *Env
+	methods map[string]map[string]*ast.FuncDecl
 	imports map[string]string
+	derives map[string]*ast.FuncDecl
+	fnStack []sema.FuncSig
 	caps    cap.CapabilitySet
 	stdout  io.Writer
 }
 
-//line interp.goal:60
+//line interp.goal:85
+type returnSignal struct {
+	vals []Value
+}
+
+//line interp.goal:90
+func (returnSignal) Error() string {
+	return "interp: return outside function"
+}
+
+//line interp.goal:96
 type panicSignal struct {
 	value Value
 }
 
-//line interp.goal:65
+//line interp.goal:90
 func (p panicSignal) Error() string {
 	return "interp: panic: " + p.value.String()
 }
 
-//line interp.goal:69
+//line interp.goal:105
 type CapabilityError struct {
 	Cap cap.Capability
 	Pos token.Pos
 }
 
-//line interp.goal:65
+//line interp.goal:90
 func (e CapabilityError) Error() string {
 	return fmt.Sprintf("interp: %s: capability denied: %s not granted", e.Pos.String(), e.Cap)
 }
 
-//line interp.goal:84
+//line interp.goal:120
 func (ip *Interp) emitStdout(pos token.Pos, write func(io.Writer) error) error {
 	if !ip.caps.Has(cap.Stdout) {
 		return CapabilityError{Cap: cap.Stdout, Pos: pos}
@@ -52,7 +69,42 @@ func (ip *Interp) emitStdout(pos token.Pos, write func(io.Writer) error) error {
 	return write(w)
 }
 
-//line interp.goal:99
-func (ip *Interp) evalExpr(expr ast.Expr, scope *Env) (Value, error) {
-	return Value{}, fmt.Errorf("interp: evalExpr not yet ported (US-012)")
+//line interp.goal:140
+func (ip *Interp) callFunc(fn *FuncValue, args []Value) ([]Value, error) {
+	return nil, fmt.Errorf("interp: function call not yet ported (US-013)")
+}
+
+//line interp.goal:145
+func (ip *Interp) callMethod(decl *ast.FuncDecl, recv Value, args []Value) ([]Value, error) {
+	return nil, fmt.Errorf("interp: method call not yet ported (US-013)")
+}
+
+//line interp.goal:151
+func (ip *Interp) sigFor(name string) sema.FuncSig {
+	return sema.FuncSig{}
+}
+
+//line interp.goal:157
+func (ip *Interp) curSig() (sema.FuncSig, bool) {
+	return sema.FuncSig{}, false
+}
+
+//line interp.goal:162
+func (ip *Interp) evalDerive(decl *ast.FuncDecl, call *ast.CallExpr, scope *Env) ([]Value, error) {
+	return nil, fmt.Errorf("interp: derive evaluation not yet ported (US-013)")
+}
+
+//line interp.goal:168
+func selectMatchArm(m *ast.MatchExpr, subj Value) (*ast.MatchArm, *ast.VariantPattern) {
+	return nil, nil
+}
+
+//line interp.goal:173
+func unreachableMatch(subj Value) error {
+	return fmt.Errorf("interp: match dispatch not yet ported (US-013)")
+}
+
+//line interp.goal:178
+func armScopeFor(vp *ast.VariantPattern, subj Value, scope *Env) *Env {
+	return scope
 }

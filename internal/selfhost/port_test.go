@@ -817,45 +817,55 @@ func TestPortedFixPackage(t *testing.T) {
 	}
 }
 
-// TestPortedInterpPackage validates US-011: the interpreter's runtime foundation
-// — the value model (value.goal), lexical environment (env.goal), host-function
-// bridge (host.goal), and assert evaluation (assert.goal) — reimplemented as
-// goal source under internal/compiler/interp transpiles to compiling Go (the
-// smoke gate, with the in-module ast, token, cap imports resolving against the
-// ported packages and the foreign errors/fmt/io/os/sort/strconv/strings imports
-// passing through) AND passes the existing internal/interp value/env tests
-// against the transpiled output (behavioral equivalence — Value construction,
-// equality, Kind, and Env scope/lookup/assign).
+// TestPortedInterpPackage validates US-011 and US-012: the interpreter's runtime
+// foundation — the value model (value.goal), lexical environment (env.goal),
+// host-function bridge (host.goal), assert evaluation (assert.goal) — AND the
+// expression EVALUATOR (eval.goal, US-012), reimplemented as goal source under
+// internal/compiler/interp, transpiles to compiling Go (the smoke gate) AND
+// passes the existing internal/interp value/env tests plus the US-012
+// eval-subset tests against the transpiled output (behavioral equivalence —
+// Value construction/equality/Kind, Env scope/lookup/assign, and the
+// arithmetic/comparison/logical/unary/error evaluation matrix).
 //
-// host.goal's evalHostCall and assert.goal's execAssert are *Interp methods that
-// reference the evaluator/driver symbols ported later (eval.go -> US-012,
-// interp.go -> US-013). So the goal-sourced package builds at the US-011
-// checkpoint, internal/compiler/interp/interp.goal is a transitional skeleton
-// supplying the minimal Interp/panicSignal/CapabilityError/emitStdout surface
-// plus a placeholder evalExpr (US-012 deletes it). The behavioral gate runs the
-// AC-2 oracle — value_test.go (package interp, testing-only) and env_test.go
-// (package interp, errors+testing) — both white-box and self-contained; the
-// identical files run against the legacy package under `task check`.
-// host_test.go and assert_test.go are excluded because they drive whole programs
-// through the real evaluator, which is not ported until US-012/US-013.
+// eval.goal (US-012) is the real evaluator but calls driver symbols ported in
+// US-013 (interp.go -> interp.goal, derive.go): callFunc, callMethod, sigFor,
+// curSig, evalDerive, and match dispatch. So the goal-sourced package builds at
+// the US-012 checkpoint, internal/compiler/interp/interp.goal is a transitional
+// skeleton supplying the full Interp struct, panicSignal/returnSignal/
+// CapabilityError/emitStdout, plus loud-refusal placeholders for those driver
+// symbols (US-013 deletes them). The behavioral gate runs the AC-2 oracle —
+// value_test.go and env_test.go (US-011) and eval_subset_test.go (US-012,
+// driver-free: it builds a bare *Interp and drives parsed expressions straight
+// through evalExpr) — all white-box and self-contained; the identical files run
+// against the legacy package under `task check`. host_test.go, assert_test.go,
+// and the legacy eval_test.go are excluded because they drive whole programs
+// through the US-013 driver (New/findMain/Run), not ported until US-013.
 //
-// interp imports ast (-> token) and cap directly; cap is a leaf and ast imports
-// only token, so the layout/deps carry token, ast, cap. The test's working
-// directory is internal/selfhost, so the goal sources are at
-// ../../internal/compiler/{token,ast,cap,interp} and the existing interp tests
-// are at ../interp.
+// Because eval.goal imports sema, the interp package now pulls sema (-> ast,
+// parser, token) and parser (-> lexer) in addition to the US-011 ast/token/cap;
+// the eval-subset test itself imports parser/ast. So the layout/deps carry
+// token, lexer, ast, parser, sema, cap. The test's working directory is
+// internal/selfhost, so the goal sources are at ../../internal/compiler/<pkg>
+// and the existing interp tests are at ../interp.
 func TestPortedInterpPackage(t *testing.T) {
 	tokenPkg := discoverPorted(t, "token")
+	lexerPkg := discoverPorted(t, "lexer")
 	astPkg := discoverPorted(t, "ast")
+	parserPkg := discoverPorted(t, "parser")
+	semaPkg := discoverPorted(t, "sema")
 	capPkg := discoverPorted(t, "cap")
 	interpPkg := discoverPorted(t, "interp")
 
 	// Criterion 1: transpiles via the smoke gate and the generated Go compiles.
-	// The layout carries interp plus its ast, token, cap dependencies so the
-	// in-module imports resolve; the stdlib foreign imports pass through.
+	// The layout carries interp plus its ast, token, cap, sema (-> parser ->
+	// lexer) dependencies so the in-module imports resolve; the stdlib foreign
+	// imports pass through.
 	layout := map[string]*project.Package{
 		"internal/compiler/token":  tokenPkg,
+		"internal/compiler/lexer":  lexerPkg,
 		"internal/compiler/ast":    astPkg,
+		"internal/compiler/parser": parserPkg,
+		"internal/compiler/sema":   semaPkg,
 		"internal/compiler/cap":    capPkg,
 		"internal/compiler/interp": interpPkg,
 	}
@@ -863,21 +873,27 @@ func TestPortedInterpPackage(t *testing.T) {
 		t.Fatalf("ported interp failed the transpile-and-build gate: %v", err)
 	}
 
-	// Criterion 2: the existing interp value/env tests pass against the
-	// transpiled package, with the ported token, ast, cap packages transpiled in
-	// as its in-module dependencies. value_test.go pins per-kind construction and
-	// equality; env_test.go pins scope/lookup/assign and NotFoundError — the
-	// same-input same-output parity oracle with the legacy package.
+	// Criterion 2: the existing interp value/env tests and the US-012 eval-subset
+	// tests pass against the transpiled package, with the ported token, lexer,
+	// ast, parser, sema, cap packages transpiled in as in-module dependencies.
+	// value_test.go pins per-kind construction and equality; env_test.go pins
+	// scope/lookup/assign and NotFoundError; eval_subset_test.go pins the
+	// evaluator's arithmetic/comparison/logical/unary/short-circuit/error matrix —
+	// the same-input same-output parity oracle with the legacy package.
 	deps := map[string]*project.Package{
-		"internal/compiler/token": tokenPkg,
-		"internal/compiler/ast":   astPkg,
-		"internal/compiler/cap":   capPkg,
+		"internal/compiler/token":  tokenPkg,
+		"internal/compiler/lexer":  lexerPkg,
+		"internal/compiler/ast":    astPkg,
+		"internal/compiler/parser": parserPkg,
+		"internal/compiler/sema":   semaPkg,
+		"internal/compiler/cap":    capPkg,
 	}
 	testFiles := []string{
 		"../interp/value_test.go",
 		"../interp/env_test.go",
+		"../interp/eval_subset_test.go",
 	}
 	if err := selfhost.BuildAndTest("internal/compiler/interp", interpPkg, testFiles, deps); err != nil {
-		t.Fatalf("existing interp value/env tests failed against the transpiled package: %v", err)
+		t.Fatalf("existing interp value/env and US-012 eval-subset tests failed against the transpiled package: %v", err)
 	}
 }
