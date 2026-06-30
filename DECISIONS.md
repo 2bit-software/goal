@@ -3476,3 +3476,71 @@ at all. The idiomatic self-host was therefore gated on building real language
 features, and SEAM-006 is the proof that those features hold together
 end-to-end — `task fixpoint` byte-identical on the idiomatic source, corpus
 behavioral + interp + check tiers green.
+
+---
+
+## US-001 — self-host flip: adopted layout & trust model
+
+> First story of the **self-host flip** PRD (`prd.json`). A pure decision/record
+> story: it adopts and writes down the flip's foundational choices *before any
+> compiler code moves*, so the loop and reviewers share one model. The flip's
+> plan (`SELF-HOST-FLIP-PLAN.md`) lays out the alternatives; this entry pins the
+> ones the PRD adopts. This **supersedes** the "coexist as peers" / "tooling out
+> of scope" / permanent-Go-trust-root framing of `SELF-HOST-RESEARCH.md` §1/§5
+> and `REWRITE-ARCHITECTURE.md` §7 (those docs are annotated to point here).
+
+### Adopted layout: colocated `<file>.goal` + committed generated `<file>.go`
+- **Kind:** decision
+- **Chose:** the **colocated** variant — each package directory holds the canonical
+  goal source `<file>.goal` *and* its committed generated Go `<file>.go` side by
+  side (the `.proto`/`.pb.go` idiom). The goal front-end reads the `.goal`; the Go
+  toolchain (`go build`) reads the `.go`. Source and generated therefore resolve at
+  the **same import path** (`goal/internal/compiler/<pkg>`, later `goal/internal/<pkg>`).
+- **Over:** the **split-dir** variant that `SELF-HOST-FLIP-PLAN.md` §3 sketched as
+  its default — goal source under `internal/compiler/<pkg>/*.goal` and committed
+  generated Go at a *different* path `internal/<pkg>/*.go`.
+- **Why:** colocation keeps source and generated on one import path, so no module
+  gymnastics, no `-C`/second-module trick, and no path-rewrite step between source
+  and artifact: `go build ./internal/compiler/...` resolves the generated `.go`
+  exactly where the `.goal` lives. Split-dir's cleaner directories were refused
+  because the dual-path indirection (and the implied path rewrite on every
+  generate) costs more than the slightly busier directory listing. Cost accepted:
+  each package dir lists both extensions. **Revisit** only if the doubled listing
+  becomes a real ergonomic problem.
+
+### Adopted bootstrap: committed-generated Go (B-commit); corpus is the primary gate
+- **Kind:** decision
+- **Chose:** **B-commit** — transpile the goal source to Go and **commit that
+  generated Go**. A clean `git clone && go build` compiles the committed Go →
+  trusted stage-0 → re-transpiles the goal source → a drift gate verifies the
+  regenerated Go is byte-identical to what is committed → `task fixpoint`. This is
+  the standard self-hosting bootstrap (rustc stage0): reproducible, reviewable, no
+  prebuilt binaries.
+- **Over:** **B-binary** (ship a prebuilt stage-0 binary — opaque, platform-bound,
+  not reviewable) and **B-emit-only** (commit no Go, regenerate on every build —
+  chicken-and-egg, needs a bootstrap binary, i.e. B-binary). Both refused.
+- **Why:** once the hand-written reference Go transpiler is deleted, the line-by-line
+  Go differential oracle is gone, so correctness can no longer lean on "diff against
+  the reference Go." From that point the **corpus behavioral conformance tier is the
+  primary correctness gate** (the goal-built compiler must pass the same corpus the
+  Go compiler did), alongside the `task fixpoint` byte-identity check. B-commit keeps
+  a clean checkout buildable with only the Go toolchain while making the generated Go
+  a reviewable, drift-gated artifact of the goal source — not a hand-maintained peer.
+
+### "Self-hosted" = the shipped goal+goalc library closure; test/dev infra stays Go
+- **Kind:** decision
+- **Chose:** define **self-hosted** as *the shipped `goal` + `goalc` library closure
+  is written in goal* — the compiler proper (token, lexer, ast, parser, sema,
+  project, pipeline, backend, typecheck) plus the shipped tooling the binaries link
+  (goalfmt, textedit, cap, guide, fix, interp, lsp). Explicitly **staying Go** (test
+  and dev infrastructure, not part of any shipped binary): the `corpus` harness,
+  `byexample`, the `internal/selfhost` bootstrap/port harness, `cmd/corpus-gen`, and
+  `cmd/build-playground`.
+- **Over:** a maximalist "every `.go` file in the repo becomes `.goal`" reading.
+- **Why:** the goal of the flip is that the *shipped toolchain* dogfoods goal end to
+  end; the Go-only test/dev harnesses exist to *verify* that toolchain and gain
+  nothing from being ported (some, like `internal/selfhost`, are the very machinery
+  that transpiles and proves the goal source). Scoping "self-hosted" to the shipped
+  closure keeps the flip's must-port set bounded and honest. **Revisit** only if a
+  later decision wants the harnesses ported too.
+

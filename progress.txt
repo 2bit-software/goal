@@ -259,6 +259,16 @@
   in BOTH internal and selfhost and rewrite shared comparisons to call it (no
   relocation, full coverage); a type WITHOUT one (Mode) — relocate its assertions to
   an internal-only `_test.go` out of the port-gate slice.
+- Self-host FLIP invariants (adopted in US-001, binding on all flip stories): the
+  layout is COLOCATED — `<file>.goal` canonical source + committed generated
+  `<file>.go` in the SAME package dir (one import path; go build reads .go, the goal
+  front-end reads .goal). The bootstrap is B-commit (committed generated Go, drift-
+  gated), NOT a prebuilt binary or emit-on-every-build. Once the hand-written
+  reference Go transpiler is deleted, the corpus behavioral tier is the PRIMARY
+  correctness gate (the Go differential oracle is gone); `task fixpoint` byte-identity
+  still holds. "Self-hosted" = the shipped goal+goalc library closure (incl. goalfmt/
+  textedit/cap/guide/fix/interp/lsp); corpus, byexample, internal/selfhost,
+  cmd/corpus-gen, cmd/build-playground deliberately stay Go.
 
 ## [2026-06-29T12:30:00Z] - US-011 (self-host idiomatic PRD)
 - Step 3 of 3 (idiomatic audit), seventh and LARGEST package: selfhost/backend
@@ -5818,4 +5828,35 @@
     preserving proof).
   - The skill lives outside the Go build tree, so task check/build/fixpoint are
     unaffected; all three stayed green (FIXPOINT OK).
+---
+
+## 2026-06-30T16:30:00Z - US-001
+- Recorded the self-host flip's adopted layout & trust model before any compiler
+  code moves (pure decision/record story, no source/build changes).
+- Appended a "US-001 — self-host flip: adopted layout & trust model" entry to
+  DECISIONS.md with three sub-decisions: (1) COLOCATED layout — <file>.goal
+  canonical source + committed generated <file>.go in the same dir, one import
+  path, over the split-dir variant; (2) B-commit bootstrap (committed generated
+  Go, drift-gated) over B-binary/B-emit-only, with the corpus behavioral tier as
+  the primary correctness gate once the reference Go is deleted; (3) "self-hosted"
+  = the shipped goal+goalc library closure (incl. shipped tooling goalfmt/textedit/
+  cap/guide/fix/interp/lsp), with corpus/byexample/internal/selfhost/cmd/corpus-gen/
+  cmd/build-playground staying Go.
+- Annotated SELF-HOST-RESEARCH.md §1 (out-of-scope "tooling, not the compiler")
+  and §5 (the ./selfhost peer-dir + permanent-Go-trust-root framing) with
+  SUPERSEDED notes pointing to the new DECISIONS.md US-001 entry.
+- Files changed: DECISIONS.md, SELF-HOST-RESEARCH.md, prd.json (US-001
+  passes:true), progress.txt. (history/ initiative artifacts are gitignored.)
+- Learnings for future iterations:
+  - prd.json verifyCommands are `task check` + `task fixpoint`; both stay green on
+    a docs-only change (no Go touched). task fixpoint still emits to
+    _bootstrap/{fa,fb} over ./selfhost and prints "FIXPOINT OK" — the flip has NOT
+    yet relocated selfhost/ -> internal/compiler (that is US-002).
+  - DECISIONS.md is an append-only ledger; superseded entries stay and a new entry
+    points back. Append after the last section (SEAM-006) using the existing
+    Kind/Chose/Over/Why structure.
+  - history/ is gitignored (.gitignore:22 `/history/`), so morse-code initiative
+    artifacts never enter the commit — only the real doc/source/prd changes do.
+  - Adopted flip invariants for later stories: COLOCATED .goal+.go per dir;
+    B-commit bootstrap; corpus tier is the primary gate post-reference-Go-deletion.
 ---

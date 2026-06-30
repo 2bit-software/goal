@@ -18,7 +18,7 @@
         "SELF-HOST-RESEARCH.md is annotated where its 'coexist as peers' / 'tooling out of scope' language (§1, §5) is superseded by this flip."
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Pure decision/record story. The plan (SELF-HOST-FLIP-PLAN.md) recommended split-dir; this PRD deliberately adopts the COLOCATED variant because source and generated share an import path with no module gymnastics and the goal front-end reads .goal while go build reads .go."
     },
     {

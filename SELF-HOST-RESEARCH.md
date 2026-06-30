@@ -50,6 +50,14 @@ Plus the two CLIs: `cmd/goalc` (single-file) and `cmd/goal` (build/check/run; sh
 **Out-of-scope for first self-host (~9k LOC):** `lsp`, `fix`, `guide`, `goalfmt`, `interp`
 (goscript), `corpus`/`byexample` (test infra), `cap`. These are tooling, not the compiler.
 
+> **SUPERSEDED by the self-host flip (see `DECISIONS.md` → "US-001 — self-host flip:
+> adopted layout & trust model").** The flip pulls `goalfmt`, `textedit`, `cap`,
+> `guide`, `fix`, `interp`, and `lsp` *into* the self-hosted closure — "self-hosted"
+> now means the shipped `goal`+`goalc` library closure, which includes that shipped
+> tooling. Only the genuine test/dev infra (`corpus`, `byexample`, the
+> `internal/selfhost` harness, `cmd/corpus-gen`, `cmd/build-playground`) stays Go.
+> The "tooling, not the compiler ⇒ out of scope" framing above is the pre-flip view.
+
 **Dependency DAG (internal edges only) — clean, acyclic:**
 ```
 token → {lexer, ast} → parser → {sema, project} → pipeline → backend → typecheck
@@ -143,6 +151,17 @@ form. Not a blocker, just a contract to honor.
 ---
 
 ## 5. Bootstrap & fixpoint mechanics
+
+> **SUPERSEDED in part by the self-host flip (see `DECISIONS.md` → "US-001 — self-host
+> flip: adopted layout & trust model").** Two things below are pre-flip framing: (1)
+> the goal compiler no longer lives at a peer `./selfhost` dir — the flip relocates it
+> *into* the `internal/` namespace as colocated `<file>.goal` source + committed
+> generated `<file>.go`; and (2) the Go build is no longer the *permanent* trust root.
+> The flip adopts the **B-commit** bootstrap (committed generated Go, drift-gated),
+> and once the hand-written reference Go transpiler is deleted the **corpus behavioral
+> tier becomes the primary correctness gate** (the byte-identical `fixpoint` check
+> below still holds). The 3-stage mechanics and the fixpoint trust gate themselves are
+> unchanged.
 
 No `selfhost/` dir or Taskfile bootstrap target exists yet. The goal-written compiler would be a
 `package main` goal program (a goalc-in-goal) under e.g. `./selfhost`. The classic 3-stage
