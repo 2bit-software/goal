@@ -1,0 +1,44 @@
+package main
+
+// US-014 concurrency spike: prove goal source can express the concurrency the
+// LSP port (US-015..US-017) needs — goroutines and a sync.Mutex — before
+// committing to the ~2292 LOC port. The goal backend already EMITS go/chan
+// constructs, but no goal source had ever USED concurrency; this probe closes
+// that gap end to end.
+//
+// The result is correct only if BOTH the goroutine launch (`go func(){...}()`)
+// and the mutex lower and execute correctly: 8 goroutines each do 1000
+// mutex-guarded increments of a shared counter, so a correct run prints exactly
+// 8000. A dropped goroutine or a mis-lowered mutex would print a smaller or
+// non-deterministic number.
+//
+// Run it through the real goal toolchain:
+//
+//	go build -o bin/goal ./cmd/goal
+//	./bin/goal run features/_spikes/lsp-concurrency   # prints 8000
+
+import (
+	"fmt"
+	"sync"
+)
+
+func main() {
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	count := 0
+	workers := 8
+	per := 1000
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < per; j++ {
+				mu.Lock()
+				count++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	fmt.Println(count)
+}

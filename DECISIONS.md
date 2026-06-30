@@ -3544,3 +3544,48 @@ behavioral + interp + check tiers green.
   closure keeps the flip's must-port set bounded and honest. **Revisit** only if a
   later decision wants the harnesses ported too.
 
+---
+
+## US-014 — lsp concurrency spike: goal already expresses the concurrency the LSP needs
+
+> Spike story of the **self-host flip** PRD (`prd.json`), run before the ~2292 LOC
+> LSP port (US-015..US-017). The LSP server is the only part of the toolchain that
+> is concurrent (a server loop, goroutines, and a `sync.Mutex` over shared server
+> state). The goal **backend** already *emits* `go`/`chan`/`select` (token/ast/
+> parser/backend all handle them), but no goal **source** had ever *used*
+> concurrency — the compiler itself is single-threaded. This story de-risks that
+> assumption empirically before committing to the port.
+
+### goal source supports goroutines + sync.Mutex through the real toolchain
+- **Kind:** decision (spike outcome).
+- **Chose:** record that **goal already supports the concurrency the LSP port
+  needs — no blocking compiler capability gap.** A probe goal program
+  (`features/_spikes/lsp-concurrency/main.goal`) launches 8 goroutines
+  (`go func(){...}()`), each doing 1000 `sync.Mutex`-guarded increments of a
+  shared counter synchronized with a `sync.WaitGroup`, then prints the total.
+  Built and run through the real toolchain
+  (`go build -o bin/goal ./cmd/goal && ./bin/goal run features/_spikes/lsp-concurrency`)
+  it prints **8000**, deterministic across repeated runs — correct only if both
+  the goroutine launch and the mutex lower and execute correctly. A supporting
+  buffered-channel probe (`make(chan int, 4)`, goroutine sends + `close`, `for v
+  := range ch`) printed the expected `10`.
+- **Evidence:** the emitted Go is a **verbatim lowering** — `go func() {...}()`,
+  `var mu sync.Mutex`, `var wg sync.WaitGroup`, `mu.Lock()/mu.Unlock()`,
+  `wg.Add/Done/Wait` all pass straight through the backend with no goal-specific
+  rewriting. `sync`/`fmt` are ordinary foreign stdlib imports. These are
+  plain-Go-superset constructs the lexer/parser/ast/backend already covered; the
+  only reason goal source had never exercised them is that the compiler is
+  single-threaded, not any missing capability.
+- **Over:** the alternative outcome the AC allows — *finding a capability gap and
+  naming the specific missing compiler capability as a blocking prerequisite for
+  US-015*. Refused because no gap surfaced: parse, sema, and backend all handle
+  the goroutine + mutex + channel surface end to end.
+- **Why / consequence:** **US-015 (lsp protocol & transport) may proceed with no
+  prerequisite concurrency-capability story.** The JSON-RPC-over-stdio framing in
+  US-015 is ordinary `io`/`bufio`/`encoding/json` and introduces no new *language*
+  capability — it is transport code, not a concurrency primitive, so it is out of
+  this spike's scope. The probe is parked permanently under the underscore-prefixed
+  `features/_spikes/` (invisible to `go ./...`) with a nested `go.mod`, outside
+  `internal/compiler`, so it is reproducible evidence yet touches none of the
+  `task check` / `generate` / `verify-generated` / `fixpoint` gates.
+

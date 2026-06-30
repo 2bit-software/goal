@@ -6486,3 +6486,42 @@
     internal/compiler tree-walk with no Taskfile edit. Next: US-014 (lsp
     concurrency spike).
 ---
+
+## [2026-06-30T20:30:00Z] - US-014 (self-host-flip PRD)
+- Spike: proved goal SOURCE can express the concurrency the lsp port (US-015..017)
+  needs — goroutines + sync.Mutex — before committing to the ~2292 LOC port. The
+  backend already EMITTED go/chan/select (token GO/CHAN/SELECT, ast.GoStmt,
+  parser.parseCallStmt(token.GO)/parseChanType/parseSelectStmt), but no goal source
+  had ever USED concurrency (the compiler is single-threaded).
+- Probe: features/_spikes/lsp-concurrency/{main.goal,go.mod,README.md}. main.goal
+  launches 8 goroutines (`go func(){...}()`), each doing 1000 sync.Mutex-guarded
+  increments of a shared counter synchronized with sync.WaitGroup, prints the total.
+  Built+run via the REAL toolchain (`go build -o bin/goal ./cmd/goal && ./bin/goal
+  run features/_spikes/lsp-concurrency`) -> prints 8000, deterministic across runs.
+  A supporting buffered-channel probe (make(chan int,4)+goroutine send+close+range)
+  printed 10. Emitted Go is a VERBATIM lowering (go func(){}(), var mu sync.Mutex,
+  mu.Lock()/Unlock(), wg.Add/Done/Wait) — no goal-specific rewriting; sync/fmt are
+  ordinary foreign stdlib imports.
+- Outcome recorded in DECISIONS.md ("US-014 — lsp concurrency spike"): NO blocking
+  capability gap; US-015 may proceed. JSON-RPC-over-stdio framing is US-015 scope
+  (ordinary io/bufio/encoding/json, not a language capability).
+- Files changed: features/_spikes/lsp-concurrency/{main.goal,go.mod,README.md} (new),
+  DECISIONS.md (new entry), prd.json (US-014 passes:true), progress.txt.
+- Verification: `./bin/goal run features/_spikes/lsp-concurrency` -> 8000 (x3);
+  `task check` exit 0; `task fixpoint` FIXPOINT OK (exit 0).
+- Learnings for future iterations:
+  - To run a one-off goal program through the toolchain, `goal run <dir>` needs a
+    go.mod at <dir> or a parent (it overlays the transpiled Go onto that module and
+    `go run`s the sole main pkg). Absent go.mod -> "go.mod file not found".
+  - Park non-production goal programs under an UNDERSCORE-prefixed dir
+    (features/_spikes/, like the existing features/_cut/): Go ignores `_`-prefixed
+    and nested-module dirs for `go build/test/vet ./...`, and anything outside
+    internal/compiler is invisible to generate/verify-generated/bootstrap/fixpoint
+    (all scoped to ./internal/compiler), so such a probe touches NO gate.
+  - Concurrency in goal source is FREE: go/chan/select/sync are plain-Go-superset
+    constructs already handled by lexer/parser/ast/backend. The lsp port (US-015+)
+    can use sync.Mutex + goroutines directly with no new compiler capability.
+  - `morse-code workflow next` PAUSES at human-review gates ("paused: awaiting human
+    review"); in automode advance past them with `morse-code workflow resume` (NOT
+    --reject, which routes to on_fail). Status via `morse-code workflow status`.
+---

@@ -181,8 +181,8 @@
         "Findings are recorded in DECISIONS.md: either goal already supports the needed concurrency, or the specific missing compiler capability is named as a blocking prerequisite."
       ],
       "priority": 14,
-      "passes": false,
-      "notes": "The goal backend already EMITS chan/go constructs, but the goal SOURCE has never used concurrency. De-risk before the 2292 LOC lsp port. If a capability gap is found, that becomes its own story before US-015."
+      "passes": true,
+      "notes": "The goal backend already EMITS chan/go constructs, but the goal SOURCE has never used concurrency. De-risk before the 2292 LOC lsp port. If a capability gap is found, that becomes its own story before US-015. OUTCOME: no gap — probe at features/_spikes/lsp-concurrency (8 goroutines x 1000 mutex-guarded increments) runs through `goal run` and prints 8000 deterministically; emitted Go is a verbatim go/sync.Mutex lowering. DECISIONS.md 'US-014' records it; US-015 may proceed."
     },
     {
       "id": "US-015",
