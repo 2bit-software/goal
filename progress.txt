@@ -455,6 +455,19 @@
   formats a value of a type the sema/ast port boxed into an enum/sealed interface,
   grep the ported package for that type's String/Format-via-`%s` uses and route them
   through the port's replacement free function.
+- Editing a `.goal` file's package-doc or inline COMMENTS produces NO committed `.go`
+  delta (found in US-022): the backend drops comments on emit, so `task generate` is a
+  no-op for comment-only `.goal` edits and the `task verify-generated` drift gate stays
+  green without a `.go` change. Still run `task generate` after ANY `.goal` edit to
+  confirm — only string-literal/identifier/structural edits move the emitted `.go`.
+- To scrub a path token while PRESERVING a longer token that contains it (e.g. strip
+  `selfhost/<pkg>` and `./selfhost` but keep `internal/selfhost`, found in US-022), use
+  a protect-restore sed — BSD sed has no lookbehind: `s|internal/selfhost|@@SENTINEL@@|g`
+  first, then the scrub (`s|\./selfhost|./internal|g; s|selfhost/|internal/|g`), then
+  `s|@@SENTINEL@@|internal/selfhost|g`. Verify after: the scrubbed token returns empty
+  and the protected token's count is unchanged, and grep for `internal/internal` to catch
+  any accidental double-prefix. Conceptual prose ("the selfhost tree", "selfhost packages")
+  and the compiler's own program name are NOT directory tokens — leave them.
 
 ## [2026-06-30T19:30:00Z] - US-009 (self-host-flip PRD)
 - Ported the goal AI-bootstrap guide surface (internal/guide) to goal source under
@@ -6926,4 +6939,40 @@
 - Verified: task check (EXIT 0), task verify-generated ("generated Go is up to
   date", EXIT 0), task fixpoint ("FIXPOINT OK", EXIT 0). Doc grep sweep: no bare
   ./selfhost token in the three docs; internal/selfhost harness refs preserved.
+---
+
+## [2026-06-30T22:27:00Z] - US-022 (self-host-flip PRD)
+- Removed the self-host flip's transition scaffolding and scrubbed the last
+  ./selfhost compiler-dir references. The flip PRD is now 100% complete.
+- Implemented:
+  - Deleted cmd/goal-gen (the US-005 proof entrypoint) + its standalone
+    `corpus-goalgen` Taskfile target + internal/corpus/behavior_runner_goalgen_test.go.
+    Post-US-019 cmd/goal/goalc ARE the goal-built compiler, so goal-gen proved
+    nothing the corpus tier doesn't. None of the three were wired into
+    check/fixpoint/build, so removal was gate-safe.
+  - Scrubbed ./selfhost directory tokens: DECISIONS.md selfhost/<pkg> ->
+    internal/<pkg> (protect-restore sed preserving 15 internal/selfhost harness
+    refs); replaced the obsolete "no files moved yet" SELF-HOST-FLIP-PLAN.md with
+    a completed-stub; fixed 2 stale source comments (internal/main.goal:9 had the
+    import path backwards post-US-020; internal/sema/foreign.goal:175,246
+    `goal build ./selfhost` -> `./internal`).
+- Files changed: cmd/goal-gen/main.go (del), internal/corpus/behavior_runner_goalgen_test.go
+  (del), Taskfile.yml, DECISIONS.md, SELF-HOST-FLIP-PLAN.md, internal/main.goal,
+  internal/sema/foreign.goal. (`task generate` produced no .go delta — comments
+  don't survive emit.)
+- Learnings for future iterations:
+  - Comment-only .goal edits are a no-op for the drift gate (backend drops comments
+    on emit); still run `task generate` to confirm. (Added to Codebase Patterns.)
+  - Protect-restore sed to scrub a token while keeping a superset token, since BSD
+    sed has no lookbehind. (Added to Codebase Patterns.)
+  - The compiler's program name "selfhost" (main.goal "Command selfhost",
+    `usage: selfhost build`) is program identity, NOT a ./selfhost directory ref;
+    preserve it. Conceptual prose ("selfhost tree/packages") in DECISIONS.md is
+    likewise not a directory token.
+  - history/ is gitignored, so morse-code initiative artifacts (which mention
+    ./selfhost/goal-gen) don't count against AC-2's repo-wide scrub.
+- Verified: task build (both binaries), task check (vet + verify-generated drift
+  gate + full `go test ./...` incl. corpus behavioral tier, EXIT 0), task fixpoint
+  ("FIXPOINT OK", EXIT 0). Repo-wide grep `\./selfhost|[^a-z]selfhost/` returns
+  empty outside prd.json/progress.txt and gitignored history/.
 ---

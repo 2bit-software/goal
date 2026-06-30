@@ -282,8 +282,8 @@
         "`task build`, `task check`, and `task fixpoint` are all green."
       ],
       "priority": 22,
-      "passes": false,
-      "notes": "Final tidy. Keep the archived Go reference compiler reachable via git history/tag per US-001's trust note."
+      "passes": true,
+      "notes": "Final tidy. Keep the archived Go reference compiler reachable via git history/tag per US-001's trust note. DONE (commit 4083326): removed the US-005 flip scaffolding — deleted cmd/goal-gen (not the shipped build path; cmd/goal/goalc ARE the goal-built compiler post-US-019), its standalone `corpus-goalgen` Taskfile target, and internal/corpus/behavior_runner_goalgen_test.go (self-contained; not invoked by check/fixpoint/build, so gate-safe). Scrubbed the last ./selfhost compiler-dir tokens: DECISIONS.md selfhost/<pkg> -> internal/<pkg> via a protect-restore sed (sentinel internal/selfhost first, since BSD sed has no lookbehind) preserving all 15 internal/selfhost harness refs + conceptual prose ('selfhost tree'); replaced the obsolete 'no files moved yet' SELF-HOST-FLIP-PLAN.md with a completed-stub; fixed 2 stale source COMMENTS (internal/main.goal:9 claimed it imports selfhost/* not goal/internal/* — backwards post-US-020; internal/sema/foreign.goal:175,246 `goal build ./selfhost` -> `./internal`). GOTCHA: editing .goal comments did NOT change committed .go (the backend drops these comments on emit), so `task generate` produced zero delta and the drift gate held — but always run generate after any .goal edit to be sure. The compiler's program name 'selfhost' (main.goal 'Command selfhost', `usage: selfhost build`) is the program identity, NOT a directory ref, and was deliberately preserved. AC-2 verified by repo-wide grep `\\./selfhost|[^a-z]selfhost/` returning empty outside prd.json/progress.txt and the gitignored history/. task build + task check (vet+drift+full test incl. corpus) + task fixpoint (FIXPOINT OK) all green. The self-host flip PRD is now 100% complete."
     }
   ]
 }
