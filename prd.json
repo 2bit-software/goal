@@ -121,7 +121,7 @@
         "Guide output from the goal-built guide matches the legacy Go guide on a fixture set."
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Small (400 LOC), low coupling."
     },
     {

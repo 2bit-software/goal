@@ -308,6 +308,77 @@
   still holds. "Self-hosted" = the shipped goal+goalc library closure (incl. goalfmt/
   textedit/cap/guide/fix/interp/lsp); corpus, byexample, internal/selfhost,
   cmd/corpus-gen, cmd/build-playground deliberately stay Go.
+- CAPABILITY GAP — the goal backend DROPS `//go:embed` directives (US-009 probe:
+  a `.goal` with `//go:embed x` + `var v string` emits Go that KEEPS the `_ "embed"`
+  blank import but EMITS NO directive, so the var is empty; a `//line` directive is
+  also injected between import and var, which would break embed even if emitted).
+  Porting any package that uses `//go:embed` requires inlining the embedded bytes as
+  a `const` raw-string literal (exact bytes, incl. trailing newline) and dropping the
+  `_ "embed"` import. Raw-string content is one lexer token, so embedded `enum`/
+  `match`/`=>`/keywords are safe. Distinct from `goal.Docs.ReadFile(...)` (a METHOD
+  call on the root `goal` package's embed.FS) which ports unchanged.
+- NON-COMPILER tooling port whose deps include the root `goal` package and/or Go-only
+  dev infra (byexample, corpus): the internal/selfhost BuildTranspiled/BuildAndTest
+  throwaway `module goal` harness CANNOT verify it (those deps are absent from the
+  isolated temp module, so the transpiled package won't build there). Instead rely on
+  the REAL module: AC "generates .go that builds" = `task generate` +
+  `go build ./internal/compiler/<pkg>/...` + the verify-generated drift gate; AC
+  "output matches legacy" = an IN-REPO parity test (`package <pkg>_test`) placed in
+  the LEGACY internal/<pkg>/ dir (NOT internal/compiler/<pkg>/ — verify-generated
+  diffs that tree vs a fresh emit excluding only *.goal, so a hand-written _test.go
+  there is flagged as drift) that imports BOTH legacy `goal/internal/<pkg>` and ported
+  `goal/internal/compiler/<pkg>` (aliased; same package name) and asserts byte-identical
+  output over a fixture set. The port-gate test in port_test.go then only asserts the
+  port SHAPE (discoverPorted: one package, right name). This is also a strong end-to-end
+  check: the ported package transitively uses the ported backend/sema, so any
+  legacy-vs-ported divergence surfaces.
+- PORTING A CALLER OF A TYPE THE SEMA PORT TURNED INTO AN ENUM: sema.Severity is a goal
+  `enum` (sealed interface) in the ported sema, so it has NO `String()` method (an enum
+  can't) — `%s`/Stringer renders the empty variant struct as `{}`. The ported sema
+  exposes a free func `sema.SeverityLabel(s)` (its own analyze.goal uses it); legacy
+  sema keeps BOTH `(Severity).String()` and `SeverityLabel`. So a ported consumer that
+  formatted `d.Severity` with `%s` (relying on the legacy Stringer) must switch to
+  `sema.SeverityLabel(d.Severity)` to stay byte-identical (US-009 guide hit exactly
+  this on the live feedback-sample diagnostics). General rule: when a ported package
+  formats a value of a type the sema/ast port boxed into an enum/sealed interface,
+  grep the ported package for that type's String/Format-via-`%s` uses and route them
+  through the port's replacement free function.
+
+## [2026-06-30T19:30:00Z] - US-009 (self-host-flip PRD)
+- Ported the goal AI-bootstrap guide surface (internal/guide) to goal source under
+  internal/compiler/guide: catalog.goal is a VERBATIM copy of catalog.go (imports only
+  `sort`); guide.goal copies guide.go with three edits — (1) repoint
+  goal/internal/{backend,sema} -> goal/internal/compiler/{backend,sema} (byexample +
+  the root `goal` package stay Go and import unchanged), (2) drop the `_ "embed"` import
+  and replace `//go:embed feedback_sample.goal` + `var feedbackSample string` with an
+  inline `const feedbackSample` raw-string of the fixture's exact 283 bytes (the backend
+  drops //go:embed — see Codebase Patterns), (3) change the live feedback-sample
+  diagnostic render from `%s` on `d.Severity` to `sema.SeverityLabel(d.Severity)` (the
+  ported sema's Severity enum has no Stringer). `task generate` emits the committed
+  colocated guide.go + catalog.go (DO NOT EDIT header).
+- AC-2 parity oracle: internal/guide/guide_parity_test.go (NEW, package guide_test)
+  imports BOTH legacy goal/internal/guide and ported goal/internal/compiler/guide,
+  renders the full document + every SectionKeys() section from each, and asserts
+  byte-identical output (and identical section keys). This caught the Severity `{}`
+  regression before commit; green after the SeverityLabel fix.
+- Port-shape gate: TestPortedGuidePackage in internal/selfhost/port_test.go asserts
+  discoverPorted("guide") == one package named guide. It deliberately does NOT use
+  BuildTranspiled/BuildAndTest (guide's root-`goal`+byexample deps are absent from the
+  throwaway module); the comment documents that AC-1/AC-2 are met in the real module.
+- Files changed: internal/compiler/guide/{guide.goal,catalog.goal,guide.go,catalog.go}
+  (new), internal/guide/guide_parity_test.go (new),
+  internal/selfhost/port_test.go (+TestPortedGuidePackage), prd.json (US-009 passes:true),
+  progress.txt, history/20260630-feature-us-009-port-guide-to-goal/* (morse-code artifacts).
+- Verification: `go build ./internal/compiler/guide/...` OK; guide parity tests PASS;
+  `task check` GREEN (vet + verify-generated drift gate + full test, exit 0, no FAIL);
+  `task fixpoint` FIXPOINT OK. main.goal does not import guide, so the bootstrap build
+  closure is unchanged; emit/verify-generated/fixpoint cover the new package via their
+  existing internal/compiler tree-walk with no Taskfile edit.
+- Learnings for future iterations: see the three new Codebase Patterns bullets above
+  (the //go:embed gap + inline-const workaround; the in-repo parity-test approach for
+  packages depending on the root `goal` package / Go-only dev infra; and routing
+  enum-boxed-type formatting through the sema port's SeverityLabel-style free funcs).
+---
 
 ## [2026-06-29T12:30:00Z] - US-011 (self-host idiomatic PRD)
 - Step 3 of 3 (idiomatic audit), seventh and LARGEST package: selfhost/backend

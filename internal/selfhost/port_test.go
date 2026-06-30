@@ -727,3 +727,34 @@ func TestPortedCapPackage(t *testing.T) {
 		t.Fatalf("existing cap tests failed against the transpiled package: %v", err)
 	}
 }
+
+// TestPortedGuidePackage validates US-009's port SHAPE: the AI-bootstrap guide
+// surface reimplemented as goal source under internal/compiler/guide discovers as
+// exactly one package named "guide".
+//
+// Unlike the other ports, guide does NOT use the BuildTranspiled/BuildAndTest
+// throwaway-module gate. guide imports the root `goal` package (its embedded docs
+// FS) and goal/internal/byexample, both Go-only dev infra (US-001) that are absent
+// from the harness's isolated `module goal` temp dir, so the transpiled guide
+// cannot build there. Instead the two US-009 acceptance criteria are met in the
+// REAL module, where every dependency exists:
+//   - AC-1 (generates colocated .go that builds): `task generate` emits
+//     internal/compiler/guide/{guide,catalog}.go and `go build ./internal/compiler/
+//     guide/...` compiles them; the `task verify-generated` drift gate (in `task
+//     check`) holds them to the .goal source.
+//   - AC-2 (output matches the legacy guide on a fixture set): the in-repo parity
+//     oracle internal/guide/guide_parity_test.go renders every section and the full
+//     document from BOTH the legacy goal/internal/guide and the goal-sourced
+//     goal/internal/compiler/guide and asserts byte-identical output under `task
+//     check`.
+//
+// The test's working directory is internal/selfhost, so the goal source is at
+// ../../internal/compiler/guide.
+func TestPortedGuidePackage(t *testing.T) {
+	// discoverPorted asserts exactly one package discovered and the package name.
+	// The feedback demo program the legacy package embeds as feedback_sample.goal
+	// is inlined as a const in the port (the goal backend drops //go:embed), so the
+	// guide directory holds only its own `package guide` source — no stray second
+	// package clause to trip project.Discover.
+	_ = discoverPorted(t, "guide")
+}
