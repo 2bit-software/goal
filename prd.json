@@ -72,7 +72,7 @@
         "The corpus behavioral tier passes when compiled by the goal-built binary."
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "End of Phase 1: two compilers (legacy Go + goal-sourced) coexist and agree. Fully reversible up to here; nothing legacy deleted yet."
     },
     {

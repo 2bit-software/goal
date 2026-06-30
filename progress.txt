@@ -5964,3 +5964,41 @@
     (_bootstrap/verify) needs no separate cleanup target; the task rm -rf's it
     on success and clean covers a failed mid-run.
 ---
+
+## 2026-06-30T17:25:00Z - US-005
+- Proved the goal-SOURCED compiler correct end to end over the corpus behavioral
+  tier. Added cmd/goal-gen, a Go entrypoint that imports
+  goal/internal/compiler/{backend,pipeline,project} (the committed generated Go from
+  US-003/004) and exposes `transpile <file|->` (single-file lower to stdout via the
+  goal-sourced backend.Transpile) and `build --emit=<dir> <path>` (package emit via
+  project.Discover + backend.TranspilePackage). `go build ./cmd/goal-gen` succeeding
+  IS the AC1 proof that the goal-written compiler compiles.
+- Added internal/corpus/behavior_runner_goalgen_test.go: TestCompileRunnerGoalGen
+  mirrors the legacy TestCompileRunner but drives a goalGenTranspiler that shells
+  `$GOAL_GEN_BIN transpile -` (src on stdin, Go on stdout) into the existing
+  RunCompile build+vet oracle over every file-mode transpile case. Gated on env
+  GOAL_GEN_BIN so the normal `go test ./...` gate stays inert (no prebuilt binary
+  needed); two compilers now coexist and agree (end of Phase 1).
+- Added Taskfile `corpus-goalgen` target: `go build -o bin/goal-gen ./cmd/goal-gen`
+  then runs that test with GOAL_GEN_BIN set to the built binary.
+- Files changed: cmd/goal-gen/main.go (new), internal/corpus/behavior_runner_goalgen_test.go
+  (new), Taskfile.yml (corpus-goalgen target), prd.json (US-005 passes:true), progress.txt.
+- Verification: `task corpus-goalgen` ok (behavioral tier green via goal-built binary);
+  `task check` GREEN; `task fixpoint` FIXPOINT OK.
+- Learnings for future iterations:
+  - The corpus behavioral tier is compiler-agnostic by design: RunCompile takes a
+    Transpiler (Transpile(src) (pipeline.Output, error)). To swap in the goal-built
+    compiler, wrap its binary in an exec-based Transpiler returning pipeline.Output{Go:
+    stdout} — no change to RunCompile. The Transpiler return type is the LEGACY
+    goal/internal/pipeline (what corpus imports), not goal/internal/compiler/pipeline;
+    only the .Go string crosses the seam so the two pipeline packages never clash.
+  - goal/internal/compiler/backend.Transpile has the IDENTICAL signature to legacy
+    goal/internal/backend.Transpile, so cmd wrappers/tests can target either by import
+    path alone — this is what US-018's repoint will lean on.
+  - Env-gating a heavyweight behavioral test (GOAL_GEN_BIN) keeps it out of the
+    default `go test ./...`/`task check` path while still being a first-class
+    `task <target>` gate — the pattern to reuse for later goal-built parity tiers.
+  - cmd/goal-gen is US-005 transition scaffolding; US-022 removes/folds it. Its
+    `build --emit` mode duplicates internal/compiler/main.go on purpose so the binary
+    exercises project+pipeline+backend, satisfying AC1's three-package wording.
+---
