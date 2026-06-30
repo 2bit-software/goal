@@ -1,6 +1,26 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- goal front-end gap (found in US-010): a `*ptr = ...` deref-assignment statement
+  parses ONLY as the FIRST statement in its block. When it follows another
+  statement the lexer inserts no semicolon before the leading `*`, so the parser
+  reads `prevExprTail * ptr` as multiplication and fails with "expected
+  expression, found =". Workaround when porting Go that uses pointer-to-slice
+  out-params (`*p = append(*p, x)`): route every such site through a tiny helper
+  whose body is the single deref-assignment (e.g. `func addX(p *[]T, x T) { *p =
+  append(*p, x) }`). Behavior-preserving; the prefix swap `*p = append(*p, ` ->
+  `addX(p, ` keeps paren balance so multi-line composite-literal tails are
+  untouched. (A proper fix belongs in internal/lexer/parser ASI, a separate story.)
+- A ported dependency may have a DIFFERENT public API than its legacy twin when it
+  was made idiomatic first: internal/compiler/sema models `Mode` as a sealed
+  interface (`Mode_ModeNone`/`Mode_ModeResult`/`Mode_ModeOption`/...), NOT the
+  legacy int enum (`ModeNone`/`ModeResult`/...). Porting a package that compared
+  `sig.Mode == sema.ModeResult` must rewrite those to type assertions (goal
+  supports `x.(T)` comma-ok and `switch x.(type)`). Add local predicates
+  (`func isModeResult(m sema.Mode) bool { _, ok := m.(sema.Mode_ModeResult); return ok }`).
+  Safe because the ported sema always populates Mode with a concrete variant
+  (ModeNone default), so the interface is never nil. Check a dep's ACTUAL ported
+  surface (grep internal/compiler/<dep>/*.go) before assuming verbatim API parity.
 - Project skills live in `.morse-code/skills/<name>/` (SKILL.md + scripts/ +
   references/), NOT `.claude/skills/` — `.claude/` is ignored by the user's GLOBAL
   gitignore (~/.config/git/ignore) so anything under it is uncommittable. The repo
@@ -6212,4 +6232,47 @@
   - A zero-import leaf (cap imports nothing at all, not even stdlib) is the absolute
     minimal port: verbatim cp, generate, single-package layout, nil deps. The
     generated .go gains `//line` directives but the surface is byte-faithful.
+---
+
+## [2026-06-30T20:30:00Z] - US-010 (self-host-flip PRD)
+- Ported the autofixer internal/fix (callsite, fix, match, propagate, resultsig)
+  to goal source under internal/compiler/fix. Each *.go copied verbatim to *.goal
+  with three classes of edit: (1) in-module imports goal/internal/{ast,parser,
+  sema,textedit,token} repointed to goal/internal/compiler/{...}; foreign `strings`
+  unchanged. (2) bare reserved-word local `enum` in match.goal renamed -> `enumName`
+  (3 sites; `switchEnumQualifier` and the "over enum" string literal left alone).
+  (3) two behavior-preserving adaptations forced by the goal front-end / ported
+  deps (see the two new Codebase Patterns bullets): deref-append helpers
+  addReport/addChange wrap the 11 `*reports/*changes = append(...)` sites (goal
+  can't parse a non-first-statement `*ptr = ...`), and Mode predicates
+  isModeNone/isModeResult/isModeOption replace the legacy `m == sema.ModeResult`
+  comparisons (internal/compiler/sema's Mode is a sealed interface, not an int enum).
+  `task generate` emits the committed colocated internal/compiler/fix/*.go (DO NOT
+  EDIT header). First Phase-2 tooling port to hit BOTH a parser gap and a ported-dep
+  API change.
+- Added TestPortedFixPackage to internal/selfhost/port_test.go: compile gate
+  (BuildTranspiled over token/lexer/ast/parser/sema/textedit/fix) + behavioral gate
+  (BuildAndTest over ../fix/fix_test.go with the closure-minus-fix deps). fix_test.go
+  (package fix, strings+testing only) drives fix.File(src) on inline source strings
+  and pins byte-identical rewritten source + reports, so it computes its own sema
+  info internally and is the AC-2 parity oracle on both the legacy package (under
+  `task check`) and the transpiled package.
+- Files changed: internal/compiler/fix/{callsite,fix,match,propagate,resultsig}.{goal,go}
+  (new), internal/selfhost/port_test.go (+TestPortedFixPackage), prd.json (US-010
+  passes:true), progress.txt. (morse-code artifacts under history/ are gitignored.)
+- Verification: `go build ./internal/compiler/fix/...` OK; TestPortedFixPackage PASS;
+  `task check` GREEN (vet + verify-generated drift gate + full test, no FAIL);
+  `task fixpoint` FIXPOINT OK. fix is not in main.goal's bootstrap closure, so
+  emit/verify-generated/fixpoint cover the new package via the existing
+  internal/compiler tree-walk with no Taskfile edit.
+- Learnings for future iterations:
+  - See the two new Codebase Patterns bullets (deref-append helper for the
+    non-first-statement `*ptr =` parser gap; type-assertion predicates for a ported
+    dep whose enum became a sealed interface). The interp/lsp ports (US-011+) will
+    likely re-hit both: interp uses pointer receivers/out-params heavily, and it
+    consumes sema's Mode/sealed types.
+  - When `task generate` fails with a parse error, bisect with a tiny throwaway
+    .goal fed to `./bin/goal build --emit=<tmp>` — the parser error line can point a
+    few lines PAST the real trigger (the deref-append failure surfaced on the `=` of
+    a later statement, not the construct that broke ASI).
 ---

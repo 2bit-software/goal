@@ -1,0 +1,60 @@
+package fix
+
+import (
+	"goal/internal/compiler/ast"
+	"goal/internal/compiler/sema"
+	"goal/internal/compiler/textedit"
+)
+
+// fixSwitchToMatch reports a `switch` whose case labels name variants of an in-file enum as
+// a candidate for `match`, which the checker can then verify for exhaustiveness. It does not
+// rewrite: goal's `match` arms are single expressions, whereas Go `switch` clauses hold
+// statement bodies, so a faithful mechanical rewrite is not expressible for the general
+// case. Surfacing the opportunity (so the author converts the arms and gains the
+// missing-variant check) is the safe, useful step. Returns no replacements.
+func fixSwitchToMatch(src string, file *ast.File, info *sema.Info, changes *[]Change, reports *[]Report) []textedit.Replacement {
+	ast.Walk(visitFn(func(n ast.Node) bool {
+		sw, ok := n.(*ast.SwitchStmt)
+		if !ok {
+			return true
+		}
+		enumName := switchEnumQualifier(sw, info)
+		if enumName == "" {
+			return true
+		}
+		addReport(reports, Report{lineOf(src, sw.Switch.Offset), Suggest, "match",
+			"`switch` over enum `" + enumName + "`; a `match` would be checked for exhaustiveness"})
+		return true
+	}), file)
+	return nil
+}
+
+// switchEnumQualifier returns the enum type name a switch's first case label qualifies
+// (`case Status.Active:` -> "Status") when that name is a declared in-file enum, or "" when
+// the switch is not over an in-file enum (a plain value switch, a type switch, or a switch
+// whose first label is not `Enum.Variant`).
+func switchEnumQualifier(sw *ast.SwitchStmt, info *sema.Info) string {
+	if sw.Body == nil {
+		return ""
+	}
+	for _, st := range sw.Body.List {
+		cc, ok := st.(*ast.CaseClause)
+		if !ok || len(cc.List) == 0 {
+			continue // skip a `default` clause; find the first `case`
+		}
+		// The first label must be `Ident.Ident`.
+		sel, ok := cc.List[0].(*ast.SelectorExpr)
+		if !ok {
+			return ""
+		}
+		q := identName(sel.X)
+		if q == "" {
+			return ""
+		}
+		if info.Enums != nil && info.Enums[q] != nil {
+			return q
+		}
+		return ""
+	}
+	return ""
+}

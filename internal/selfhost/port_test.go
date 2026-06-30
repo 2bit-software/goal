@@ -758,3 +758,61 @@ func TestPortedGuidePackage(t *testing.T) {
 	// package clause to trip project.Discover.
 	_ = discoverPorted(t, "guide")
 }
+
+// TestPortedFixPackage validates US-010: the autofixer (internal/fix —
+// callsite/fix/match/propagate/resultsig) reimplemented as goal source under
+// internal/compiler/fix transpiles to compiling Go (the smoke gate, with the
+// in-module ast, parser, sema, textedit, token imports resolving against the
+// ported packages and the foreign `strings` import passing through) AND produces
+// byte-identical output to the legacy Go fix across the existing autofix golden
+// fixtures (fix_test.go, package fix, strings + testing only, with every input
+// and expected rewrite/report pinned inline — it drives fix.File(src) and so
+// computes its sema info internally; the identical file runs against the legacy
+// package under `task check`, making it the AC-2 parity oracle).
+//
+// fix imports ast, parser, sema, textedit, token directly; the transpiled
+// parser/sema in turn import goal/internal/compiler/lexer, so the layout and
+// deps carry lexer too. The test's working directory is internal/selfhost, so
+// the goal sources are at ../../internal/compiler/{token,lexer,ast,parser,sema,
+// textedit,fix} and the existing fix tests are at ../fix.
+func TestPortedFixPackage(t *testing.T) {
+	tokenPkg := discoverPorted(t, "token")
+	lexerPkg := discoverPorted(t, "lexer")
+	astPkg := discoverPorted(t, "ast")
+	parserPkg := discoverPorted(t, "parser")
+	semaPkg := discoverPorted(t, "sema")
+	texteditPkg := discoverPorted(t, "textedit")
+	fixPkg := discoverPorted(t, "fix")
+
+	// Criterion 1: transpiles via the smoke gate and the generated Go compiles.
+	// The layout carries fix plus its full in-module dependency closure so the
+	// in-module imports resolve; the strings foreign import passes through.
+	layout := map[string]*project.Package{
+		"internal/compiler/token":    tokenPkg,
+		"internal/compiler/lexer":    lexerPkg,
+		"internal/compiler/ast":      astPkg,
+		"internal/compiler/parser":   parserPkg,
+		"internal/compiler/sema":     semaPkg,
+		"internal/compiler/textedit": texteditPkg,
+		"internal/compiler/fix":      fixPkg,
+	}
+	if err := selfhost.BuildTranspiled(layout); err != nil {
+		t.Fatalf("ported fix failed the transpile-and-build gate: %v", err)
+	}
+
+	// Criterion 2: the existing fix tests pass against the transpiled package,
+	// with the ported dependency closure transpiled in. fix_test.go (package fix)
+	// pins byte-identical rewritten source and reports, proving same-input
+	// same-output parity with the legacy autofixer.
+	deps := map[string]*project.Package{
+		"internal/compiler/token":    tokenPkg,
+		"internal/compiler/lexer":    lexerPkg,
+		"internal/compiler/ast":      astPkg,
+		"internal/compiler/parser":   parserPkg,
+		"internal/compiler/sema":     semaPkg,
+		"internal/compiler/textedit": texteditPkg,
+	}
+	if err := selfhost.BuildAndTest("internal/compiler/fix", fixPkg, []string{"../fix/fix_test.go"}, deps); err != nil {
+		t.Fatalf("existing fix tests failed against the transpiled package: %v", err)
+	}
+}

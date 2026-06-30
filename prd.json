@@ -133,7 +133,7 @@
         "The goal-built fix produces byte-identical output to the legacy Go fix across the existing autofix golden fixtures."
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "1060 LOC, depends on textedit (US-007). Autofix golden tests are the parity oracle."
     },
     {
