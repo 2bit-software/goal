@@ -1890,10 +1890,10 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
 > (delete internal/check). This section is US-005 of the **self-host idiomatic**
 > PRD (`prd.json`): the per-package idiomatic audit of the self-hosted compiler.
 
-### `selfhost/token`'s `Kind` stays an iota `const` block — NOT a goal `enum`
+### `internal/token`'s `Kind` stays an iota `const` block — NOT a goal `enum`
 - **Kind:** refusal (with reason)
 - **Refused:** rewriting the iota-based `type Kind int` + `const ( ILLEGAL Kind =
-  iota; ... )` block in `selfhost/token/token.goal` into a goal `enum`.
+  iota; ... )` block in `internal/token/token.goal` into a goal `enum`.
 - **Why:** a goal `enum` lowers to a **sealed interface + one struct per variant +
   an unexported marker** (see §01-enums / §8.1) — i.e. a *closed sum type whose
   values are boxed interface values*. It is deliberately **not** an ordered
@@ -1925,15 +1925,15 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
   enum over just one sub-range (the `*_beg`/`*_end` sentinels span the whole block,
   so no sub-range is separable without breaking the others).
 
-### No `switch`→`match` and no Result/`?` conversions apply to `selfhost/token`
+### No `switch`→`match` and no Result/`?` conversions apply to `internal/token`
 - **Kind:** assumption
-- **Chose:** leave `selfhost/token/token.goal` source unchanged beyond this
+- **Chose:** leave `internal/token/token.goal` source unchanged beyond this
   ledger entry.
 - **Why:** the package contains **no `switch` statement** (only the `"switch"`
   keyword spelling string), so there is nothing to convert to `match`. It is
   **import-free and has no `(T, error)` function**, so there is no manual `if err
   != nil` propagation for `goal fix` to idiomatize — `goal fix
-  selfhost/token/token.goal` produces no diff and reports nothing (AC-2 already
+  internal/token/token.goal` produces no diff and reports nothing (AC-2 already
   holds). The one multi-value helper, `Lookup(name string) (Kind, bool)`, is the
   **comma-ok** idiom, not a fallible `(T, error)`; converting it to
   `Option[Kind]` was refused because (a) it is not a `goal fix` propagation site
@@ -1946,13 +1946,13 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
 ## self-host idiomatic audit — US-006 (lexer)
 
 > US-006 of the **self-host idiomatic** PRD (`prd.json`): the per-package
-> idiomatic audit of `selfhost/lexer/lexer.goal`. Follows the US-005 (token)
+> idiomatic audit of `internal/lexer/lexer.goal`. Follows the US-005 (token)
 > pattern: classify each Go-ism against the goal idiom it could become, convert
 > where it FITS, and record refusals-with-reason here.
 
 ### The lexer's `switch` statements stay `switch` — none are over an in-file enum
 - **Kind:** refusal (with reason)
-- **Refused:** rewriting any of `selfhost/lexer/lexer.goal`'s `switch`
+- **Refused:** rewriting any of `internal/lexer/lexer.goal`'s `switch`
   statements into `match`.
 - **Why:** AC-1 scopes the conversion to "`switch` statements over an in-file
   enum". The lexer declares **no `enum`** (and imports none — `token.Kind` is an
@@ -1981,13 +1981,13 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
 
 ### No Result/Option/`?` conversion applies — the lexer has no fallible helper
 - **Kind:** assumption
-- **Chose:** leave `selfhost/lexer/lexer.goal` source unchanged beyond this
+- **Chose:** leave `internal/lexer/lexer.goal` source unchanged beyond this
   ledger entry.
 - **Why:** the lexer is a **total tokenizer**: no function returns `error`. It
   reports lexical problems *in-band* by emitting a `token.ILLEGAL` token
   (`scanOperator`'s default) rather than via a fallible `(T, error)` signature,
   so there is **no manual `if err != nil` propagation** for `goal fix` to
-  idiomatize into Result/`?`. `goal fix selfhost/lexer/lexer.goal` produces no
+  idiomatize into Result/`?`. `goal fix internal/lexer/lexer.goal` produces no
   diff and reports nothing — AC-2 ("goal fix reports no remaining
   auto-convertible propagation sites") already holds. The package's multi-value
   uses are not fallible-error sites: `token.Lookup(lit)` is the **comma-ok**
@@ -2004,20 +2004,20 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
 ## self-host idiomatic audit — US-007 (ast)
 
 > US-007 of the **self-host idiomatic** PRD (`prd.json`): the per-package
-> idiomatic audit of `selfhost/ast` (ast.goal, goal_decl.goal, goal_expr.goal,
+> idiomatic audit of `internal/ast` (ast.goal, goal_decl.goal, goal_expr.goal,
 > goal_stmt.goal, walk.goal). This is the highest idiomatic-opportunity package
 > (sealed interfaces + match over node kinds) and the highest risk. Follows the
 > US-005 (token) / US-006 (lexer) pattern: classify each Go-ism against the goal
 > idiom it could become, convert where it FITS and is behavior-preserving, and
 > record refusals-with-reason here. Outcome: a recorded DECISION with **no
 > `.goal` source change** — every candidate's only behavior-preserving form lies
-> outside `selfhost/ast`, so converting would break the US-003 verbatim
+> outside `internal/ast`, so converting would break the US-003 verbatim
 > self-host oracle and/or ripple out of this story's scope.
 
 ### The node category interfaces stay plain Go interfaces — NOT goal `sealed interface`
 - **Kind:** refusal (with reason)
 - **Refused:** rewriting `Node` / `Decl` / `Stmt` / `Expr` / `Spec`
-  (the `go/ast`-mirrored marker interfaces in `selfhost/ast/ast.goal`) into goal
+  (the `go/ast`-mirrored marker interfaces in `internal/ast/ast.goal`) into goal
   `sealed interface` declarations.
 - **Why:** these *are* the conceptual sealed interfaces of the AST — closed sets
   of node types kept package-private by the unexported markers `declNode()` /
@@ -2028,19 +2028,19 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
      `isNAME()` marker, and every concrete node struct must be re-spelled with
      an `implements NAME for T` clause (or `type T struct implements NAME`).
      That changes the package's surface the **US-003 verbatim self-host oracle**
-     pins — `selfhost/ast` is modeled byte-for-byte on `go/ast` and its ported
+     pins — `internal/ast` is modeled byte-for-byte on `go/ast` and its ported
      `internal/ast` tests run against the transpiled package unchanged.
   2. **§9 switch-coexistence blast radius (out of scope).** Per DECISIONS
      §02-match ("Switch-coexistence", §228), a plain `switch` on a closed
      enum/sealed value is a **compile error** in the live `sema` checker. The
-     consumers of these category interfaces — `selfhost/sema` (check, resolve,
+     consumers of these category interfaces — `internal/sema` (check, resolve,
      question, fields, mustuse, foreign, assert, convert, implements),
-     `selfhost/backend` (lower, emit), and `selfhost/parser` (parser,
+     `internal/backend` (lower, emit), and `internal/parser` (parser,
      goal_construct) — dispatch on them with **dozens of plain
      `switch n := x.(type)` type-switches**. Sealing `Node`/`Expr`/`Stmt`/`Decl`
      would turn every one of those into a closed-switch compile error, forcing a
      tree-wide `switch`→`match` conversion that is explicitly **outside US-007**
-     (scoped to `selfhost/ast` only).
+     (scoped to `internal/ast` only).
 - **Over:** sealing only `Decl`/`Stmt`/`Expr`/`Spec` (same §9 problem, same
   oracle problem, smaller only in degree); a "sealed interface with no
   implementors-rewrite" (not expressible — the §8.1 encoding requires the
@@ -2049,7 +2049,7 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
 ### `Walk`'s type-switch stays a Go type-switch — NOT `match`
 - **Kind:** refusal (with reason)
 - **Refused:** rewriting `Walk`'s `switch n := node.(type)` over the ~60 node
-  kinds (`selfhost/ast/walk.goal`) into a goal `match`.
+  kinds (`internal/ast/walk.goal`) into a goal `match`.
 - **Why:** goal `match` is reserved for a **closed enum / sealed-interface
   scrutinee** (§02-match §228); a `match` over node kinds is only legal once
   `Node` is a `sealed interface`. Since sealing `Node` is refused above (oracle
@@ -2077,12 +2077,12 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
   oracle pins, and both are consumed cross-package by patterns a goal `enum`
   (which lowers to a *boxed sealed interface*, not an `int`, per §01-enums/§8.1)
   cannot serve:
-  1. **`==`/`!=` comparison.** `selfhost/sema` reads `FuncMod` with equality
+  1. **`==`/`!=` comparison.** `internal/sema` reads `FuncMod` with equality
      tests — `fn.Mod != ast.FuncPlain` (question.goal), `fd.Mod != ast.FuncDerive`
      (convert.goal), `d.Mod == ast.FuncFrom || d.Mod == ast.FuncDerive`
      (resolve.goal). Enum values are boxed interface values, not comparable
      integers, so these comparisons would not survive the conversion.
-  2. **Plain `switch` over the value (§9).** `selfhost/backend/emit.goal` does a
+  2. **Plain `switch` over the value (§9).** `internal/backend/emit.goal` does a
      plain `switch fn.Mod { case ast.FuncPlain, ast.FuncFrom: … case
      ast.FuncDerive: … }`; `sema/resolve.goal` and `backend/emit.goal` do plain
      `switch` over `ChanType.Dir` (`case ast.RecvOnly: … case ast.SendOnly: …`).
@@ -2098,16 +2098,16 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
   `==`/`switch` in sema/backend/parser to `match` (out of US-007 scope; changes
   the oracle-pinned representation from `int`).
 
-### No Result/Option/`?` conversion applies — `selfhost/ast` has no fallible function
+### No Result/Option/`?` conversion applies — `internal/ast` has no fallible function
 - **Kind:** assumption
-- **Chose:** leave `selfhost/ast`'s `.goal` source unchanged beyond this ledger
+- **Chose:** leave `internal/ast`'s `.goal` source unchanged beyond this ledger
   entry.
 - **Why:** the package is **pure AST data plus the total `Walk` traversal** — it
   declares **no function that returns `error`** (the only "error" in the source
   is the word inside a doc comment on `IndexListExpr`). There is therefore **no
   manual `if err != nil` propagation** for `goal fix` to idiomatize into
   Result/`?`, and `Walk` is total (a nil node is a no-op; unknown kinds simply
-  fall through). `goal fix selfhost/ast/*.goal` produces **no diff and reports
+  fall through). `goal fix internal/ast/*.goal` produces **no diff and reports
   nothing** across all five files — AC-2 ("goal fix reports no remaining
   auto-convertible propagation sites") already holds.
 - **Over:** an `Option`/`Result` rewrite of the `Pos()`/`End()` accessors or the
@@ -2117,7 +2117,7 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
 ## self-host idiomatic audit — US-008 (parser)
 
 > US-008 of the **self-host idiomatic** PRD (`prd.json`): the per-package
-> idiomatic audit of `selfhost/parser` (parser.goal, goal_construct.goal,
+> idiomatic audit of `internal/parser` (parser.goal, goal_construct.goal,
 > goal_decl.goal, goal_match.goal, goal_stmt.goal). The headline idiom the story
 > anticipated is Result/`?` for `(node, error)` parser functions. Following the
 > US-005/006/007 pattern: classify each Go-ism against the goal idiom it could
@@ -2132,7 +2132,7 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
 - **Refused:** rewriting parser functions to return `Result[node, error]` with `?`
   propagation.
 - **Why:** the anticipated `(node, error)` propagation simply is not how this
-  parser is built. `selfhost/parser` uses an **error-accumulator** design, not
+  parser is built. `internal/parser` uses an **error-accumulator** design, not
   per-function `(T, error)` propagation:
   1. **No internal `(T, error)` functions.** An exhaustive scan of all five
      `.goal` files for `func … error` returns exactly two hits: the exported
@@ -2154,7 +2154,7 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
      `internal/parser/parser_test.go` calls it with the `(*ast.File, error)`
      signature unchanged. Converting it to `Result[*ast.File, error]` would break
      that signature (forbidden) and is exactly the case `goal fix` already refuses:
-     `goal fix selfhost/parser/parser.goal` emits a result-sig **SKIP** —
+     `goal fix internal/parser/parser.goal` emits a result-sig **SKIP** —
      `parser.goal:57: skipped: [result-sig] ParseFile has a non-propagating
      return; not auto-converted to Result` — i.e. it is **not an auto-convertible
      site**. AC-2 ("goal fix reports no remaining auto-convertible propagation
@@ -2165,11 +2165,11 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
   `?` (would replace the accumulate-and-recover strategy, changing error-reporting
   behavior — not behavior-preserving).
 
-### No `switch`→`match` applies — `selfhost/parser` declares no in-file `enum`
+### No `switch`→`match` applies — `internal/parser` declares no in-file `enum`
 - **Kind:** refusal (with reason)
 - **Refused:** converting the package's `switch` statements to `match`.
 - **Why:** AC-1 scopes the conversion to "switch over an in-file enum", and
-  `selfhost/parser` declares **no `enum`** of its own (it *parses* enum syntax in
+  `internal/parser` declares **no `enum`** of its own (it *parses* enum syntax in
   other source; it has none). Every `switch` in the package is over a **non-enum
   scrutinee**, for which `match` has no legal subject (§02-match §228):
   - over `token.Kind` (`p.kind()`, `tok`, `k`) — `Kind` is `type Kind int`,
@@ -2196,18 +2196,18 @@ go/types. Thesis + proven SPIKE-B1 are in `DEPTH-TODO.md`.
   model).
 
 ### Verification
-`goal fix selfhost/parser/*.goal` → no content diff on any file; the only stderr
+`goal fix internal/parser/*.goal` → no content diff on any file; the only stderr
 is the `ParseFile` result-sig SKIP above (a deliberately non-auto-convertible
 site). `task check` (incl. the `internal/selfhost` port gate that builds and tests
-the transpiled `selfhost/parser` against `internal/parser/parser_test.go`, plus
+the transpiled `internal/parser` against `internal/parser/parser_test.go`, plus
 `internal/parser`) green; `task build` green; `task fixpoint` → FIXPOINT OK
-(`selfhost/parser/*.go` byte-identical across goal-c-1/goal-c-2). The
-`selfhost/parser` `.goal` source is unchanged.
+(`internal/parser/*.go` byte-identical across goal-c-1/goal-c-2). The
+`internal/parser` `.goal` source is unchanged.
 
 ## self-host idiomatic audit — US-009 (sema)
 
 > US-009 of the **self-host idiomatic** PRD (`prd.json`): the per-package
-> idiomatic audit of `selfhost/sema` (12 files: analyze, assert, check, convert,
+> idiomatic audit of `internal/sema` (12 files: analyze, assert, check, convert,
 > fields, foreign, implements, mustuse, package, question, resolve, sema). sema is
 > the FIRST ported package with a genuine fallible `(T, error)` surface (the
 > US-004 result-sig SKIPs and the US-008 carry-forward note both name it). Unlike
@@ -2228,7 +2228,7 @@ the transpiled `selfhost/parser` against `internal/parser/parser_test.go`, plus
   (`parser.ParseFile` returns `(*ast.File, error)` = open-E ModeResult), which is
   exactly what `?` is for (feature-05). (2) It has **zero consumers anywhere in the
   selfhost tree** and **zero oracle tests** (no `analyze_test` is in the sema
-  behavioral gate; grep finds no `Analyze(` call in `selfhost/**` or the copied
+  behavioral gate; grep finds no `Analyze(` call in `internal/**` or the copied
   `internal/sema/*_test.go`), so the conversion needs **no caller or test edits**.
   (3) Behavior is preserved EXACTLY: open-E `Result[T, error]` lowers to native
   `(T, error)`, so the emitted Go is `func Analyze(src string) (ok []Diagnostic,
@@ -2304,16 +2304,16 @@ the transpiled `selfhost/parser` against `internal/parser/parser_test.go`, plus
   and `Severity` (Error/Warning) as goal `enum`s.
 - **Why:** both are **exported, ordered iota ints** consumed cross-package by `==`
   and numeric conversion: `sig.Mode == sema.ModeResultClosed` and
-  `calleeMode(…) sema.Mode` in `selfhost/backend` (lower.goal, emit.goal);
+  `calleeMode(…) sema.Mode` in `internal/backend` (lower.goal, emit.goal);
   `Severity: sema.Error/Warning`, the `sema.Severity` field type, and
-  `sema.Severity(x)` numeric conversions in `selfhost/typecheck` (and lsp). A goal
+  `sema.Severity(x)` numeric conversions in `internal/typecheck` (and lsp). A goal
   `enum` lowers to a boxed sealed interface (§8.1), not an `int`, so `==`,
   ordering, and the numeric conversions all break and every cross-package consumer
   would need a coordinated edit — out of scope for a single-package story. This is
   the same canonical "ordered/comparable iota int, keep as-is" case as `token.Kind`
   (US-005) and `FuncMod`/`ChanDir` (US-007).
 
-### No `switch`→`match` applies — `selfhost/sema` declares no in-file `enum`
+### No `switch`→`match` applies — `internal/sema` declares no in-file `enum`
 - **Kind:** refusal (with reason)
 - **Refused:** converting the package's `switch` statements to `match`.
 - **Why:** AC-1 scopes the conversion to "switch over an in-file enum", and sema
@@ -2325,23 +2325,23 @@ the transpiled `selfhost/parser` against `internal/parser/parser_test.go`, plus
   identifiers, not enum kinds, so they are not enum/match candidates either.
 
 ### Verification
-`goal fix selfhost/sema/*.goal` → no content diff on any file (`Analyze` no longer
+`goal fix internal/sema/*.goal` → no content diff on any file (`Analyze` no longer
 appears in the report at all now that it is Result-returning); the only stderr is
 the deliberately non-auto-convertible SKIPs (DefaultResolver, goListResolve,
 AnalyzePackageInDir/With) and advisory call-site suggestions (EnrichForeign,
 foreignDecls, moduleResolve, readModulePath, constIntLit, AnalyzePackageInDirWith)
 — zero auto-convertible sites remain. `go test ./internal/selfhost -run
-TestPortedSemaPackage` green (the transpiled `selfhost/sema` with the Result/`?`
+TestPortedSemaPackage` green (the transpiled `internal/sema` with the Result/`?`
 `Analyze` compiles and passes the copied `internal/sema` behavioral suites).
 `task check` (incl. the selfhost port gate + `internal/sema`) green; `task build`
-green; `task fixpoint` → FIXPOINT OK (`selfhost/sema/*.go` byte-identical across
-goal-c-1/goal-c-2). Only `selfhost/sema/analyze.goal` changed.
+green; `task fixpoint` → FIXPOINT OK (`internal/sema/*.go` byte-identical across
+goal-c-1/goal-c-2). Only `internal/sema/analyze.goal` changed.
 
 ## self-host idiomatic audit — US-010 (project + pipeline)
 
 > US-010 of the **self-host idiomatic** PRD (`prd.json`): the per-package
 > idiomatic audit of the two smallest selfhost packages, combined into one story
-> — `selfhost/project` (project.goal) and `selfhost/pipeline` (pipeline.goal,
+> — `internal/project` (project.goal) and `internal/pipeline` (pipeline.goal,
 > sourcemap.goal). Pattern unchanged from US-005..US-009: classify each Go-ism
 > against the goal idiom it could become, convert where it FITS (intra-package,
 > behavior-preserving, no cross-package caller edits, no oracle-pinned signature
@@ -2395,7 +2395,7 @@ goal-c-1/goal-c-2). Only `selfhost/sema/analyze.goal` changed.
   do not apply. It is also exported and oracle-pinned (TestPackageClause*), so its
   signature is frozen regardless.
 
-### `selfhost/pipeline` has no fallible surface — nothing to convert
+### `internal/pipeline` has no fallible surface — nothing to convert
 - **Kind:** N/A (no fallible functions)
 - **Note:** `pipeline.goal` is pure type declarations (Output, GoFile,
   PackageOutput) — no functions at all. `sourcemap.goal`'s functions
@@ -2424,7 +2424,7 @@ goal-c-1/goal-c-2). Only `selfhost/sema/analyze.goal` changed.
   helper. enum and Option have no candidate.
 
 ### Verification
-`goal fix selfhost/project/*.goal` and `goal fix selfhost/pipeline/*.goal` →
+`goal fix internal/project/*.goal` and `goal fix internal/pipeline/*.goal` →
 **no content diff** on any file. The only stderr is project.goal's two deliberate
 non-auto-convertible SKIPs (`Discover` exported-with-hidden-callers, `packageName`
 non-propagating-return) plus one advisory `suggestion: [call-site]` on `Discover`
@@ -2435,13 +2435,13 @@ self-host port gate `go test ./internal/selfhost -run
 compiling Go and pass the copied `internal/project` / behavioral suites);
 `task check` (incl. the port gate + `internal/project` + `internal/pipeline`)
 green; `task build` green; `task fixpoint` → FIXPOINT OK
-(`selfhost/{project,pipeline}/*.go` byte-identical across goal-c-1/goal-c-2). No
+(`internal/{project,pipeline}/*.go` byte-identical across goal-c-1/goal-c-2). No
 `.goal` source changed — this story is documentation only.
 
 ## self-host idiomatic audit — US-011 (backend)
 
 > US-011 of the **self-host idiomatic** PRD (`prd.json`): the per-package
-> idiomatic audit of `selfhost/backend` — the LARGEST ported package
+> idiomatic audit of `internal/backend` — the LARGEST ported package
 > (arity/backend/doctest/emit/lower/package.goal, ~3,447 LOC). Pattern unchanged
 > from US-005..US-010: classify each Go-ism against the goal idiom it could
 > become, convert where it FITS (intra-package, behavior-preserving), record
@@ -2453,7 +2453,7 @@ green; `task build` green; `task fixpoint` → FIXPOINT OK
 > source.
 
 ### KEY front-end fact: the EMITTER gates `?` to a Result/Option host
-- The **sema** mode model (`selfhost/sema/sema.goal:39`) says a `?` host may be
+- The **sema** mode model (`internal/sema/sema.goal:39`) says a `?` host may be
   "a Result, a `func(…) error`, or a tuple ending in error" — so sema *accepts*
   `?` inside a plain `(T, error)` function. BUT the **backend emitter** is
   stricter: `emit.goal` rejects `?` whose enclosing function is not Result/Option
@@ -2548,7 +2548,7 @@ green; `task build` green; `task fixpoint` → FIXPOINT OK
   consistent with US-006/US-007/US-008/US-010.
 
 ### Verification
-`goal fix -inplace selfhost/backend/*.goal` → **no source diff** on any file (the
+`goal fix -inplace internal/backend/*.goal` → **no source diff** on any file (the
 former `genConversion`/`resolveField`/`deriveBody` `suggestion`s are gone now that
 the cluster is Result/`?`/`match`). Remaining stderr is only deliberate
 non-auto-convertible reports: `skipped` on `Transpile`/`emitFile`/`elemConv`/
@@ -2559,13 +2559,13 @@ propagation sites) holds. `go test ./internal/selfhost -run
 TestPortedBackendPackage` green (the converted backend transpiles to compiling Go
 and passes the copied `internal/backend` behavioral suite); `task check` (incl.
 the port gate + `internal/backend` + the corpus transpile/behavioral tiers) green;
-`task build` green; `task fixpoint` → FIXPOINT OK (`selfhost/backend/*.go`
+`task build` green; `task fixpoint` → FIXPOINT OK (`internal/backend/*.go`
 byte-identical across goal-c-1/goal-c-2).
 
 ## self-host idiomatic audit — US-012 (typecheck)
 
 > US-012 of the **self-host idiomatic** PRD (`prd.json`): the per-package
-> idiomatic audit of the FINAL package, `selfhost/typecheck` (the go/types-over-
+> idiomatic audit of the FINAL package, `internal/typecheck` (the go/types-over-
 > lowered-Go depth-checker harness: checker.goal, typecheck.goal, implements.goal,
 > mustuse.goal, nozero.goal). Pattern unchanged from US-005..US-011: classify each
 > Go-ism against the goal idiom it could become, convert where it FITS
@@ -2632,22 +2632,22 @@ byte-identical across goal-c-1/goal-c-2).
   `token.Kind` (US-005) and the ast modifiers (US-007). Refuse.
 
 ### Verification
-`goal fix selfhost/typecheck/*.goal` → **no source diff** on any of the five files.
+`goal fix internal/typecheck/*.goal` → **no source diff** on any of the five files.
 The only stderr is the deliberate non-auto-convertible reports: `skipped:
 [result-sig]` on `Load` (non-propagating return) and advisory `suggestion:
 [call-site]` on `Load` and `Check` — neither is an auto-conversion, so AC-2 (zero
 remaining auto-convertible propagation sites) holds with no source change. The
-selfhost port gate (`internal/selfhost` port_test) transpiles `selfhost/typecheck`
+selfhost port gate (`internal/selfhost` port_test) transpiles `internal/typecheck`
 and runs the copied `internal/typecheck` depth tests against it; `task check`
 (incl. that port gate + `internal/typecheck`) green; `task build` green; `task
-fixpoint` → FIXPOINT OK (`selfhost/typecheck/*.go` byte-identical across
+fixpoint` → FIXPOINT OK (`internal/typecheck/*.go` byte-identical across
 goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
 
 ## self-host idiomatic audit — US-013 (final whole-tree sweep + self-host proof)
 
 > US-013 of the **self-host idiomatic** PRD (`prd.json`): the CLOSING story. After
 > the per-package audits (US-005..US-012) this is a whole-compiler proof that no
-> auto-convertible plain-Go propagation remains anywhere in the `selfhost/` tree,
+> auto-convertible plain-Go propagation remains anywhere in the `internal/` tree,
 > that every remaining deliberately-Go construct is documented, and that the
 > idiomatic compiler still self-hosts to a byte-identical fixpoint while passing the
 > corpus. No `.goal` source change — the tree is already at the `goal fix` fixed
@@ -2656,7 +2656,7 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
 ### Whole-tree machine proof (AC-1: zero auto-convertible propagation sites)
 - **Kind:** proof
 - Running `goal fix -inplace` over a COPY of the entire tree (all 39
-  `selfhost/**/*.goal` files) and `diff -r`-ing against the original yields an EMPTY
+  `internal/**/*.goal` files) and `diff -r`-ing against the original yields an EMPTY
   diff. (A bare `goal fix` always prints the possibly-unchanged rewritten file to
   stdout, so the reliable "did it convert anything" check is the `-inplace`-on-a-copy
   diff, not stdout inspection — see progress.txt patterns.)
@@ -2679,12 +2679,12 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
     (backend) — US-011.
   - `Load`/`Check` (typecheck) — US-012.
 - The ONLY file never given a per-package audit story is the top-level
-  `selfhost/main.goal`; its two refusals are recorded immediately below. With those
+  `internal/main.goal`; its two refusals are recorded immediately below. With those
   documented, every flagged construct in the whole-tree sweep is accounted for.
 
 ### `run` stays `(error)` — NOT converted to Result (main.goal)
 - **Kind:** refusal (with reason)
-- **Refused:** converting `run(args []string) error` (selfhost/main.goal) to a
+- **Refused:** converting `run(args []string) error` (internal/main.goal) to a
   Result-returning signature.
 - **Why:** `run` is the CLI entry point — `main()` consumes it as
   `if err := run(os.Args[1:]); err != nil { … os.Exit(1) }`. It returns a BARE
@@ -2703,7 +2703,7 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
 ### `emitPackage` stays `(error)` — NOT converted to Result (main.goal)
 - **Kind:** refusal (with reason)
 - **Refused:** converting `emitPackage(pkg *project.Package, out pipeline.PackageOutput,
-  emitDir string) error` (selfhost/main.goal) to Result.
+  emitDir string) error` (internal/main.goal) to Result.
 - **Why:** `emitPackage` is an IO helper called only by `run` (`if err :=
   emitPackage(…); err != nil { return err }`). It returns a bare `error` and
   propagates `os.MkdirAll` / `os.WriteFile` failures — both bare-error Go stdlib
@@ -2715,12 +2715,12 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
 ### Verification (AC-2: fixpoint; AC-3: corpus)
 - `task check` green: `go vet ./...` + the full `go test ./...` suite, which includes
   the `internal/corpus` transpile/behavioral/check tiers AND the `internal/selfhost`
-  behavioral port gates (each transpiles a `selfhost/<pkg>` through the goal front end
+  behavioral port gates (each transpiles a `internal/<pkg>` through the goal front end
   and runs the copied `internal/<pkg>` tests against the emitted Go) — i.e. the
   goal-built packages pass the corpus + behavioral tiers.
 - `task build` green (both binaries).
 - `task fixpoint` → FIXPOINT OK: stage-0 builds goal-c-1, goal-c-1 builds goal-c-2,
-  and `diff -r` of the two stages' emit over `./selfhost` is empty — goal-c-1 and
+  and `diff -r` of the two stages' emit over `./internal` is empty — goal-c-1 and
   goal-c-2 emit byte-identical Go for the compiler's own source. The self-host is
   PROVEN: a goal-built, idiomatic-goal compiler compiles itself to a byte-identical
   fixpoint while passing the corpus. No `.goal` source changed in this story.
@@ -2759,7 +2759,7 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
 ### The crux: `task fixpoint` is self-consistency, not output-stability
 - **Kind:** methodology
 - `task fixpoint` proves **goal-c-1 == goal-c-2** — stage-0 builds goal-c-1,
-  goal-c-1 builds goal-c-2, and `diff -r` of the two stages' emit over `./selfhost`
+  goal-c-1 builds goal-c-2, and `diff -r` of the two stages' emit over `./internal`
   is empty. This is STAGE1==STAGE2 self-consistency (both bootstrap stages agree on
   the *new* idiomatic form), **NOT** output==before (the new form vs the old form).
 - Therefore an emitted-Go change introduced by a seam edit does **not** break the
@@ -2775,7 +2775,7 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
      idiomatic source (goal-c-1 and goal-c-2 byte-identical to each other).
   2. **Corpus behavioral tier** — the compiled programs behave identically
      (`internal/corpus` behavioral tier + the `internal/selfhost` behavioral port
-     gates, which transpile each `selfhost/<pkg>` through the goal front end and run
+     gates, which transpile each `internal/<pkg>` through the goal front end and run
      the copied `internal/<pkg>` tests against the emitted Go). Behavioral green is
      the real "same program" proof once exact emitted-Go bytes are allowed to move.
   3. **Reviewed golden regeneration** — any golden/shape fixture whose bytes
@@ -2844,7 +2844,7 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
 - **Problem:** SEAM-CAP lowered a cross-package enum `match`/construction only when the
   DEFINING package was available as generated `.go` (its fixture used a `.go` foreign
   package; `EnrichForeign`/`foreignDecls` read only `.go`). The real per-package
-  `goal build ./selfhost` transpiles each package from sibling `.goal` SOURCE, so an enum
+  `goal build ./internal` transpiles each package from sibling `.goal` SOURCE, so an enum
   defined in a sibling `.goal` package (e.g. `ast.FuncMod`) was invisible to consumers in
   other `.goal` packages: a `match` over it failed (`unsupported expression *ast.MatchExpr`)
   and bare construction `a.Mod.From` lowered VERBATIM instead of the §8.1
@@ -2868,8 +2868,8 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
   `.goal` source are deferred (the `.go` path covers them once a package is emitted).
   `qualifyForeignType` requalifies variant field types best-effort (moot for tag-only).
 - **Applied in BOTH** `internal/` (live transpiler — `internal/sema/foreign.go`,
-  `internal/backend/lower.go`+`emit.go`) AND `selfhost/` (`selfhost/sema/foreign.goal`,
-  `selfhost/backend/lower.goal`+`emit.goal`), so the self-host stays consistent and the
+  `internal/backend/lower.go`+`emit.go`) AND `internal/` (`internal/sema/foreign.goal`,
+  `internal/backend/lower.goal`+`emit.goal`), so the self-host stays consistent and the
   fixpoint holds.
 - **Proof:** a 2-package fixture under `internal/backend/testdata/goalenum/` where the enum
   is DEFINED IN A SIBLING `.goal` PACKAGE (`mood/mood.goal`) and consumed via cross-package
@@ -2882,26 +2882,26 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
 ## SEAM-002 — FuncMod & ChanDir iota → goal enum (tree-wide); token.Kind kept as iota
 
 - **Kind:** seam (relaxed gate; see "Seam methodology" above)
-- **What converted.** `selfhost/ast` `FuncMod` (FuncPlain/FuncFrom/FuncDerive) and
+- **What converted.** `internal/ast` `FuncMod` (FuncPlain/FuncFrom/FuncDerive) and
   `ChanDir` (SendRecv/SendOnly/RecvOnly) are now goal `enum`s (§8.1 sealed-interface
   encoding) instead of `type X int` + iota. Every cross- and same-package consumer
   converted to `match` in the same atomic change:
-  - `selfhost/ast/ast.goal:170` (`FuncDecl.Pos`, same-package) — `d.Mod != FuncPlain` →
+  - `internal/ast/ast.goal:170` (`FuncDecl.Pos`, same-package) — `d.Mod != FuncPlain` →
     `notPlain := match d.Mod {…}`.
-  - `selfhost/sema/question.goal` (`plainResultFuncs`) — `fn.Mod != ast.FuncPlain` →
+  - `internal/sema/question.goal` (`plainResultFuncs`) — `fn.Mod != ast.FuncPlain` →
     a match-bound bool, with the `!ok` type-assert guard split out FIRST so the
     short-circuit that protected the nil deref is preserved.
-  - `selfhost/sema/resolve.goal` — `d.Mod == ast.FuncFrom || …FuncDerive` → match-bound
+  - `internal/sema/resolve.goal` — `d.Mod == ast.FuncFrom || …FuncDerive` → match-bound
     bool inside the (retained) tagless `switch {}`; the `switch x.Dir {…}` in
     `typeString` → value-position `match` (the former `default` body re-homed under the
     explicit `ast.ChanDir.SendRecv` arm).
-  - `selfhost/sema/convert.goal` — `fd.Mod != ast.FuncDerive` → match-bound bool (`!ok`
+  - `internal/sema/convert.goal` — `fd.Mod != ast.FuncDerive` → match-bound bool (`!ok`
     split out).
-  - `selfhost/backend/emit.goal` — `funcDecl`'s control `switch d.Mod` → `isDerive :=
+  - `internal/backend/emit.goal` — `funcDecl`'s control `switch d.Mod` → `isDerive :=
     match d.Mod {…}` + `if isDerive { e.deriveDecl(d); return }` (the unreachable
     `default: e.fail(…)` arm dropped); `chanType`'s `switch x.Dir` → statement-position
     `match` (former `default` → explicit `SendRecv` arm).
-  - `selfhost/parser/parser.goal` — construction sites requalified to
+  - `internal/parser/parser.goal` — construction sites requalified to
     `ast.FuncMod.FuncFrom`/`…FuncDerive` and `ast.ChanDir.SendRecv`/`…RecvOnly`/`…SendOnly`.
 - **Zero-value gap (real semantic, fixed not refused).** An enum's zero value is `nil`,
   not the first variant — unlike iota, where `FuncMod`'s zero was `FuncPlain` and
@@ -2910,7 +2910,7 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
   (`parseModFuncDecl` overwrites it for from/derive). `ChanType`'s sole constructor
   already set `Dir` explicitly. This construction invariant (no site leaves Mod/Dir nil)
   is what keeps the 3-arm exhaustive `match` total at run time.
-- **token.Kind KEPT as iota (documented refusal, AC-1 escape hatch).** `selfhost/token`
+- **token.Kind KEPT as iota (documented refusal, AC-1 escape hatch).** `internal/token`
   `Kind` retains `type Kind int` + iota because it has a genuine NUMERIC-IDENTITY
   dependence that survives the seam relaxation, not a mere scope limit: it is used as an
   ARRAY INDEX (`kindNames[k]`), in RANGE PREDICATES over contiguous numbering
@@ -2928,12 +2928,12 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
   port-gated `internal/ast/ast_test.go` into a new internal-only
   `internal/ast/funcmod_test.go` (NOT added to `internal/selfhost/port_test.go`'s
   BuildAndTest slice), so the shared `ast_test.go` is FuncMod/ChanDir-symbol-free and
-  compiles against BOTH Go-iota internal/ast and the enum-transpiled selfhost/ast the port
+  compiles against BOTH Go-iota internal/ast and the enum-transpiled internal/ast the port
   gate builds it against.
 - **Equivalence proof (relaxed gate).** `task fixpoint` → FIXPOINT OK (goal-c-1 and
-  goal-c-2 emit byte-identical Go for `./selfhost`, both agreeing on the new enum/match
+  goal-c-2 emit byte-identical Go for `./internal`, both agreeing on the new enum/match
   form); `task check` green (incl. the `internal/selfhost` behavioral port gates that
-  transpile selfhost/ast as an enum and run the relocated `ast_test.go` against it, and
+  transpile internal/ast as an enum and run the relocated `ast_test.go` against it, and
   `internal/corpus` `TestASTEngineWholeCorpusBehavioralGate`); `task build` green. The
   emitted Go for the converted sites moved (iota int → §8.1 sealed-interface, `switch` →
   type-switch); verified behavior-preserving (same control flow / values, only the idiom
@@ -2988,8 +2988,8 @@ goal-c-1/goal-c-2, since the package is unchanged). No `.goal` source changed.
     checks T/E/Arity/EndsInError against selfhost). Mirrors the SEAM-002 funcmod_test.go
     relocation.
 - **Equivalence proof (relaxed gate).** `task fixpoint` → FIXPOINT OK (goal-c-1/goal-c-2
-  byte-identical on `./selfhost`, both agreeing on the new enum/match form); `task check`
-  green (incl. the `internal/selfhost` behavioral port gates transpiling selfhost/{sema,
+  byte-identical on `./internal`, both agreeing on the new enum/match form); `task check`
+  green (incl. the `internal/selfhost` behavioral port gates transpiling internal/{sema,
   backend,typecheck} as enums and running the rewritten/relocated tests, plus the corpus
   behavioral tier); `task build` green. No golden regeneration was needed — goldens test the
   unchanged internal/ Go compiler, not the selfhost tree.
@@ -3111,14 +3111,14 @@ gain. (Confirms / refines the US-008..US-012 refusals.)
 
 ### Equivalence proof (relaxed gate)
 - `task fixpoint` → **FIXPOINT OK** (goal-c-1/goal-c-2 byte-identical on
-  `./selfhost`, both stages agreeing on the new Result/`?` source).
+  `./internal`, both stages agreeing on the new Result/`?` source).
 - `task check` green — incl. the `internal/selfhost` port gate transpiling
-  `selfhost/{typecheck,sema}` and running the unchanged oracle tests
+  `internal/{typecheck,sema}` and running the unchanged oracle tests
   (`checker_test.go`, `package_test.go`) against the lowered Go, plus the corpus
   behavioral tier; `internal/{typecheck,sema}` green.
 - `task build` green. No golden regeneration needed — goldens test the unchanged
   internal/ Go compiler, not the selfhost tree; the emitted selfhost Go signatures
-  are byte-identical (verified in `_bootstrap/fb/selfhost/...`).
+  are byte-identical (verified in `_bootstrap/fb/internal/...`).
 
 ## SEAM-CAP-3b — type-pattern match over a same-package sealed interface
 
@@ -3128,7 +3128,7 @@ to a Go type-switch with concrete `case *T:` labels — the language feature tha
 sealed interfaces preserve method signatures; this story adds the match capability.
 Cross-package implementor propagation is CAP-3c (next), explicitly out of scope.
 
-Four gaps closed, mirrored in BOTH internal/ (live Go transpiler) and selfhost/
+Four gaps closed, mirrored in BOTH internal/ (live Go transpiler) and internal/
 (.goal mirror compiled by the port gate):
 
 1. Implementor registry. `sema.Info` gains `SealedImpls map[string][]string`
@@ -3185,10 +3185,10 @@ the new parser/sema/backend source) all green; corpus behavioral tier unchanged
 
 CAP-3 part 3 of 3, and the final prerequisite for SEAM-004: a `sealed interface`
 DEFINED in a sibling `.goal` package is now matchable (type-pattern `match`) from a
-consumer `.goal` package during the real per-package `goal build ./selfhost`
+consumer `.goal` package during the real per-package `goal build ./internal`
 bootstrap. CAP-3b made same-package sealed match work; this story carries the
 implementor set across the package boundary. It matters because 35 of SEAM-004's 36
-type-switches consume ast.Node/Expr/Stmt/Decl from packages OTHER than selfhost/ast.
+type-switches consume ast.Node/Expr/Stmt/Decl from packages OTHER than internal/ast.
 
 The gap: foreign enrichment propagated ENUM facts from sibling `.goal` source (the
 SEAM-CAP-2 `goalForeignDecls` path: `parser.ParseFile` + `ResolvePackage`, projecting
@@ -3197,7 +3197,7 @@ consumer's `checkOneSealedMatch` → `sealedInterfaceOf` found nothing cross-pac
 deferred with the `unresolved-match-sealed` Warning CAP-3b explicitly left open.
 
 The fix (mirrored line-for-line in `internal/sema/foreign.go` and
-`selfhost/sema/foreign.goal`):
+`internal/sema/foreign.goal`):
 
 1. `goalForeignDecls` now also projects EXPORTED sealed interfaces. `ResolvePackage`
    already builds `info.Sealed` (sealed iface names) and `info.SealedImpls`
@@ -3252,7 +3252,7 @@ embedding: declaring `implements Expr` where sealed `Expr` embeds sealed `Node`
 automatically registers the type under both interfaces and emits both markers. No parser
 change.
 
-The fix (mirrored line-for-line in `internal/` and `selfhost/`):
+The fix (mirrored line-for-line in `internal/` and `internal/`):
 
 1. **sema** (`resolve.go` / `resolve.goal`): new `cascadeSealedImpls()` — for each sealed
    iface B with implementors, propagate them to every sealed interface B transitively
@@ -3295,7 +3295,7 @@ behavioral tier unchanged (additive tests only).
 ## SEAM-004 — seal ast.Node/Expr/Stmt/Decl/Spec + convert AST type-switches to match
 - **Kind:** seam (reverses the US-007 AST-seal refusal and the Walk refusal)
 
-The AST category interfaces in `selfhost/ast` are now sealed:
+The AST category interfaces in `internal/ast` are now sealed:
 
     sealed interface Node { Pos() token.Pos; End() token.Pos }
     sealed interface Decl { Node }   // and Stmt / Expr / Spec, each embedding Node
@@ -3310,8 +3310,8 @@ generates the markers.
 
 **Type-switches converted to `match`.** Every type-switch over a single sealed AST
 interface (scrutinee Node/Expr/Stmt/Decl/Spec) is now a goal `match` with type
-patterns and exhaustiveness: in `selfhost/sema` (check, resolve, question, fields,
-mustuse, assert), `selfhost/backend` (lower, emit), and `selfhost/parser` (parser,
+patterns and exhaustiveness: in `internal/sema` (check, resolve, question, fields,
+mustuse, assert), `internal/backend` (lower, emit), and `internal/parser` (parser,
 goal_construct). Partial switches carry a `_` rest-arm (the §8.2 opt-out);
 value-returning switches stay statement-position matches with `return` inside arm
 blocks; a `case nil:` is hoisted to an `if x == nil` guard before the match (a
@@ -3319,30 +3319,30 @@ sealed match dispatches on concrete `*T`, so the nil-interface case has no patte
 
 **Three switches deliberately kept as plain type-switches** (recorded here so the
 non-conversion is a decision, not an oversight):
-1. `selfhost/ast/walk.goal` Walk — the AC permits a justified exclusion. It is the
+1. `internal/ast/walk.goal` Walk — the AC permits a justified exclusion. It is the
    one switch enumerating the ENTIRE Node implementor set and uses two Go
    type-switch features `match` lacks: grouped multi-type clauses
    (`case *Ident, *BasicLit:`) and no-op clauses. Expanding to ~60 single-type arms
    (several empty) is strictly less readable with no idiom gain; the visitor is
    exhaustive by construction.
-2. `selfhost/backend/emit.goal` armBody — its cases discriminate across the SIBLING
+2. `internal/backend/emit.goal` armBody — its cases discriminate across the SIBLING
    sealed interfaces `ast.Stmt` and `ast.Expr` (plus a nil arm): one value tested
    against two DIFFERENT sealed-category interfaces, not against the concrete `*T`
    variants of ONE. `match` lowers type patterns as concrete `case *T:` labels and
    cannot express interface-typed `case ast.Stmt:` clauses.
-3. `selfhost/sema/foreign.goal` ×3 — these switch over `go/ast` (Go stdlib) nodes
+3. `internal/sema/foreign.goal` ×3 — these switch over `go/ast` (Go stdlib) nodes
    read from imported `.go` packages. go/ast's interfaces are not goal-sealed and
    are unsealable from here, so they stay plain Go type-switches.
 
 **The US-003 go/ast-mirror oracle is RESOLVED by retaining the mirror unchanged.**
-`selfhost/ast` was modeled byte-for-byte on `go/ast`, with the ported `internal/ast`
+`internal/ast` was modeled byte-for-byte on `go/ast`, with the ported `internal/ast`
 unit tests as the oracle. Sealing changes the EMITTED Go shape (markers move from
 `exprNode()` to `isExpr()`/`isNode()`), but the public API the mirror tests exercise
 — struct fields, `Pos()`/`End()`, node construction, and assignability to the
 category interfaces — is unchanged. The port-gated `internal/ast/ast_test.go`
 references no marker method (verified), so it compiles and passes against BOTH the
 open `internal/ast` (the live Go compiler's own AST, left open) and the sealed
-`selfhost/ast` transpile. No mirror test was changed or deleted; the seal simply
+`internal/ast` transpile. No mirror test was changed or deleted; the seal simply
 does not disturb the behavior the oracle pins. `internal/ast` stays open Go because
 it is the bootstrap compiler's AST and is not in the fixpoint diff (same precedent
 as SEAM-002 keeping internal/ast iota).
@@ -3358,25 +3358,25 @@ super-interface and falsely flagged non-exhaustive (a ~50%-per-run flake in
 `TestNestedMatchExhaustiveBothLevels`). The fix resolves to the MOST SPECIFIC sealed
 interface (smallest implementor set, ties broken by name) whose set contains every
 covered arm type — deterministic and semantically the narrowest level the match
-targets. Mirrored line-for-line in `internal/sema/check.go` + `selfhost/sema/check.goal`.
+targets. Mirrored line-for-line in `internal/sema/check.go` + `internal/sema/check.goal`.
 
 Gates: `task check`, `task build`, `task fixpoint` (FIXPOINT OK) all green; corpus
 behavioral + interp tiers unchanged. Equivalence re-proven under the relaxed seam
 gate by fixpoint self-consistency + corpus behavioral tier (no golden regen was
-needed — the goldens test the unchanged internal/ Go compiler, not selfhost/).
+needed — the goldens test the unchanged internal/ Go compiler, not internal/).
 
 ## SEAM-006 — cross-cutting proof: the compiler showcases goal end-to-end
 
 > SEAM-006 of the **seam** PRD (`prd.json`): the closing proof story (mirror of
 > US-013, but for the seam end state). Not a source idiom change — it VERIFIES
 > and MEASURES that the SEAM-002..005 conversions hold together, then states the
-> honest end state. Every number below is counted from the live `selfhost/` tree,
+> honest end state. Every number below is counted from the live `internal/` tree,
 > not asserted.
 
 ### Gates (the equivalence oracle, all green)
 
 - `task check` — green (go vet + full `go test ./...`, including the
-  internal/selfhost port gates that transpile every `selfhost/*` package and run
+  internal/selfhost port gates that transpile every `internal/*` package and run
   the ported oracle tests against the lowered Go, plus the corpus behavioral +
   interp + check tiers).
 - `task build` — green (both binaries).
@@ -3397,7 +3397,7 @@ needed — the goldens test the unchanged internal/ Go compiler, not selfhost/).
 ### Honest end state — idioms the compiler now showcases tree-wide
 
 - **enum from iota:** the four closed, unordered classification types are goal
-  `enum`s (FuncMod, ChanDir, Mode, Severity). The only `iota` left in `selfhost/`
+  `enum`s (FuncMod, ChanDir, Mode, Severity). The only `iota` left in `internal/`
   is `token.Kind` and `litClass` (numeric-identity types, documented) plus two
   private backend implementation helpers (`roKind`, `matchPos`) that are not part
   of the public idiom surface. The idiom is the default; the exceptions are named.
@@ -3413,7 +3413,7 @@ needed — the goldens test the unchanged internal/ Go compiler, not selfhost/).
 
 ### `goal fix` over the whole selfhost tree — the autofixer agrees the API is idiomatic
 
-`goal fix` was run over all 39 `selfhost/**/*.goal` files. **It would auto-modify
+`goal fix` was run over all 39 `internal/**/*.goal` files. **It would auto-modify
 ZERO of them** (verified by diffing each file against its `goal fix` output). It
 makes no automatic propagation conversion anywhere — i.e. the propagating API is
 already idiomatic by the autofixer's own judgement. Its reports are all
@@ -3459,7 +3459,7 @@ in this PRD:
    over an enum DEFINED in an imported package now lowers; previously only
    Result/Option crossed package lines, via hardcoded special-casing).
 2. **SEAM-CAP-2** — cross-`.goal`-package enum/§8.1-fact propagation during the
-   real per-package `goal build ./selfhost` bootstrap (a sibling-`.goal`-defined
+   real per-package `goal build ./internal` bootstrap (a sibling-`.goal`-defined
    enum is now visible to consumers in other `.goal` packages; foreign
    enrichment reads `.goal` source, not just generated `.go`).
 3. **SEAM-CAP-3a–d** — sealed-interface type-pattern `match`, built in four

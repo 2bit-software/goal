@@ -6,7 +6,7 @@
 // output directory, mirroring `cmd/goal`'s `--emit` layout so its output is
 // interchangeable with the trusted compiler's.
 //
-// It imports the goal-ported selfhost/* packages (not goal/internal/*), so the
+// It imports the goal-ported goal/internal/* packages, so the
 // whole compiler is built from goal source. The bootstrap emits this tree into a
 // self-contained `module goal` and builds goal-c-1/goal-c-2 from it, making the
 // byte-identical fixpoint a genuine differential self-host proof.

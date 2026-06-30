@@ -172,7 +172,7 @@ func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs
 		}
 	}
 	// A sibling package that exists only as .goal SOURCE (not yet emitted to .go) is the
-	// real per-package `goal build ./selfhost` topology: each package is transpiled from
+	// real per-package `goal build ./internal` topology: each package is transpiled from
 	// .goal source, so a dependent resolves an imported sibling to its .goal dir, not a
 	// generated one. Read the enums straight from that source (the §8.1 facts the backend
 	// match/construction lowering consults) so a cross-package match/construction lowers,
@@ -243,7 +243,7 @@ func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs
 	}
 	enums = reconstructForeignEnums(markers, structs, alias)
 	// The .go path does not reconstruct sealed-interface implementor sets from the
-	// generated marker form: the real per-package `goal build ./selfhost` bootstrap
+	// generated marker form: the real per-package `goal build ./internal` bootstrap
 	// resolves a sibling to its .goal SOURCE (the goalForeignDecls path below), so a
 	// cross-package sealed match is enriched there. Reconstructing sealed sets from an
 	// already-generated .go sibling is deferred, exactly as struct/func/method facts are

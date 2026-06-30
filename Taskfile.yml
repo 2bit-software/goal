@@ -102,17 +102,6 @@ tasks:
       - cmd: echo "generated Go is up to date"
         silent: true
 
-  corpus-goalgen:
-    desc: Run the corpus behavioral tier through the goal-built compiler (cmd/goal-gen)
-    cmds:
-      # Build the goal-sourced compiler binary from the committed generated Go
-      # (goal/internal/{backend,pipeline,project}); `go build` succeeding
-      # is itself the US-005 proof that the goal-written compiler compiles.
-      - go build -o bin/goal-gen ./cmd/goal-gen
-      # Drive the behavioral conformance tier with that binary as the compiler: each
-      # transpile case is lowered by goal-gen, then built and vetted in a temp module.
-      - GOAL_GEN_BIN="$(pwd)/bin/goal-gen" go test ./internal/corpus -run TestCompileRunnerGoalGen -count=1
-
   bootstrap:
     desc: 3-stage self-host bootstrap (stage-0 -> goal-c-1 -> goal-c-2)
     cmds:
