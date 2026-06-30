@@ -924,3 +924,51 @@ func TestPortedInterpPackage(t *testing.T) {
 		t.Fatalf("the full goscript+doctest interp conformance suite failed against the transpiled package: %v", err)
 	}
 }
+
+// TestPortedLspPackage validates US-015: the LSP wire protocol and JSON-RPC
+// transport (legacy internal/lsp protocol.go, jsonrpc.go, uri.go) reimplemented
+// as goal source under internal/compiler/lsp transpiles to compiling Go (the
+// smoke gate — this subset is a LEAF that imports only foreign stdlib bufio/
+// encoding/json/fmt/io/strconv/strings/sync/net/url/path/filepath, so the layout
+// is the single package and there are no in-module deps to transpile alongside)
+// AND frames JSON-RPC messages identically to the legacy package.
+//
+// The behavioral gate runs the legacy package's own white-box jsonrpc_test.go
+// (TestFramingRoundTrip — encode then decode preserves method and params, the
+// AC-2 round-trip parity oracle — and TestReadMessageMissingLength) plus
+// uri_test.go (TestURIToPath). Both files are package lsp, import only stdlib,
+// and reference only symbols defined in the three ported files, so they are
+// self-contained in the harness's throwaway temp module; the identical files run
+// against the legacy package under `task check`. The server-lifecycle and
+// query-feature files (US-016/US-017) are intentionally NOT ported here, and
+// nothing in these three files nor their two tests references them. The test's
+// working directory is internal/selfhost, so the goal source is at
+// ../../internal/compiler/lsp and the existing tests are at ../lsp.
+func TestPortedLspPackage(t *testing.T) {
+	lspPkg := discoverPorted(t, "lsp")
+
+	// Criterion 1: transpiles via the smoke gate and the generated Go compiles.
+	// A leaf package, so the layout is lsp alone; bufio/encoding/json/fmt/io/
+	// strconv/strings/sync/net/url/path/filepath pass through as foreign stdlib
+	// imports.
+	layout := map[string]*project.Package{
+		"internal/compiler/lsp": lspPkg,
+	}
+	if err := selfhost.BuildTranspiled(layout); err != nil {
+		t.Fatalf("ported lsp failed the transpile-and-build gate: %v", err)
+	}
+
+	// Criterion 2: the self-contained lsp transport/uri tests pass against the
+	// transpiled package. Leaf package => no dependency closure to transpile (nil
+	// deps). jsonrpc_test.go pins JSON-RPC framing round-trip (write then read
+	// preserves method and params) and missing-Content-Length rejection;
+	// uri_test.go pins file-URI-to-path decoding — proving same-input same-output
+	// parity with the legacy package.
+	testFiles := []string{
+		"../lsp/jsonrpc_test.go",
+		"../lsp/uri_test.go",
+	}
+	if err := selfhost.BuildAndTest("internal/compiler/lsp", lspPkg, testFiles, nil); err != nil {
+		t.Fatalf("existing lsp transport tests failed against the transpiled package: %v", err)
+	}
+}

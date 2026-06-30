@@ -6525,3 +6525,49 @@
     review"); in automode advance past them with `morse-code workflow resume` (NOT
     --reject, which routes to on_fail). Status via `morse-code workflow status`.
 ---
+
+## [2026-06-30T21:15:00Z] - US-015 (self-host-flip PRD)
+- Ported the LSP wire protocol + JSON-RPC transport SUBSET to goal source under
+  internal/compiler/lsp: protocol.goal (LSP message types + symbol/semantic-token
+  consts + legend), jsonrpc.goal (Content-Length framing readMessage/writeMessage
+  + rpc message types), uri.goal (uriToPath). These are exactly the three files
+  AC-1 names; the rest of legacy internal/lsp (server/symbols/codeaction/hover/
+  definition/references/diagnostics/semantictokens) is US-016/US-017.
+- This subset is a LEAF package: NO in-module (goal/internal/*) imports, only
+  foreign stdlib (bufio/encoding/json/fmt/io/strconv/strings/sync/net/url/
+  path/filepath). Ported VERBATIM (Go superset = valid goal); no idiom rewrite.
+  No goal reserved-word collisions — `match`/`enum`/`assert` appear ONLY inside a
+  comment ("must match") and a string literal ("enum"), both harmless.
+- `task generate` (scoped to ./internal/compiler) auto-discovered the new lsp
+  package with NO Taskfile edit (same as interp in US-011..013) and emitted
+  colocated internal/compiler/lsp/{protocol,jsonrpc,uri}.go with the generated
+  header; `go build ./internal/compiler/lsp/...` + `go vet` clean.
+- AC-2 parity oracle: added TestPortedLspPackage to internal/selfhost/port_test.go
+  following the leaf-package shape of TestPortedCap/Textedit but with foreign
+  stdlib imports. BuildTranspiled(layout={internal/compiler/lsp}) is the compile
+  gate; BuildAndTest(... ,nil deps) feeds the legacy white-box ../lsp/jsonrpc_test.go
+  (TestFramingRoundTrip = encode-then-decode preserves method+params;
+  TestReadMessageMissingLength) and ../lsp/uri_test.go (TestURIToPath). The
+  identical files run against the legacy package under `task check`, so they are
+  the same-input same-output oracle.
+- Files changed: internal/compiler/lsp/{protocol,jsonrpc,uri}.{goal,go} (new),
+  internal/selfhost/port_test.go (+TestPortedLspPackage), prd.json (US-015
+  passes:true), progress.txt.
+- Verification: go build ./internal/compiler/lsp OK; go vet OK; TestPortedLspPackage
+  PASS; `task check` exit 0 (vet + verify-generated drift gate + full test);
+  `task fixpoint` FIXPOINT OK.
+- Learnings for future iterations:
+  - When an AC names a SPECIFIC file set ("ports protocol.go, jsonrpc.go, uri.go"),
+    port exactly that subset even though the legacy package has many more files —
+    the remaining files belong to later stories (US-016/017). A partial-package
+    port compiles standalone as long as the ported files + their fed-in tests
+    reference no symbol from the un-ported files (Go does NOT error on unused
+    package-level type/const/var/func decls, only unused imports + locals). Verify
+    by inspection before copying.
+  - Concurrency carried over for FREE (jsonrpc.writeMessage takes *sync.Mutex):
+    confirms the US-014 spike finding — sync.Mutex is plain foreign-stdlib
+    passthrough, no compiler capability needed.
+  - A ported leaf with FOREIGN stdlib imports (vs cap/textedit which had none)
+    still uses the nil-deps BuildAndTest path; the foreign imports pass through the
+    throwaway temp `module goal` unchanged.
+---

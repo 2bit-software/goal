@@ -193,8 +193,8 @@
         "JSON-RPC message framing round-trips (encode then decode) identically to the legacy package on a fixture set of messages."
       ],
       "priority": 15,
-      "passes": false,
-      "notes": "~425 LOC. Depends on US-014 outcome."
+      "passes": true,
+      "notes": "~425 LOC. Depends on US-014 outcome. DONE: ported the protocol/jsonrpc/uri SUBSET (the only files matching AC-1's named set) verbatim to internal/compiler/lsp/*.goal; `task generate` emits colocated .go that builds. Leaf package (foreign stdlib only: bufio/encoding/json/fmt/io/strconv/strings/sync/net/url/path/filepath), no in-module deps. No goal reserved-word collisions (only 'enum' in a string literal, 'match' in a comment). TestPortedLspPackage (internal/selfhost/port_test.go) runs the legacy white-box jsonrpc_test.go (TestFramingRoundTrip = AC-2 round-trip oracle + TestReadMessageMissingLength) and uri_test.go against the transpiled package via BuildTranspiled+BuildAndTest. `task check` + `task fixpoint` green. The other legacy lsp files (server/symbols/codeaction/hover/definition/references/diagnostics/semantictokens) are US-016/017 and are NOT yet ported."
     },
     {
       "id": "US-016",
