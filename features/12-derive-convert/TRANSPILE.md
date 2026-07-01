@@ -110,6 +110,14 @@ Focused recognizer (`text/scanner`, span-splice, `go/format`); no full Go parser
      `make` + indexed loop applying the element resolution. (Map and nested-struct recursion follow
      the same rule; see scope.)
    - none of the above → **located error** (deferred, not silently skipped).
+5. **Inline `...derive(src)` (return position).** The same expansion (steps 3–4) applies when a
+   `...derive(src)` literal appears as the operand of a `return` in an ordinary function, not only
+   in a `derive func` body: `return T{ overrides…, ...derive(src) }` (and `return T{ … }, nil` when
+   the function returns `(T, error)`). It lowers to a scoping block `{ var out T; overrides; fills;
+   return out[, nil] }` — the block lets `var out` shadow any user local of that name, and `src` is
+   read off the enclosing function's parameter. The emitted conversion statements are identical to
+   the equivalent `derive func`. Fallibility is taken from the return **shape** (a trailing `, nil`),
+   and a `...derive` outside a return is a located error pointing at the `derive func` form.
 
 ## Erasure-with-defensive-feedback
 

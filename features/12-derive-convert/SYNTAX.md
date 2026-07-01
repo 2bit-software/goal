@@ -77,6 +77,13 @@ derive func toStorage(e EventExecution) StoredEvent {
   to same-named fields filled by `...derive`.
 - **`Field: _`** marks a target field intentionally unset (the deriver leaves it zero and the
   completeness check is satisfied) — e.g. boiler's `R`, `L`, `DeletedAt`.
+- **Inline (outside a `derive func`).** The `T{ …, ...derive(src) }` literal is not exclusive to
+  a `derive func` body: it also works inline in an ordinary function whose result is `T`, as the
+  operand of a `return` — `return T{ …, ...derive(src) }`, or `return T{ … }, nil` when the
+  function returns `(T, error)` and a filled field is fallible. It lowers to the same field
+  conversions the equivalent `derive func` produces. Scope for now is **return position only**: a
+  `...derive(src)` used elsewhere (a call argument, an assignment, a nested literal) is a located
+  error pointing at the `derive func` form.
 
 ### Grammar
 
@@ -89,7 +96,9 @@ CompositeLit = TypeName "{" { Override "," } "...derive" "(" ident ")" [ "," ] "
 Override   = FieldName ":" ( Expression | "_" ) .
 ```
 
-A bodyless `DeriveDecl` is sugar for `{ return T{ ...derive(src) } }` (no overrides).
+A bodyless `DeriveDecl` is sugar for `{ return T{ ...derive(src) } }` (no overrides). The same
+`CompositeLit` form is also accepted inline in an ordinary function's `return` (see *Inline*
+above) — the `derive func` body is one instance of the general return-position form.
 
 ## Worked examples
 
