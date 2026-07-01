@@ -127,6 +127,36 @@ func first() Light {
 **Lowers to:** a sealed interface (`interface{ isLight() }`) with one per-variant struct
 and an unexported marker method each — closing the set in Go's own type system.
 
+## Rejecting an unknown enum variant
+
+The closed set is binding at **construction**, not only at `match`. Name a variant the
+enum never declares and the checker rejects it at its source position — a located
+compile error, not a phantom selector the backend would otherwise emit.
+
+```goal name=light_unknown.goal
+package traffic
+
+enum Light {
+    Red
+    Yellow
+    Green
+}
+
+func signal() Light {
+    return Light.Blue
+}
+```
+
+Rejected with:
+
+```error
+light_unknown.goal:10:12: error: [unknown-variant] `Light.Blue` names `Blue`, which is not a variant of enum `Light` — its variants are `Light.Red`, `Light.Yellow`, `Light.Green`
+```
+
+**Why:** `enum Light` freezes its variant set to Red, Yellow, Green (feature 01), so the
+checker knows `Blue` was never declared. Enforcing this at construction — not just at
+`match` — is what keeps the set genuinely closed, so exhaustiveness stays provable.
+
 ## 02. Match
 
 A dedicated `match` construct (deliberately *not* `switch`) with `=>` arms. Arms bind
@@ -450,6 +480,15 @@ func handle(id ID) {
 **Lowers to:** `*T`. `Option.None` → `nil`, `Option.Some(v)` → `&v`, and `match` becomes
 the nil-check `if p != nil { … } else { … }`.
 
+**No standalone "Rejected with" example:** unlike the other features here, `Option` has no
+error snippet of its own — and that omission is the point. Its guarantee is *structural*,
+not a diagnostic. The inner value is unreachable except through a `match` arm (feature 02
+already rejects a `match` that forgets `Option.None`), so a nil-dereference has no
+syntactic form to reject — there is nothing to *write* that reaches the value unguarded.
+And dropping an `Option` is legal: absence is a valid, complete outcome, so — unlike a
+dropped `Result` (feature 03) — discarding one is not an error. Option's safety shows up
+as the *absence* of a way to go wrong, which is exactly why it needs no rejection example.
+
 ## 05. `?` propagation
 
 Postfix `?` on a `Result` or `Option` value: if it's `Err`/`None`, early-return it from
@@ -526,6 +565,36 @@ func loadConfig(p string) (ok Config, err error) {
 **Lowers to:** in a `Result[_, error]` function, `name := expr?` becomes
 `name, err := expr; if err != nil { return ok, err }`. In an
 `Option[_]` function it becomes a nil-check-and-return, then a deref.
+
+## Rejecting `?` in a non-fallible function
+
+`?` early-returns a failure, so it needs a failure channel to return it *through*. Use
+`?` in a function whose return type is neither a `Result` nor an `Option` and the
+checker rejects it at the `?`, naming the offending function's return — a located
+compile error, not a silent drop.
+
+```goal name=qprop_nonfallible.goal
+package config
+
+func readFile(p string) Result[[]byte, error] {
+    return Result.Ok([]byte(p))
+}
+
+func peek(p string) int {
+    raw := readFile(p)?
+    return len(raw)
+}
+```
+
+Rejected with:
+
+```error
+qprop_nonfallible.goal:8:23: error: [question-outside-result] `?` propagates a failure, but function `peek` returns `(int)`, which is neither a `Result` nor an `Option`; change its return type to `Result[T, error]` or `Option[T]` so it can carry the failure
+```
+
+**Why:** `?` is sugar for "return the `Err`/`None` from here." A function returning a plain
+`int` has nowhere to put that failure, so the propagation is unrepresentable. Change
+`peek`'s return to `Result[int, error]` (or `Option[int]`) and the `?` has a channel.
 
 ## 06. Result (closed-E)
 
