@@ -1,6 +1,25 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- cmd/build-playground error-feature verification (US-003) discriminates checker
+  vs backend by the LOCKED-BLOCK FORMAT, not by "does the checker fire". A located
+  checker block's first line begins with the feature's SourceName
+  (`traffic.goal:10:9: error: [code] …`, the shape sema.Diagnostic.Render emits);
+  a backend rejection begins with `backend:`. This matters because the checker NOW
+  also flags the unsafe-default example (CheckUnsafeDefaults is in sema.Check), so a
+  naive checker-first path would try to match its `backend:`-format locked block
+  against the checker render and break `go run ./cmd/build-playground`. Checker path:
+  sema.Analyze(source) -> first Error-severity diag -> d.Render(SourceName) must equal
+  the locked block (trailing newline trimmed). To capture the exact live render for a
+  test constant, drop a throwaway `probe_test.go` in the package (internal/* imports
+  need to live IN the module), print d.Render("name.goal"), run `go test -run Probe`,
+  then delete it. goal enum syntax is `enum Name { … }` and match arms are
+  `Name.Variant => …` (NOT `Variant =>`).
+- The Edit PostToolUse hook runs the FULL `task check` (go vet + entire suite) after
+  every single Edit and BLOCKS on failure — so a multi-edit change is red between
+  edits (e.g. unused import, arg-count mismatch). Sequence edits so the tree is
+  buildable ASAP; the intermediate hook failures are expected and clear once the last
+  edit lands. corpus tests make each hook run ~15s.
 - A panic-safety / classification RULE the lexical checker (internal/sema) and the
   backend must agree on belongs in sema (found in US-001): backend imports sema, so
   sema cannot import backend — promote the function INTO sema (exported, e.g.
@@ -7168,4 +7187,29 @@
     the zombiekit git commit surfaces it as "failed to write commit object"
     AFTER the pre-commit `task check` passes. Fall back to
     `git commit --no-gpg-sign -F msg` (tree already verified) to land the story.
+---
+
+## 2026-07-01T17:28:00Z - US-003
+- Implemented checker-backed verification of playground error features in
+  cmd/build-playground. Error features whose locked block is a located checker
+  diagnostic (first line begins with the feature's SourceName) are now verified
+  against sema.Analyze + Diagnostic.Render(SourceName); backend-format blocks
+  (the unsafe-default `backend:` example) fall back to backend.Transpile,
+  unchanged. site/features.json regenerated with no drift.
+- Files changed: cmd/build-playground/main.go (import sema; verify gains a
+  sourceName param + verifyError/isCheckerDiagnostic/firstError helpers),
+  cmd/build-playground/main_test.go (new: checker pass, wrong-locked fail,
+  backend fallback, isCheckerDiagnostic).
+- Verify: `task check` exit 0; `go run ./cmd/build-playground -out
+  site/features.json` exit 0 (13 features / 5 categories);
+  `go test ./cmd/build-playground` ok. Commit d9cd8f9.
+- Learnings for future iterations:
+  - Discriminate error-feature verification by locked-block FORMAT, not by
+    "checker fires" — the checker now flags unsafe-default too. See Codebase
+    Patterns block.
+  - Capture exact live diagnostic text for test constants via a throwaway
+    probe_test.go in-package, then delete it (internal/* imports must be in the
+    module). goal syntax: `enum Name { … }`, arms `Name.Variant => …`.
+  - The Edit hook runs full `task check` per edit and blocks on red; order edits
+    so the tree compiles quickly.
 ---

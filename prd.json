@@ -49,7 +49,7 @@
         "`go run ./cmd/build-playground` still exits 0 on the current docs/by-example.md."
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Core enabler for all checker-backed authoring stories (US-006..US-009). No change to the authored '## Rejected with' doc format is required — only the verification source. Reuse sema.Analyze + Diagnostic.Render, the same path goalc's checker uses."
     },
     {
