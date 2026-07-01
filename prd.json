@@ -148,7 +148,7 @@
         "site/features.json contains a feature under the doctests category with the doctest-failure output kind and its expected failure text."
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-004 and US-005."
     }
   ]

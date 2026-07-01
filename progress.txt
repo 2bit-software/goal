@@ -7430,3 +7430,36 @@
     `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md` is rerun. No `task generate`
     needed (no .goal changed).
 ---
+
+## 2026-07-01T18:55:00Z - US-010
+- Authored a doctest-failure example under the doctests feature in docs/by-example.md:
+  a new `## A drifted doctest fails its test` section with a ```goal name=triple.goal```
+  snippet whose `/// >>> triple(3)` expects `6` while the code returns `9`, followed by
+  a ```testfail``` block locked to the normalized failure `doctest triple: got 9, want 6`.
+- The failure text was DERIVED live, not hand-written: transpiled `triple.goal` with
+  `./bin/goalc <file>` (package Go) and `./bin/goalc -test <file>` (sidecar) into a
+  throwaway `module goal` temp dir, ran `go test .`, and took the normalized
+  `doctest <fn>: got …, want …` line (same subset build-playground's US-005 verifier
+  extracts via `^\s*\S+_test\.go:\d+:\s*(doctest .*)$`).
+- Files changed: docs/by-example.md, AI-KNOWLEDGE-BOOTSTRAP.md. Commit beaea60
+  (SSH signing OK, no --no-gpg-sign needed).
+- Verify: `task check` exit 0; `go run ./cmd/build-playground -out site/features.json`
+  exit 0 (23 features / 5 categories); features.json carries a doctest-failure feature
+  with expected `doctest triple: got 9, want 6` and pane label "test failure".
+- Learnings for future iterations:
+  - doctest-failure fence label is ```testfail``` (byexample testFailFenceRe
+    `^```testfail\b`) -> OutputKind "doctest-failure" -> build-playground pane label
+    "test failure". Each `##` section = exactly ONE feature (one name-tagged goal block
+    + one output block); a failure example must therefore be its OWN `##` section, not a
+    second block appended inside an existing feature — placed under the same preceding
+    `#` category divider (here "Runtime & test feedback").
+  - The verifier matches the ```testfail``` body by EXACT equality after TrimRight("\n")
+    against the normalized `doctest <fn>: got <got>, want <want>` line(s) — the
+    `<file>:<line>:` prefix and FAIL framing are stripped, so lock ONLY the doctest
+    message line(s), nothing else.
+  - Same standing golden gotcha as the other docs stories: after editing
+    docs/by-example.md, rerun `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md` or
+    cmd/goal's TestBootstrapGoldenMatches fails. The guide renders a doctest-failure
+    feature as its plain "transpiles to" package Go (it does not show the testfail
+    block), which is fine — the golden only needs to match the fresh render.
+---
