@@ -1059,7 +1059,7 @@ func (e *emitter) buildTypeDecls(f *ast.File) map[string]string {
 	return m
 }
 
-//line emit.goal:1175
+//line emit.goal:1176
 func (e *emitter) compositeLit(x *ast.CompositeLit) {
 	if x.Type != nil {
 		e.expr(x.Type)
@@ -1076,7 +1076,11 @@ func (e *emitter) compositeLit(x *ast.CompositeLit) {
 		if sp, ok := el.(*ast.SpreadElement); ok {
 			id, ok := sp.X.(*ast.Ident)
 			if !ok || id.Name != "defaults" {
-				e.fail("unsupported spread element in composite literal: only `...defaults` is lowered (`...derive` is a later story)")
+				if isDeriveSpread(sp) {
+					e.fail("`...derive` at %s is only supported in a return; use a `derive func`", sp.Pos())
+				} else {
+					e.fail("`...defaults` at %s: unsupported spread element (only `...defaults` and a return-position `...derive(src)` are lowered)", sp.Pos())
+				}
 				return
 			}
 			for _, entry := range e.defaultEntries(x, sp.Pos()) {
@@ -1091,7 +1095,7 @@ func (e *emitter) compositeLit(x *ast.CompositeLit) {
 	e.p("}")
 }
 
-//line emit.goal:1211
+//line emit.goal:1216
 func (e *emitter) defaultEntries(x *ast.CompositeLit, pos token.Pos) []string {
 	id, ok := x.Type.(*ast.Ident)
 	if !ok {
@@ -1119,14 +1123,14 @@ func (e *emitter) defaultEntries(x *ast.CompositeLit, pos token.Pos) []string {
 	return entries
 }
 
-//line emit.goal:1240
+//line emit.goal:1245
 type deriveOverride struct {
 	Name  string
 	Skip  bool
 	Value ast.Expr
 }
 
-//line emit.goal:1253
+//line emit.goal:1258
 func (e *emitter) deriveDecl(d *ast.FuncDecl) {
 	if d.Name == nil || d.Type == nil {
 		e.fail("derive func has no name or signature")
@@ -1147,7 +1151,7 @@ func (e *emitter) deriveDecl(d *ast.FuncDecl) {
 	e.genConversion(d.Name.Name, srcName, srcType, tgtType, fallible, overrides)
 }
 
-//line emit.goal:1277
+//line emit.goal:1282
 func (e *emitter) deriveOverrides(body *ast.BlockStmt) []deriveOverride {
 	if body == nil {
 		return nil
@@ -1166,7 +1170,7 @@ func (e *emitter) deriveOverrides(body *ast.BlockStmt) []deriveOverride {
 	return nil
 }
 
-//line emit.goal:1299
+//line emit.goal:1304
 func overridesFromLit(cl *ast.CompositeLit) []deriveOverride {
 	var out []deriveOverride
 
@@ -1188,7 +1192,7 @@ func overridesFromLit(cl *ast.CompositeLit) []deriveOverride {
 	return out
 }
 
-//line emit.goal:1326
+//line emit.goal:1331
 func (e *emitter) genConversion(name, srcName, srcType, tgtType string, fallible bool, overrides []deriveOverride) {
 	tgtVal := derefType(tgtType)
 	if _, ok := structFieldsOf(e.info, tgtVal); !ok {
@@ -1206,7 +1210,7 @@ func (e *emitter) genConversion(name, srcName, srcType, tgtType string, fallible
 	e.p("}")
 }
 
-//line emit.goal:1352
+//line emit.goal:1357
 func (e *emitter) emitConversionBody(name, srcName, srcType, tgtType string, fallible bool, overrides []deriveOverride, pos token.Pos) {
 	tgtVal := derefType(tgtType)
 	tgtFields, _ := structFieldsOf(e.info, tgtVal)
@@ -1271,7 +1275,7 @@ func (e *emitter) emitConversionBody(name, srcName, srcType, tgtType string, fal
 	e.p(returnStmt + "\n")
 }
 
-//line emit.goal:1438
+//line emit.goal:1443
 func (e *emitter) resolveField(dst, srcExpr, sf, tf string, fallibleOK bool, errName string) (ok1 []string, err1 error) {
 	reg := e.info.FromRegistry
 	sf, tf = strings.TrimSpace(sf), strings.TrimSpace(tf)
@@ -1347,7 +1351,7 @@ func (e *emitter) resolveField(dst, srcExpr, sf, tf string, fallibleOK bool, err
 	return ok1, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
 }
 
-//line emit.goal:1524
+//line emit.goal:1529
 func (e *emitter) deriveBody(dstVar, srcExpr, srcType, tgtType string, fallible bool, errName string) (ok1 []string, err1 error) {
 	tgtFields, ok := structFieldsOf(e.info, tgtType)
 	if !ok {
@@ -1375,7 +1379,7 @@ func (e *emitter) deriveBody(dstVar, srcExpr, srcType, tgtType string, fallible 
 	return stmts, nil
 }
 
-//line emit.goal:1550
+//line emit.goal:1555
 func (e *emitter) indexExpr(x *ast.IndexExpr) {
 	if id, ok := x.X.(*ast.Ident); ok && id.Name == "Option" {
 		e.p("*")
@@ -1388,7 +1392,7 @@ func (e *emitter) indexExpr(x *ast.IndexExpr) {
 	e.p("]")
 }
 
-//line emit.goal:1564
+//line emit.goal:1569
 func (e *emitter) returnStmt(s *ast.ReturnStmt) {
 	if cl, src, pos, fallible, ok := e.inlineDeriveReturn(s); ok {
 		e.emitInlineDerive(cl, src, pos, fallible)
@@ -1434,7 +1438,7 @@ func (e *emitter) returnStmt(s *ast.ReturnStmt) {
 	}
 }
 
-//line emit.goal:1622
+//line emit.goal:1627
 func (e *emitter) inlineDeriveReturn(s *ast.ReturnStmt) (*ast.CompositeLit, *ast.Ident, token.Pos, bool, bool) {
 	if len(s.Results) == 1 {
 		if cl, ok := s.Results[0].(*ast.CompositeLit); ok && cl.Type != nil {
@@ -1453,7 +1457,7 @@ func (e *emitter) inlineDeriveReturn(s *ast.ReturnStmt) (*ast.CompositeLit, *ast
 	return nil, nil, token.Pos{}, false, false
 }
 
-//line emit.goal:1642
+//line emit.goal:1647
 func deriveSpreadSrc(cl *ast.CompositeLit) (*ast.Ident, token.Pos, bool) {
 	for _, el := range cl.Elts {
 		sp, ok := el.(*ast.SpreadElement)
@@ -1475,13 +1479,23 @@ func deriveSpreadSrc(cl *ast.CompositeLit) (*ast.Ident, token.Pos, bool) {
 	return nil, token.Pos{}, false
 }
 
-//line emit.goal:1664
+//line emit.goal:1669
 func isNilIdent(e ast.Expr) bool {
 	id, ok := e.(*ast.Ident)
 	return ok && id.Name == "nil"
 }
 
-//line emit.goal:1674
+//line emit.goal:1676
+func isDeriveSpread(sp *ast.SpreadElement) bool {
+	call, ok := sp.X.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	fn, ok := call.Fun.(*ast.Ident)
+	return ok && fn.Name == "derive"
+}
+
+//line emit.goal:1690
 func (e *emitter) emitInlineDerive(cl *ast.CompositeLit, src *ast.Ident, pos token.Pos, fallible bool) {
 	tgtType := typeExprString(cl.Type)
 	srcType, ok := e.paramType(src.Name)
@@ -1499,7 +1513,7 @@ func (e *emitter) emitInlineDerive(cl *ast.CompositeLit, src *ast.Ident, pos tok
 	e.p("}")
 }
 
-//line emit.goal:1696
+//line emit.goal:1712
 func (e *emitter) tryVarMatch(d ast.Decl) bool {
 	gd, ok := d.(*ast.GenDecl)
 	if !ok || gd.Tok.String() != "var" || len(gd.Specs) != 1 {
@@ -1525,7 +1539,7 @@ func (e *emitter) tryVarMatch(d ast.Decl) bool {
 	return true
 }
 
-//line emit.goal:1724
+//line emit.goal:1740
 func (e *emitter) matchValue(m *ast.MatchExpr, q string, pos matchPos, name string) {
 	switch {
 	case isSealedMatch(m):
@@ -1539,7 +1553,7 @@ func (e *emitter) matchValue(m *ast.MatchExpr, q string, pos matchPos, name stri
 	}
 }
 
-//line emit.goal:1746
+//line emit.goal:1762
 func (e *emitter) tryAssignMatch(s *ast.AssignStmt) bool {
 	if len(s.Lhs) != 1 || len(s.Rhs) != 1 {
 		return false
@@ -1566,7 +1580,7 @@ func (e *emitter) tryAssignMatch(s *ast.AssignStmt) bool {
 	return true
 }
 
-//line emit.goal:1778
+//line emit.goal:1794
 func (e *emitter) inferMatchType(m *ast.MatchExpr) (string, bool) {
 	inferred := ""
 	for _, arm := range m.Arms {
@@ -1584,7 +1598,7 @@ func (e *emitter) inferMatchType(m *ast.MatchExpr) (string, bool) {
 	return inferred, inferred != ""
 }
 
-//line emit.goal:1800
+//line emit.goal:1816
 func (e *emitter) armBodyType(body ast.Node) (string, bool) {
 	switch v1 := body.(type) {
 	case *ast.BasicLit:
@@ -1620,7 +1634,7 @@ func (e *emitter) armBodyType(body ast.Node) (string, bool) {
 	return "", false
 }
 
-//line emit.goal:1834
+//line emit.goal:1850
 func (e *emitter) emitResultReturn(x ast.Expr) bool {
 	call, ok := x.(*ast.CallExpr)
 	if !ok {
@@ -1653,7 +1667,7 @@ func (e *emitter) emitResultReturn(x ast.Expr) bool {
 	return false
 }
 
-//line emit.goal:1875
+//line emit.goal:1891
 func (e *emitter) optionValueExpr(x ast.Expr) (string, bool) {
 	if sel, ok := x.(*ast.SelectorExpr); ok {
 		if base, ok := sel.X.(*ast.Ident); ok && base.Name == "Option" && sel.Sel != nil && sel.Sel.Name == "None" {
@@ -1684,7 +1698,7 @@ func (e *emitter) optionValueExpr(x ast.Expr) (string, bool) {
 	return "&" + some, true
 }
 
-//line emit.goal:1914
+//line emit.goal:1930
 func (e *emitter) tryOptionValue(x ast.Expr) bool {
 	kind, arg, ok := optionConstruction(x)
 	if !ok {
@@ -1705,7 +1719,7 @@ func (e *emitter) tryOptionValue(x ast.Expr) bool {
 	return true
 }
 
-//line emit.goal:1936
+//line emit.goal:1952
 func (e *emitter) emitOptionReturn(x ast.Expr) bool {
 	expr, ok := e.optionValueExpr(x)
 	if !ok {
@@ -1715,7 +1729,7 @@ func (e *emitter) emitOptionReturn(x ast.Expr) bool {
 	return true
 }
 
-//line emit.goal:1951
+//line emit.goal:1967
 func (e *emitter) emitClosedResultReturn(x ast.Expr) bool {
 	call, ok := x.(*ast.CallExpr)
 	if !ok {
@@ -1741,7 +1755,7 @@ func (e *emitter) emitClosedResultReturn(x ast.Expr) bool {
 	return true
 }
 
-//line emit.goal:1981
+//line emit.goal:1997
 func (e *emitter) unwrap(name string, u *ast.UnwrapExpr, discard bool) {
 	switch e.fnKind {
 	case roResultOpen:
@@ -1755,7 +1769,7 @@ func (e *emitter) unwrap(name string, u *ast.UnwrapExpr, discard bool) {
 	}
 }
 
-//line emit.goal:1999
+//line emit.goal:2015
 func (e *emitter) unwrapClosed(name string, u *ast.UnwrapExpr, discard bool) {
 	sig, ok := e.calleeSig(u.X)
 	var isClosed bool
@@ -1792,7 +1806,7 @@ func (e *emitter) unwrapClosed(name string, u *ast.UnwrapExpr, discard bool) {
 	e.p(fmt.Sprintf("default:\npanic(%q)\n}", fmt.Sprintf("unreachable: non-exhaustive Result[%s, %s] (compiler invariant violated)", sig.T, sig.E)))
 }
 
-//line emit.goal:2039
+//line emit.goal:2055
 func (e *emitter) unwrapResult(name string, u *ast.UnwrapExpr, discard bool) {
 	n := 2
 	if sig, ok := e.calleeSig(u.X); ok && sig.EndsInError && sig.Arity >= 1 {
@@ -1813,7 +1827,7 @@ func (e *emitter) unwrapResult(name string, u *ast.UnwrapExpr, discard bool) {
 	e.p("\nif " + e.errName + " != nil {\nreturn " + e.okName + ", " + e.errName + "\n}")
 }
 
-//line emit.goal:2062
+//line emit.goal:2078
 func (e *emitter) unwrapOption(name string, u *ast.UnwrapExpr, discard bool) {
 	o := e.gensym("o")
 	if discard {
@@ -1827,10 +1841,10 @@ func (e *emitter) unwrapOption(name string, u *ast.UnwrapExpr, discard bool) {
 	e.p("\nif " + o + " == nil {\nreturn nil\n}\n" + name + " := *" + o)
 }
 
-//line emit.goal:2081
+//line emit.goal:2097
 var stdlibErrorOnly = map[string]bool{"os.Mkdir": true, "os.MkdirAll": true, "os.Remove": true, "os.RemoveAll": true, "os.Rename": true, "os.Chmod": true, "os.Chown": true, "os.Chdir": true, "os.Chtimes": true, "os.Symlink": true, "os.Link": true, "os.Truncate": true, "os.Setenv": true, "os.Unsetenv": true, "os.WriteFile": true, "json.Unmarshal": true, "xml.Unmarshal": true, "binary.Read": true, "binary.Write": true}
 
-//line emit.goal:2108
+//line emit.goal:2124
 func (e *emitter) calleeSig(x ast.Expr) (sema.FuncSig, bool) {
 	call, ok := x.(*ast.CallExpr)
 	if !ok {
@@ -1869,7 +1883,7 @@ func (e *emitter) calleeSig(x ast.Expr) (sema.FuncSig, bool) {
 	return sema.FuncSig{}, false
 }
 
-//line emit.goal:2155
+//line emit.goal:2171
 func (e *emitter) methodCalleeSig(recv, method string) (sema.FuncSig, bool) {
 	if e.info == nil || e.recvTypes == nil {
 		return sema.FuncSig{}, false
@@ -1891,7 +1905,7 @@ func (e *emitter) methodCalleeSig(recv, method string) (sema.FuncSig, bool) {
 	return sema.FuncSig{}, false
 }
 
-//line emit.goal:2181
+//line emit.goal:2197
 func (e *emitter) buildRecvTypes(d *ast.FuncDecl) map[string]string {
 	out := map[string]string{}
 	add := func(fl *ast.FieldList) {
@@ -1920,7 +1934,7 @@ func (e *emitter) buildRecvTypes(d *ast.FuncDecl) map[string]string {
 	return out
 }
 
-//line emit.goal:2212
+//line emit.goal:2228
 func buildCurParams(d *ast.FuncDecl) map[string]string {
 	if d.Type == nil || d.Type.Params == nil {
 		return nil
@@ -1940,7 +1954,7 @@ func buildCurParams(d *ast.FuncDecl) map[string]string {
 	return out
 }
 
-//line emit.goal:2232
+//line emit.goal:2248
 func (e *emitter) paramType(name string) (string, bool) {
 	if e.curParams == nil {
 		return "", false
@@ -1949,7 +1963,7 @@ func (e *emitter) paramType(name string) (string, bool) {
 	return t, ok
 }
 
-//line emit.goal:2244
+//line emit.goal:2260
 func recvBaseType(x ast.Expr) string {
 	switch v1 := x.(type) {
 	case *ast.StarExpr:
@@ -1975,7 +1989,7 @@ func recvBaseType(x ast.Expr) string {
 	}
 }
 
-//line emit.goal:2267
+//line emit.goal:2283
 func (e *emitter) matchStmt(m *ast.MatchExpr) {
 	if isSealedMatch(m) {
 		e.sealedMatch(m, posStmt, "")
@@ -1995,17 +2009,17 @@ func (e *emitter) matchStmt(m *ast.MatchExpr) {
 	}
 }
 
-//line emit.goal:2289
+//line emit.goal:2305
 type matchPos int
 
-//line emit.go:2000
+//line emit.go:2014
 const (
 	posStmt matchPos = iota
 	posReturn
 	posVar
 )
 
-//line emit.goal:2304
+//line emit.goal:2320
 func (e *emitter) enumMatch(m *ast.MatchExpr, pos matchPos, name string) {
 	enumName := matchQualifier(m)
 	en := enumOf(e.info, enumName)
@@ -2051,7 +2065,7 @@ func (e *emitter) enumMatch(m *ast.MatchExpr, pos matchPos, name string) {
 	e.p("\n}")
 }
 
-//line emit.goal:2355
+//line emit.goal:2371
 func (e *emitter) emitEnumArm(arm *ast.MatchArm, vp *ast.VariantPattern, en *sema.Enum, guard string, pos matchPos, name string) {
 	binding := ""
 	if vp != nil && vp.Binding != nil {
@@ -2077,7 +2091,7 @@ func (e *emitter) emitEnumArm(arm *ast.MatchArm, vp *ast.VariantPattern, en *sem
 	e.armWrap(arm.Body, pos, name)
 }
 
-//line emit.goal:2384
+//line emit.goal:2400
 func (e *emitter) armWrap(body ast.Node, pos matchPos, name string) {
 	switch pos {
 	case posReturn:
@@ -2091,7 +2105,7 @@ func (e *emitter) armWrap(body ast.Node, pos matchPos, name string) {
 	}
 }
 
-//line emit.goal:2404
+//line emit.goal:2420
 func (e *emitter) sealedMatch(m *ast.MatchExpr, pos matchPos, name string) {
 	usesBinding := false
 	for _, arm := range m.Arms {
@@ -2137,7 +2151,7 @@ func (e *emitter) sealedMatch(m *ast.MatchExpr, pos matchPos, name string) {
 	e.p("\n}")
 }
 
-//line emit.goal:2456
+//line emit.goal:2472
 func (e *emitter) emitSealedArm(arm *ast.MatchArm, tp *ast.TypePattern, guard string, pos matchPos, name string) {
 	binding := ""
 	if tp != nil && tp.Binding != nil {
@@ -2153,7 +2167,7 @@ func (e *emitter) emitSealedArm(arm *ast.MatchArm, tp *ast.TypePattern, guard st
 	e.armWrap(arm.Body, pos, name)
 }
 
-//line emit.goal:2479
+//line emit.goal:2495
 func (e *emitter) resultMatch(m *ast.MatchExpr, pos matchPos, name string) {
 	var subjectIsClosed bool
 	switch e.calleeMode(m.Subject).(type) {
@@ -2192,7 +2206,7 @@ func (e *emitter) resultMatch(m *ast.MatchExpr, pos matchPos, name string) {
 	e.p("\n}")
 }
 
-//line emit.goal:2516
+//line emit.goal:2532
 func (e *emitter) closedResultMatch(m *ast.MatchExpr, pos matchPos, name string) {
 	sig, _ := e.calleeSig(m.Subject)
 	okArm, errArm := armByVariant(m, "Ok"), armByVariant(m, "Err")
@@ -2224,7 +2238,7 @@ func (e *emitter) closedResultMatch(m *ast.MatchExpr, pos matchPos, name string)
 	e.p(fmt.Sprintf("\ndefault:\npanic(%q)\n}", fmt.Sprintf("unreachable: non-exhaustive Result[%s, %s] (compiler invariant violated)", sig.T, sig.E)))
 }
 
-//line emit.goal:2552
+//line emit.goal:2568
 func (e *emitter) optionMatch(m *ast.MatchExpr, pos matchPos, name string) {
 	someArm, noneArm := armByVariant(m, "Some"), armByVariant(m, "None")
 	if someArm == nil || noneArm == nil {
@@ -2244,7 +2258,7 @@ func (e *emitter) optionMatch(m *ast.MatchExpr, pos matchPos, name string) {
 	e.p("\n}")
 }
 
-//line emit.goal:2572
+//line emit.goal:2588
 func armByVariant(m *ast.MatchExpr, variant string) *ast.MatchArm {
 	for _, arm := range m.Arms {
 		if vp, ok := arm.Pattern.(*ast.VariantPattern); ok && vp.Variant != nil && vp.Variant.Name == variant {
@@ -2254,7 +2268,7 @@ func armByVariant(m *ast.MatchExpr, variant string) *ast.MatchArm {
 	return nil
 }
 
-//line emit.goal:2582
+//line emit.goal:2598
 func bindingName(p ast.Expr) string {
 	if vp, ok := p.(*ast.VariantPattern); ok && vp.Binding != nil {
 		return vp.Binding.Name
@@ -2262,7 +2276,7 @@ func bindingName(p ast.Expr) string {
 	return ""
 }
 
-//line emit.goal:2592
+//line emit.goal:2608
 func (e *emitter) calleeMode(x ast.Expr) sema.Mode {
 	call, ok := x.(*ast.CallExpr)
 	if !ok {
@@ -2279,7 +2293,7 @@ func (e *emitter) calleeMode(x ast.Expr) sema.Mode {
 	return sig.Mode
 }
 
-//line emit.goal:2612
+//line emit.goal:2628
 func (e *emitter) armBodyRenamed(body ast.Node, binding, target string) {
 	if binding != "" {
 		if e.renames == nil {
@@ -2291,7 +2305,7 @@ func (e *emitter) armBodyRenamed(body ast.Node, binding, target string) {
 	e.armBody(body)
 }
 
-//line emit.goal:2627
+//line emit.goal:2643
 func (e *emitter) armBodyRenamedWrap(body ast.Node, binding, target string, pos matchPos, name string) {
 	if binding != "" {
 		if e.renames == nil {
@@ -2303,7 +2317,7 @@ func (e *emitter) armBodyRenamedWrap(body ast.Node, binding, target string, pos 
 	e.armWrap(body, pos, name)
 }
 
-//line emit.goal:2648
+//line emit.goal:2664
 func (e *emitter) armBody(n ast.Node) {
 	switch b := n.(type) {
 	case nil:
@@ -2316,7 +2330,7 @@ func (e *emitter) armBody(n ast.Node) {
 	}
 }
 
-//line emit.goal:2661
+//line emit.goal:2677
 func (e *emitter) sliceExpr(x *ast.SliceExpr) {
 	e.expr(x.X)
 	e.p("[")
@@ -2334,7 +2348,7 @@ func (e *emitter) sliceExpr(x *ast.SliceExpr) {
 	e.p("]")
 }
 
-//line emit.goal:2678
+//line emit.goal:2694
 func (e *emitter) chanType(x *ast.ChanType) {
 	switch x.Dir.(type) {
 	case ast.ChanDir_RecvOnly:
@@ -2349,7 +2363,7 @@ func (e *emitter) chanType(x *ast.ChanType) {
 	e.expr(x.Value)
 }
 
-//line emit.goal:2687
+//line emit.goal:2703
 func (e *emitter) identList(ids []*ast.Ident) {
 	for i, id := range ids {
 		if i > 0 {
@@ -2359,7 +2373,7 @@ func (e *emitter) identList(ids []*ast.Ident) {
 	}
 }
 
-//line emit.goal:2696
+//line emit.goal:2712
 func (e *emitter) exprList(xs []ast.Expr) {
 	for i, x := range xs {
 		if i > 0 {

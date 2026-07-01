@@ -1170,8 +1170,9 @@ func (e *emitter) buildTypeDecls(f *ast.File) map[string]string {
 
 // compositeLit emits a composite literal, expanding a `...defaults` spread element
 // (§8.5) into explicit per-field zero values for the struct's omitted fields so the
-// generated literal is complete. Every other element emits verbatim; a non-`defaults`
-// spread (`...derive`) is a later story (US-039).
+// generated literal is complete. Every other element emits verbatim. A `...derive(src)`
+// spread reaching here is not in a return position (returnStmt lowers those, US-039), so
+// it is a located error pointing at the `derive func` form.
 func (e *emitter) compositeLit(x *ast.CompositeLit) {
 	if x.Type != nil {
 		e.expr(x.Type)
@@ -1188,7 +1189,11 @@ func (e *emitter) compositeLit(x *ast.CompositeLit) {
 		if sp, ok := el.(*ast.SpreadElement); ok {
 			id, ok := sp.X.(*ast.Ident)
 			if !ok || id.Name != "defaults" {
-				e.fail("unsupported spread element in composite literal: only `...defaults` is lowered (`...derive` is a later story)")
+				if isDeriveSpread(sp) {
+					e.fail("`...derive` at %s is only supported in a return; use a `derive func`", sp.Pos())
+				} else {
+					e.fail("`...defaults` at %s: unsupported spread element (only `...defaults` and a return-position `...derive(src)` are lowered)", sp.Pos())
+				}
 				return
 			}
 			for _, entry := range e.defaultEntries(x, sp.Pos()) {
@@ -1664,6 +1669,17 @@ func deriveSpreadSrc(cl *ast.CompositeLit) (*ast.Ident, token.Pos, bool) {
 func isNilIdent(e ast.Expr) bool {
 	id, ok := e.(*ast.Ident)
 	return ok && id.Name == "nil"
+}
+
+// isDeriveSpread reports whether sp is a `...derive(src)` spread element (its X is a
+// call to `derive`), as opposed to `...defaults` or another spread.
+func isDeriveSpread(sp *ast.SpreadElement) bool {
+	call, ok := sp.X.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	fn, ok := call.Fun.(*ast.Ident)
+	return ok && fn.Name == "derive"
 }
 
 // emitInlineDerive lowers a return-position inline `...derive(src)` as a scoping block
