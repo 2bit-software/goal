@@ -116,6 +116,27 @@
   rest of `.morse-code/` IS tracked. Verify with `git check-ignore -v <path>`
   before placing committable content. macOS ships bash 3.2 — no `mapfile`; use a
   `while IFS= read -r` loop in helper scripts.
+- A new sema lexical check (found in US-002): add the `Check<Name>(file *ast.File,
+  info *Info) []Diagnostic` function to a feature file in internal/sema, then WIRE it
+  by appending `diags = append(diags, Check<Name>(file, info)...)` in the `Check`
+  aggregator in internal/sema/check.goal — that is the single path `goal check`'s
+  lexical stage runs. Emit `Diagnostic{Pos, Severity.Error|Warning, Feature, Code,
+  Message}` (Severity lowers to a sealed interface `Severity(Severity_Error{})`). A
+  new emitted `Code` MUST get a row in internal/guide/catalog.goal (diagDoc: Code,
+  Feature, severity string "error"/"warning", Meaning) — the catalog is rendered into
+  the `goal ai` guide, so after `task generate` you MUST also regenerate the golden:
+  `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md` (cmd/goal/ai_test.go
+  TestBootstrapGoldenMatches asserts committed == live). Reuse fields.goal helpers
+  (identName, litKeys, missingFieldNames) and the shared sema.ZeroSafety rule rather
+  than re-deriving. To classify a `...defaults` field type through alias chains,
+  rebuild the decls map (name -> "struct"/"interface"/typeString(alias)) locally the
+  way backend buildTypeDecls does — sema owns typeString in resolve.goal.
+- Behavioral check of a sema diagnostic without a corpus fixture (found in US-002):
+  sema is an INTERNAL package, so a scratch `go run` file outside the module tree
+  fails "use of internal package not allowed". Drop the throwaway main.go into a temp
+  dir INSIDE the repo (e.g. ./_tmpverify/) so it is under module `goal`, run
+  `go run ./_tmpverify`, then delete it. `sema.Analyze(src)` returns diagnostics with
+  Pos.Line/Pos.Col already populated; filter by `d.Code`.
 - goal reserves three words beyond Go's keywords: `match`, `enum`, `assert`
   (implements/sealed/from/derive are contextual keywords, NOT reserved). Go source
   that uses any of these EXACT words as an identifier is valid Go but rejected by
@@ -7018,4 +7039,31 @@
     "fork/exec .../go: not a directory" — an environment limit on invoking the
     real toolchain, NOT a compiler failure. The transpile/classifier verdict
     (the part this story touches) is observable before that step.
+---
+
+## 2026-07-01T06:02:00Z - US-002
+- Added the lexical `[unsafe-default]` check in internal/sema. CheckUnsafeDefaults
+  is the complement of CheckFields over the same feature-08 `...defaults` literals:
+  CheckFields skips any literal with a spread; the new check acts ONLY on `...defaults`
+  literals and flags every omitted field whose zero is unsafe (per the shared
+  sema.ZeroSafety, US-001) as one Severity.Error located at the `...defaults` spread,
+  naming field + type + reason. A keyed field (incl. `Field: _`) and an all-safe
+  spread stay clean. Unlike the backend (which fails on the FIRST unsafe field), the
+  checker reports one diagnostic PER unsafe omitted field.
+- Files changed: internal/sema/fields.goal (CheckUnsafeDefaults + helpers
+  checkUnsafeDefaults, defaultsSpread, buildDeclKinds), internal/sema/check.goal
+  (wired into the Check aggregator), internal/guide/catalog.goal (new
+  `unsafe-default` row, 08-no-zero-value/error), the regenerated committed .go for
+  those three, and AI-KNOWLEDGE-BOOTSTRAP.md (guide golden).
+- Learnings for future iterations:
+  - `...derive(src)` is also a *ast.SpreadElement but its `.X` is a *CallExpr, so
+    matching `SpreadElement.X == *ast.Ident named "defaults"` cleanly excludes it —
+    the new check never fires on a derive spread.
+  - defaultsSpread returns the SpreadElement so the diagnostic Pos is the spread
+    itself (AC: located at the `...defaults` spread), not the CompositeLit start.
+  - Verified via a temp ./_tmpverify main using sema.Analyze: omit-map => 1 error at
+    the spread; Tags set / Tags: _ / all-safe => 0; nil-ptr + nil-map => 2. `task
+    check` EXIT 0 (vet + verify-generated up-to-date + full go test).
+  - New pattern captured at the top: wiring a sema check + the catalog/AI-golden
+    dual-regenerate obligation whenever a new emitted Code lands.
 ---

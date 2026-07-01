@@ -30,7 +30,7 @@
         "task check exits 0."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Mirror the sibling in internal/sema/fields.goal (CheckFields emits missing-field Error and unresolved-literal-type Warning). CheckFields already skips `...defaults` literals for missing-field; the new check is the complement over those same literals. Reuse the US-001 classifier. Some tests assert every emitted Code has a guide catalog entry, so add the catalog row here to keep task check green."
     },
     {
