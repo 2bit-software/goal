@@ -48,6 +48,7 @@ func Check(file *ast.File, info *Info) []Diagnostic {
 
 	diags = append(diags, CheckExhaustive(file, info)...)
 	diags = append(diags, CheckFields(file, info)...)
+	diags = append(diags, CheckUnsafeDefaults(file, info)...)
 	diags = append(diags, CheckMustUse(file, info)...)
 	diags = append(diags, CheckImplements(file, info)...)
 	diags = append(diags, CheckQuestion(file, info)...)
@@ -57,7 +58,7 @@ func Check(file *ast.File, info *Info) []Diagnostic {
 	return diags
 }
 
-//line check.goal:89
+//line check.goal:90
 func CheckExhaustive(file *ast.File, info *Info) []Diagnostic {
 	var diags []Diagnostic
 
@@ -67,7 +68,7 @@ func CheckExhaustive(file *ast.File, info *Info) []Diagnostic {
 	return diags
 }
 
-//line check.goal:101
+//line check.goal:102
 func checkOneMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 	for _, arm := range m.Arms {
 		if _, ok := arm.Pattern.(*ast.TypePattern); ok {
@@ -121,7 +122,7 @@ func checkOneMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 	return []Diagnostic{{Pos: m.Match, Severity: Severity(Severity_Error{}), Feature: "02-match", Code: "non-exhaustive-match", Message: fmt.Sprintf("non-exhaustive `match` on enum `%s`: missing variant%s %s — handle %s, or add a `_` rest-arm to dismiss the rest", enumDecl.Name, plural(len(missing)), quoteVariants(enumDecl.Name, missing), pronoun(len(missing)))}}
 }
 
-//line check.goal:187
+//line check.goal:188
 func checkOneSealedMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 	covered := map[string]bool{}
 	hasRest := false
@@ -165,7 +166,7 @@ func checkOneSealedMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 	return []Diagnostic{{Pos: m.Match, Severity: Severity(Severity_Error{}), Feature: "02-match", Code: "non-exhaustive-match", Message: fmt.Sprintf("non-exhaustive `match` on sealed interface `%s`: missing implementor%s %s — handle %s, or add a `_` rest-arm to dismiss the rest", iface, plural(len(missing)), quoteImplementors(missing), pronoun(len(missing)))}}
 }
 
-//line check.goal:258
+//line check.goal:259
 func sealedInterfaceOf(info *Info, covered map[string]bool) string {
 	if info == nil || info.SealedImpls == nil {
 		return ""
@@ -198,7 +199,7 @@ func sealedInterfaceOf(info *Info, covered map[string]bool) string {
 	return best
 }
 
-//line check.goal:292
+//line check.goal:293
 func missingImplementors(impls []string, covered map[string]bool) []string {
 	var missing []string
 
@@ -210,7 +211,7 @@ func missingImplementors(impls []string, covered map[string]bool) []string {
 	return missing
 }
 
-//line check.goal:304
+//line check.goal:305
 func quoteImplementors(types []string) string {
 	quoted := make([]string, len(types))
 	for i, t := range types {
@@ -219,7 +220,7 @@ func quoteImplementors(types []string) string {
 	return strings.Join(quoted, ", ")
 }
 
-//line check.goal:313
+//line check.goal:314
 func collectMatches(file *ast.File) []*ast.MatchExpr {
 	var matches []*ast.MatchExpr
 
@@ -232,10 +233,10 @@ func collectMatches(file *ast.File) []*ast.MatchExpr {
 	return matches
 }
 
-//line check.goal:326
+//line check.goal:327
 type visitorFunc func(ast.Node) bool
 
-//line check.goal:328
+//line check.goal:329
 func (f visitorFunc) Visit(n ast.Node) ast.Visitor {
 	if n == nil {
 		return nil
@@ -246,12 +247,12 @@ func (f visitorFunc) Visit(n ast.Node) ast.Visitor {
 	return nil
 }
 
-//line check.goal:341
+//line check.goal:342
 func patternEnumName(p *ast.VariantPattern) string {
 	return exprName(p.Enum)
 }
 
-//line check.goal:347
+//line check.goal:348
 func exprName(e ast.Expr) string {
 	switch v1 := e.(type) {
 	case *ast.Ident:
@@ -273,7 +274,7 @@ func exprName(e ast.Expr) string {
 	}
 }
 
-//line check.goal:367
+//line check.goal:368
 func missingVariants(enumDecl *Enum, covered map[string]bool) []string {
 	var missing []string
 
@@ -285,7 +286,7 @@ func missingVariants(enumDecl *Enum, covered map[string]bool) []string {
 	return missing
 }
 
-//line check.goal:379
+//line check.goal:380
 func quoteVariants(enumName string, variants []string) string {
 	qualified := make([]string, len(variants))
 	for i, v := range variants {
@@ -294,7 +295,7 @@ func quoteVariants(enumName string, variants []string) string {
 	return strings.Join(qualified, ", ")
 }
 
-//line check.goal:388
+//line check.goal:389
 func plural(n int) string {
 	if n == 1 {
 		return ""
@@ -302,7 +303,7 @@ func plural(n int) string {
 	return "s"
 }
 
-//line check.goal:396
+//line check.goal:397
 func pronoun(n int) string {
 	if n == 1 {
 		return "it"

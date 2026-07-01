@@ -130,6 +130,123 @@ func checkVariantLit(lit *ast.VariantLit, info *Info) []Diagnostic {
 	}}
 }
 
+// CheckUnsafeDefaults is the complement of CheckFields over the same feature-08
+// literals: where CheckFields checks completeness of literals that DON'T opt out with
+// a spread, this checks the safety of the omitted fields a `...defaults` spread fills.
+// A `...defaults` (§8.5) promises to fill every unnamed field with its type's zero,
+// but a type whose nil zero panics on normal use (a nil pointer/map/chan/func, a
+// method-bearing interface, or a sum type with no valid zero variant) has no safe
+// zero — so filling it silently would defeat feature-08's guarantee. Each such omitted
+// field is a first-class Error located at the `...defaults` spread, mirroring the
+// backend's transpile-time failure (internal/backend defaultEntries) but reported as a
+// checker diagnostic. The panic-safety rule is the shared ZeroSafety (US-001), so the
+// checker and the transpiler never disagree; only `...defaults` literals of an in-file
+// struct are judged (an unknown type, or a non-Ident/`pkg.T{…}` type, is not ours).
+func CheckUnsafeDefaults(file *ast.File, info *Info) []Diagnostic {
+	decls := buildDeclKinds(file)
+	var diags []Diagnostic
+	ast.Walk(visitorFunc(func(n ast.Node) bool {
+		if lit, ok := n.(*ast.CompositeLit); ok {
+			diags = append(diags, checkUnsafeDefaults(lit, info, decls)...)
+		}
+		return true
+	}), file)
+	return diags
+}
+
+// checkUnsafeDefaults checks one composite literal. It acts only on a `T{…, ...defaults}`
+// literal whose type is a bare identifier naming an in-file struct: for every field the
+// spread would fill (declared but not keyed at the site — a `Field: _` skip counts as
+// keyed, so it is never flagged), a type with no safe zero (ZeroSafety != "") is an
+// Error located at the spread. A literal with no `...defaults` spread, a non-struct or
+// unknown type, or a non-Ident type is not this check's concern.
+func checkUnsafeDefaults(lit *ast.CompositeLit, info *Info, decls map[string]string) []Diagnostic {
+	name, ok := identName(lit.Type)
+	if !ok {
+		return nil
+	}
+	spread, ok := defaultsSpread(lit)
+	if !ok {
+		return nil
+	}
+	fields, known := info.Structs[name]
+	if !known {
+		return nil
+	}
+	present := litKeys(lit)
+	var diags []Diagnostic
+	for _, f := range fields {
+		if present[f.Name] {
+			continue
+		}
+		reason := ZeroSafety(f.Type, decls, info, 0)
+		if reason == "" {
+			continue
+		}
+		diags = append(diags, Diagnostic{
+			Pos:      spread.Pos(),
+			Severity: Severity.Error,
+			Feature:  "08-no-zero-value",
+			Code:     "unsafe-default",
+			Message: fmt.Sprintf("`...defaults` cannot default field `%s` of type `%s`: %s",
+				f.Name, f.Type, reason),
+		})
+	}
+	return diags
+}
+
+// defaultsSpread returns the `...defaults` spread element of a composite literal, and
+// whether one is present. A `...derive(src)` spread carries a *CallExpr (not an
+// Ident), so it is never mistaken for `...defaults`.
+func defaultsSpread(lit *ast.CompositeLit) (*ast.SpreadElement, bool) {
+	for _, elt := range lit.Elts {
+		sp, ok := elt.(*ast.SpreadElement)
+		if !ok {
+			continue
+		}
+		if id, ok := sp.X.(*ast.Ident); ok && id.Name == "defaults" {
+			return sp, true
+		}
+	}
+	return nil, false
+}
+
+// buildDeclKinds maps each in-file `type X …` to its underlying form — "struct",
+// "interface", or (for an alias) the rendered underlying type text — the decls map
+// ZeroSafety resolves a field type through to reach a struct/interface/alias base.
+// Mirrors internal/backend buildTypeDecls so the checker and the transpiler classify
+// the same alias chains.
+func buildDeclKinds(file *ast.File) map[string]string {
+	m := map[string]string{}
+	if file == nil {
+		return m
+	}
+	for _, d := range file.Decls {
+		gd, ok := d.(*ast.GenDecl)
+		if !ok || gd.Tok.String() != "type" {
+			continue
+		}
+		for _, s := range gd.Specs {
+			ts, ok := s.(*ast.TypeSpec)
+			if !ok || ts.Name == nil {
+				continue
+			}
+			match ts.Type {
+				*ast.StructType => {
+					m[ts.Name.Name] = "struct"
+				}
+				*ast.InterfaceType => {
+					m[ts.Name.Name] = "interface"
+				}
+				_ => {
+					m[ts.Name.Name] = typeString(ts.Type)
+				}
+			}
+		}
+	}
+	return m
+}
+
 // identName returns the name of a type expression that is a bare identifier, and
 // whether it was one. A qualified or generic type (SelectorExpr / IndexExpr / etc.)
 // reports ok=false.

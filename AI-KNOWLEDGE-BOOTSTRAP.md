@@ -1144,6 +1144,7 @@ The full set of stable codes the checker can emit:
 - `[generic-missing-field]` (error) — a generic struct literal omits required fields (typed stage).
 - `[missing-field]` (error) — a struct literal omits a required field and has no `...defaults`.
 - `[unresolved-literal-type]` (warning) — a struct literal's type can't be resolved lexically; deferred to the typed stage.
+- `[unsafe-default]` (error) — a `...defaults` literal omits a field whose zero is unsafe (nil pointer/map/chan/func, method-bearing interface, or sum type).
 
 **10-assert**
 

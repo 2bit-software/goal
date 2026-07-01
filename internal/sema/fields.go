@@ -75,7 +75,100 @@ func checkVariantLit(lit *ast.VariantLit, info *Info) []Diagnostic {
 	return []Diagnostic{{Pos: lit.Pos(), Severity: Severity(Severity_Error{}), Feature: "08-no-zero-value", Code: "missing-field", Message: fmt.Sprintf("variant construction `%s.%s(…)` omits required field%s %s — a variant has no `...defaults`; name every field", enumDecl.Name, lit.Variant.Name, plural(len(missing)), quoteJoin(missing))}}
 }
 
-//line fields.goal:136
+//line fields.goal:145
+func CheckUnsafeDefaults(file *ast.File, info *Info) []Diagnostic {
+	decls := buildDeclKinds(file)
+	var diags []Diagnostic
+
+	ast.Walk(visitorFunc(func(n ast.Node) bool {
+		if lit, ok := n.(*ast.CompositeLit); ok {
+			diags = append(diags, checkUnsafeDefaults(lit, info, decls)...)
+		}
+		return true
+	}), file)
+	return diags
+}
+
+//line fields.goal:163
+func checkUnsafeDefaults(lit *ast.CompositeLit, info *Info, decls map[string]string) []Diagnostic {
+	name, ok := identName(lit.Type)
+	if !ok {
+		return nil
+	}
+	spread, ok := defaultsSpread(lit)
+	if !ok {
+		return nil
+	}
+	fields, known := info.Structs[name]
+	if !known {
+		return nil
+	}
+	present := litKeys(lit)
+	var diags []Diagnostic
+
+	for _, f := range fields {
+		if present[f.Name] {
+			continue
+		}
+		reason := ZeroSafety(f.Type, decls, info, 0)
+		if reason == "" {
+			continue
+		}
+		diags = append(diags, Diagnostic{Pos: spread.Pos(), Severity: Severity(Severity_Error{}), Feature: "08-no-zero-value", Code: "unsafe-default", Message: fmt.Sprintf("`...defaults` cannot default field `%s` of type `%s`: %s", f.Name, f.Type, reason)})
+	}
+	return diags
+}
+
+//line fields.goal:201
+func defaultsSpread(lit *ast.CompositeLit) (*ast.SpreadElement, bool) {
+	for _, elt := range lit.Elts {
+		sp, ok := elt.(*ast.SpreadElement)
+		if !ok {
+			continue
+		}
+		if id, ok := sp.X.(*ast.Ident); ok && id.Name == "defaults" {
+			return sp, true
+		}
+	}
+	return nil, false
+}
+
+//line fields.goal:219
+func buildDeclKinds(file *ast.File) map[string]string {
+	m := map[string]string{}
+	if file == nil {
+		return m
+	}
+	for _, d := range file.Decls {
+		gd, ok := d.(*ast.GenDecl)
+		if !ok || gd.Tok.String() != "type" {
+			continue
+		}
+		for _, s := range gd.Specs {
+			ts, ok := s.(*ast.TypeSpec)
+			if !ok || ts.Name == nil {
+				continue
+			}
+			switch ts.Type.(type) {
+			case *ast.StructType:
+				{
+					m[ts.Name.Name] = "struct"
+				}
+			case *ast.InterfaceType:
+				{
+					m[ts.Name.Name] = "interface"
+				}
+			default:
+				{
+					m[ts.Name.Name] = typeString(ts.Type)
+				}
+			}
+		}
+	}
+	return m
+}
+
+//line fields.goal:253
 func identName(e ast.Expr) (string, bool) {
 	if id, ok := e.(*ast.Ident); ok {
 		return id.Name, true
@@ -83,7 +176,7 @@ func identName(e ast.Expr) (string, bool) {
 	return "", false
 }
 
-//line fields.goal:145
+//line fields.goal:262
 func litKeys(lit *ast.CompositeLit) map[string]bool {
 	present := map[string]bool{}
 	for _, elt := range lit.Elts {
@@ -98,7 +191,7 @@ func litKeys(lit *ast.CompositeLit) map[string]bool {
 	return present
 }
 
-//line fields.goal:161
+//line fields.goal:278
 func litHasSpread(lit *ast.CompositeLit) bool {
 	for _, elt := range lit.Elts {
 		if _, ok := elt.(*ast.SpreadElement); ok {
@@ -108,7 +201,7 @@ func litHasSpread(lit *ast.CompositeLit) bool {
 	return false
 }
 
-//line fields.goal:172
+//line fields.goal:289
 func labeledArgNames(args []ast.Expr) map[string]bool {
 	present := map[string]bool{}
 	for _, a := range args {
@@ -119,7 +212,7 @@ func labeledArgNames(args []ast.Expr) map[string]bool {
 	return present
 }
 
-//line fields.goal:184
+//line fields.goal:301
 func variantFields(enumDecl *Enum, variant string) ([]Field, bool) {
 	for _, v := range enumDecl.Variants {
 		if v.Name == variant {
@@ -129,7 +222,7 @@ func variantFields(enumDecl *Enum, variant string) ([]Field, bool) {
 	return nil, false
 }
 
-//line fields.goal:195
+//line fields.goal:312
 func missingFieldNames(declared []Field, present map[string]bool) []string {
 	var missing []string
 
@@ -141,7 +234,7 @@ func missingFieldNames(declared []Field, present map[string]bool) []string {
 	return missing
 }
 
-//line fields.goal:207
+//line fields.goal:324
 func quoteJoin(names []string) string {
 	quoted := make([]string, len(names))
 	for i, n := range names {

@@ -61,6 +61,7 @@ func Check(file *ast.File, info *Info) []Diagnostic {
 	var diags []Diagnostic
 	diags = append(diags, CheckExhaustive(file, info)...)
 	diags = append(diags, CheckFields(file, info)...)
+	diags = append(diags, CheckUnsafeDefaults(file, info)...)
 	diags = append(diags, CheckMustUse(file, info)...)
 	diags = append(diags, CheckImplements(file, info)...)
 	diags = append(diags, CheckQuestion(file, info)...)

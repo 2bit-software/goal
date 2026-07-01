@@ -48,6 +48,7 @@ var diagnosticCatalog = []diagDoc{
 	{"generic-missing-field", "08-no-zero-value", "error", "a generic struct literal omits required fields (typed stage)."},
 	{"elided-missing-field", "08-no-zero-value", "error", "an elided literal (type inferred from a collection) omits required fields (typed stage)."},
 	{"unresolved-literal-type", "08-no-zero-value", "warning", "a struct literal's type can't be resolved lexically; deferred to the typed stage."},
+	{"unsafe-default", "08-no-zero-value", "error", "a `...defaults` literal omits a field whose zero is unsafe (nil pointer/map/chan/func, method-bearing interface, or sum type)."},
 	// 10-assert
 	{"assert-always-false", "10-assert", "error", "an `assert` condition is constantly false — it would always panic."},
 	{"assert-always-true", "10-assert", "warning", "an `assert` condition is constantly true — the assert is dead."},
