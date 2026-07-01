@@ -1,0 +1,53 @@
+package conv
+
+type UUID struct {
+	s string
+}
+
+func parseUUID(s string) (UUID, error) {
+	if s == "" {
+		return UUID{}, errEmpty
+	}
+	return UUID{s: s}, nil
+}
+
+var errEmpty = newErr("empty uuid")
+
+func newErr(msg string) error {
+	return &convErr{msg}
+}
+
+type convErr struct {
+	msg string
+}
+
+func (e *convErr) Error() string {
+	return e.msg
+}
+
+type StoredEvent struct {
+	ID         string
+	CustomerID string
+}
+
+type EventExecution struct {
+	ID         UUID
+	CustomerID UUID
+}
+
+func fromStorage(s StoredEvent) (EventExecution, error) {
+	{
+		var out EventExecution
+		v, err := parseUUID(s.ID)
+		if err != nil {
+			return out, err
+		}
+		out.ID = v
+		v1, err := parseUUID(s.CustomerID)
+		if err != nil {
+			return out, err
+		}
+		out.CustomerID = v1
+		return out, nil
+	}
+}

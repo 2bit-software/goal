@@ -321,16 +321,16 @@
       "normalize": "gofmt"
     },
     {
-      "id": "features-11-doctests-examples-multi-doctest",
-      "kind": "doctest",
+      "id": "features-11-doctests-examples-multi",
+      "kind": "transpile",
       "input": "features/11-doctests/examples/multi.goal",
       "expected": "features/11-doctests/examples/multi.go.expected",
       "mode": "file",
       "normalize": "gofmt"
     },
     {
-      "id": "features-11-doctests-examples-multi",
-      "kind": "transpile",
+      "id": "features-11-doctests-examples-multi-doctest",
+      "kind": "doctest",
       "input": "features/11-doctests/examples/multi.goal",
       "expected": "features/11-doctests/examples/multi.go.expected",
       "mode": "file",
@@ -341,6 +341,30 @@
       "kind": "transpile",
       "input": "features/12-derive-convert/examples/from_storage.goal",
       "expected": "features/12-derive-convert/examples/from_storage.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-12-derive-convert-examples-inline_fallible",
+      "kind": "transpile",
+      "input": "features/12-derive-convert/examples/inline_fallible.goal",
+      "expected": "features/12-derive-convert/examples/inline_fallible.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-12-derive-convert-examples-inline_infallible",
+      "kind": "transpile",
+      "input": "features/12-derive-convert/examples/inline_infallible.goal",
+      "expected": "features/12-derive-convert/examples/inline_infallible.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-12-derive-convert-examples-inline_overrides_skip",
+      "kind": "transpile",
+      "input": "features/12-derive-convert/examples/inline_overrides_skip.goal",
+      "expected": "features/12-derive-convert/examples/inline_overrides_skip.go.expected",
       "mode": "file",
       "normalize": "gofmt"
     },

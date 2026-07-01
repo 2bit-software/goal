@@ -1,0 +1,43 @@
+package conv
+
+// Inline `...derive(src)` in a fallible function: the enclosing signature is
+// (EventExecution, error) and the return is `T{...derive(s)}, nil`, so a fallible leaf
+// conversion (parseUUID: string -> UUID) threads its error out as the function's own.
+type UUID struct {
+	s string
+}
+
+from func parseUUID(s string) (UUID, error) {
+	if s == "" {
+		return UUID{}, errEmpty
+	}
+	return UUID{s: s}, nil
+}
+
+var errEmpty = newErr("empty uuid")
+
+func newErr(msg string) error {
+	return &convErr{msg}
+}
+
+type convErr struct {
+	msg string
+}
+
+func (e *convErr) Error() string {
+	return e.msg
+}
+
+type StoredEvent struct {
+	ID         string
+	CustomerID string
+}
+
+type EventExecution struct {
+	ID         UUID
+	CustomerID UUID
+}
+
+func fromStorage(s StoredEvent) (EventExecution, error) {
+	return EventExecution{...derive(s)}, nil
+}

@@ -1,0 +1,31 @@
+package conv
+
+// Inline `...derive(src)` in a plain function's returned literal (US-039): the
+// derived-conversion analog of `...defaults`. No overrides — every field is filled
+// from the same-named source field, exercising identity (Name) and the built-in
+// slice recursion (Members []UUID -> []string via the registered leaf).
+type UUID struct {
+	s string
+}
+
+func (u UUID) String() string {
+	return u.s
+}
+
+from func uuidToString(u UUID) string {
+	return u.String()
+}
+
+type Group struct {
+	Name    string
+	Members []UUID
+}
+
+type IDList struct {
+	Name    string
+	Members []string
+}
+
+func toIDs(g Group) IDList {
+	return IDList{...derive(g)}
+}

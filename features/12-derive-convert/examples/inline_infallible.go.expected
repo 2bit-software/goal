@@ -1,0 +1,35 @@
+package conv
+
+type UUID struct {
+	s string
+}
+
+func (u UUID) String() string {
+	return u.s
+}
+
+func uuidToString(u UUID) string {
+	return u.String()
+}
+
+type Group struct {
+	Name    string
+	Members []UUID
+}
+
+type IDList struct {
+	Name    string
+	Members []string
+}
+
+func toIDs(g Group) IDList {
+	{
+		var out IDList
+		out.Name = g.Name
+		out.Members = make([]string, len(g.Members))
+		for i := range g.Members {
+			out.Members[i] = uuidToString(g.Members[i])
+		}
+		return out
+	}
+}

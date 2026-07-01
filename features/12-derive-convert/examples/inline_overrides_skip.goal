@@ -1,0 +1,36 @@
+package conv
+
+// Inline `...derive(src)` with exceptions, in a plain function (US-039): an explicit
+// override (ExternalID has no same-named source), an intentional skip (Audit stays
+// zero), and `...derive(e)` fills the rest (ID via the registry, Railroad by identity).
+type UUID struct {
+	s string
+}
+
+func (u UUID) String() string {
+	return u.s
+}
+
+from func uuidToString(u UUID) string {
+	return u.String()
+}
+
+type EventExecution struct {
+	ID       UUID
+	Railroad string
+}
+
+type StoredEvent struct {
+	ID         string
+	Railroad   string
+	ExternalID string
+	Audit      string
+}
+
+func toStorage(e EventExecution) StoredEvent {
+	return StoredEvent{
+		ExternalID: e.ID.String(),
+		Audit:      _,
+		...derive(e),
+	}
+}
