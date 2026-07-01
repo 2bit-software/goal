@@ -1562,6 +1562,13 @@ func (e *emitter) indexExpr(x *ast.IndexExpr) {
 // returnStmt emits a return, lowering a Result/Option constructor in the
 // enclosing function (§8.3/§8.4) to the native (T, error) pair / pointer form.
 func (e *emitter) returnStmt(s *ast.ReturnStmt) {
+	// A return-position inline `...derive(src)` lowers like a `derive func` body:
+	// `{ var out T; overrides; fills; return out[, nil] }` (US-039). Checked first,
+	// ahead of the match/Result/Option forms, since its result is a composite literal.
+	if cl, src, pos, fallible, ok := e.inlineDeriveReturn(s); ok {
+		e.emitInlineDerive(cl, src, pos, fallible)
+		return
+	}
 	if len(s.Results) == 1 {
 		// `return match …` lowers to a value-position split whose arms each
 		// `return <body>`: a type-switch for an enum, the Result (T, error) /
@@ -1603,6 +1610,82 @@ func (e *emitter) returnStmt(s *ast.ReturnStmt) {
 		e.p(" ")
 		e.exprList(s.Results)
 	}
+}
+
+// inlineDeriveReturn detects a return-position inline `...derive(src)`: the sole
+// result `return T{…, ...derive(src)}` (infallible), or `return T{…}, nil` (two
+// results, the second the bare `nil` ident → fallible, absorbing a fallible field's
+// error into the function's own error return). Fallibility is read from the return
+// SHAPE, never from e.fnKind (a native (T, error) function is roNone). Returns the
+// literal, the `...derive` source ident, the spread's position (for located errors),
+// whether fallible, and whether an inline `...derive` was found.
+func (e *emitter) inlineDeriveReturn(s *ast.ReturnStmt) (*ast.CompositeLit, *ast.Ident, token.Pos, bool, bool) {
+	if len(s.Results) == 1 {
+		if cl, ok := s.Results[0].(*ast.CompositeLit); ok && cl.Type != nil {
+			if src, pos, ok := deriveSpreadSrc(cl); ok {
+				return cl, src, pos, false, true
+			}
+		}
+	}
+	if len(s.Results) == 2 {
+		if cl, ok := s.Results[0].(*ast.CompositeLit); ok && cl.Type != nil && isNilIdent(s.Results[1]) {
+			if src, pos, ok := deriveSpreadSrc(cl); ok {
+				return cl, src, pos, true, true
+			}
+		}
+	}
+	return nil, nil, token.Pos{}, false, false
+}
+
+// deriveSpreadSrc returns the source identifier and position of a `...derive(src)`
+// spread element in cl (the spread's X is a call `derive(src)`), if present.
+func deriveSpreadSrc(cl *ast.CompositeLit) (*ast.Ident, token.Pos, bool) {
+	for _, el := range cl.Elts {
+		sp, ok := el.(*ast.SpreadElement)
+		if !ok {
+			continue
+		}
+		call, ok := sp.X.(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+		fn, ok := call.Fun.(*ast.Ident)
+		if !ok || fn.Name != "derive" || len(call.Args) != 1 {
+			continue
+		}
+		if id, ok := call.Args[0].(*ast.Ident); ok {
+			return id, sp.Pos(), true
+		}
+	}
+	return nil, token.Pos{}, false
+}
+
+// isNilIdent reports whether e is the bare `nil` identifier.
+func isNilIdent(e ast.Expr) bool {
+	id, ok := e.(*ast.Ident)
+	return ok && id.Name == "nil"
+}
+
+// emitInlineDerive lowers a return-position inline `...derive(src)` as a scoping block
+// `{ var out T; overrides; per-field fills; return out[, nil] }`, reusing the derive
+// body. The block scopes `out`, so it never collides with a user local of that name.
+// The source must be a parameter of the enclosing function (v1); the target must be a
+// known in-file struct. Both failures are located at the spread.
+func (e *emitter) emitInlineDerive(cl *ast.CompositeLit, src *ast.Ident, pos token.Pos, fallible bool) {
+	tgtType := typeExprString(cl.Type)
+	srcType, ok := e.paramType(src.Name)
+	if !ok {
+		e.fail("`...derive` at %s: source `%s` must be a parameter of the enclosing function", pos, src.Name)
+		return
+	}
+	if _, ok := structFieldsOf(e.info, derefType(tgtType)); !ok {
+		e.fail("`...derive` at %s: unknown target struct `%s` (no `type %s struct{…}` in this file)", pos, tgtType, derefType(tgtType))
+		return
+	}
+	overrides := overridesFromLit(cl)
+	e.p("{\n")
+	e.emitConversionBody("", src.Name, srcType, tgtType, fallible, overrides, pos)
+	e.p("}")
 }
 
 // tryVarMatch lowers a `var name T = match …` declaration over an enum: it emits
