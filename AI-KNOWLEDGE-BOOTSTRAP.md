@@ -453,7 +453,7 @@ func loadConfig(p string) (ok Config, err error) {
 ```
 
 **Lowers to:** in a `Result[_, error]` function, `name := expr?` becomes
-`name, __goal_err := expr; if __goal_err != nil { return __goal_ok, __goal_err }`. In an
+`name, err := expr; if err != nil { return ok, err }`. In an
 `Option[_]` function it becomes a nil-check-and-return, then a deref.
 
 #### Result (closed-E)
