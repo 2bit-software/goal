@@ -21,6 +21,7 @@ import (
 
 	"goal/internal/backend"
 	"goal/internal/byexample"
+	"goal/internal/sema"
 )
 
 func main() {
@@ -111,7 +112,7 @@ func buildManifest(doc, docPath string) (Manifest, error) {
 	manifest := Manifest{Title: parsed.Title, GeneratedFrom: parsed.GeneratedFrom}
 	for _, cat := range parsed.Categories {
 		for _, f := range cat.Features {
-			if err := verify(f.Source, f.LockedExpected, f.OutputKind); err != nil {
+			if err := verify(f.Source, f.LockedExpected, f.OutputKind, f.SourceName); err != nil {
 				return Manifest{}, fmt.Errorf("feature %q: %w", f.Title, err)
 			}
 			// The doc keeps keyword headings lowercase (implements, assert) and
@@ -158,21 +159,14 @@ func expectedLabel(kind string) string {
 	}
 }
 
-// verify re-transpiles source and asserts the result matches the doc's locked block,
-// so the manifest cannot drift from the transpiler. For an error feature it asserts
-// the transpile fails with exactly the locked message.
-func verify(source, expected, kind string) error {
-	res, err := backend.Transpile(source)
+// verify re-runs source through the live toolchain and asserts the result matches
+// the doc's locked block, so the manifest cannot drift. For an error feature it
+// delegates to verifyError; go/test features are re-transpiled and compared.
+func verify(source, expected, kind, sourceName string) error {
 	if kind == "error" {
-		if err == nil {
-			return fmt.Errorf("expected transpile to be rejected, but it succeeded:\n%s", res.Go)
-		}
-		if strings.TrimRight(err.Error(), "\n") != strings.TrimRight(expected, "\n") {
-			return fmt.Errorf("doc error does not match live transpiler\n--- doc ---\n%s\n--- live ---\n%s",
-				expected, err.Error())
-		}
-		return nil
+		return verifyError(source, expected, sourceName)
 	}
+	res, err := backend.Transpile(source)
 	if err != nil {
 		return fmt.Errorf("live transpile failed: %w", err)
 	}
@@ -185,6 +179,69 @@ func verify(source, expected, kind string) error {
 			expected, got)
 	}
 	return nil
+}
+
+// verifyError verifies an error feature's locked block against the live toolchain.
+//
+// When the locked block is a located checker diagnostic (its first line begins
+// with the feature's SourceName, e.g. "traffic.goal:9:2: error: [code] …"), it is
+// verified against the checker: sema.Analyze must report an Error-severity
+// diagnostic whose Render(sourceName) equals the locked block exactly (trailing
+// newline trimmed). This is the same path goalc's checker uses.
+//
+// Otherwise the block is a backend transpile rejection (e.g. the "backend: …"
+// unsafe-default example) and is verified against backend.Transpile, unchanged.
+func verifyError(source, expected, sourceName string) error {
+	if isCheckerDiagnostic(expected, sourceName) {
+		diags, err := sema.Analyze(source)
+		if err != nil {
+			return fmt.Errorf("checker failed to analyze source: %w", err)
+		}
+		d, ok := firstError(diags)
+		if !ok {
+			return fmt.Errorf("expected a checker error diagnostic, but the checker reported none")
+		}
+		got := d.Render(sourceName)
+		if strings.TrimRight(got, "\n") != strings.TrimRight(expected, "\n") {
+			return fmt.Errorf("doc error does not match live checker\n--- doc ---\n%s\n--- live ---\n%s",
+				expected, got)
+		}
+		return nil
+	}
+	res, err := backend.Transpile(source)
+	if err == nil {
+		return fmt.Errorf("expected transpile to be rejected, but it succeeded:\n%s", res.Go)
+	}
+	if strings.TrimRight(err.Error(), "\n") != strings.TrimRight(expected, "\n") {
+		return fmt.Errorf("doc error does not match live transpiler\n--- doc ---\n%s\n--- live ---\n%s",
+			expected, err.Error())
+	}
+	return nil
+}
+
+// isCheckerDiagnostic reports whether a locked error block is a located checker
+// diagnostic — its first non-empty line begins with the feature's SourceName
+// followed by ":", the form Diagnostic.Render produces. A backend rejection block
+// (e.g. "backend: …") does not, so it routes to the backend fallback.
+func isCheckerDiagnostic(expected, sourceName string) bool {
+	if sourceName == "" {
+		return false
+	}
+	first := strings.TrimLeft(expected, "\n")
+	if i := strings.IndexByte(first, '\n'); i >= 0 {
+		first = first[:i]
+	}
+	return strings.HasPrefix(first, sourceName+":")
+}
+
+// firstError returns the first Error-severity diagnostic, if any.
+func firstError(diags []sema.Diagnostic) (sema.Diagnostic, bool) {
+	for _, d := range diags {
+		if sema.HasErrors([]sema.Diagnostic{d}) {
+			return d, true
+		}
+	}
+	return sema.Diagnostic{}, false
 }
 
 // --------------------------------------------------------------------------- //
