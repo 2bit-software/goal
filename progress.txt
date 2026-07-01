@@ -7377,3 +7377,29 @@
     is now checker-aware, so those should not re-hit the "expected rejection"
     failure. US-009 depends on US-001/US-002 codes already landed.
 ---
+
+## 2026-07-01T18:35:00Z - US-008
+- Authored three "Rejected with:" ```error``` examples in docs/by-example.md: under
+  08-no-zero-value ([missing-field], name=incomplete.goal), 10-assert
+  ([assert-always-false], name=overdraft.goal), and 12-derive-convert
+  ([unsourced-field], name=to_storage.goal). Each locked block is the EXACT live
+  goalc diagnostic. Regenerated AI-KNOWLEDGE-BOOTSTRAP.md.
+- Files changed: docs/by-example.md, AI-KNOWLEDGE-BOOTSTRAP.md.
+- Learnings for future iterations:
+  - Capture the live diagnostic verbatim by building `bin/goalc` and running it on the
+    snippet in a scratch dir — the diagnostic's SourceName is just the BASENAME passed
+    to goalc, so name the ```goal name=<base>``` fence to match (incomplete.goal etc.)
+    and the line:col in the locked block must match the snippet's line:col exactly.
+    Keep the by-example snippet byte-identical to the probed file so positions hold.
+  - The [missing-field] example under 08 must be distinct from the existing
+    unsafe-default BACKEND example: unsafe-default is a `backend:`-format block
+    (nil-map hazard on `...defaults`); [missing-field] is the CHECKER completeness
+    guarantee (omitted field, no `...defaults`) and renders as a located
+    `<name>:l:c: error: [missing-field] ...` block.
+  - Confirmed the drift gotcha: editing docs/by-example.md alone stales
+    AI-KNOWLEDGE-BOOTSTRAP.md (ai_test.go TestBootstrapGoldenMatches), failing
+    `task check` until `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md` is rerun.
+    byexample + build-playground tests PASS immediately (blocks verify live) — only the
+    golden lags. The per-Edit PostToolUse `task check` hook therefore fails on each doc
+    Edit; that is expected and clears the moment the golden is regenerated.
+---

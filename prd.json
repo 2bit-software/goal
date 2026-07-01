@@ -120,7 +120,7 @@
         "site/features.json contains error features whose `expected` fields contain `[missing-field]`, `[assert-always-false]`, and an `[unsourced-field]`/`[unbridged-field]` code."
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Snippets adaptable from testdata/check/08-no-zero-value, 10-assert, 12-derive-convert. Depends on US-003."
     },
     {
