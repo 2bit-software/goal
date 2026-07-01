@@ -97,7 +97,7 @@ type Feature struct {
 	LoweringHTML    string `json:"loweringHtml,omitempty"`
 	Source          string `json:"source"`        // the .goal example
 	SourceName      string `json:"sourceName"`    // e.g. "traffic.goal"
-	OutputKind      string `json:"outputKind"`    // "go" | "test"
+	OutputKind      string `json:"outputKind"`    // "go" | "test" | "error" | "doctest-failure"
 	Expected        string `json:"expected"`      // the locked, verified output
 	ExpectedLabel   string `json:"expectedLabel"` // pane label, e.g. "transpiled Go"
 }
@@ -154,6 +154,8 @@ func expectedLabel(kind string) string {
 		return "rejected"
 	case "test":
 		return "generated _test.go"
+	case "doctest-failure":
+		return "test failure"
 	default:
 		return "transpiled Go"
 	}

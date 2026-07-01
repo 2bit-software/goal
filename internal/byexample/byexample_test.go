@@ -42,7 +42,7 @@ func TestParseFindsEveryFeature(t *testing.T) {
 				t.Errorf("feature %q Category=%q but is grouped under %q", f.Title, f.Category, cat.Name)
 			}
 			switch f.OutputKind {
-			case "go", "test", "error":
+			case "go", "test", "error", "doctest-failure":
 			default:
 				t.Errorf("feature %q has unexpected OutputKind %q", f.Title, f.OutputKind)
 			}
@@ -53,6 +53,46 @@ func TestParseFindsEveryFeature(t *testing.T) {
 	// feature list from this count, so a drop is a regression worth catching.
 	if total < 13 {
 		t.Errorf("parsed %d features, want >= 13", total)
+	}
+}
+
+// TestParseDoctestFailureBlock verifies that a feature whose locked output is a
+// doctest-failure block (```testfail```) parses to the "doctest-failure" OutputKind
+// with the failure body captured verbatim — distinct from a "Transpiles to" go block
+// or a "Rejected with" error block.
+func TestParseDoctestFailureBlock(t *testing.T) {
+	const body = "--- FAIL: TestGreet (0.00s)\n    greet_test.go:1: got \"hi\", want \"hello\""
+	doc := "# goal by Example\n\n" +
+		"## 99. doctests: a failing doctest\n\n" +
+		"A doctest whose expected output is wrong fails its generated test.\n\n" +
+		"```goal name=greet.goal\n" +
+		"func Greet() string { return \"hi\" }\n" +
+		"/// >>> Greet()\n" +
+		"/// hello\n" +
+		"```\n\n" +
+		"Fails with:\n\n" +
+		"```testfail\n" +
+		body + "\n" +
+		"```\n"
+
+	parsed, err := Parse(doc, "inline.md")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	var feats []Feature
+	for _, cat := range parsed.Categories {
+		feats = append(feats, cat.Features...)
+	}
+	if len(feats) != 1 {
+		t.Fatalf("parsed %d features, want 1", len(feats))
+	}
+	f := feats[0]
+	if f.OutputKind != "doctest-failure" {
+		t.Errorf("OutputKind = %q, want %q", f.OutputKind, "doctest-failure")
+	}
+	if f.LockedExpected != body {
+		t.Errorf("LockedExpected = %q, want %q", f.LockedExpected, body)
 	}
 }
 

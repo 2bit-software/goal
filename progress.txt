@@ -89,6 +89,16 @@
   entries whose membership sets may be incomplete, so judging them risks false
   rejections, and the local guard is also what stops ordinary selectors
   (`io.Writer`, `cfg.name`) from being mistaken for `Enum.Variant` constructions.
+- The by-example playground pipeline is ordinary Go (internal/byexample +
+  cmd/build-playground have NO `.goal` siblings — edit directly, no `task generate`).
+  A locked output block's KIND flows through four points: the fenced-block label
+  (```go```/```error```/```testfail```) -> byexample readOutputBlock blockKind ->
+  byexample parseFeature OutputKind ("go"/"test"/"error"/"doctest-failure") ->
+  build-playground expectedLabel pane label. Adding a new output kind means touching
+  all four. parseFeature's `/// >>>` "test" promotion only fires when the block began
+  as a ```go``` block, so a non-go fenced block can't be mis-promoted. The
+  TestParseFindsEveryFeature suite parses the REAL docs/by-example.md and asserts
+  each OutputKind is in an allow-list switch — extend it when adding a kind.
 - Pure-docs stories touch no `.goal`/`.go`: `task generate` is NOT needed and the
   `task verify-generated` drift gate stays green on its own (it diffs committed `.go`
   against a fresh emit, which is unchanged). The full gate set is still
@@ -7213,3 +7223,32 @@
   - The Edit hook runs full `task check` per edit and blocks on red; order edits
     so the tree compiles quickly.
 ---
+
+## 2026-07-01T18:00:00Z - US-004
+- Added a doctest-failure output kind to the by-example parser + playground. A new
+  ```testfail``` fenced output block (distinct from the ```go``` "Transpiles to" and
+  ```error``` "Rejected with" blocks) now parses to OutputKind "doctest-failure",
+  carrying the locked failure body verbatim; cmd/build-playground maps that kind to
+  the pane label "test failure". Parser + data-model only (build-time verification of
+  the failure is US-005; no doctest-failure feature is authored yet).
+- Files changed: internal/byexample/byexample.go (testFailFenceRe + readOutputBlock
+  case + parseFeature "testfail"->"doctest-failure" mapping + doc comments),
+  internal/byexample/byexample_test.go (new TestParseDoctestFailureBlock;
+  "doctest-failure" added to the OutputKind allow-list in TestParseFindsEveryFeature),
+  cmd/build-playground/main.go (expectedLabel case + OutputKind JSON comment),
+  prd.json, progress.txt, plus the morse-code history/ initiative artifacts.
+- Verify: task check exit 0; go test ./internal/byexample and ./cmd/build-playground
+  ok; go run ./cmd/build-playground -out site/features.json exit 0 (13 features,
+  no features.json drift — new kind is unused until a feature is authored).
+- Learnings for future iterations:
+  - internal/byexample and cmd/build-playground are ORDINARY Go (no .goal siblings) —
+    edit directly, no `task generate`. Output-kind flow is: fence label ->
+    readOutputBlock blockKind -> parseFeature OutputKind -> build-playground
+    expectedLabel pane label. Add a new kind at all four points.
+  - The `/// >>>` "test" promotion in parseFeature only fires when the block started
+    as "go"; a ```testfail``` block is not a ```go``` block, so a failing doctest is
+    never mis-promoted to "test". Order the switch so the blockKind arms precede the
+    `/// >>>` check.
+  - TestParseFindsEveryFeature parses the REAL docs/by-example.md and asserts every
+    feature's OutputKind is in an allow-list switch — add any new kind there or a
+    future authored feature false-fails.

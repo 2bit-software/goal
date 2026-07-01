@@ -3,8 +3,9 @@
 // The by-example doc is the project's single source of truth for "here is a goal
 // feature, here is a runnable example, here is the Go it lowers to." Each feature
 // section carries prose, exactly one name-tagged ```goal``` example, and a locked
-// output block (a "Transpiles to" ```go``` block, or a "Rejected with" ```error```
-// block). This package turns that document into records every consumer can render
+// output block (a "Transpiles to" ```go``` block, a "Rejected with" ```error```
+// block, or a doctest-failure ```testfail``` block). This package turns that
+// document into records every consumer can render
 // its own way — the playground renders HTML, the AI guide renders Markdown — so the
 // parsing lives in one place instead of being duplicated per consumer.
 //
@@ -30,7 +31,7 @@ type Feature struct {
 	Source         string   // the .goal example source
 	SourceName     string   // the example's name= attribute, e.g. "traffic.goal"
 	LoweringMD     []string // doc lines after the output block (the "lowers to" prose), or nil
-	OutputKind     string   // "go" | "test" | "error"
+	OutputKind     string   // "go" | "test" | "error" | "doctest-failure"
 	LockedExpected string   // the doc's locked output block, verbatim
 }
 
@@ -51,9 +52,10 @@ type Doc struct {
 var (
 	headingRe    = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
 	goalFenceRe  = regexp.MustCompile("^```goal(?:\\s+(.*))?$")
-	goFenceRe    = regexp.MustCompile("^```go\\b")
-	errorFenceRe = regexp.MustCompile("^```error\\b")
-	anyFenceRe   = regexp.MustCompile("^```")
+	goFenceRe       = regexp.MustCompile("^```go\\b")
+	errorFenceRe    = regexp.MustCompile("^```error\\b")
+	testFailFenceRe = regexp.MustCompile("^```testfail\\b")
+	anyFenceRe      = regexp.MustCompile("^```")
 	nameAttrRe   = regexp.MustCompile(`name=(\S+)`)
 )
 
@@ -160,13 +162,16 @@ func parseFeature(sec section) (Feature, error) {
 		return Feature{}, err
 	}
 
-	// The output block is either a "Transpiles to" go block or a "Rejected with"
-	// error block (a feature whose example is a located compile error). A go block
-	// whose example carries doctests yields a _test.go instead.
+	// The output block is a "Transpiles to" go block, a "Rejected with" error block
+	// (a feature whose example is a located compile error), or a doctest-failure block
+	// (a feature whose example is a failing doctest, showing its test failure). A go
+	// block whose example carries doctests yields a _test.go instead.
 	outputKind := "go"
 	switch {
 	case blockKind == "error":
 		outputKind = "error"
+	case blockKind == "testfail":
+		outputKind = "doctest-failure"
 	case strings.Contains(source, "/// >>>"):
 		outputKind = "test"
 	}
@@ -223,8 +228,9 @@ func readGoalExample(body []string, start int) (source, name string, next int, e
 }
 
 // readOutputBlock reads the feature's locked output: the first fenced block at or
-// after from that is either a "Transpiles to" go block (kind "go") or a "Rejected
-// with" error block (kind "error", holding the exact located compile error).
+// after from that is a "Transpiles to" go block (kind "go"), a "Rejected with" error
+// block (kind "error", holding the exact located compile error), or a doctest-failure
+// block (kind "testfail", holding a failing doctest's locked failure output).
 func readOutputBlock(body []string, from int) (expected, kind string, next int, err error) {
 	for i := from; i < len(body); i++ {
 		switch {
@@ -234,9 +240,12 @@ func readOutputBlock(body []string, from int) (expected, kind string, next int, 
 		case errorFenceRe.MatchString(body[i]):
 			exp, n, e := readFenceBody(body, i)
 			return exp, "error", n, e
+		case testFailFenceRe.MatchString(body[i]):
+			exp, n, e := readFenceBody(body, i)
+			return exp, "testfail", n, e
 		}
 	}
-	return "", "", -1, fmt.Errorf("no \"Transpiles to\" go block or \"Rejected with\" error block found")
+	return "", "", -1, fmt.Errorf("no \"Transpiles to\" go block, \"Rejected with\" error block, or doctest-failure block found")
 }
 
 // readFenceBody returns the lines inside the fenced block opening at body[openIdx]

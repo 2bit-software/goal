@@ -63,7 +63,7 @@
         "Existing `go`, `test`, and `error` output kinds continue to parse unchanged (existing byexample tests pass)."
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Parser + data-model only; the build-time verification of the failure is US-005. app.js consumes the pane label as data, so no front-end edit is expected."
     },
     {
