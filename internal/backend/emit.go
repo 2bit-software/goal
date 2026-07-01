@@ -1075,7 +1075,7 @@ func (e *emitter) compositeLit(x *ast.CompositeLit) {
 				e.fail("unsupported spread element in composite literal: only `...defaults` is lowered (`...derive` is a later story)")
 				return
 			}
-			for _, entry := range e.defaultEntries(x) {
+			for _, entry := range e.defaultEntries(x, sp.Pos()) {
 				sep()
 				e.p(entry)
 			}
@@ -1088,7 +1088,7 @@ func (e *emitter) compositeLit(x *ast.CompositeLit) {
 }
 
 //line emit.goal:1203
-func (e *emitter) defaultEntries(x *ast.CompositeLit) []string {
+func (e *emitter) defaultEntries(x *ast.CompositeLit, pos token.Pos) []string {
 	id, ok := x.Type.(*ast.Ident)
 	if !ok {
 		e.fail("`...defaults` is not inside a named struct literal")
@@ -1107,7 +1107,7 @@ func (e *emitter) defaultEntries(x *ast.CompositeLit) []string {
 			continue
 		}
 		if reason := zeroSafety(f.Type, e.typeDecls, e.info, 0); reason != "" {
-			e.fail("`...defaults` cannot default field `%s` of type `%s`: %s", f.Name, f.Type, reason)
+			e.fail("`...defaults` at %s cannot default field `%s` of type `%s`: %s", pos, f.Name, f.Type, reason)
 			return nil
 		}
 		entries = append(entries, fmt.Sprintf("%s: %s", f.Name, zeroLit(f.Type, e.typeDecls, 0)))

@@ -722,7 +722,7 @@ func newStore(name string) Store {
 Rejected with:
 
 ```error
-backend: `...defaults` cannot default field `entries` of type `map[string]int`: a nil map panics on write — set it explicitly (e.g. `map[string]int{}`)
+backend: `...defaults` at 9:27 cannot default field `entries` of type `map[string]int`: a nil map panics on write — set it explicitly (e.g. `map[string]int{}`)
 ```
 
 **Why:** a `nil` map reads fine but panics the moment something writes to it — exactly the
