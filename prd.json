@@ -34,7 +34,7 @@
         "If the fix lives in goal source (internal/sema or internal/backend .goal), the committed generated *.go is regenerated so verify-generated passes."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Today `goalc` prints `backend: ` + \"`?` outside a Result- or Option-returning function\" with no line:col. End state is a located, coded diagnostic; checker vs backend placement is an implementation choice, but US-003 renders it via the playground so it must carry a position."
     },
     {
