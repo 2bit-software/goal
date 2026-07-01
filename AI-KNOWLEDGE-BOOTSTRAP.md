@@ -214,6 +214,42 @@ func handle2(s Status) {
 **Lowers to:** a Go type switch over the variant structs. An exhaustive `match` emits a
 defensive panicking `default`; an explicit `_` arm becomes a real `default:` block.
 
+#### Rejecting a non-exhaustive match
+
+Omit a variant with no `_` rest-arm and the checker rejects the `match` at its source
+position, naming the variant you forgot — a **located compile error**, not a silent
+panicking `default:`.
+
+```goal
+package status
+
+func startOnboarding() {}
+func resume()          {}
+
+enum Status {
+    Pending
+    Active
+    Cancelled
+}
+
+func handle(s Status) {
+    match s {
+        Status.Pending => startOnboarding()
+        Status.Active => resume()
+    }
+}
+```
+
+_rejected with:_
+
+```text
+status_missing.goal:13:5: error: [non-exhaustive-match] non-exhaustive `match` on enum `Status`: missing variant `Status.Cancelled` — handle it, or add a `_` rest-arm to dismiss the rest
+```
+
+**Why:** the enum is a closed set (feature 01), so the checker knows `Cancelled` exists and
+that this `match` never handles it. Add the arm, or opt out deliberately with `_` — either
+way the omission is a conscious choice, never a silent fall-through.
+
 ---
 
 ### Errors & absence
@@ -281,6 +317,43 @@ func parse(s string) (ok Config, err error) {
 **Lowers to:** Go's native `(T, error)` pair. `Result.Ok(v)` → `(v, nil)`,
 `Result.Err(e)` → `(zero, e)`, and a `match` on the result becomes an `err != nil`
 branch. Zero runtime cost over hand-written Go.
+
+#### Rejecting a dropped Result
+
+A `Result` is **must-use**: drop it on the floor — a bare call statement — and the checker
+rejects it at the call site. The success value is unreachable and the error branch would be
+silently discarded, exactly the `cfg, _ := parse(s)` footgun this feature closes.
+
+```goal
+package config
+
+import "errors"
+
+type Config struct {
+    Raw string
+}
+
+func parse(s string) Result[Config, error] {
+    if s == "" {
+        return Result.Err(errors.New("empty input"))
+    }
+    return Result.Ok(Config{Raw: s})
+}
+
+func run(input string) {
+    parse(input)
+}
+```
+
+_rejected with:_
+
+```text
+result_dropped.goal:17:5: error: [dropped-result] the `Result` returned by `parse(…)` is dropped: a `Result` must be used — consume it with `match parse(…) { Result.Ok(v) => … Result.Err(e) => … }`, propagate it with `parse(…)?`, or bind it with `x := parse(…)`
+```
+
+**Why:** the error is a branch of the value you hold, not a separate return you can forget.
+Consume it (`match`), propagate it (`?`), or bind it (`x := parse(…)`) — any of the three
+makes the error path a conscious choice, never a silent discard.
 
 #### Option
 

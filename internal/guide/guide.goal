@@ -223,6 +223,22 @@ func writeFeatures(b *strings.Builder) error {
 // Go, the generated test for a doctest example, or the located error for a feature whose
 // example is intentionally rejected. The label names which of these it is.
 func lower(f byexample.Feature) (out, label string, err error) {
+	// A located checker diagnostic (its locked block begins with the feature's
+	// SourceName) is rendered live from the checker, the same path
+	// cmd/build-playground verifies against. A backend rejection (e.g. the
+	// "backend: …" unsafe-default example) still lowers via backend.Transpile below.
+	if f.OutputKind == "error" && isCheckerDiagnostic(f.LockedExpected, f.SourceName) {
+		diags, aerr := sema.Analyze(f.Source)
+		if aerr != nil {
+			return "", "", fmt.Errorf("checker failed to analyze source: %w", aerr)
+		}
+		for _, d := range diags {
+			if sema.HasErrors([]sema.Diagnostic{d}) {
+				return strings.TrimRight(d.Render(f.SourceName), "\n"), "rejected with", nil
+			}
+		}
+		return "", "", fmt.Errorf("expected a checker error diagnostic, but the checker reported none")
+	}
 	res, terr := backend.Transpile(f.Source)
 	switch f.OutputKind {
 	case "error":
@@ -249,6 +265,21 @@ func fenceLang(kind string) string {
 		return "text"
 	}
 	return "go"
+}
+
+// isCheckerDiagnostic reports whether a locked error block is a located checker
+// diagnostic — its first non-empty line begins with the feature's SourceName
+// followed by ":", the form Diagnostic.Render produces. A backend rejection block
+// (e.g. "backend: …") does not, so it routes to the backend fallback.
+func isCheckerDiagnostic(expected, sourceName string) bool {
+	if sourceName == "" {
+		return false
+	}
+	first := strings.TrimLeft(expected, "\n")
+	if i := strings.IndexByte(first, '\n'); i >= 0 {
+		first = first[:i]
+	}
+	return strings.HasPrefix(first, sourceName+":")
 }
 
 // writeCatalog renders the diagnostic-code catalog grouped by feature.

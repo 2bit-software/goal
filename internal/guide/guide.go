@@ -193,6 +193,18 @@ func writeFeatures(b *strings.Builder) error {
 
 //line guide.goal:225
 func lower(f byexample.Feature) (out, label string, err error) {
+	if f.OutputKind == "error" && isCheckerDiagnostic(f.LockedExpected, f.SourceName) {
+		diags, aerr := sema.Analyze(f.Source)
+		if aerr != nil {
+			return "", "", fmt.Errorf("checker failed to analyze source: %w", aerr)
+		}
+		for _, d := range diags {
+			if sema.HasErrors([]sema.Diagnostic{d}) {
+				return strings.TrimRight(d.Render(f.SourceName), "\n"), "rejected with", nil
+			}
+		}
+		return "", "", fmt.Errorf("expected a checker error diagnostic, but the checker reported none")
+	}
 	res, terr := backend.Transpile(f.Source)
 	switch f.OutputKind {
 	case "error":
@@ -213,7 +225,7 @@ func lower(f byexample.Feature) (out, label string, err error) {
 	}
 }
 
-//line guide.goal:247
+//line guide.goal:263
 func fenceLang(kind string) string {
 	if kind == "error" {
 		return "text"
@@ -221,7 +233,19 @@ func fenceLang(kind string) string {
 	return "go"
 }
 
-//line guide.goal:255
+//line guide.goal:274
+func isCheckerDiagnostic(expected, sourceName string) bool {
+	if sourceName == "" {
+		return false
+	}
+	first := strings.TrimLeft(expected, "\n")
+	if i := strings.IndexByte(first, '\n'); i >= 0 {
+		first = first[:i]
+	}
+	return strings.HasPrefix(first, sourceName+":")
+}
+
+//line guide.goal:286
 func writeCatalog(b *strings.Builder) {
 	for _, g := range catalogByFeature() {
 		fmt.Fprintf(b, "**%s**\n\n", g.Feature)
@@ -232,7 +256,7 @@ func writeCatalog(b *strings.Builder) {
 	}
 }
 
-//line guide.goal:267
+//line guide.goal:298
 func writeFeedbackSample(b *strings.Builder) error {
 	b.WriteString("**What the feedback looks like.** Running the checker on this program:\n\n")
 	fmt.Fprintf(b, "```goal\n%s\n```\n\n", strings.TrimRight(feedbackSample, "\n"))
@@ -257,7 +281,7 @@ func writeFeedbackSample(b *strings.Builder) error {
 	return nil
 }
 
-//line guide.goal:293
+//line guide.goal:324
 func writeStarter(b *strings.Builder) error {
 	src, err := goal.Docs.ReadFile("docs/ai/starter.goal")
 	if err != nil {
@@ -279,7 +303,7 @@ func writeStarter(b *strings.Builder) error {
 	return nil
 }
 
-//line guide.goal:317
+//line guide.goal:348
 func writeProse(b *strings.Builder, lines []string) {
 	text := strings.TrimSpace(strings.Join(lines, "\n"))
 	if text == "" {
