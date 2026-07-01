@@ -72,6 +72,77 @@ func TestVerifyErrorBackendFallback(t *testing.T) {
 	}
 }
 
+// A doctest whose expected value is wrong: the generated _test.go fails, so this
+// is a genuine doctest-failure feature. Its locked block is the normalized failure
+// message the toolchain prints.
+const failingDoctestSource = `package mathx
+
+/// Squares an int.
+/// >>> square(3)
+/// 8
+func square(x int) int {
+	return x * x
+}
+`
+
+const failingDoctestBlock = "doctest square: got 9, want 8"
+
+// A doctest whose expected value is correct: the generated _test.go passes, so it
+// must NOT be accepted as a doctest-failure feature.
+const passingDoctestSource = `package mathx
+
+/// Squares an int.
+/// >>> square(3)
+/// 9
+func square(x int) int {
+	return x * x
+}
+`
+
+// A doctest-failure feature whose locked block matches the live test failure
+// (compiled and run) verifies cleanly.
+func TestVerifyDoctestFailureAccepted(t *testing.T) {
+	if err := verify(failingDoctestSource, failingDoctestBlock, "doctest-failure", "mathx.goal"); err != nil {
+		t.Fatalf("failing doctest feature should verify, got: %v", err)
+	}
+}
+
+// A passing doctest must be rejected as a doctest-failure feature: its generated
+// test passes, so the shown failure would be a lie.
+func TestVerifyDoctestFailurePassingRejected(t *testing.T) {
+	err := verify(passingDoctestSource, failingDoctestBlock, "doctest-failure", "mathx.goal")
+	if err == nil {
+		t.Fatal("a passing doctest must not be accepted as a doctest-failure feature")
+	}
+	if !strings.Contains(err.Error(), "expected the generated doctest to fail") {
+		t.Fatalf("expected a passing-doctest rejection, got: %v", err)
+	}
+}
+
+// A doctest-failure feature whose locked block does not match the observed failure
+// is rejected, so the shown failure cannot drift from the toolchain.
+func TestVerifyDoctestFailureWrongText(t *testing.T) {
+	err := verify(failingDoctestSource, "doctest square: got 9, want 7", "doctest-failure", "mathx.goal")
+	if err == nil {
+		t.Fatal("wrong locked failure text should fail verification, got nil")
+	}
+	if !strings.Contains(err.Error(), "does not match the live test failure") {
+		t.Fatalf("expected a failure-mismatch error, got: %v", err)
+	}
+}
+
+// normalizeDoctestFailure strips the harness prefix/framing down to the authored
+// `doctest …: got …, want …` message(s).
+func TestNormalizeDoctestFailure(t *testing.T) {
+	raw := "--- FAIL: TestDoctest_square_1 (0.00s)\n    feature_test.go:9: doctest square: got 9, want 8\nFAIL\nFAIL\tgoal\t0.2s\n"
+	if got := normalizeDoctestFailure(raw); got != "doctest square: got 9, want 8" {
+		t.Fatalf("normalized failure = %q, want %q", got, "doctest square: got 9, want 8")
+	}
+	if got := normalizeDoctestFailure("ok\tgoal\t0.1s\n"); got != "" {
+		t.Fatalf("passing output should normalize to empty, got %q", got)
+	}
+}
+
 // isCheckerDiagnostic routes located checker blocks to the checker and
 // backend-format blocks to the backend fallback.
 func TestIsCheckerDiagnostic(t *testing.T) {

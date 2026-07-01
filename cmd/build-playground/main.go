@@ -15,7 +15,10 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go/format"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -163,10 +166,14 @@ func expectedLabel(kind string) string {
 
 // verify re-runs source through the live toolchain and asserts the result matches
 // the doc's locked block, so the manifest cannot drift. For an error feature it
-// delegates to verifyError; go/test features are re-transpiled and compared.
+// delegates to verifyError; a doctest-failure feature is compiled and run via
+// verifyDoctestFailure; go/test features are re-transpiled and compared.
 func verify(source, expected, kind, sourceName string) error {
 	if kind == "error" {
 		return verifyError(source, expected, sourceName)
+	}
+	if kind == "doctest-failure" {
+		return verifyDoctestFailure(source, expected, sourceName)
 	}
 	res, err := backend.Transpile(source)
 	if err != nil {
@@ -244,6 +251,90 @@ func firstError(diags []sema.Diagnostic) (sema.Diagnostic, bool) {
 		}
 	}
 	return sema.Diagnostic{}, false
+}
+
+// verifyDoctestFailure proves a doctest-failure feature is real: it generates the
+// feature's doctest sidecar test (exactly what `goalc -test` writes), compiles and
+// runs it, and asserts the run FAILS. A passing doctest is rejected — a feature
+// billed as a doctest failure whose test passes would silently mislead.
+//
+// The locked block is matched against a normalized subset of the `go test` output:
+// the doctest failure message(s) the generated test prints via t.Errorf, i.e.
+// `doctest <fn>: got <got>, want <want>`. The harness's `<file>:<line>: ` prefix,
+// `--- FAIL` header, and `FAIL <pkg> <time>` footer are stripped because they carry
+// brittle, non-authored detail (line numbers, timings, temp paths).
+func verifyDoctestFailure(source, expected, sourceName string) error {
+	res, err := backend.Transpile(source)
+	if err != nil {
+		return fmt.Errorf("live transpile failed: %w", err)
+	}
+	if strings.TrimSpace(res.Test) == "" {
+		return fmt.Errorf("doctest-failure feature has no doctests (no `/// >>>` in the example)")
+	}
+	output, passed, err := runDoctest(res.Go, res.Test)
+	if err != nil {
+		return err
+	}
+	if passed {
+		return fmt.Errorf("expected the generated doctest to fail, but `go test` passed:\n%s", output)
+	}
+	got := normalizeDoctestFailure(output)
+	if got == "" {
+		return fmt.Errorf("doctest failed but no `got …, want …` message was found in the output:\n%s", output)
+	}
+	if strings.TrimRight(got, "\n") != strings.TrimRight(expected, "\n") {
+		return fmt.Errorf("doc failure block does not match the live test failure\n--- doc ---\n%s\n--- live ---\n%s",
+			expected, got)
+	}
+	return nil
+}
+
+// runDoctest writes the transpiled package Go (pkgGo) and its doctest sidecar test
+// (testGo) into a throwaway `module goal` temp dir and runs `go test`, returning the
+// combined output and whether the run passed. Playground doctest examples are
+// self-contained (stdlib imports only), so a bare temp module compiles them with no
+// extra wiring. Each file is validated as Go first so a malformed emission is
+// reported precisely rather than as an opaque build error.
+func runDoctest(pkgGo, testGo string) (output string, passed bool, err error) {
+	dir, err := os.MkdirTemp("", "playground-doctest-*")
+	if err != nil {
+		return "", false, fmt.Errorf("temp module: %w", err)
+	}
+	defer os.RemoveAll(dir)
+
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module goal\n\ngo 1.26\n"), 0o644); err != nil {
+		return "", false, fmt.Errorf("write go.mod: %w", err)
+	}
+	for name, content := range map[string]string{"feature.go": pkgGo, "feature_test.go": testGo} {
+		if _, ferr := format.Source([]byte(content)); ferr != nil {
+			return "", false, fmt.Errorf("generated %s is not valid Go: %w", name, ferr)
+		}
+		if werr := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); werr != nil {
+			return "", false, fmt.Errorf("write %s: %w", name, werr)
+		}
+	}
+	cmd := exec.Command("go", "test", ".")
+	cmd.Dir = dir
+	// `go test` exits non-zero when a test fails, which is the expected outcome for
+	// a doctest-failure feature; a real infra error surfaces in the output instead.
+	b, runErr := cmd.CombinedOutput()
+	return string(b), runErr == nil, nil
+}
+
+// doctestFailRe matches the doctest failure line `go test` prints for a generated
+// TestDoctest_*: `\t<base>_test.go:<line>: doctest <fn>: got <got>, want <want>`.
+var doctestFailRe = regexp.MustCompile(`(?m)^\s*\S+_test\.go:\d+:\s*(doctest .*)$`)
+
+// normalizeDoctestFailure extracts the authored failure message(s) from raw
+// `go test` output: the `doctest …: got …, want …` line(s), with the harness
+// `<file>:<line>: ` prefix and FAIL framing removed. This is the documented
+// normalized subset a doctest-failure feature's locked block is matched against.
+func normalizeDoctestFailure(output string) string {
+	var msgs []string
+	for _, m := range doctestFailRe.FindAllStringSubmatch(output, -1) {
+		msgs = append(msgs, strings.TrimSpace(m[1]))
+	}
+	return strings.Join(msgs, "\n")
 }
 
 // --------------------------------------------------------------------------- //
