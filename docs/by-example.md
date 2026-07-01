@@ -1107,6 +1107,29 @@ func TestDoctest_add_1(t *testing.T) {
 — `got := <expr>; want := <expected>; if got != want { t.Errorf(...) }`. It's a
 *side output*, emitted alongside the transpiled Go rather than inline.
 
+## A drifted doctest fails its test
+
+The guarantee is only worth something when a *wrong* example is caught. Here the
+expected value drifts from what the code returns — `triple(3)` is `9`, not `6`:
+
+```goal name=triple.goal
+package mathx
+
+/// Triples an int.
+/// >>> triple(3)
+/// 6
+func triple(x int) int {
+	return x * 3
+}
+```
+
+Fails its generated test — `go test` runs the `TestDoctest_*` sidecar and reports the
+mismatch, so the stale example can't ship green:
+
+```testfail
+doctest triple: got 9, want 6
+```
+
 ## 12. derive-convert
 
 `derive func` declarations build a struct-to-struct conversion field-by-field, pulling
