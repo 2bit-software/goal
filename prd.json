@@ -77,7 +77,7 @@
         "`go run ./cmd/build-playground` exits 0 with the new verification wired in and no doctest-failure features yet present."
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Runs go build/test on a generated file in a temp dir; keep IO behind the existing generator seams. Highest-risk story — split if compile+run cannot be finished and verified in one pass."
     },
     {

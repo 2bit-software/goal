@@ -1,6 +1,17 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- To prove a generated artifact really behaves as documented, compile+run it in a
+  throwaway `module goal` temp dir (os.MkdirTemp, write `go.mod` = `module goal\n\ngo
+  1.26\n`, format.Source-validate each file, exec `go test`/`go build`, defer
+  os.RemoveAll) — the same shape internal/selfhost uses. For a doctest sidecar
+  (backend.Transpile res.Test, identical to `goalc -test`), write res.Go AND res.Test
+  into ONE package dir (the test is `package <name>` calling res.Go's funcs) and
+  `go test .`. A failing doctest exits `go test` NON-ZERO — that is the success path;
+  runErr==nil means the doctest passed. Match a locked failure block against a
+  NORMALIZED subset (the `doctest <fn>: got …, want …` message), never raw output:
+  the `<file>:<line>:` prefix and `FAIL\t<pkg>\t<time>` footer are toolchain-brittle
+  (US-005).
 - cmd/build-playground error-feature verification (US-003) discriminates checker
   vs backend by the LOCKED-BLOCK FORMAT, not by "does the checker fire". A located
   checker block's first line begins with the feature's SourceName
@@ -7252,3 +7263,34 @@
   - TestParseFindsEveryFeature parses the REAL docs/by-example.md and asserts every
     feature's OutputKind is in an allow-list switch — add any new kind there or a
     future authored feature false-fails.
+
+## 2026-07-01T18:20:00Z - US-005
+- Wired build-time verification of a doctest-failure feature into
+  cmd/build-playground. verify() now routes kind "doctest-failure" to a new
+  verifyDoctestFailure: it transpiles the source, requires a non-empty doctest
+  sidecar (res.Test), writes res.Go + res.Test into a throwaway `module goal`
+  temp dir, runs `go test`, and REQUIRES the run to fail (a passing doctest is
+  rejected). The locked block is matched against a documented normalized subset
+  of the go-test output — the `doctest <fn>: got …, want …` message(s), with the
+  harness `<file>:<line>:` prefix and FAIL framing stripped via doctestFailRe.
+- Files changed: cmd/build-playground/main.go (imports go/format, os/exec,
+  path/filepath; verify() branch; verifyDoctestFailure/runDoctest/
+  normalizeDoctestFailure + doctestFailRe), cmd/build-playground/main_test.go
+  (TestVerifyDoctestFailureAccepted / PassingRejected / WrongText /
+  TestNormalizeDoctestFailure). No doctest-failure feature authored (US-010), so
+  site/features.json is unchanged.
+- Verify: `task check` exit 0; `go run ./cmd/build-playground -out
+  site/features.json` exit 0 (13 features / 5 categories, no drift);
+  `go test ./cmd/build-playground` ok. Commit 68fdb9a.
+- Learnings for future iterations:
+  - The doctest sidecar is res.Test from backend.Transpile (identical to
+    `goalc -test` output). It is `package <name>` importing "testing" and calls
+    the functions in res.Go, so both must be written into the SAME package dir; a
+    bare `module goal` temp dir compiles a self-contained (stdlib-only) example.
+  - A failing doctest's observed line is
+    `\t<file>_test.go:<line>: doctest <fn>: got <got>, want <want>`. Normalize to
+    the `doctest …` message; the file:line prefix and `FAIL\t<pkg>\t<time>` footer
+    are toolchain-brittle and must not be part of an authored locked block.
+  - `go test` exits non-zero on a test failure, which is the EXPECTED path here —
+    treat runErr==nil as "passed" (reject), not as success.
+---
