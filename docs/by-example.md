@@ -639,6 +639,48 @@ becomes type-switch-and-return, inserting a `from func` conversion in the `Err` 
 error types differ. (Open-E and closed-E can coexist in one file — see
 [composition](#composition-all-eleven-in-one-file).)
 
+## Rejecting an unbridged closed-E propagation
+
+`?` may cross from one closed error enum into another only when a `from func`
+converts between them. Omit the conversion and the propagation is rejected at the `?`,
+naming both enums and the exact `from func` you must declare — the closed set stays
+total, so no failure silently changes type.
+
+```goal name=err_convert_missing.goal
+package parse
+
+enum ParseError {
+    Empty
+}
+
+enum AppError {
+    Boom
+}
+
+type Config struct {
+    Raw string
+}
+
+func parse(s string) Result[Config, ParseError] {
+    return Result.Ok(Config{Raw: s})
+}
+
+func load(s string) Result[Config, AppError] {
+    cfg := parse(s)?
+    return Result.Ok(cfg)
+}
+```
+
+Rejected with:
+
+```error
+err_convert_missing.goal:20:20: error: [missing-from-conversion] `?` propagates `ParseError` into a `Result[_, AppError]` function but no `from func` converts `ParseError` to `AppError` — declare `from func name(e ParseError) AppError { … }`
+```
+
+**Why:** a closed error enum is a total set of failures (feature 06), so bridging `?`
+into a different enum must be an explicit, checked conversion — never an implicit widening
+that would let a `ParseError` reach an `AppError` caller unaccounted for.
+
 ---
 
 # Contracts on types
@@ -701,6 +743,40 @@ func (p Point) String() string {
 
 **Lowers to:** the idiomatic Go compile-time assertion `var _ Stringer = Point{}` (or
 `&Point{}` for pointer-receiver methods).
+
+## Rejecting an unmet implements clause
+
+Declare `implements` on a struct that is missing one of the interface's methods and the
+checker rejects the struct at its `implements` clause, naming the absent method and the
+exact receiver signature to add — the contract is enforced at the declaration, not at a
+distant call site.
+
+```goal name=square_missing.goal
+package shapes
+
+type Shaper interface {
+    Area() float64
+    Perimeter() float64
+}
+
+type Square struct implements Shaper {
+    side float64
+}
+
+func (s Square) Perimeter() float64 {
+    return 4 * s.side
+}
+```
+
+Rejected with:
+
+```error
+square_missing.goal:8:20: error: [unimplemented-method] type `Square` does not implement `Shaper`: missing method `Area() float64` — declare `func (s Square) Area() float64`
+```
+
+**Why:** `implements` turns Go's silent, unchecked-at-declaration interface satisfaction
+into located feedback at the type itself — a missing or mis-signed method is caught where
+the claim is made, so `Square` can never drift out of `Shaper` unnoticed.
 
 ## 08. No zero value
 
