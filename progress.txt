@@ -26,6 +26,32 @@
   need to live IN the module), print d.Render("name.goal"), run `go test -run Probe`,
   then delete it. goal enum syntax is `enum Name { … }` and match arms are
   `Name.Variant => …` (NOT `Variant =>`).
+- by-example ERROR features have TWO live-verifying consumers, not one:
+  cmd/build-playground (US-003) AND cmd/goal's `ai` bootstrap guide
+  (internal/guide, sourced from guide.goal). US-003 only fixed build-playground;
+  the guide's lower() still lowered every "error" feature via backend.Transpile
+  alone, so a checker-ONLY rejection (non-exhaustive match, dropped result —
+  backend.Transpile succeeds) makes TestAICommandEmitsGuide/TestBootstrapGolden
+  fail with "expected rejection, but transpile succeeded" (found in US-006). Fix:
+  mirror build-playground's discriminator in guide.goal — when
+  isCheckerDiagnostic(f.LockedExpected, f.SourceName) (locked block's first line
+  begins with SourceName), render live via sema.Analyze + Diagnostic.Render;
+  else keep the backend path. After editing guide.goal you MUST regenerate the
+  AI-KNOWLEDGE-BOOTSTRAP.md golden: `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`.
+- Two-value binding a Result-returning goal function IS a valid consumption form
+  in goal source: `diags, err := sema.Analyze(src)` compiles and satisfies
+  must-use (Result[T,error] lowers to native (T,error); precedent:
+  guide.goal's `perFile, err := sema.AnalyzePackageInDir(...)`).
+- Bootstrap-cycle gotcha when adding a NEW helper func to a *.goal that other
+  code in the same file calls: `task generate` runs bin/goal, and bin/goal is
+  built from the committed *.go. If you regenerate after adding the CALL but
+  before the committed .go has the DEFINITION (e.g. you split the edits), the
+  committed .go references an undefined symbol, `go build ./cmd/goal` fails, and
+  bin/goal can no longer rebuild to regenerate — a deadlock. Escape by
+  hand-adding the missing func to the committed .go just enough to compile (the
+  //line markers will differ), then `task generate` overwrites it canonically
+  and verify-generated passes. Cleanest avoidance: put the def + all its callers
+  in ONE edit before regenerating.
 - The Edit PostToolUse hook runs the FULL `task check` (go vet + entire suite) after
   every single Edit and BLOCKS on failure — so a multi-edit change is red between
   edits (e.g. unused import, arg-count mismatch). Sequence edits so the tree is
@@ -7293,4 +7319,31 @@
     are toolchain-brittle and must not be part of an authored locked block.
   - `go test` exits non-zero on a test failure, which is the EXPECTED path here —
     treat runErr==nil as "passed" (reject), not as success.
+---
+
+## 2026-07-01T18:15:00Z - US-006
+- Authored two "Rejected with" error examples in docs/by-example.md: a
+  non-exhaustive `match` (`status_missing.goal`, live `[non-exhaustive-match]`)
+  under the Match feature, and a dropped `Result` (`result_dropped.goal`, live
+  `[dropped-result]`) under the Result (open-E) feature. Locked blocks captured
+  verbatim from `./bin/goalc` at 4-space indentation (column 5).
+- Extended internal/guide/guide.goal lower() to render checker-diagnostic error
+  features live (sema.Analyze + Diagnostic.Render), discriminated by
+  isCheckerDiagnostic on the locked block's SourceName prefix — the same path
+  US-003 added to cmd/build-playground, which the guide had been missing.
+  Regenerated internal/guide/guide.go (task generate) and AI-KNOWLEDGE-BOOTSTRAP.md.
+- Files changed: docs/by-example.md, internal/guide/guide.goal,
+  internal/guide/guide.go, AI-KNOWLEDGE-BOOTSTRAP.md. (site/features.json is
+  gitignored; regenerated to 15 features / 5 categories, 3 error features.)
+- Verify: `task check` exit 0; `go run ./cmd/build-playground -out
+  site/features.json` exit 0; features.json has "outputKind":"error" features
+  whose expected fields carry [non-exhaustive-match] and [dropped-result]; the
+  unsafe-default backend example still verifies via the backend path. Commit be0e287.
+- Learnings for future iterations:
+  - See the two new Codebase Patterns entries at the top: the guide is a SECOND
+    live-verifying consumer of by-example error features, and the *.goal ->
+    committed .go bootstrap-cycle deadlock when adding a helper split across edits.
+  - US-007..US-009 author more checker-only error examples; the guide.goal path
+    is now checker-aware, so those should not re-hit the "expected rejection"
+    failure. US-009 depends on US-001/US-002 codes already landed.
 ---

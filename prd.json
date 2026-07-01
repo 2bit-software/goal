@@ -91,7 +91,7 @@
         "site/features.json contains two `\"outputKind\": \"error\"` features whose `expected` fields contain `[non-exhaustive-match]` and `[dropped-result]` respectively."
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Snippets can be adapted from testdata/check/02-match and testdata/check/03-result. Depends on US-003."
     },
     {
