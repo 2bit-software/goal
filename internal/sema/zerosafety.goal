@@ -1,0 +1,80 @@
+package sema
+
+// zerosafety.go is the single, shared home of the unsafe-zero (panic-safety)
+// classification the compiler enforces on `...defaults` literals. It was
+// promoted here from internal/backend/lower.goal so the lexical checker
+// (internal/sema) can reuse the exact same rule the backend lowers against —
+// backend imports sema, so sema cannot import backend, and a divergent copy
+// would let the checker and the transpiler disagree. The backend now calls
+// sema.ZeroSafety; there is no second definition of the rule.
+
+import "strings"
+
+// ZeroSafety reports why a field of type typ has no safe zero to fill via
+// `...defaults`, or "" when its zero is safe. It reads sum-type membership off
+// info (Enums / Sealed) and alias chains off decls. A type whose nil zero
+// panics/deadlocks on normal use (pointer, map, chan, func, method-bearing
+// interface) or a sum type with no valid zero variant (enum / sealed interface)
+// is rejected; a primitive, struct, array, nil slice, error, or bare interface
+// is safe. depth guards alias chains.
+func ZeroSafety(typ string, decls map[string]string, info *Info, depth int) string {
+	typ = strings.TrimSpace(typ)
+	switch {
+	case strings.HasPrefix(typ, "*"):
+		return "a nil pointer has no safe zero — set it explicitly, or use Option[T] for an optional value"
+	case strings.HasPrefix(typ, "map["):
+		return "a nil map panics on write — set it explicitly (e.g. `" + typ + "{}`)"
+	case strings.HasPrefix(typ, "chan"):
+		return "a nil channel blocks forever — set it explicitly"
+	case strings.HasPrefix(typ, "func"):
+		return "a nil func panics when called — set it explicitly"
+	case strings.HasPrefix(typ, "interface"):
+		// Bare `interface{}` has no methods, so its nil is harmless; a method-bearing
+		// interface literal panics on a nil method call.
+		if strings.TrimSpace(typ[len("interface"):]) == "{}" {
+			return ""
+		}
+		return "a nil interface has no safe zero — set it explicitly"
+	case typ == "any", typ == "error":
+		return "" // bare any: no methods; nil error is the success value
+	case strings.HasPrefix(typ, "[]"):
+		return "" // a nil slice is safe: range/len/append all work on it
+	case strings.HasPrefix(typ, "["):
+		return "" // array: composite zero is a usable value
+	}
+	switch typ {
+	case "string", "bool",
+		"int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+		"byte", "rune", "float32", "float64", "complex64", "complex128":
+		return ""
+	}
+	base := zeroBaseType(typ)
+	if info != nil && (info.Enums[base] != nil || info.Sealed[base]) {
+		return "a sum type has no valid zero variant — set it explicitly"
+	}
+	if depth < 8 {
+		if under, ok := decls[base]; ok {
+			switch under {
+			case "struct":
+				return ""
+			case "interface":
+				return "a nil interface has no safe zero — set it explicitly"
+			default:
+				return ZeroSafety(under, decls, info, depth+1)
+			}
+		}
+	}
+	// Unknown external named type: assume struct-like (as zeroLit does) — treat as safe.
+	return ""
+}
+
+// zeroBaseType strips a leading "*" and any "pkg." qualifier, yielding the bare
+// type name (used to look up a local type). Mirrors backend baseType.
+func zeroBaseType(t string) string {
+	t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
+	if i := strings.LastIndexByte(t, '.'); i >= 0 {
+		t = t[i+1:]
+	}
+	return t
+}

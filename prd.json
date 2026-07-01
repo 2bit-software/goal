@@ -1,289 +1,51 @@
 {
   "project": "goal",
-  "branchName": "ralph/self-host-flip",
-  "description": "Make goal source the compiler's only source: relocate the goal-written compiler into internal/, port the remaining Go tooling to goal, and retire the hand-written Go transpiler behind a committed-generated bootstrap.",
+  "branchName": "ralph/goalcheck-unsafe-defaults",
+  "description": "Make `goal check` catch an unsafe `...defaults` field as a located [unsafe-default] error, matching `goal build`.",
   "verifyCommands": [
-    "task check",
-    "task fixpoint"
+    "task check"
   ],
   "userStories": [
     {
       "id": "US-001",
-      "title": "Record adopted flip decisions",
-      "description": "As a maintainer, I need the flip's layout and trust model written down so the loop and reviewers share one set of decisions before any code moves.",
+      "title": "Share the unsafe-zero classifier with sema",
+      "description": "As a checker author, I need the unsafe-zero classification (currently zeroSafety in internal/backend/lower.goal) reachable from internal/sema without an import cycle, so the lexical checker can reuse the exact same panic-safety rule the backend enforces.",
       "acceptanceCriteria": [
-        "DECISIONS.md contains a new entry naming the adopted layout: colocated '<file>.goal' (canonical source) + committed generated '<file>.go' per package directory.",
-        "DECISIONS.md entry names the adopted bootstrap as committed-generated Go (B-commit), with the corpus behavioral tier as the primary correctness gate once the reference Go is gone.",
-        "DECISIONS.md entry states 'self-hosted' means the shipped goal+goalc library closure, and that test/dev infra (corpus, byexample, internal/selfhost harness, cmd/corpus-gen, cmd/build-playground) stays Go.",
-        "SELF-HOST-RESEARCH.md is annotated where its 'coexist as peers' / 'tooling out of scope' language (§1, §5) is superseded by this flip."
+        "internal/sema can call a function that returns the unsafe-zero reason (empty string = safe) for a field type string, using the same rules as backend zeroSafety (nil *T, map, chan, func, method-bearing/named interface, and enum/sealed sum types are unsafe; primitives, structs, slices, arrays, any/error/interface{} are safe).",
+        "There is a single definition of that rule shared by both packages (no divergent copy), and internal/sema does not import internal/backend (no import cycle: `go build ./...` succeeds).",
+        "`goal build` on a `...defaults` literal that omits a `map[...]` field still exits non-zero with the existing backend message (behavior unchanged)."
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Pure decision/record story. The plan (SELF-HOST-FLIP-PLAN.md) recommended split-dir; this PRD deliberately adopts the COLOCATED variant because source and generated share an import path with no module gymnastics and the goal front-end reads .goal while go build reads .go."
+      "notes": "zeroSafety is internal/backend/lower.goal:438 (typ, decls, info, depth). backend imports sema, so sema cannot import backend — move the classifier to a package both import (or into sema and have backend call it). Preserve the reason strings the backend error already shows."
     },
     {
       "id": "US-002",
-      "title": "Relocate goal compiler source into internal",
-      "description": "As a maintainer, I need the goal-written compiler under internal/compiler so it lives in the internal namespace and bootstraps from its new home.",
+      "title": "Add lexical [unsafe-default] check in sema",
+      "description": "As a goal author, I need the lexical checker to flag a `...defaults` literal whose omitted fields have panic-prone zero values, so the violation surfaces as a first-class diagnostic instead of only a transpile failure.",
       "acceptanceCriteria": [
-        "Every selfhost/<pkg>/*.goal is moved to internal/compiler/<pkg>/*.goal for token, lexer, ast, parser, sema, project, pipeline, backend, typecheck (and main.goal).",
-        "No source file contains the import path substring 'goal/selfhost/'; goal source self-imports use 'goal/internal/compiler/'.",
-        "Taskfile.yml bootstrap and fixpoint targets reference ./internal/compiler instead of ./selfhost.",
-        "The ./selfhost directory no longer exists."
+        "For a `T{ ..., ...defaults }` literal, the sema check emits one Severity.Error Diagnostic with Code \"unsafe-default\" per omitted field whose zero is unsafe, positioned at the `...defaults` spread (line:col), naming the field and its type.",
+        "A field that is explicitly set in the literal (including a `Field: _` skip) produces no unsafe-default diagnostic; a `...defaults` literal whose omitted fields are all safe produces no unsafe-default diagnostic.",
+        "The new check is invoked by the sema Check aggregator (the same path `goal check`'s lexical stage runs), and \"unsafe-default\" is registered in internal/guide/catalog.goal for feature 08-no-zero-value with severity error.",
+        "task check exits 0."
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Mechanical move + import rewrite. Verified by `task fixpoint` (universal gate) staying green from the new path."
+      "passes": false,
+      "notes": "Mirror the sibling in internal/sema/fields.goal (CheckFields emits missing-field Error and unresolved-literal-type Warning). CheckFields already skips `...defaults` literals for missing-field; the new check is the complement over those same literals. Reuse the US-001 classifier. Some tests assert every emitted Code has a guide catalog entry, so add the catalog row here to keep task check green."
     },
     {
       "id": "US-003",
-      "title": "Add task generate for committed Go",
-      "description": "As a maintainer, I need a generate step that transpiles the goal source to committed Go colocated beside it, so the toolchain can build from goal source.",
+      "title": "Prove goal check fails and document it",
+      "description": "As a maintainer, I need on-disk fixtures and docs proving `goal check` now rejects an unsafe `...defaults` at the CLI, so the guarantee is regression-tested and discoverable.",
       "acceptanceCriteria": [
-        "`task generate` transpiles every internal/compiler/<pkg>/*.goal to a colocated internal/compiler/<pkg>/<file>.go.",
-        "Generated .go files for all nine compiler packages exist and are committed (not gitignored).",
-        "`go build ./internal/compiler/...` succeeds against the generated .go.",
-        "Generated files carry a 'Code generated ... DO NOT EDIT.' header line."
+        "`go run ./cmd/goal check <fixture>` on a `...defaults` literal omitting a nil-map (or nil-pointer) field exits 1 and prints `[unsafe-default]` with a file:line:col location; the same file with that field set exits 0.",
+        "A testdata/check/08-no-zero-value case with a `// want [unsafe-default]` marker exists and passes; corpus/manifest.json is regenerated (go run ./cmd/corpus-gen) and the hardcoded check-case count in internal/corpus/generate_test.go is updated to match.",
+        "features/08-no-zero-value/SYNTAX.md (and DECISIONS.md) record that an unsafe `...defaults` is an [unsafe-default] checker error caught by `goal check`, not only by `goal build`.",
+        "task check exits 0."
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Generated .go resolves at the same import path as the .goal source (goal/internal/compiler/<pkg>) within module goal, so no separate module/-C trick is needed."
-    },
-    {
-      "id": "US-004",
-      "title": "Add generated-Go drift gate",
-      "description": "As a maintainer, I need a drift gate so committed generated Go can never diverge from the goal source.",
-      "acceptanceCriteria": [
-        "`task verify-generated` regenerates to a temp location and diffs against the committed internal/compiler tree, exiting non-zero on any difference.",
-        "`task verify-generated` exits 0 on a freshly generated, clean tree.",
-        "`task check` invokes `task verify-generated` so the drift gate runs in the universal gate for all later stories."
-      ],
-      "priority": 4,
-      "passes": true,
-      "notes": "Folding verify-generated into task check (rather than verifyCommands) keeps US-001..003 from referencing a command that did not yet exist."
-    },
-    {
-      "id": "US-005",
-      "title": "Prove goal-built compiler via corpus",
-      "description": "As a maintainer, I need a compiler binary built from the generated Go to pass the behavioral corpus, proving the goal-sourced compiler is correct end to end.",
-      "acceptanceCriteria": [
-        "A cmd entrypoint (e.g. cmd/goal-gen) builds from goal/internal/compiler/{backend,pipeline,project} via `go build`.",
-        "A Taskfile target runs the corpus behavioral tier using the goal-built binary as the compiler.",
-        "The corpus behavioral tier passes when compiled by the goal-built binary."
-      ],
-      "priority": 5,
-      "passes": true,
-      "notes": "End of Phase 1: two compilers (legacy Go + goal-sourced) coexist and agree. Fully reversible up to here; nothing legacy deleted yet."
-    },
-    {
-      "id": "US-006",
-      "title": "Port goalfmt to goal",
-      "description": "As a maintainer, I need the formatter written in goal so it is part of the self-hosted toolchain.",
-      "acceptanceCriteria": [
-        "internal/compiler/goalfmt/*.goal exists and `task generate` emits colocated .go that builds.",
-        "Formatting a fixture set with the goal-built goalfmt is byte-identical to the legacy Go goalfmt output.",
-        "Re-formatting already-formatted goal source with the goal-built goalfmt is idempotent."
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "Smallest tooling package (143 LOC); plain-Go-superset port first, no idiom rewrite. Start of Phase 2."
-    },
-    {
-      "id": "US-007",
-      "title": "Port textedit to goal",
-      "description": "As a maintainer, I need the edit-primitives package in goal because the fixer depends on it.",
-      "acceptanceCriteria": [
-        "internal/compiler/textedit/*.goal exists and generates colocated .go that builds.",
-        "The textedit behavior matches the legacy package on a fixture set of edit applications (same resulting text for the same edits)."
-      ],
-      "priority": 7,
-      "passes": true,
-      "notes": "Leaf helper (168 LOC), unblocks fix."
-    },
-    {
-      "id": "US-008",
-      "title": "Port cap to goal",
-      "description": "As a maintainer, I need the capabilities package in goal because the interpreter depends on it.",
-      "acceptanceCriteria": [
-        "internal/compiler/cap/*.goal exists and generates colocated .go that builds.",
-        "Capability allow/deny decisions from the goal-built cap match the legacy package on a fixture set of capability checks."
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "Leaf helper (110 LOC), unblocks interp."
-    },
-    {
-      "id": "US-009",
-      "title": "Port guide to goal",
-      "description": "As a maintainer, I need the guide surface in goal so it is part of the self-hosted toolchain.",
-      "acceptanceCriteria": [
-        "internal/compiler/guide/*.goal exists and generates colocated .go that builds.",
-        "Guide output from the goal-built guide matches the legacy Go guide on a fixture set."
-      ],
-      "priority": 9,
-      "passes": true,
-      "notes": "Small (400 LOC), low coupling."
-    },
-    {
-      "id": "US-010",
-      "title": "Port fix to goal",
-      "description": "As a maintainer, I need the autofixer in goal so it is part of the self-hosted toolchain.",
-      "acceptanceCriteria": [
-        "internal/compiler/fix/*.goal exists (covering fix, propagate, resultsig, match, callsite) and generates colocated .go that builds.",
-        "The goal-built fix produces byte-identical output to the legacy Go fix across the existing autofix golden fixtures."
-      ],
-      "priority": 10,
-      "passes": true,
-      "notes": "1060 LOC, depends on textedit (US-007). Autofix golden tests are the parity oracle."
-    },
-    {
-      "id": "US-011",
-      "title": "Port interp values and environment",
-      "description": "As a maintainer, I need the interpreter's value model and environment in goal as the foundation of the interp port.",
-      "acceptanceCriteria": [
-        "internal/compiler/interp/ contains goal ports of value.go, env.go, host.go, assert.go and generates colocated .go that builds.",
-        "Value construction, equality, and environment scope/lookup from the goal-built code match the legacy package on a fixture set of value/env operations."
-      ],
-      "priority": 11,
-      "passes": true,
-      "notes": "interp is 3722 LOC, split across three stories (US-011/012/013). This is the ~660 LOC foundation."
-    },
-    {
-      "id": "US-012",
-      "title": "Port interp evaluator",
-      "description": "As a maintainer, I need the interpreter's expression/statement evaluator in goal so goscript programs execute under the goal-built interp.",
-      "acceptanceCriteria": [
-        "internal/compiler/interp/eval is ported to goal and generates colocated .go that builds against US-011's value/env.",
-        "A subset of the goscript behavioral conformance suite that exercises evaluation passes against the goal-built interp."
-      ],
-      "priority": 12,
-      "passes": true,
-      "notes": "eval.go is 1177 LOC, the core of interp. Depends on US-011."
-    },
-    {
-      "id": "US-013",
-      "title": "Port interp driver and doctest",
-      "description": "As a maintainer, I need the interpreter driver, derivation, and doctest runner in goal so the full goscript/doctest surface is self-hosted.",
-      "acceptanceCriteria": [
-        "internal/compiler/interp ports interp.go, derive.go, doctest.go to goal and generates colocated .go that builds.",
-        "The full goscript and doctest behavioral conformance suites pass against the goal-built interp."
-      ],
-      "priority": 13,
-      "passes": true,
-      "notes": "~1836 LOC. Completes the interp port. Depends on US-011, US-012."
-    },
-    {
-      "id": "US-014",
-      "title": "Spike lsp concurrency in goal",
-      "description": "As a maintainer, I need proof that goal can express the concurrency the LSP needs (sync.Mutex, goroutines, JSON-RPC over stdio) before committing to the lsp port.",
-      "acceptanceCriteria": [
-        "A probe goal program using sync.Mutex and a goroutine transpiles and runs correctly when built by the goal toolchain.",
-        "Findings are recorded in DECISIONS.md: either goal already supports the needed concurrency, or the specific missing compiler capability is named as a blocking prerequisite."
-      ],
-      "priority": 14,
-      "passes": true,
-      "notes": "The goal backend already EMITS chan/go constructs, but the goal SOURCE has never used concurrency. De-risk before the 2292 LOC lsp port. If a capability gap is found, that becomes its own story before US-015. OUTCOME: no gap — probe at features/_spikes/lsp-concurrency (8 goroutines x 1000 mutex-guarded increments) runs through `goal run` and prints 8000 deterministically; emitted Go is a verbatim go/sync.Mutex lowering. DECISIONS.md 'US-014' records it; US-015 may proceed."
-    },
-    {
-      "id": "US-015",
-      "title": "Port lsp protocol and transport",
-      "description": "As a maintainer, I need the LSP wire protocol and JSON-RPC transport in goal as the base of the lsp port.",
-      "acceptanceCriteria": [
-        "internal/compiler/lsp ports protocol.go, jsonrpc.go, uri.go to goal and generates colocated .go that builds.",
-        "JSON-RPC message framing round-trips (encode then decode) identically to the legacy package on a fixture set of messages."
-      ],
-      "priority": 15,
-      "passes": true,
-      "notes": "~425 LOC. Depends on US-014 outcome. DONE: ported the protocol/jsonrpc/uri SUBSET (the only files matching AC-1's named set) verbatim to internal/compiler/lsp/*.goal; `task generate` emits colocated .go that builds. Leaf package (foreign stdlib only: bufio/encoding/json/fmt/io/strconv/strings/sync/net/url/path/filepath), no in-module deps. No goal reserved-word collisions (only 'enum' in a string literal, 'match' in a comment). TestPortedLspPackage (internal/selfhost/port_test.go) runs the legacy white-box jsonrpc_test.go (TestFramingRoundTrip = AC-2 round-trip oracle + TestReadMessageMissingLength) and uri_test.go against the transpiled package via BuildTranspiled+BuildAndTest. `task check` + `task fixpoint` green. The other legacy lsp files (server/symbols/codeaction/hover/definition/references/diagnostics/semantictokens) are US-016/017 and are NOT yet ported."
-    },
-    {
-      "id": "US-016",
-      "title": "Port lsp server lifecycle",
-      "description": "As a maintainer, I need the LSP server loop and lifecycle handlers in goal so the server initializes and shuts down under the goal-built lsp.",
-      "acceptanceCriteria": [
-        "internal/compiler/lsp ports server.go, symbols.go, codeaction.go to goal and generates colocated .go that builds.",
-        "The initialize/initialized/shutdown handshake from the goal-built server matches the legacy server responses on a scripted session."
-      ],
-      "priority": 16,
-      "passes": true,
-      "notes": "~499 LOC. Depends on US-015. DONE: ported server.go/symbols.go/codeaction.go verbatim to internal/compiler/lsp/*.goal; `task generate` emits colocated .go that builds. server.goal's dispatch references US-017 handlers (definition/hover/references/rename/semanticTokens/compile/publish/openFilesInDir + openFile type) — these are inert forward-dep stubs in us017_stubs.goal so `go build` succeeds (AC-1); US-017 DELETES that file when it lands the real handlers. symbols.goal hit the ast.FuncMod enum-drift (ported ast lowers FuncMod to a sealed interface) so the legacy `switch decl.Mod { case ast.FuncFrom }` became a type switch over ast.FuncMod_FuncFrom/_FuncDerive. The package gained sema/project/fix imports (no longer a leaf): TestPortedLspPackage's gate widened to the full closure (token,lexer,ast,parser,sema,project,textedit,fix) via new lspClosure helper. AC-2 oracle: new internal/lsp/server_handshake_test.go scripts initialize/initialized/shutdown/exit and pins capability advertisement + null shutdown reply; TestPortedLspServer feeds it to the goal-built package (byte-identical to legacy under `task check`). The didOpen->publishDiagnostics path is US-017 and NOT gated here. `task check` + `task fixpoint` green. Commit 323c3d4."
-    },
-    {
-      "id": "US-017",
-      "title": "Port lsp query features",
-      "description": "As a maintainer, I need the LSP language features in goal so the self-hosted LSP is feature-complete.",
-      "acceptanceCriteria": [
-        "internal/compiler/lsp ports hover, definition, references, diagnostics, semantictokens to goal and generates colocated .go that builds.",
-        "The existing lsp feature tests pass against the goal-built lsp (parity with the legacy responses on the test fixtures)."
-      ],
-      "priority": 17,
-      "passes": true,
-      "notes": "~1422 LOC. Completes the lsp port and Phase 2. Depends on US-016. DONE: ported hover/definition/references(+rename)/diagnostics/semantictokens verbatim to internal/compiler/lsp/*.goal and DELETED the US-016 us017_stubs.goal bridge (the five files now supply openFile/compile/publish/openFilesInDir/definition/hover/references/rename/semanticTokens). Two drift fixes: diagnostics.goal's `d.Severity == sema.Warning` -> comma-ok assertion `d.Severity.(sema.Severity_Warning)` (ported sema models Severity as a sealed interface); goal reserved word `enum` renamed (refVariant param -> enumExpr in 3 files; symKey field + 3 literals -> enumName in references.goal). rangeOf reused from symbols.goal (US-016), not redefined. AC-2 oracle: internal/lsp/features_parity_test.go (7 tests, self-contained, assertions derived from the fixture, NO sema consts / NO symKey field) passes against the legacy package under `task check` AND the goal-built package via new TestPortedLspFeatures (internal/selfhost/port_test.go, reuses lspClosure). The tightly-coupled legacy feature *_test.go web was NOT fed verbatim (diagnostics_test uses sema.Error/Warning; references_test reads symKey.enum; server_test depends on diagnostics_test) — same precedent as US-016's fresh handshake oracle. `task check` + `task fixpoint` green. The lsp port is now complete; US-018 repoints cmd/* and US-019 deletes legacy internal/lsp."
-    },
-    {
-      "id": "US-018",
-      "title": "Repoint CLI imports to goal compiler",
-      "description": "As a maintainer, I need cmd/goal and cmd/goalc to import the goal-sourced compiler so the shipped binaries run on goal source.",
-      "acceptanceCriteria": [
-        "Every cmd/* import of goal/internal/<pkg> for a ported package is repointed to goal/internal/compiler/<pkg>.",
-        "`go build ./cmd/...` succeeds and `go test ./cmd/...` passes.",
-        "The goal and goalc binaries still produce identical output to the pre-repoint binaries on a corpus smoke set."
-      ],
-      "priority": 18,
-      "passes": true,
-      "notes": "Start of Phase 3 (the flip). Repoint before deletion so the switch is isolated and reviewable. DONE: repointed all cmd/* ported imports to goal/internal/compiler/* — cmd/goal (11 imports), cmd/goalc (backend,sema), cmd/goal-wasm (backend), cmd/build-playground (backend; byexample stays Go). cmd/corpus-gen untouched (only Go-only corpus). One API-drift fix: compiler/sema models Severity as a sealed interface (Severity_Error/Severity_Warning, no comparable consts), so `d.Severity == sema.Error` became `_, ok := d.Severity.(sema.Severity_Error)` (cmd/goalc:78, cmd/goal:532) and the checkDiag render `%s` on severity became `sema.SeverityLabel(d.severity)` (cmd/goal:631 — SeverityLabel returns the same 'error'/'warning' as legacy String, so output is byte-identical). cmd/goal:594 `sema.Severity(d.Severity)` stayed valid: compiler/typecheck.Diagnostic.Severity is ALREADY compiler/sema.Severity, making it an identity conversion. AC-3 parity verified: pre- vs post-repoint goalc (transpile/doctest/check over 40 files) and goal check (over 12 package dirs, exercising the severity-render path) are byte-identical incl. exit codes. `go build ./cmd/...`, `GOOS=js GOARCH=wasm go build ./cmd/goal-wasm`, `go test ./cmd/...`, `task check`, `task fixpoint` all green."
-    },
-    {
-      "id": "US-019",
-      "title": "Delete legacy Go transpiler",
-      "description": "As a maintainer, I need the hand-written Go transpiler removed so goal source is the only source of the toolchain.",
-      "acceptanceCriteria": [
-        "The legacy hand-written internal/<pkg> directories for token, lexer, ast, parser, sema, project, pipeline, backend, typecheck, goalfmt, textedit, cap, guide, fix, interp, lsp are removed.",
-        "No remaining .go file outside internal/compiler implements transpiler logic for those packages (only cmd wrappers and Go-only test/dev infra remain).",
-        "`go build ./...`, full `go test ./...`, the corpus behavioral tier, and `task fixpoint` are all green."
-      ],
-      "priority": 19,
-      "passes": true,
-      "notes": "Irreversible point. Test/dev infra that stays Go: corpus, byexample, internal/selfhost harness, cmd/corpus-gen, cmd/build-playground. DONE (commit 83671c5): deleted all 16 legacy internal/<pkg> dirs; repointed the only external Go consumers (internal/corpus, internal/selfhost/selfhost.go) to goal/internal/compiler/*. Enum drift: corpus/check_runner.go `d.Severity == sema.Error` -> `_, isError := d.Severity.(sema.Severity_Error)` (compiler sema models Severity as a sealed interface, same as US-018). Retired the selfhost legacy-parity tests (port_test.go + the InScope smoke gate) since their oracle (legacy source) is gone; kept selfhost.go + TestGateFailsOnNonCompilingTranspile. GOTCHA: the foreign-derive corpus case imported the on-disk fixture internal/pipeline/testdata/extpkg, deleted with the legacy package — relocated it to internal/corpus/testdata/extpkg, repointed testdata/package/foreign-derive/{conv.goal,pkg.json}, and regenerated corpus/manifest.json via `go run ./cmd/corpus-gen`. `task check` (incl. corpus behavioral tier) + `task fixpoint` (FIXPOINT OK) green. US-020 promotes internal/compiler/<pkg> -> internal/<pkg>; US-022 removes scaffolding (cmd/goal-gen)."
-    },
-    {
-      "id": "US-020",
-      "title": "Promote compiler to final internal layout",
-      "description": "As a maintainer, I need the goal compiler at its final internal/<pkg> paths so the namespace is clean and matches the original goal of the flip.",
-      "acceptanceCriteria": [
-        "Each internal/compiler/<pkg> is moved to internal/<pkg> (now-vacated by US-019), carrying both the .goal source and generated .go.",
-        "All import paths and goal source self-imports are updated from goal/internal/compiler/<pkg> to goal/internal/<pkg>; no 'internal/compiler' path remains.",
-        "`go build ./...`, full `go test ./...`, and `task fixpoint` are all green."
-      ],
-      "priority": 20,
-      "passes": true,
-      "notes": "Optional-but-intended final namespace promotion. If kept simpler, internal/compiler could remain the home; this story realizes the literal 'selfhost into internal, replacing legacy' end-state. DONE: git-mv'd all 16 internal/compiler/<pkg> dirs + main.go/main.goal to internal/<pkg> (main at internal/), rewrote every import / goal self-import goal/internal/compiler/<pkg> -> goal/internal/<pkg> (136 source files) and stale comments, so no 'internal/compiler' path remains in code/build (only .md docs, which are US-021). Updated Taskfile generate/verify-generated/bootstrap/fixpoint to ./internal; verify-generated's diff is now SCOPED to the emitted entries (for entry in _bootstrap/verify/internal/*) because internal/ now co-hosts Go-only infra (byexample/corpus/selfhost) the emit doesn't produce. The compiler `main` package moved to internal/ itself, so bootstrap builds `go build ./internal`. Regenerated all .go via task generate (the sed broke gofmt import ordering in guide.go, e.g. backend now sorts before byexample — regenerate, never hand-sed the committed .go). task check (vet+drift gate+full test incl. corpus behavioral tier) EXIT 0; task fixpoint FIXPOINT OK; go build ./... + wasm build green."
-    },
-    {
-      "id": "US-021",
-      "title": "Update build, CI, and docs",
-      "description": "As a maintainer, I need the Taskfile, CI, and docs to describe the new single-source layout so contributors and automation use it.",
-      "acceptanceCriteria": [
-        "Taskfile.yml generate, verify-generated, bootstrap, and fixpoint targets reference the final internal/ paths.",
-        "README.md, REWRITE-ARCHITECTURE.md, and SELF-HOST-RESEARCH.md describe goal source as canonical with committed generated Go, and no longer reference a ./selfhost directory.",
-        "`task check`, `task verify-generated`, and `task fixpoint` all pass."
-      ],
-      "priority": 21,
-      "passes": true,
-      "notes": "Phase 4 cleanup. DONE: AC-1 was confirm-only — US-020 already pointed Taskfile generate/verify-generated/bootstrap/fixpoint at ./internal (the only 'selfhost' tokens there are comments about the internal/.../selfhost Go-only infra dir). AC-2: README gained a 'The self-hosted compiler' section, REWRITE-ARCHITECTURE gained an 'Update — the self-host flip has landed' banner, both stating goal source (.goal) is canonical with committed generated Go (.go) under internal/ (task generate emits, task verify-generated drift-gates). SELF-HOST-RESEARCH §5 banner/body+bootstrap-snippet/§8/§9 had their ./selfhost & selfhost/ COMPILER-dir refs scrubbed to the final internal/ layout (bootstrap snippet build target ./selfhost -> ./internal, matching the live Taskfile). GOTCHA: internal/selfhost is the Go TEST HARNESS package, a DIFFERENT thing — its references (SELF-HOST-RESEARCH §1 banner, README note) were deliberately PRESERVED; scrub only the bare ./selfhost / selfhost/ compiler-dir token. No .goal/.go source touched, so task generate was not needed and the drift gate stayed green. task check + task verify-generated + task fixpoint (FIXPOINT OK) all green. The repo-wide ./selfhost scrub (DECISIONS.md, SELF-HOST-FLIP-PLAN.md, internal/sema/foreign.goal comments) and cmd/goal-gen removal remain US-022."
-    },
-    {
-      "id": "US-022",
-      "title": "Remove transition scaffolding",
-      "description": "As a maintainer, I need temporary flip scaffolding removed so the repo reflects only the final self-hosted state.",
-      "acceptanceCriteria": [
-        "Any temporary entrypoint added for the flip (e.g. cmd/goal-gen) is removed or folded into the shipped cmd/* if it became the real build path.",
-        "No reference to a ./selfhost directory remains anywhere in the repo (source, Taskfile, scripts, docs).",
-        "`task build`, `task check`, and `task fixpoint` are all green."
-      ],
-      "priority": 22,
-      "passes": true,
-      "notes": "Final tidy. Keep the archived Go reference compiler reachable via git history/tag per US-001's trust note. DONE (commit 4083326): removed the US-005 flip scaffolding — deleted cmd/goal-gen (not the shipped build path; cmd/goal/goalc ARE the goal-built compiler post-US-019), its standalone `corpus-goalgen` Taskfile target, and internal/corpus/behavior_runner_goalgen_test.go (self-contained; not invoked by check/fixpoint/build, so gate-safe). Scrubbed the last ./selfhost compiler-dir tokens: DECISIONS.md selfhost/<pkg> -> internal/<pkg> via a protect-restore sed (sentinel internal/selfhost first, since BSD sed has no lookbehind) preserving all 15 internal/selfhost harness refs + conceptual prose ('selfhost tree'); replaced the obsolete 'no files moved yet' SELF-HOST-FLIP-PLAN.md with a completed-stub; fixed 2 stale source COMMENTS (internal/main.goal:9 claimed it imports selfhost/* not goal/internal/* — backwards post-US-020; internal/sema/foreign.goal:175,246 `goal build ./selfhost` -> `./internal`). GOTCHA: editing .goal comments did NOT change committed .go (the backend drops these comments on emit), so `task generate` produced zero delta and the drift gate held — but always run generate after any .goal edit to be sure. The compiler's program name 'selfhost' (main.goal 'Command selfhost', `usage: selfhost build`) is the program identity, NOT a directory ref, and was deliberately preserved. AC-2 verified by repo-wide grep `\\./selfhost|[^a-z]selfhost/` returning empty outside prd.json/progress.txt and the gitignored history/. task build + task check (vet+drift+full test incl. corpus) + task fixpoint (FIXPOINT OK) all green. The self-host flip PRD is now 100% complete."
+      "passes": false,
+      "notes": "The corpus check runner is TestTranspileRunner over corpus/manifest.json; check cases live under testdata/check with `// want [code]` markers (see internal/corpus/check_runner.go). TestGenerateCounts (internal/corpus/generate_test.go) asserts check == 50 today — bump it when the new case lands, as US-039's T6 bumped the transpile count."
     }
   ]
 }

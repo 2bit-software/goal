@@ -358,54 +358,7 @@ func zeroLit(typ string, decls map[string]string, depth int) string {
 	return typ + "{}"
 }
 
-//line lower.goal:438
-func zeroSafety(typ string, decls map[string]string, info *sema.Info, depth int) string {
-	typ = strings.TrimSpace(typ)
-	switch {
-	case strings.HasPrefix(typ, "*"):
-		return "a nil pointer has no safe zero — set it explicitly, or use Option[T] for an optional value"
-	case strings.HasPrefix(typ, "map["):
-		return "a nil map panics on write — set it explicitly (e.g. `" + typ + "{}`)"
-	case strings.HasPrefix(typ, "chan"):
-		return "a nil channel blocks forever — set it explicitly"
-	case strings.HasPrefix(typ, "func"):
-		return "a nil func panics when called — set it explicitly"
-	case strings.HasPrefix(typ, "interface"):
-		if strings.TrimSpace(typ[len("interface"):]) == "{}" {
-			return ""
-		}
-		return "a nil interface has no safe zero — set it explicitly"
-	case typ == "any", typ == "error":
-		return ""
-	case strings.HasPrefix(typ, "[]"):
-		return ""
-	case strings.HasPrefix(typ, "["):
-		return ""
-	}
-	switch typ {
-	case "string", "bool", "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr", "byte", "rune", "float32", "float64", "complex64", "complex128":
-		return ""
-	}
-	base := baseType(typ)
-	if enumOf(info, base) != nil || isSealed(info, base) {
-		return "a sum type has no valid zero variant — set it explicitly"
-	}
-	if depth < 8 {
-		if under, ok := decls[base]; ok {
-			switch under {
-			case "struct":
-				return ""
-			case "interface":
-				return "a nil interface has no safe zero — set it explicitly"
-			default:
-				return zeroSafety(under, decls, info, depth+1)
-			}
-		}
-	}
-	return ""
-}
-
-//line lower.goal:492
+//line lower.goal:433
 func needsFmtImport(f *ast.File) bool {
 	need := false
 	ast.Walk(identFinder(func(n ast.Node) bool {
@@ -417,7 +370,7 @@ func needsFmtImport(f *ast.File) bool {
 	return need
 }
 
-//line lower.goal:505
+//line lower.goal:446
 func importsPkg(f *ast.File, path string) bool {
 	if f == nil {
 		return false
@@ -437,7 +390,7 @@ func importsPkg(f *ast.File, path string) bool {
 	return false
 }
 
-//line lower.goal:527
+//line lower.goal:468
 func presentFieldNames(elts []ast.Expr) map[string]bool {
 	present := map[string]bool{}
 	for _, el := range elts {
@@ -452,7 +405,7 @@ func presentFieldNames(elts []ast.Expr) map[string]bool {
 	return present
 }
 
-//line lower.goal:542
+//line lower.goal:483
 func structFieldsOf(info *sema.Info, name string) ([]sema.Field, bool) {
 	if info == nil || info.Structs == nil {
 		return nil, false
@@ -461,7 +414,7 @@ func structFieldsOf(info *sema.Info, name string) ([]sema.Field, bool) {
 	return fs, ok
 }
 
-//line lower.goal:561
+//line lower.goal:502
 func findSemaField(fields []sema.Field, name string) (sema.Field, bool) {
 	for _, f := range fields {
 		if strings.EqualFold(f.Name, name) {
@@ -471,7 +424,7 @@ func findSemaField(fields []sema.Field, name string) (sema.Field, bool) {
 	return sema.Field{}, false
 }
 
-//line lower.goal:573
+//line lower.goal:514
 func derefType(s string) string {
 	s = strings.TrimSpace(s)
 	if rest, ok := strings.CutPrefix(s, "*"); ok {
@@ -480,7 +433,7 @@ func derefType(s string) string {
 	return s
 }
 
-//line lower.goal:584
+//line lower.goal:525
 func ptrInner(s string) (string, bool) {
 	s = strings.TrimSpace(s)
 	if strings.HasPrefix(s, "*") {
@@ -492,7 +445,7 @@ func ptrInner(s string) (string, bool) {
 	return "", false
 }
 
-//line lower.goal:597
+//line lower.goal:538
 func arrElem(s string) (n, elem string, ok bool) {
 	s = strings.TrimSpace(s)
 	if !strings.HasPrefix(s, "[") || strings.HasPrefix(s, "[]") {
@@ -509,7 +462,7 @@ func arrElem(s string) (n, elem string, ok bool) {
 	return n, strings.TrimSpace(s[close+1:]), true
 }
 
-//line lower.goal:615
+//line lower.goal:556
 func mapKV(s string) (k, v string, ok bool) {
 	s = strings.TrimSpace(s)
 	if !strings.HasPrefix(s, "map[") {
@@ -530,7 +483,7 @@ func mapKV(s string) (k, v string, ok bool) {
 	return "", "", false
 }
 
-//line lower.goal:638
+//line lower.goal:579
 func elemConv(a, b string, reg map[[2]string]sema.ConvEntry) (func(string) string, error) {
 	a, b = strings.TrimSpace(a), strings.TrimSpace(b)
 	if a == b {
@@ -546,7 +499,7 @@ func elemConv(a, b string, reg map[[2]string]sema.ConvEntry) (func(string) strin
 	return nil, fmt.Errorf("no total element conversion %s -> %s for container recursion", a, b)
 }
 
-//line lower.goal:652
+//line lower.goal:593
 func deriveTarget(fl *ast.FieldList) (tgt string, fallible bool, ok bool) {
 	if fl == nil || len(fl.List) == 0 {
 		return "", false, false
@@ -566,7 +519,7 @@ func deriveTarget(fl *ast.FieldList) (tgt string, fallible bool, ok bool) {
 	return tgt, count > 1, true
 }
 
-//line lower.goal:678
+//line lower.goal:619
 func typeExprString(x ast.Expr) string {
 	if x == nil {
 		return ""
@@ -622,7 +575,7 @@ func typeExprString(x ast.Expr) string {
 	}
 }
 
-//line lower.goal:733
+//line lower.goal:674
 func pointerReceiverSet(f *ast.File) map[string]bool {
 	set := map[string]bool{}
 	if f == nil {

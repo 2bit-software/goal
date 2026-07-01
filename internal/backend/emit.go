@@ -1114,7 +1114,7 @@ func (e *emitter) defaultEntries(x *ast.CompositeLit, pos token.Pos) []string {
 		if present[f.Name] {
 			continue
 		}
-		if reason := zeroSafety(f.Type, e.typeDecls, e.info, 0); reason != "" {
+		if reason := sema.ZeroSafety(f.Type, e.typeDecls, e.info, 0); reason != "" {
 			e.fail("`...defaults` at %s cannot default field `%s` of type `%s`: %s", pos, f.Name, f.Type, reason)
 			return nil
 		}

@@ -1,6 +1,14 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- A panic-safety / classification RULE the lexical checker (internal/sema) and the
+  backend must agree on belongs in sema (found in US-001): backend imports sema, so
+  sema cannot import backend — promote the function INTO sema (exported, e.g.
+  sema.ZeroSafety) and call it from backend. No package-both-import shim needed when
+  the rule reads facts off sema.Info (Enums/Sealed). Inside sema the backend helpers
+  collapse: enumOf(info,n) -> info.Enums[n] != nil, isSealed(info,n) -> info.Sealed[n].
+  sema has no base-type helper — reproduce backend's baseType (strip `*` + `pkg.`)
+  locally rather than importing textedit.
 - The committed generated .go is owned by `task generate`, NEVER by hand: for any
   import-path / identifier rename, edit the .goal source then run `task generate`
   to re-emit ALL .go. A direct sed of the committed .go does not re-sort the
@@ -6975,4 +6983,39 @@
   gate + full `go test ./...` incl. corpus behavioral tier, EXIT 0), task fixpoint
   ("FIXPOINT OK", EXIT 0). Repo-wide grep `\./selfhost|[^a-z]selfhost/` returns
   empty outside prd.json/progress.txt and gitignored history/.
+---
+
+## 2026-07-01T05:50:00Z - US-001
+- Promoted the unsafe-zero (panic-safety) classifier from the backend into sema
+  as a single shared, exported `sema.ZeroSafety(typ, decls, info, depth) string`,
+  so the lexical checker (US-002) can reuse the exact rule the backend lowers
+  against, with no import cycle (backend imports sema, not vice versa) and no
+  divergent copy. Reason strings copied byte-for-byte; behavior unchanged.
+- Files changed:
+  - internal/sema/zerosafety.goal (new): `ZeroSafety` + local `zeroBaseType`
+    helper. `enumOf`/`isSealed` collapse to `info.Enums[base] != nil` /
+    `info.Sealed[base]` since Info is local to sema.
+  - internal/backend/emit.goal: call site `zeroSafety(...)` -> `sema.ZeroSafety(...)`.
+  - internal/backend/lower.goal: deleted the backend `zeroSafety` copy (kept
+    enumOf/isSealed/baseType/zeroLit — still used elsewhere).
+  - Regenerated internal/sema/zerosafety.go, internal/backend/emit.go,
+    internal/backend/lower.go via `task generate`.
+- Learnings for future iterations:
+  - A rule the CHECKER (sema) and the BACKEND must agree on belongs in sema:
+    backend already imports sema, so promoting the function into sema (and
+    calling sema.X from backend) is the cycle-free single-source pattern. Don't
+    add a package-both-import shim — sema.Info is the natural home when the rule
+    reads Enums/Sealed off Info.
+  - sema had no base-type helper; backend's `baseType` (strip `*` + `pkg.`) was
+    reproduced as unexported `zeroBaseType` in the new file to avoid importing
+    textedit.
+  - Verified: `task check` EXIT 0; `go build ./...` EXIT 0 (no cycle);
+    `go run ./cmd/goal build` on a `...defaults` literal omitting a
+    `map[string]int` field still exits 1 with the exact existing message
+    ("a nil map panics on write — set it explicitly (e.g. `map[string]int{}`)").
+  - Sandbox note: `go run ./cmd/goal build` on a fixture whose transpile SUCCEEDS
+    then fails at the final `go build` compile step with
+    "fork/exec .../go: not a directory" — an environment limit on invoking the
+    real toolchain, NOT a compiler failure. The transpile/classifier verdict
+    (the part this story touches) is observable before that step.
 ---
