@@ -7403,3 +7403,30 @@
     golden lags. The per-Edit PostToolUse `task check` hook therefore fails on each doc
     Edit; that is expected and clears the moment the golden is regenerated.
 ---
+
+## 2026-07-01T18:43:00Z - US-009
+- Authored two "Rejected with" ```error``` examples in docs/by-example.md and one
+  prose note: (a) under 01-enums, an unknown-variant construction
+  (`light_unknown.goal`, live `[unknown-variant]`); (b) under 05-`?` propagation, a
+  `?` in a plain-`int`-returning function (`qprop_nonfallible.goal`, live located
+  `[question-outside-result]`); (c) under 04-Option, a note explaining Option needs
+  no standalone rejection example (its guarantee is structural — value unreachable
+  without a match, and dropping an Option is legal absence).
+- Both locked blocks captured verbatim from `./bin/goalc <file>`; the snippet in the
+  doc is byte-identical to the probed file so line:col hold, and the ```goal
+  name=<name>``` fence matches the diagnostic's SourceName.
+- Files changed: docs/by-example.md, AI-KNOWLEDGE-BOOTSTRAP.md.
+- Verify: `task check` exit 0; `go run ./cmd/build-playground -out site/features.json`
+  exit 0 (22 features / 5 categories); features.json error features carry
+  [unknown-variant] (light_unknown.goal) and [question-outside-result]
+  (qprop_nonfallible.goal). Commit 65250a1 (SSH signing OK, no --no-gpg-sign).
+- Learnings for future iterations:
+  - The Option "no rejection example" is a legitimate authored deliverable — a prose
+    note, NOT an ```error``` block — so it adds no feature to features.json and does
+    not need a live diagnostic capture.
+  - Docs-only story confirmed the standing gotcha: edit docs/by-example.md -> the ai
+    guide re-renders its error features live into AI-KNOWLEDGE-BOOTSTRAP.md, so the
+    golden goes stale and `task check` fails until
+    `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md` is rerun. No `task generate`
+    needed (no .goal changed).
+---
