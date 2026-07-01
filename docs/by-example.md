@@ -879,6 +879,40 @@ silent zero-value footgun this feature exists to close. `entries` has no safe de
 construction must name it (`entries: map[string]int{}`); the genuinely-safe fields can still
 ride `...defaults`.
 
+## Rejecting an incomplete literal
+
+Without `...defaults`, every declared field must be set explicitly. A literal that omits
+one is a **located compile error** naming the missing field(s) — never a silent Go zero
+value. This is the completeness guarantee itself, separate from the `...defaults`
+safety carve-out above.
+
+```goal name=incomplete.goal
+package users
+
+type User struct {
+	name  string
+	email string
+	admin bool
+}
+
+// newUser omits `email` and `admin` with no `...defaults`: each unset field is a
+// located missing-field error, not a silent Go zero value.
+func newUser(name string) User {
+	return User{name: name}
+}
+```
+
+Rejected with:
+
+```error
+incomplete.goal:12:9: error: [missing-field] struct literal `User{…}` omits required fields `email`, `admin` — set them explicitly, or add `...defaults` to fill the rest with zero values
+```
+
+**Why:** in Go, `User{name: name}` compiles and reads back `email`/`admin` as `""`/`false`
+— the exact footgun this feature closes. goal makes the omission a checker error at the
+construction site, so the fix (name the fields, or opt into `...defaults`) is forced to be
+explicit.
+
 # Runtime & test feedback
 
 ## 10. assert
@@ -925,6 +959,32 @@ func withdraw(balance int, amount int) int {
 
 **Lowers to:** `if !(cond) { panic("assertion failed: " + cond) }`; the printf form
 appends `fmt.Sprintf(...)` to the message.
+
+## Rejecting a statically-false assert
+
+An `assert` whose condition the checker can constant-fold to `false` can only ever panic
+at runtime. goal rejects it **before lowering** — a guaranteed-panic assert is a compile
+error, not a crash waiting for the code path to run.
+
+```goal name=overdraft.goal
+package bank
+
+// The condition constant-folds to false, so this assert can only ever panic. The
+// checker rejects it before lowering rather than deferring to a guaranteed runtime crash.
+func mustFail() {
+	assert 2 > 3
+}
+```
+
+Rejected with:
+
+```error
+overdraft.goal:6:2: error: [assert-always-false] assert condition `2 > 3` is statically false: this assert always panics
+```
+
+**Why:** an assertion that is *always* false is never a real invariant — it is dead,
+guaranteed-panic code. Catching it at compile time pulls the failure up a feedback band
+(compiler over runtime), so the mistake surfaces before the program ever runs.
 
 ## 11. Doctests
 
@@ -1068,6 +1128,43 @@ func toIDs(g Group) IDList {
 field-by-field assignments with registry lookups and container recursion;
 `...derive(src)` expands to per-field conversions, skipping overridden and `_`-marked
 fields.
+
+## Rejecting an unsourced derive field
+
+Every target field of a `derive func` must be sourced — from a same-named source field, a
+registry conversion, or an explicit override. A target field with no source would be
+silently zeroed, so the deriver **rejects** it as a located compile error.
+
+```goal name=to_storage.goal
+package conv
+
+// StoredEvent.ExternalID has no same-named source field on EventExecution and no
+// explicit override in the bodyless derive: it is unsourced. Filling it would silently
+// zero the field, so the conversion is rejected as incomplete.
+
+type EventExecution struct {
+	ID       string
+	Railroad string
+}
+
+type StoredEvent struct {
+	ID         string
+	Railroad   string
+	ExternalID string
+}
+
+derive func toStorage(e EventExecution) StoredEvent
+```
+
+Rejected with:
+
+```error
+to_storage.goal:18:13: error: [unsourced-field] `derive func` target field `StoredEvent.ExternalID` has no same-named source field on `EventExecution` and no explicit override — add `ExternalID: …` or `ExternalID: _`, or a same-named field on `EventExecution`
+```
+
+**Why:** this is feature 08's completeness guarantee generalized to type-pair conversion —
+the high-leverage case where a forgotten field reads back as zero across a translation
+layer. The deriver refuses to invent a value it was never given a source for.
 
 ---
 
