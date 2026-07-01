@@ -1279,25 +1279,33 @@ func (e *emitter) deriveOverrides(body *ast.BlockStmt) []deriveOverride {
 		if !ok {
 			continue
 		}
-		var out []deriveOverride
-		for _, el := range cl.Elts {
-			kv, ok := el.(*ast.KeyValueExpr)
-			if !ok {
-				continue // the `...derive(src)` SpreadElement is the implicit fill
-			}
-			key, ok := kv.Key.(*ast.Ident)
-			if !ok {
-				continue
-			}
-			if id, ok := kv.Value.(*ast.Ident); ok && id.Name == "_" {
-				out = append(out, deriveOverride{Name: key.Name, Skip: true})
-				continue
-			}
-			out = append(out, deriveOverride{Name: key.Name, Value: kv.Value})
-		}
-		return out
+		return overridesFromLit(cl)
 	}
 	return nil
+}
+
+// overridesFromLit reads the `Field: expr` / `Field: _` elements of a composite
+// literal into deriveOverrides, ignoring the `...derive(src)` SpreadElement (the
+// implicit fill). Shared by the bodied `derive func` path (which reads the body's
+// returned literal) and the inline `...derive` path (which reads the literal directly).
+func overridesFromLit(cl *ast.CompositeLit) []deriveOverride {
+	var out []deriveOverride
+	for _, el := range cl.Elts {
+		kv, ok := el.(*ast.KeyValueExpr)
+		if !ok {
+			continue // the `...derive(src)` SpreadElement is the implicit fill
+		}
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		if id, ok := kv.Value.(*ast.Ident); ok && id.Name == "_" {
+			out = append(out, deriveOverride{Name: key.Name, Skip: true})
+			continue
+		}
+		out = append(out, deriveOverride{Name: key.Name, Value: kv.Value})
+	}
+	return out
 }
 
 // genConversion emits the generated Go conversion function for a derive. It
