@@ -105,7 +105,7 @@
         "site/features.json contains error features under the closed-E and implements categories whose `expected` fields contain the corresponding bracketed codes."
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Snippets adaptable from testdata/check/06-error-e and testdata/check/07-implements. Depends on US-003."
     },
     {

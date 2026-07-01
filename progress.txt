@@ -7321,6 +7321,36 @@
     treat runErr==nil as "passed" (reject), not as success.
 ---
 
+## 2026-07-01T19:30:00Z - US-007
+- Authored two "Rejected with" error examples in docs/by-example.md: an unbridged
+  closed-E `?` (`err_convert_missing.goal`, live `[missing-from-conversion]`) under
+  feature 06 Result (closed-E), and an unmet `implements` clause
+  (`square_missing.goal`, live `[unimplemented-method]`) under feature 07 implements.
+  Both locked blocks captured verbatim from ./bin/goalc.
+- Docs-only story: no *.goal edits, so `task generate`'s generated .go stayed up to
+  date. But the `ai` bootstrap guide renders by-example error features live (see the
+  Codebase Patterns note about the guide being a 2nd live consumer), so the two new
+  error features flowed into AI-KNOWLEDGE-BOOTSTRAP.md — TestBootstrapGoldenMatches
+  went stale and required `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`.
+- Files changed: docs/by-example.md, AI-KNOWLEDGE-BOOTSTRAP.md. (site/features.json
+  is gitignored; regenerated to 17 features / 5 categories, 5 error features.)
+- Verify: `task check` exit 0; `go run ./cmd/build-playground -out site/features.json`
+  exit 0; features.json error features carry [missing-from-conversion] (under
+  err_convert_missing.goal) and [unimplemented-method] (under square_missing.goal).
+  Commit 45c57da (SSH signing succeeded, no --no-gpg-sign needed).
+- Learnings for future iterations:
+  - For closed-E, the natural "unknown variant" snippet (Result.Err(Enum.Missing))
+    emits TWO diagnostics and the FIRST Error is `[unknown-variant]` (US-001's code,
+    higher col), not `[unknown-error-variant]`. build-playground/guide lock the FIRST
+    Error-severity render, so that snippet would lock `[unknown-variant]`. To hit the
+    closed-E-specific `[missing-from-conversion]` code, use the unbridged `?`-across-
+    enums shape (adapted from testdata/check/06-error-e/missing_from.goal) — it emits
+    a single clean diagnostic.
+  - Even a docs-ONLY authoring story that adds an error feature must regenerate
+    AI-KNOWLEDGE-BOOTSTRAP.md; the Edit hook's `task check` fails on the stale golden
+    until you do. No `task generate` needed (no .goal changed).
+---
+
 ## 2026-07-01T18:15:00Z - US-006
 - Authored two "Rejected with" error examples in docs/by-example.md: a
   non-exhaustive `match` (`status_missing.goal`, live `[non-exhaustive-match]`)
