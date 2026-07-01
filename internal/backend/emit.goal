@@ -1317,11 +1317,33 @@ func overridesFromLit(cl *ast.CompositeLit) []deriveOverride {
 // internal/pass.genConversion over sema facts.
 func (e *emitter) genConversion(name, srcName, srcType, tgtType string, fallible bool, overrides []deriveOverride) {
 	tgtVal := derefType(tgtType)
-	tgtFields, ok := structFieldsOf(e.info, tgtVal)
-	if !ok {
+	if _, ok := structFieldsOf(e.info, tgtVal); !ok {
 		e.fail("derive %s: unknown target struct %q (no `type %s struct{…}` in this file)", name, tgtType, tgtVal)
 		return
 	}
+
+	// Signature, then the shared conversion body, then the closing brace.
+	e.p("func " + name + "(" + srcName + " " + srcType + ") ")
+	if fallible {
+		e.p("(" + tgtType + ", error)")
+	} else {
+		e.p(tgtType)
+	}
+	e.p(" {\n")
+	e.emitConversionBody(name, srcName, srcType, tgtType, fallible, overrides, token.Pos{})
+	e.p("}")
+}
+
+// emitConversionBody emits the derive body — `var out <tgtVal>`, an optional nil-guard
+// for a pointer source, the explicit overrides, the per-field registry conversions for
+// the unnamed fields, and the trailing `return out[, nil]` — into the current output.
+// The caller has already emitted the enclosing `func …{` (genConversion) or a scoping
+// `{` (emitInlineDerive) and guarantees the target struct is known. `name` labels a
+// derive-func error; a valid `pos` (the `...derive` position) selects the located inline
+// error form instead.
+func (e *emitter) emitConversionBody(name, srcName, srcType, tgtType string, fallible bool, overrides []deriveOverride, pos token.Pos) {
+	tgtVal := derefType(tgtType)
+	tgtFields, _ := structFieldsOf(e.info, tgtVal)
 	srcFields, _ := structFieldsOf(e.info, derefType(srcType))
 
 	overridden := map[string]bool{}
@@ -1338,14 +1360,6 @@ func (e *emitter) genConversion(name, srcName, srcType, tgtType string, fallible
 		returnStmt = "return " + retVar + ", nil"
 	}
 
-	// Signature.
-	e.p("func " + name + "(" + srcName + " " + srcType + ") ")
-	if fallible {
-		e.p("(" + tgtType + ", error)")
-	} else {
-		e.p(tgtType)
-	}
-	e.p(" {\n")
 	e.p("var out " + tgtVal + "\n")
 
 	// A pointer source may be nil; a nil source yields the zero target rather than
@@ -1370,17 +1384,21 @@ func (e *emitter) genConversion(name, srcName, srcType, tgtType string, fallible
 		e.p("out." + o.Name + " = " + e.exprText(o.Value) + "\n")
 	}
 
-	// `...derive(src)`: remaining target fields, resolved through the registry.
+	// The `...derive(src)` fill: remaining target fields, resolved through the registry.
 	for _, f := range tgtFields {
 		if overridden[strings.ToLower(f.Name)] {
 			continue
 		}
 		sf, found := findSemaField(srcFields, f.Name)
 		if !found {
-			e.fail("derive %s: target field %q of %s is not sourced from %s (add an explicit `%s: …` or a `from func`)", name, f.Name, tgtType, srcType, f.Name)
+			if pos.IsValid() {
+				e.fail("`...derive` at %s cannot fill field `%s` of `%s`: no same-named field on `%s` — add an explicit `%s: …`", pos, f.Name, tgtType, srcType, f.Name)
+			} else {
+				e.fail("derive %s: target field %q of %s is not sourced from %s (add an explicit `%s: …` or a `from func`)", name, f.Name, tgtType, srcType, f.Name)
+			}
 			return
 		}
-		// genConversion is void and reports via e.fail, so this consumer uses `match`:
+		// emitConversionBody is void and reports via e.fail, so this consumer uses `match`:
 		// the Err arm turns resolveField's error into a located e.fail, never `?`.
 		match e.resolveField("out."+f.Name, srcName+"."+sf.Name, sf.Type, f.Type, fallible, errName) {
 		Result.Ok(stmts) => {
@@ -1389,13 +1407,17 @@ func (e *emitter) genConversion(name, srcName, srcType, tgtType string, fallible
 			}
 		}
 		Result.Err(err) => {
-			e.fail("derive %s, field %q: %v", name, f.Name, err)
+			if pos.IsValid() {
+				e.fail("`...derive` at %s cannot fill field `%s`: %v", pos, f.Name, err)
+			} else {
+				e.fail("derive %s, field %q: %v", name, f.Name, err)
+			}
 			return
 		}
 		}
 	}
 
-	e.p(returnStmt + "\n}")
+	e.p(returnStmt + "\n")
 }
 
 // resolveField returns the Go statements assigning a converted source field to a
