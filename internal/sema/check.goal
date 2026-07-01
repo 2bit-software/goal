@@ -59,6 +59,7 @@ type Diagnostic struct {
 // (CheckQuestion for open-E feature 05, CheckClosed for closed-E feature 06).
 func Check(file *ast.File, info *Info) []Diagnostic {
 	var diags []Diagnostic
+	diags = append(diags, CheckEnumConstruction(file, info)...)
 	diags = append(diags, CheckExhaustive(file, info)...)
 	diags = append(diags, CheckFields(file, info)...)
 	diags = append(diags, CheckUnsafeDefaults(file, info)...)

@@ -1,0 +1,72 @@
+package sema
+
+// enums.go holds feature-01 (enums) construction checks. The `match`-side
+// guarantee (exhaustiveness) lives in check.goal; this file enforces the
+// complementary construction-side guarantee: an enum's closed variant set is
+// binding when a variant is CONSTRUCTED, not only when it is destructured.
+
+import (
+	"fmt"
+
+	"goal/internal/ast"
+)
+
+// CheckEnumConstruction enforces feature-01 (enums): constructing a variant a
+// locally-declared enum does not declare is an Error — the closed set is binding
+// at construction. Without this the backend lowers `Light.Blue` (a variant the
+// `Light` enum never declares) to a phantom selector rather than rejecting it.
+//
+// Both construction shapes are checked: the data-less form `Light.Blue` parses to
+// an *ast.SelectorExpr, and the payload form `Light.Blue(x)` to an *ast.VariantLit
+// (the same two shapes errVariantArg unifies for the closed-E `Result.Err` check).
+//
+// Only constructions whose qualifier names an enum declared IN THIS FILE are
+// judged: a locally-declared enum's variant set (VSet) is authoritative and
+// complete, so an unknown variant is a definite error. An ordinary selector on a
+// non-enum value (`io.Writer`, `cfg.name`) never names a local enum and is left
+// alone; a foreign / cross-package enum construction is likewise skipped, because
+// its full variant set is not authoritatively resolved in the single-file check —
+// judging it risks a false rejection.
+func CheckEnumConstruction(file *ast.File, info *Info) []Diagnostic {
+	var diags []Diagnostic
+	if file == nil || info == nil {
+		return diags
+	}
+	local := localEnumNames(file)
+	ast.Walk(visitorFunc(func(n ast.Node) bool {
+		expr, ok := n.(ast.Expr)
+		if !ok {
+			return true
+		}
+		qual, variant, isVariant := errVariantArg(expr)
+		if !isVariant || !local[qual] {
+			return true
+		}
+		enumDecl := info.Enums[qual]
+		if enumDecl == nil || enumDecl.VSet[variant] {
+			return true
+		}
+		diags = append(diags, Diagnostic{
+			Pos:      expr.Pos(),
+			Severity: Severity.Error,
+			Feature:  "01-enums",
+			Code:     "unknown-variant",
+			Message: fmt.Sprintf("`%s.%s` names `%s`, which is not a variant of enum `%s` — its variants are %s",
+				qual, variant, variant, qual, semaVariantList(enumDecl)),
+		})
+		return true
+	}), file)
+	return diags
+}
+
+// localEnumNames returns the set of enum names declared in this file — the enums
+// whose variant set is authoritative for the construction check.
+func localEnumNames(file *ast.File) map[string]bool {
+	names := map[string]bool{}
+	for _, d := range file.Decls {
+		if ed, ok := d.(*ast.EnumDecl); ok && ed.Name != nil {
+			names[ed.Name.Name] = true
+		}
+	}
+	return names
+}

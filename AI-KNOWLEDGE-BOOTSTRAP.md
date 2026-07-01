@@ -1103,6 +1103,10 @@ construct.
 
 The full set of stable codes the checker can emit:
 
+**01-enums**
+
+- `[unknown-variant]` (error) — constructing an enum variant the enum doesn't declare (its closed set is enforced at construction, not only at `match`).
+
 **02-match**
 
 - `[non-exhaustive-match]` (error) — a `match` on an enum omits a variant and has no `_` rest-arm.

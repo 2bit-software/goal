@@ -1,51 +1,155 @@
 {
   "project": "goal",
-  "branchName": "ralph/goalcheck-unsafe-defaults",
-  "description": "Make `goal check` catch an unsafe `...defaults` field as a located [unsafe-default] error, matching `goal build`.",
+  "branchName": "ralph/playground-error-examples",
+  "description": "Fix the language gaps that make feature errors unshowable, then add a per-feature 'Rejected with' error example to the playground so goal's located, AI-ingestible diagnostics are on display.",
   "verifyCommands": [
-    "task check"
+    "task check",
+    "go run ./cmd/build-playground -out site/features.json"
   ],
   "userStories": [
     {
       "id": "US-001",
-      "title": "Share the unsafe-zero classifier with sema",
-      "description": "As a checker author, I need the unsafe-zero classification (currently zeroSafety in internal/backend/lower.goal) reachable from internal/sema without an import cycle, so the lexical checker can reuse the exact same panic-safety rule the backend enforces.",
+      "title": "Reject unknown enum variant construction",
+      "description": "As a goal author, I need constructing an undeclared enum variant (e.g. `Light.Blue`) to be a located compile error so the enum's closed set is enforced at construction, not silently transpiled.",
       "acceptanceCriteria": [
-        "internal/sema can call a function that returns the unsafe-zero reason (empty string = safe) for a field type string, using the same rules as backend zeroSafety (nil *T, map, chan, func, method-bearing/named interface, and enum/sealed sum types are unsafe; primitives, structs, slices, arrays, any/error/interface{} are safe).",
-        "There is a single definition of that rule shared by both packages (no divergent copy), and internal/sema does not import internal/backend (no import cycle: `go build ./...` succeeds).",
-        "`goal build` on a `...defaults` literal that omits a `map[...]` field still exits non-zero with the existing backend message (behavior unchanged)."
+        "Running goalc on a file that constructs a variant not declared in its enum exits non-zero with a `file:line:col: error:` diagnostic that names the bad variant and lists the enum's valid variants.",
+        "The diagnostic carries a stable bracketed code (e.g. `[unknown-variant]`) distinct from the existing `[unknown-error-variant]` Result code.",
+        "A valid enum construction (e.g. `Light.Red`) still transpiles cleanly (goalc exits 0).",
+        "testdata/check/01-enums/ contains a positive case annotated with a `// want` marker and a negative (clean, no-marker) case, and the internal/sema test suite discovers and passes them.",
+        "The diagnostic is authored in internal/sema/*.goal and the committed generated *.go is regenerated (task check's verify-generated passes)."
       ],
       "priority": 1,
       "passes": true,
-      "notes": "zeroSafety is internal/backend/lower.goal:438 (typ, decls, info, depth). backend imports sema, so sema cannot import backend — move the classifier to a package both import (or into sema and have backend call it). Preserve the reason strings the backend error already shows."
+      "notes": "New checker diagnostic. Construction (not match) is the gap: match on an unknown variant is already handled; Enum.NotAVariant currently transpiles silently to a phantom struct. If a corpus/manifest check-case count is asserted in a test (see internal/corpus/generate_test.go), bump it when the new testdata case lands."
     },
     {
       "id": "US-002",
-      "title": "Add lexical [unsafe-default] check in sema",
-      "description": "As a goal author, I need the lexical checker to flag a `...defaults` literal whose omitted fields have panic-prone zero values, so the violation surfaces as a first-class diagnostic instead of only a transpile failure.",
+      "title": "Locate the question-outside-Result error",
+      "description": "As a goal author, I need the error for using `?` in a function that cannot carry the error to be located (file:line:col) and coded, matching every other diagnostic, so the playground can show it with a source position.",
       "acceptanceCriteria": [
-        "For a `T{ ..., ...defaults }` literal, the sema check emits one Severity.Error Diagnostic with Code \"unsafe-default\" per omitted field whose zero is unsafe, positioned at the `...defaults` spread (line:col), naming the field and its type.",
-        "A field that is explicitly set in the literal (including a `Field: _` skip) produces no unsafe-default diagnostic; a `...defaults` literal whose omitted fields are all safe produces no unsafe-default diagnostic.",
-        "The new check is invoked by the sema Check aggregator (the same path `goal check`'s lexical stage runs), and \"unsafe-default\" is registered in internal/guide/catalog.goal for feature 08-no-zero-value with severity error.",
-        "task check exits 0."
+        "Using `?` in a function whose return type is neither Result nor Option produces a located `file:line:col: error:` diagnostic (currently it is an unlocated `backend:` message).",
+        "The message names or references the enclosing function's non-fallible return so the fix is obvious.",
+        "The diagnostic carries a stable bracketed code.",
+        "Existing valid `?` programs (features/05-question-prop examples and any question-prop testdata) still transpile cleanly.",
+        "If the fix lives in goal source (internal/sema or internal/backend .goal), the committed generated *.go is regenerated so verify-generated passes."
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Mirror the sibling in internal/sema/fields.goal (CheckFields emits missing-field Error and unresolved-literal-type Warning). CheckFields already skips `...defaults` literals for missing-field; the new check is the complement over those same literals. Reuse the US-001 classifier. Some tests assert every emitted Code has a guide catalog entry, so add the catalog row here to keep task check green."
+      "passes": false,
+      "notes": "Today `goalc` prints `backend: ` + \"`?` outside a Result- or Option-returning function\" with no line:col. End state is a located, coded diagnostic; checker vs backend placement is an implementation choice, but US-003 renders it via the playground so it must carry a position."
     },
     {
       "id": "US-003",
-      "title": "Prove goal check fails and document it",
-      "description": "As a maintainer, I need on-disk fixtures and docs proving `goal check` now rejects an unsafe `...defaults` at the CLI, so the guarantee is regression-tested and discoverable.",
+      "title": "Verify playground errors against the checker",
+      "description": "As the playground build, I need error features to be verified against the checker (sema.Analyze), not only backend.Transpile, so exhaustiveness/must-use/implements/derive diagnostics can be locked and displayed.",
       "acceptanceCriteria": [
-        "`go run ./cmd/goal check <fixture>` on a `...defaults` literal omitting a nil-map (or nil-pointer) field exits 1 and prints `[unsafe-default]` with a file:line:col location; the same file with that field set exits 0.",
-        "A testdata/check/08-no-zero-value case with a `// want [unsafe-default]` marker exists and passes; corpus/manifest.json is regenerated (go run ./cmd/corpus-gen) and the hardcoded check-case count in internal/corpus/generate_test.go is updated to match.",
-        "features/08-no-zero-value/SYNTAX.md (and DECISIONS.md) record that an unsafe `...defaults` is an [unsafe-default] checker error caught by `goal check`, not only by `goal build`.",
-        "task check exits 0."
+        "cmd/build-playground's error-feature verification runs the checker on the example source and, when it produces an Error-severity diagnostic, asserts the rendered diagnostic equals the locked ```error``` block exactly (trailing newline trimmed).",
+        "The rendered diagnostic uses the feature's SourceName (e.g. `traffic.goal:9:2: error: ...`), not an absolute or placeholder path.",
+        "When the checker reports no error, verification falls back to the existing backend.Transpile assertion, so the current `unsafe-default` backend example still verifies unchanged.",
+        "A build-playground unit test covers an error feature whose expected output is a checker diagnostic (verification passes) and one whose locked text is wrong (verification fails).",
+        "`go run ./cmd/build-playground` still exits 0 on the current docs/by-example.md."
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "The corpus check runner is TestTranspileRunner over corpus/manifest.json; check cases live under testdata/check with `// want [code]` markers (see internal/corpus/check_runner.go). TestGenerateCounts (internal/corpus/generate_test.go) asserts check == 50 today — bump it when the new case lands, as US-039's T6 bumped the transpile count."
+      "passes": false,
+      "notes": "Core enabler for all checker-backed authoring stories (US-006..US-009). No change to the authored '## Rejected with' doc format is required — only the verification source. Reuse sema.Analyze + Diagnostic.Render, the same path goalc's checker uses."
+    },
+    {
+      "id": "US-004",
+      "title": "Add doctest-failure output kind",
+      "description": "As a playground author, I need a distinct output kind for a failing doctest so a feature can show a wrong `>>>`/expected pair and its test failure, rather than a transpile rejection.",
+      "acceptanceCriteria": [
+        "internal/byexample parses a doctest-failure output block (a labeled fence distinct from `Transpiles to`/`Rejected with`) and threads a new OutputKind value through the parsed record.",
+        "cmd/build-playground maps the new kind to a distinct expected-pane label (e.g. \"test failure\") in the generated features.json.",
+        "A byexample unit test asserts a feature section with the new block parses to the new OutputKind with the expected locked body.",
+        "Existing `go`, `test`, and `error` output kinds continue to parse unchanged (existing byexample tests pass)."
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Parser + data-model only; the build-time verification of the failure is US-005. app.js consumes the pane label as data, so no front-end edit is expected."
+    },
+    {
+      "id": "US-005",
+      "title": "Verify doctest-failure at build time",
+      "description": "As the playground build, I need a doctest-failure feature to be proven real by compiling and running its generated test and asserting it fails, so the shown failure cannot drift from the toolchain.",
+      "acceptanceCriteria": [
+        "cmd/build-playground verifies a doctest-failure feature by generating the doctest `_test.go` (as `goalc -test` does), compiling and running it, and asserting the run fails.",
+        "The locked failure block matches the observed test-failure output (the `got %v, want %v` message), trimmed, or a normalized subset the verifier documents.",
+        "A build-playground test covers a passing doctest (must NOT be accepted as a doctest-failure feature) and a failing doctest (accepted).",
+        "`go run ./cmd/build-playground` exits 0 with the new verification wired in and no doctest-failure features yet present."
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Runs go build/test on a generated file in a temp dir; keep IO behind the existing generator seams. Highest-risk story — split if compile+run cannot be finished and verified in one pass."
+    },
+    {
+      "id": "US-006",
+      "title": "Author match and result error examples",
+      "description": "As a playground visitor, I need to see the error goal emits for a non-exhaustive match and for a dropped Result, so the exhaustiveness and must-use guarantees are visible.",
+      "acceptanceCriteria": [
+        "docs/by-example.md gains an error example under the match feature whose locked block is the live `[non-exhaustive-match]` diagnostic for a missing variant.",
+        "docs/by-example.md gains an error example under the Result (open-E) feature whose locked block is the live `[dropped-result]` diagnostic.",
+        "`go run ./cmd/build-playground` exits 0 (re-verifying both locked messages against the live checker).",
+        "site/features.json contains two `\"outputKind\": \"error\"` features whose `expected` fields contain `[non-exhaustive-match]` and `[dropped-result]` respectively."
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Snippets can be adapted from testdata/check/02-match and testdata/check/03-result. Depends on US-003."
+    },
+    {
+      "id": "US-007",
+      "title": "Author closed-E and implements error examples",
+      "description": "As a playground visitor, I need to see the error for an unknown closed-E variant (or missing from-conversion) and for a struct that fails its declared interface, so the closedness and implements guarantees are visible.",
+      "acceptanceCriteria": [
+        "docs/by-example.md gains an error example under the Result (closed-E) feature whose locked block is a live closed-E diagnostic (`[unknown-error-variant]` or `[missing-from-conversion]`).",
+        "docs/by-example.md gains an error example under the implements feature whose locked block is a live `[unimplemented-method]` or `[method-signature-mismatch]` diagnostic.",
+        "`go run ./cmd/build-playground` exits 0.",
+        "site/features.json contains error features under the closed-E and implements categories whose `expected` fields contain the corresponding bracketed codes."
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Snippets adaptable from testdata/check/06-error-e and testdata/check/07-implements. Depends on US-003."
+    },
+    {
+      "id": "US-008",
+      "title": "Author completeness, assert, derive examples",
+      "description": "As a playground visitor, I need to see the errors for an incomplete struct literal, an always-false assert, and an unsourced/unbridged derive field, so the completeness, static-assert, and conversion-totality guarantees are visible.",
+      "acceptanceCriteria": [
+        "docs/by-example.md gains an error example under the no-zero-value feature whose locked block is a live `[missing-field]` diagnostic (distinct from the existing `unsafe-default` backend example).",
+        "docs/by-example.md gains an error example under the assert feature whose locked block is a live `[assert-always-false]` diagnostic.",
+        "docs/by-example.md gains an error example under the derive-convert feature whose locked block is a live `[unsourced-field]` or `[unbridged-field]` diagnostic.",
+        "`go run ./cmd/build-playground` exits 0.",
+        "site/features.json contains error features whose `expected` fields contain `[missing-field]`, `[assert-always-false]`, and an `[unsourced-field]`/`[unbridged-field]` code."
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Snippets adaptable from testdata/check/08-no-zero-value, 10-assert, 12-derive-convert. Depends on US-003."
+    },
+    {
+      "id": "US-009",
+      "title": "Author enum and question-prop examples",
+      "description": "As a playground visitor, I need to see the error for constructing an unknown enum variant and for `?` in a non-fallible function, plus a note on why Option has no standalone error, so the enum and `?` guarantees are visible and Option's omission is justified.",
+      "acceptanceCriteria": [
+        "docs/by-example.md gains an error example under the enums feature whose locked block is the live diagnostic added in US-001 for unknown-variant construction.",
+        "docs/by-example.md gains an error example under the `?` propagation feature whose locked block is the live located diagnostic from US-002.",
+        "docs/by-example.md documents, under the Option feature, why Option has no standalone 'Rejected with' example (its guarantee is structural: the value is unreachable without a match, and dropping an Option is legal absence).",
+        "`go run ./cmd/build-playground` exits 0.",
+        "site/features.json contains error features under the enums and `?` propagation categories."
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "Depends on US-001, US-002, and US-003."
+    },
+    {
+      "id": "US-010",
+      "title": "Author failing-doctest example",
+      "description": "As a playground visitor, I need to see a doctest whose expected output is wrong and the resulting test failure, so the doctests guarantee (examples that cannot silently drift) is visible.",
+      "acceptanceCriteria": [
+        "docs/by-example.md gains a doctest-failure example under the doctests feature: a goal snippet with a `>>>`/expected pair that does not match, plus its locked failure block.",
+        "`go run ./cmd/build-playground` exits 0 (the failure is verified by compiling and running the generated test per US-005).",
+        "site/features.json contains a feature under the doctests category with the doctest-failure output kind and its expected failure text."
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Depends on US-004 and US-005."
     }
   ]
 }

@@ -60,6 +60,16 @@
   `grep -n "internal/selfhost"` (must remain). Also note the live bootstrap path is
   `./internal` (Taskfile bootstrap/fixpoint build `go build ./internal`), so any stale
   `goal build ... ./selfhost` snippet maps to `./internal`.
+- Adding N testdata/check/*.goal fixtures raises the hardcoded check-case count in
+  internal/corpus/generate_test.go by N (found US-001 playground prd: 2 fixtures =>
+  51->53). Never guess the delta — regen the manifest (`go run ./cmd/corpus-gen`)
+  then read the exact expected number from `go test ./internal/corpus -run
+  TestGenerateCounts` and set the assertion to it.
+- A construction-side enum/type check must guard on names declared IN THIS FILE
+  (walk file.Decls for the decl node) — sema.Info also carries foreign/qualified
+  entries whose membership sets may be incomplete, so judging them risks false
+  rejections, and the local guard is also what stops ordinary selectors
+  (`io.Writer`, `cfg.name`) from being mistaken for `Enum.Variant` constructions.
 - Pure-docs stories touch no `.goal`/`.go`: `task generate` is NOT needed and the
   `task verify-generated` drift gate stays green on its own (it diffs committed `.go`
   against a fresh emit, which is unchanged). The full gate set is still
@@ -7097,4 +7107,30 @@
     asserted behavior.
   - features/<feature>/DECISIONS.md was referenced by SYNTAX.md but did not exist
     for any feature — this story created the first one; no fixed template, prose is fine.
+---
+
+## 2026-07-01T17:00:00Z - US-001 (playground-error-examples prd)
+- Added feature-01 construction-side check `sema.CheckEnumConstruction`: constructing
+  a variant a LOCALLY-declared enum doesn't declare (e.g. `Light.Blue`) is now a
+  located `[unknown-variant]` Error instead of a silent phantom-selector transpile.
+  Mirrors the closed-E `unknown-error-variant` sibling but at every value-position
+  construction (both `Enum.V` SelectorExpr and `Enum.V(x)` VariantLit), reusing the
+  existing `errVariantArg` + `semaVariantList` helpers. Wired first into the `Check`
+  aggregator.
+- Files changed: internal/sema/enums.goal (new) + generated .go; internal/sema/check.goal
+  (+ generated); internal/guide/catalog.goal 01-enums row (+ generated);
+  AI-KNOWLEDGE-BOOTSTRAP.md (guide golden regen); testdata/check/01-enums/{unknown_variant,
+  ok_construction}.goal (new); corpus/manifest.json (112->114); internal/corpus/generate_test.go
+  (check count 51->53); prd.json.
+- Learnings for future iterations:
+  - Guard a construction check on LOCAL enum names only (walk file.Decls for
+    *ast.EnumDecl). info.Enums also holds foreign/qualified enums whose VSet may be
+    incomplete, so judging them risks false rejections; and the local guard is what
+    keeps ordinary selectors (`io.Writer`, `cfg.name`) from ever being flagged.
+  - Adding TWO check fixtures bumps the check count by 2 (51->53), not 1 — the count
+    in internal/corpus/generate_test.go counts each testdata/check/*.goal case. Run
+    `go test ./internal/corpus -run TestGenerateCounts` to read the exact expected N.
+  - A new emitted diagnostic Code needs BOTH a catalog row (internal/guide/catalog.goal)
+    AND a guide-golden regen (`go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`), else
+    TestBootstrapGoldenMatches fails.
 ---

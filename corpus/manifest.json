@@ -385,6 +385,22 @@
       "normalize": "gofmt"
     },
     {
+      "id": "testdata-check-01-enums-ok_construction",
+      "kind": "check",
+      "input": "testdata/check/01-enums/ok_construction.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-01-enums-unknown_variant",
+      "kind": "check",
+      "input": "testdata/check/01-enums/unknown_variant.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
       "id": "testdata-check-02-match-deferred_unknown_enum",
       "kind": "check",
       "input": "testdata/check/02-match/deferred_unknown_enum.goal",

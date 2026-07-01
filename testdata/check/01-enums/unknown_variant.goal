@@ -1,0 +1,16 @@
+package app
+
+// Constructing `Light.Blue` names a variant the `Light` enum never declares — its
+// closed set is Red, Yellow, Green. The closed set is binding at CONSTRUCTION, not
+// only at `match`, so this is an Error (`unknown-variant`) rather than a phantom
+// selector the backend would otherwise emit.
+
+enum Light {
+    Red
+    Yellow
+    Green
+}
+
+func signal() Light {
+    return Light.Blue // want "not a variant of enum `Light`"
+}

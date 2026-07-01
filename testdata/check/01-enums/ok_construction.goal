@@ -1,0 +1,14 @@
+package app
+
+// A valid construction: `Light.Green` names a declared variant of `Light`, so the
+// closed-set check is satisfied and no diagnostic fires (clean, no `// want`).
+
+enum Light {
+    Red
+    Yellow
+    Green
+}
+
+func signal() Light {
+    return Light.Green
+}

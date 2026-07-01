@@ -18,6 +18,8 @@ type diagDoc struct {
 // a test (TestDiagnosticCatalogMatchesSource) fails if the two diverge, so this catalog
 // cannot silently fall out of sync with the checker.
 var diagnosticCatalog = []diagDoc{
+	// 01-enums
+	{"unknown-variant", "01-enums", "error", "constructing an enum variant the enum doesn't declare (its closed set is enforced at construction, not only at `match`)."},
 	// 02-match
 	{"non-exhaustive-match", "02-match", "error", "a `match` on an enum omits a variant and has no `_` rest-arm."},
 	{"unresolved-match-enum", "02-match", "warning", "the matched value's enum type can't be resolved lexically; deferred to the typed stage."},
