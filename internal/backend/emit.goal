@@ -82,6 +82,11 @@ type emitter struct {
 	// be resolved through the receiver's method set (info.Methods / info.Interfaces).
 	// Reset per funcDecl; nil outside a function body.
 	recvTypes map[string]string
+	// curParams maps each parameter identifier of the current function to its full
+	// type text (as written), so an inline `...derive(src)` can resolve the source's
+	// type the way a `derive func` reads it off its declared parameter. Reset per
+	// funcDecl; nil outside a function body.
+	curParams map[string]string
 }
 
 // emitFile renders a whole *ast.File to Go source text, lowering goal-specific
@@ -420,9 +425,11 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 	prevKind, prevOk, prevErr, prevTaken := e.fnKind, e.okName, e.errName, e.taken
 	prevClosedT, prevClosedE := e.closedT, e.closedE
 	prevRecvTypes := e.recvTypes
+	prevCurParams := e.curParams
 	e.fnKind, e.taken, e.okName, e.errName = kind, e.newScope(), "", ""
 	e.closedT, e.closedE = closedT, closedE
 	e.recvTypes = e.buildRecvTypes(d)
+	e.curParams = buildCurParams(d)
 	if kind == roResultOpen {
 		e.okName = e.gensym("ok")
 		e.errName = e.gensym("err")
@@ -431,6 +438,7 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 		e.fnKind, e.okName, e.errName, e.taken = prevKind, prevOk, prevErr, prevTaken
 		e.closedT, e.closedE = prevClosedT, prevClosedE
 		e.recvTypes = prevRecvTypes
+		e.curParams = prevCurParams
 	}()
 
 	e.p("func ")
@@ -2113,6 +2121,37 @@ func (e *emitter) buildRecvTypes(d *ast.FuncDecl) map[string]string {
 		return nil
 	}
 	return out
+}
+
+// buildCurParams maps each parameter name of d to its full type text, so an inline
+// `...derive(src)` can look the source's type up the way a `derive func` reads it off
+// its declared parameter. Receiver names are excluded — a derive source is a parameter.
+func buildCurParams(d *ast.FuncDecl) map[string]string {
+	if d.Type == nil || d.Type.Params == nil {
+		return nil
+	}
+	out := map[string]string{}
+	for _, f := range d.Type.Params.List {
+		ts := typeExprString(f.Type)
+		for _, n := range f.Names {
+			if n != nil && n.Name != "" && n.Name != "_" {
+				out[n.Name] = ts
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// paramType returns the full type text of the current function's parameter named name.
+func (e *emitter) paramType(name string) (string, bool) {
+	if e.curParams == nil {
+		return "", false
+	}
+	t, ok := e.curParams[name]
+	return t, ok
 }
 
 // recvBaseType renders a receiver/parameter type expression to the bare named type a
