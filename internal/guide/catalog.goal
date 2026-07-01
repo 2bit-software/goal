@@ -34,6 +34,7 @@ var diagnosticCatalog = []diagDoc{
 	{"question-callee-no-error", "05-question-prop", "error", "in a `Result[_, error]` function, a `?` callee yields no `error` to propagate — it returns nothing, a non-error type, an `Option`, or a closed-E `Result`."},
 	{"question-binds-nonvalue", "05-question-prop", "error", "`name := expr?` binds a value but the callee doesn't return exactly `(value, error)`."},
 	{"question-callee-unresolved", "05-question-prop", "warning", "a discarding `?` callee's arity can't be resolved lexically; the two-value form is assumed."},
+	{"question-outside-result", "05-question-prop", "error", "`?` is used in a function whose return type is neither a `Result` nor an `Option`, so there is no failure channel to carry the propagated `Err`/`None`."},
 	// 06-error-e (closed-E Result)
 	{"missing-from-conversion", "06-error-e", "error", "`?` bridges two error enums but no `from func` conversion is registered."},
 	{"err-outside-closed-enum", "06-error-e", "error", "`Result.Err(...)` is used with a value outside the declared error enum."},

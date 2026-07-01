@@ -76,6 +76,60 @@ func CheckQuestion(file *ast.File, info *Info) []Diagnostic {
 	return diags
 }
 
+// CheckQuestionOutsideResult flags a `?` used inside a function whose return type is
+// neither a `Result` nor an `Option` (Mode.ModeNone): such a function has no failure
+// channel to carry the propagated `Err`/`None`, so the program is invalid. The backend
+// previously rejected this only at lowering time with an unlocated `backend:` message;
+// reporting it here yields a located `file:line:col: error:` diagnostic so goalc and the
+// playground agree on a source position. Functions that return a Result or an Option
+// carry the failure and are handled by CheckQuestion/CheckClosed, so they are skipped.
+func CheckQuestionOutsideResult(file *ast.File, info *Info) []Diagnostic {
+	var diags []Diagnostic
+	if file == nil {
+		return diags
+	}
+	for _, d := range plainResultFuncs(file) {
+		caller := funcSig(d.fn.Name.Name, d.fn.Type)
+		carriesFailure := match caller.Mode {
+			Mode.ModeResult => true
+			Mode.ModeResultClosed => true
+			Mode.ModeOption => true
+			Mode.ModeNone => false
+		}
+		if carriesFailure {
+			continue
+		}
+		ret := funcReturnText(d.fn.Type)
+		for _, site := range collectQuestionSites(d.fn.Body) {
+			diags = append(diags, Diagnostic{Pos: site.unwrap.Question, Severity: Severity.Error, Feature: "05-question-prop",
+				Code: "question-outside-result",
+				Message: fmt.Sprintf("`?` propagates a failure, but function `%s` returns %s, which is neither a `Result` nor an `Option`; change its return type to `Result[T, error]` or `Option[T]` so it can carry the failure", d.fn.Name.Name, ret)})
+		}
+	}
+	return diags
+}
+
+// funcReturnText renders a function's declared results for a diagnostic: "no value" when
+// the function returns nothing, otherwise the parenthesized, backtick-quoted result-type
+// list (each shared-type name expanded), e.g. "`(int, string)`".
+func funcReturnText(t *ast.FuncType) string {
+	if t == nil || t.Results == nil || len(t.Results.List) == 0 {
+		return "no value"
+	}
+	var parts []string
+	for _, f := range t.Results.List {
+		ts := typeString(f.Type)
+		n := 1
+		if len(f.Names) > 0 {
+			n = len(f.Names)
+		}
+		for i := 0; i < n; i++ {
+			parts = append(parts, ts)
+		}
+	}
+	return "`(" + strings.Join(parts, ", ") + ")`"
+}
+
 // appendQuestionResolved appends the open-E diagnostic (if any) for a resolved `?` callee.
 func appendQuestionResolved(diags []Diagnostic, p token.Pos, key string, csig FuncSig, discard bool) []Diagnostic {
 	isOpenResult := match csig.Mode {

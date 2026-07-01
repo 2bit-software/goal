@@ -1126,6 +1126,7 @@ The full set of stable codes the checker can emit:
 - `[question-binds-nonvalue]` (error) — `name := expr?` binds a value but the callee doesn't return exactly `(value, error)`.
 - `[question-callee-no-error]` (error) — in a `Result[_, error]` function, a `?` callee yields no `error` to propagate — it returns nothing, a non-error type, an `Option`, or a closed-E `Result`.
 - `[question-callee-unresolved]` (warning) — a discarding `?` callee's arity can't be resolved lexically; the two-value form is assumed.
+- `[question-outside-result]` (error) — `?` is used in a function whose return type is neither a `Result` nor an `Option`, so there is no failure channel to carry the propagated `Err`/`None`.
 
 **06-error-e**
 
