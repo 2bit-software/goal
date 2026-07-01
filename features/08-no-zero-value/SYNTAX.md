@@ -142,6 +142,21 @@ A rejected literal reports the first offending field, with its type and the `...
 `...defaults` at 9:27 cannot default field `entries` of type `map[string]int`: a nil map panics on write — set it explicitly (e.g. `map[string]int{}`)
 ```
 
+This is a **first-class checker diagnostic**, code `[unsafe-default]` (feature
+08, severity error). It is caught by **`goal check`** at the lexical stage — not
+only as a `goal build` transpile failure — so an unsafe `...defaults` surfaces at
+the CLI with a `file:line:col` location and a non-zero exit before any code is
+emitted:
+
+```
+$ goal check user.goal
+user.goal:14:27: error: [unsafe-default] `...defaults` cannot default field `entries` of type `map[string]int`: a nil map panics on write — set it explicitly (e.g. `map[string]int{}`)
+```
+
+The same rule the backend enforces on emit (`sema.ZeroSafety`) drives the check,
+so `goal check` and `goal build` agree on exactly which zeros are unsafe. A
+regression fixture lives at `testdata/check/08-no-zero-value/unsafe_default.goal`.
+
 ## Rationale, tied to the two principles
 
 - **Default, not opt-in** (§3.5): "an opt-in strictness the model forgets to opt into catches

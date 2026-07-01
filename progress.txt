@@ -7067,3 +7067,34 @@
   - New pattern captured at the top: wiring a sema check + the catalog/AI-golden
     dual-regenerate obligation whenever a new emitted Code lands.
 ---
+
+## 2026-06-30T00:00:00Z - US-003
+- Proved and documented that `goal check` rejects an unsafe `...defaults` as a
+  located [unsafe-default] checker error (guarantee implemented in US-001/US-002).
+- Added positive check fixture testdata/check/08-no-zero-value/unsafe_default.goal
+  (nil-map field opted into `...defaults`, `// want "cannot default field
+  `entries`"`); regenerated corpus/manifest.json via `go run ./cmd/corpus-gen`
+  (112 cases); bumped the check-case assertion in internal/corpus/generate_test.go
+  50 -> 51; documented the guarantee in features/08-no-zero-value/SYNTAX.md and
+  created features/08-no-zero-value/DECISIONS.md.
+- Files changed: testdata/check/08-no-zero-value/unsafe_default.goal (new),
+  corpus/manifest.json, internal/corpus/generate_test.go,
+  features/08-no-zero-value/SYNTAX.md, features/08-no-zero-value/DECISIONS.md (new),
+  prd.json.
+- Learnings for future iterations:
+  - The corpus check runner (internal/corpus/check_runner.go) matches
+    `// want "substring"` against the diagnostic MESSAGE, not its Code. For
+    [unsafe-default] the message is `` `...defaults` cannot default field `<name>`
+    of type `<type>`: <reason> `` — so the want marker uses a message substring
+    (e.g. "cannot default field `entries`"), NOT the bracketed code.
+  - Adding one testdata/check/*.goal fixture bumps ONLY the check count; regen the
+    manifest with `go run ./cmd/corpus-gen` (repo root) then match
+    generate_test.go's hardcoded count to the number TestGenerateCounts reports
+    (it reads testdata fresh, so a stale count fails as `check cases = N, want M`).
+  - `goal check` CLI prints `file:line:col: <sev>: [<code>] <message>`
+    (cmd/goal/main.go:631); an unsafe `...defaults` also surfaces a backend
+    transpile line, but the [unsafe-default] checker line + non-zero exit is the
+    asserted behavior.
+  - features/<feature>/DECISIONS.md was referenced by SYNTAX.md but did not exist
+    for any feature — this story created the first one; no fixed template, prose is fine.
+---

@@ -673,6 +673,14 @@
       "normalize": "none"
     },
     {
+      "id": "testdata-check-08-no-zero-value-unsafe_default",
+      "kind": "check",
+      "input": "testdata/check/08-no-zero-value/unsafe_default.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
       "id": "testdata-check-08-no-zero-value-variant_incomplete",
       "kind": "check",
       "input": "testdata/check/08-no-zero-value/variant_incomplete.goal",

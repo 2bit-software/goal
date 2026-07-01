@@ -44,7 +44,7 @@
         "task check exits 0."
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "The corpus check runner is TestTranspileRunner over corpus/manifest.json; check cases live under testdata/check with `// want [code]` markers (see internal/corpus/check_runner.go). TestGenerateCounts (internal/corpus/generate_test.go) asserts check == 50 today — bump it when the new case lands, as US-039's T6 bumped the transpile count."
     }
   ]

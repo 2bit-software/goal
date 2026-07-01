@@ -1,0 +1,15 @@
+package cache
+
+// A `...defaults` literal may not default a field whose zero value is unsafe.
+// `entries` is a `map[string]int`, and a nil map panics on first write — so
+// opting it into `...defaults` is a located [unsafe-default] error caught by
+// `goal check`, not only by `goal build`. `name` is set explicitly and is left
+// untouched by the check.
+type Cache struct {
+	name    string
+	entries map[string]int
+}
+
+func newCache(name string) Cache {
+	return Cache{name: name, ...defaults} // want "cannot default field `entries`"
+}
