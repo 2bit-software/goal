@@ -7766,3 +7766,34 @@
     `sema.Severity(sema.Severity_Error{})` — construct it that way from Go
     callers (cmd/goal, cmd/goalc).
 ---
+
+## 2026-07-02T04:39:00Z - US-009
+- Implemented `goal check --json`: a `--json` flag on `goal check` that emits all
+  diagnostics as a single JSON array (`[{file,line,col,severity,code,message}]`)
+  to stdout, with exit codes unchanged and the `ok` line suppressed. Clean
+  packages emit `[]` with exit 0; `build` rejects `--json` as an unknown flag.
+- Files changed: cmd/goal/main.go (parseFlags gains a jsonOut return + `--json`
+  recognition; run dispatch rejects it for build and threads jsonMode into
+  cmdCheck; cmdCheck now accumulates ALL packages' checkDiags, sorts once, and in
+  JSON mode marshals a non-nil []jsonDiag to stdout; new jsonDiag struct +
+  checkDiag.toJSON helper). cmd/goal/main_test.go (TestParseFlags updated for the
+  5-value signature + a --json case; new TestCheckJSONReportsDiagnostics,
+  TestCheckJSONCleanEmitsEmptyArray, TestBuildRejectsJSONFlag).
+- Learnings for future iterations:
+  - cmd/goal and cmd/goalc are plain Go (no .goal), so a change confined to them
+    needs NO `task generate` — but the Edit PostToolUse hook still runs the full
+    `task check` after every edit, so a multi-return-value signature change
+    (parseFlags 4->5 values) is red between edits until every call site (incl.
+    main_test.go's TestParseFlags/TestParseFlagsUnknownFlag) is updated. Batch
+    the signature change with all its callers in mind.
+  - Accumulate-then-render is the clean shape for cmdCheck: gather every
+    package's []checkDiag, sortDiags(all) once, compute the error total once,
+    then branch on jsonMode. Initialize the JSON payload slice with make(...,0,n)
+    so an empty result marshals to `[]`, never `null`.
+  - `[syntax]`/`[go-build]`/`--json` are all cmd-side surfaces — no catalog entry,
+    no AI-KNOWLEDGE-BOOTSTRAP regen; the bootstrap golden stays green.
+  - To reuse a diagnostic fixture, the elided-composite-literal case
+    (`return []Inner{{a: 1}}` with a 2-field Inner) reliably yields an
+    error-severity `[elided-missing-field]` via the depth stage — handy for
+    asserting JSON field values.
+---

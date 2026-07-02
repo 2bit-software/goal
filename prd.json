@@ -127,7 +127,7 @@
         "A cmd/goal test covers a diagnostic case and a clean case."
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "SPIKE. FILES: cmd/goal/main.go only (run dispatch, parseFlags, cmdCheck, checkDiag). APPROACH: (1) add jsonOut bool to flag parsing (recognize --json for check; reject for build). Thread into cmdCheck. (2) Accumulate all packages' []checkDiag (including US-008 syntax diags) instead of printing per-package; after sortDiags, if jsonMode marshal []jsonDiag{File,Line,Col,Severity,Code,Message with json tags} built from checkDiag (sema.SeverityLabel for severity); one array to STDOUT; empty slice renders []. (3) Keep exit behavior: still return the '%d checker error(s)' error — main prints that wrapper to stderr, stdout stays valid JSON. Suppress the ok print in json mode. (4) endLine/endCol optional: internal/lsp/diagnostics.go tokenEnds (~:193) shows the approach; omit if not cheap. Use an omitempty-friendly struct so US-030 can add suggestedFix. PATTERN: writeOverlay's anonymous-struct json.Marshal (main.go:724). TESTS: main_test.go — diagnostic fixture, json.Unmarshal round-trip + field asserts; clean case asserts [] and nil err (json.Valid can stand in for the python3 pipe). PITFALLS: diags currently stream to errOut — JSON must go to out and NOTHING else may print to stdout (ok suppressed; depth-stage note stays on stderr); reject --json+--emit style nonsense combos for build unchanged."
     },
     {
