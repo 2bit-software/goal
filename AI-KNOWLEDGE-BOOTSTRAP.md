@@ -460,7 +460,8 @@ func find(id ID) *User {
 	if !ok {
 		return nil
 	}
-	return &u
+	some := u
+	return &some
 }
 
 func greet(u User) {

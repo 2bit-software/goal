@@ -9,7 +9,8 @@ func passthrough() *int {
 	if o := mkOpt(); o != nil {
 		n := *o
 		{
-			return &n
+			some := n
+			return &some
 		}
 	} else {
 		{

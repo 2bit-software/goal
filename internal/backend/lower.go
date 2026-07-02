@@ -27,7 +27,7 @@ func fileIdentSet(f *ast.File) map[string]bool {
 	return set
 }
 
-//line lower.goal:52
+//line lower.goal:53
 func optionConstruction(x ast.Expr) (kind string, arg ast.Expr, ok bool) {
 	if sel, isSel := x.(*ast.SelectorExpr); isSel {
 		if base, isID := sel.X.(*ast.Ident); isID && base.Name == "Option" && sel.Sel != nil && sel.Sel.Name == "None" {
@@ -54,11 +54,11 @@ func optionConstruction(x ast.Expr) (kind string, arg ast.Expr, ok bool) {
 	return "some-box", call.Args[0], true
 }
 
-//line lower.goal:87
+//line lower.goal:88
 const optionPrelude = `// goalSome boxes v into the pointer (*T) encoding of an Option Some value.
 func goalSome[T any](v T) *T { return &v }`
 
-//line lower.goal:91
+//line lower.goal:92
 type roKind int
 
 //line lower.go:63
@@ -69,7 +69,7 @@ const (
 	roResultClosed
 )
 
-//line lower.goal:105
+//line lower.goal:106
 const resultPrelude = `type Result[T, E any] interface{ isResult() }
 type Ok[T, E any] struct{ Value T }
 type Err[T, E any] struct{ Value E }
@@ -77,7 +77,7 @@ type Err[T, E any] struct{ Value E }
 func (Ok[T, E]) isResult()  {}
 func (Err[T, E]) isResult() {}`
 
-//line lower.goal:115
+//line lower.goal:116
 func needsResultPrelude(info *sema.Info) bool {
 	if info == nil {
 		return false
@@ -103,7 +103,7 @@ func needsResultPrelude(info *sema.Info) bool {
 	return false
 }
 
-//line lower.goal:138
+//line lower.goal:139
 func resultOptionKind(t *ast.FuncType) (roKind, ast.Expr) {
 	if t == nil || t.Results == nil || len(t.Results.List) != 1 {
 		return roNone, nil
@@ -132,13 +132,13 @@ func resultOptionKind(t *ast.FuncType) (roKind, ast.Expr) {
 	return roNone, nil
 }
 
-//line lower.goal:164
+//line lower.goal:165
 func isErrorIdent(x ast.Expr) bool {
 	id, ok := x.(*ast.Ident)
 	return ok && id.Name == "error"
 }
 
-//line lower.goal:173
+//line lower.goal:174
 func closedResultType(t *ast.FuncType) (*ast.IndexListExpr, bool) {
 	if t == nil || t.Results == nil || len(t.Results.List) != 1 {
 		return nil, false
@@ -158,7 +158,7 @@ func closedResultType(t *ast.FuncType) (*ast.IndexListExpr, bool) {
 	return il, true
 }
 
-//line lower.goal:197
+//line lower.goal:198
 func matchQualifier(m *ast.MatchExpr) string {
 	for _, arm := range m.Arms {
 		vp, ok := arm.Pattern.(*ast.VariantPattern)
@@ -184,7 +184,7 @@ func matchQualifier(m *ast.MatchExpr) string {
 	return ""
 }
 
-//line lower.goal:229
+//line lower.goal:230
 func isSealedMatch(m *ast.MatchExpr) bool {
 	for _, arm := range m.Arms {
 		if _, ok := arm.Pattern.(*ast.TypePattern); ok {
@@ -194,7 +194,7 @@ func isSealedMatch(m *ast.MatchExpr) bool {
 	return false
 }
 
-//line lower.goal:242
+//line lower.goal:243
 func usesIdent(n ast.Node, name string) bool {
 	found := false
 	ast.Walk(identFinder(func(node ast.Node) bool {
@@ -206,10 +206,10 @@ func usesIdent(n ast.Node, name string) bool {
 	return found
 }
 
-//line lower.goal:255
+//line lower.goal:256
 type identFinder func(ast.Node) bool
 
-//line lower.goal:257
+//line lower.goal:258
 func (f identFinder) Visit(n ast.Node) ast.Visitor {
 	if n == nil || !f(n) {
 		return nil
@@ -217,7 +217,7 @@ func (f identFinder) Visit(n ast.Node) ast.Visitor {
 	return f
 }
 
-//line lower.goal:270
+//line lower.goal:271
 func enumRef(x ast.Expr) (string, bool) {
 	switch v1 := x.(type) {
 	case *ast.Ident:
@@ -237,7 +237,7 @@ func enumRef(x ast.Expr) (string, bool) {
 	return "", false
 }
 
-//line lower.goal:287
+//line lower.goal:288
 func enumOf(info *sema.Info, name string) *sema.Enum {
 	if info == nil || info.Enums == nil {
 		return nil
@@ -245,12 +245,12 @@ func enumOf(info *sema.Info, name string) *sema.Enum {
 	return info.Enums[name]
 }
 
-//line lower.goal:295
+//line lower.goal:296
 func isSealed(info *sema.Info, name string) bool {
 	return info != nil && info.Sealed != nil && info.Sealed[name]
 }
 
-//line lower.goal:306
+//line lower.goal:307
 func sealedEmbeds(info *sema.Info, iface string) []string {
 	if info == nil {
 		return nil
@@ -258,7 +258,7 @@ func sealedEmbeds(info *sema.Info, iface string) []string {
 	return collectSealedEmbeds(info, iface, map[string]bool{}, nil)
 }
 
-//line lower.goal:316
+//line lower.goal:317
 func collectSealedEmbeds(info *sema.Info, name string, seen map[string]bool, out []string) []string {
 	for _, emb := range info.EmbeddedIfaces[name] {
 		if seen[emb] {
@@ -273,7 +273,7 @@ func collectSealedEmbeds(info *sema.Info, name string, seen map[string]bool, out
 	return out
 }
 
-//line lower.goal:333
+//line lower.goal:334
 func genEnum(e *sema.Enum) string {
 	marker := "is" + e.Name
 	var b strings.Builder
@@ -297,17 +297,17 @@ func genEnum(e *sema.Enum) string {
 	return b.String()
 }
 
-//line lower.goal:357
+//line lower.goal:358
 func genSealedInterface(name string) string {
 	return fmt.Sprintf("type %s interface{ is%s() }", name, name)
 }
 
-//line lower.goal:363
+//line lower.goal:364
 func genMarkerMethod(typ, iface string) string {
 	return fmt.Sprintf("func (%s) is%s() {}", typ, iface)
 }
 
-//line lower.goal:369
+//line lower.goal:370
 func exported(name string) string {
 	if name == "" {
 		return name
@@ -317,7 +317,7 @@ func exported(name string) string {
 	return string(r)
 }
 
-//line lower.goal:381
+//line lower.goal:382
 func baseType(t string) string {
 	t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
 	if i := strings.LastIndexByte(t, '.'); i >= 0 {
@@ -326,7 +326,7 @@ func baseType(t string) string {
 	return t
 }
 
-//line lower.goal:394
+//line lower.goal:395
 func zeroLit(typ string, decls map[string]string, depth int) string {
 	typ = strings.TrimSpace(typ)
 	switch {
@@ -358,7 +358,7 @@ func zeroLit(typ string, decls map[string]string, depth int) string {
 	return typ + "{}"
 }
 
-//line lower.goal:433
+//line lower.goal:434
 func needsFmtImport(f *ast.File) bool {
 	need := false
 	ast.Walk(identFinder(func(n ast.Node) bool {
@@ -370,7 +370,7 @@ func needsFmtImport(f *ast.File) bool {
 	return need
 }
 
-//line lower.goal:446
+//line lower.goal:447
 func importsPkg(f *ast.File, path string) bool {
 	if f == nil {
 		return false
@@ -390,7 +390,7 @@ func importsPkg(f *ast.File, path string) bool {
 	return false
 }
 
-//line lower.goal:468
+//line lower.goal:469
 func presentFieldNames(elts []ast.Expr) map[string]bool {
 	present := map[string]bool{}
 	for _, el := range elts {
@@ -405,7 +405,7 @@ func presentFieldNames(elts []ast.Expr) map[string]bool {
 	return present
 }
 
-//line lower.goal:483
+//line lower.goal:484
 func structFieldsOf(info *sema.Info, name string) ([]sema.Field, bool) {
 	if info == nil || info.Structs == nil {
 		return nil, false
@@ -414,7 +414,7 @@ func structFieldsOf(info *sema.Info, name string) ([]sema.Field, bool) {
 	return fs, ok
 }
 
-//line lower.goal:502
+//line lower.goal:503
 func findSemaField(fields []sema.Field, name string) (sema.Field, bool) {
 	for _, f := range fields {
 		if strings.EqualFold(f.Name, name) {
@@ -424,7 +424,7 @@ func findSemaField(fields []sema.Field, name string) (sema.Field, bool) {
 	return sema.Field{}, false
 }
 
-//line lower.goal:514
+//line lower.goal:515
 func derefType(s string) string {
 	s = strings.TrimSpace(s)
 	if rest, ok := strings.CutPrefix(s, "*"); ok {
@@ -433,7 +433,7 @@ func derefType(s string) string {
 	return s
 }
 
-//line lower.goal:525
+//line lower.goal:526
 func ptrInner(s string) (string, bool) {
 	s = strings.TrimSpace(s)
 	if strings.HasPrefix(s, "*") {
@@ -445,7 +445,7 @@ func ptrInner(s string) (string, bool) {
 	return "", false
 }
 
-//line lower.goal:538
+//line lower.goal:539
 func arrElem(s string) (n, elem string, ok bool) {
 	s = strings.TrimSpace(s)
 	if !strings.HasPrefix(s, "[") || strings.HasPrefix(s, "[]") {
@@ -462,7 +462,7 @@ func arrElem(s string) (n, elem string, ok bool) {
 	return n, strings.TrimSpace(s[close+1:]), true
 }
 
-//line lower.goal:556
+//line lower.goal:557
 func mapKV(s string) (k, v string, ok bool) {
 	s = strings.TrimSpace(s)
 	if !strings.HasPrefix(s, "map[") {
@@ -483,7 +483,7 @@ func mapKV(s string) (k, v string, ok bool) {
 	return "", "", false
 }
 
-//line lower.goal:579
+//line lower.goal:580
 func elemConv(a, b string, reg map[[2]string]sema.ConvEntry) (func(string) string, error) {
 	a, b = strings.TrimSpace(a), strings.TrimSpace(b)
 	if a == b {
@@ -499,7 +499,7 @@ func elemConv(a, b string, reg map[[2]string]sema.ConvEntry) (func(string) strin
 	return nil, fmt.Errorf("no total element conversion %s -> %s for container recursion", a, b)
 }
 
-//line lower.goal:593
+//line lower.goal:594
 func deriveTarget(fl *ast.FieldList) (tgt string, fallible bool, ok bool) {
 	if fl == nil || len(fl.List) == 0 {
 		return "", false, false
@@ -519,7 +519,7 @@ func deriveTarget(fl *ast.FieldList) (tgt string, fallible bool, ok bool) {
 	return tgt, count > 1, true
 }
 
-//line lower.goal:619
+//line lower.goal:620
 func typeExprString(x ast.Expr) string {
 	if x == nil {
 		return ""
@@ -575,7 +575,7 @@ func typeExprString(x ast.Expr) string {
 	}
 }
 
-//line lower.goal:674
+//line lower.goal:675
 func pointerReceiverSet(f *ast.File) map[string]bool {
 	set := map[string]bool{}
 	if f == nil {

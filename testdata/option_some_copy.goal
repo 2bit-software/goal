@@ -1,0 +1,18 @@
+package optcopy
+
+// snapshot proves `Option.Some(x)` captures x by value: after constructing the
+// Option from the identifier `x`, a later write `x = 9` must not be observable
+// through the Option. Under the old ident shortcut, `Option.Some(x)` lowered to
+// `&x` (an alias), so matching `o` would have yielded 9 instead of the original 1.
+/// snapshot builds an Option from x, then mutates x, and returns the matched value.
+/// >>> snapshot()
+/// 1
+func snapshot() int {
+	x := 1
+	o := Option.Some(x)
+	x = 9
+	return match o {
+		Option.Some(v) => v
+		Option.None => 0
+	}
+}

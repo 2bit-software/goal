@@ -913,6 +913,22 @@
       "normalize": "gofmt"
     },
     {
+      "id": "testdata-option_some_copy-doctest",
+      "kind": "doctest",
+      "input": "testdata/option_some_copy.goal",
+      "expected": "testdata/option_some_copy.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-option_some_copy",
+      "kind": "transpile",
+      "input": "testdata/option_some_copy.goal",
+      "expected": "testdata/option_some_copy.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
       "id": "testdata-package-cross-file-demo",
       "kind": "transpile",
       "input": "testdata/package/cross-file-demo",

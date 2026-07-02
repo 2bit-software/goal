@@ -1915,9 +1915,11 @@ func (e *emitter) emitResultReturn(x ast.Expr) bool {
 
 // optionValueExpr lowers an Option construction to its `*T` pointer encoding
 // (§8.4) and returns the resulting Go expression text: `nil` for `Option.None`,
-// `&x` for an addressable `Option.Some(x)`, or a boxed `&<gensym>` after emitting
-// `<gensym> := x` for any other argument. It reports false when x is not an
-// Option construction. This is the single Option-construction lowering, used both
+// or a boxed `&<gensym>` after emitting `<gensym> := x` for any `Option.Some(x)`
+// argument (any shape). It reports false when x is not an Option construction.
+// Hoisting a temporary for every argument — including a bare identifier — makes
+// `Option.Some(x)` snapshot x's value, so a later write to x is never observable
+// through the Option. This is the single Option-construction lowering, used both
 // for a direct Option return and for an Option value nested in a `Result.Ok(…)`
 // payload — so the construction lowers identically wherever it is produced.
 func (e *emitter) optionValueExpr(x ast.Expr) (string, bool) {
@@ -1940,9 +1942,6 @@ func (e *emitter) optionValueExpr(x ast.Expr) (string, bool) {
 	if len(call.Args) != 1 {
 		return "", false
 	}
-	if _, ok := call.Args[0].(*ast.Ident); ok {
-		return "&" + e.exprText(call.Args[0]), true
-	}
 	some := e.gensym("some")
 	e.p(some + " := ")
 	e.expr(call.Args[0])
@@ -1952,13 +1951,15 @@ func (e *emitter) optionValueExpr(x ast.Expr) (string, bool) {
 
 // tryOptionValue lowers an Option construction appearing in a value position to its
 // `*T` pointer encoding (§8.4) directly into the output, and reports whether it
-// handled x. `Option.None` -> `nil`; `Option.Some(ident)` -> `&ident` (addressable);
-// `Option.Some(other)` -> `goalSome(other)`, the boxing helper (optionPrelude),
-// since a non-addressable argument cannot be address-taken as a pure expression and
-// the single-pass emitter cannot hoist a temporary here. Unlike optionValueExpr
-// (which may emit a preceding `tmp :=` statement and is used at statement-position
-// returns / Result.Ok payloads), this stays a self-contained expression so it is
-// valid in any value position — a call argument, struct field, or slice/map element.
+// handled x. `Option.None` -> `nil`; `Option.Some(x)` (any argument shape) ->
+// `goalSome(x)`, the boxing helper (optionPrelude), which copies x so the Option
+// snapshots its value — a later write to x is never observable through the Option.
+// The helper is used for every argument because a bare identifier's `&x` would
+// alias the caller's variable and the single-pass emitter cannot hoist a temporary
+// here. Unlike optionValueExpr (which may emit a preceding `tmp :=` statement and is
+// used at statement-position returns / Result.Ok payloads), this stays a
+// self-contained expression so it is valid in any value position — a call argument,
+// struct field, or slice/map element.
 func (e *emitter) tryOptionValue(x ast.Expr) bool {
 	kind, arg, ok := optionConstruction(x)
 	if !ok {
@@ -1967,9 +1968,6 @@ func (e *emitter) tryOptionValue(x ast.Expr) bool {
 	switch kind {
 	case "none":
 		e.p("nil")
-	case "some-addr":
-		e.p("&")
-		e.expr(arg)
 	default: // "some-box"
 		e.usedOptionHelper = true
 		e.p("goalSome(")

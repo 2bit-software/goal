@@ -42,13 +42,14 @@ func fileIdentSet(f *ast.File) map[string]bool {
 }
 
 // optionConstruction classifies x as a goal Option construction for value-position
-// lowering (§8.4). kind is "none" for `Option.None`, "some-addr" when the single
-// `Option.Some(arg)` argument is an addressable identifier (lowered to `&arg`), or
-// "some-box" for any other single argument (a literal, call, or selector — lowered
-// to a boxed temporary). arg is the `Some` argument (nil for "none"); ok reports
-// whether x is an Option construction at all. It is the single classifier shared by
-// the emit-time interception (emit.go tryOptionValue) and the boxing-helper scan
-// (needsOptionPrelude), so the two never disagree about what gets boxed.
+// lowering (§8.4). kind is "none" for `Option.None`, or "some-box" for the single
+// `Option.Some(arg)` argument (any shape — identifier, literal, call, or selector),
+// which always lowers to a boxed copy so `Option.Some(x)` snapshots x's value and a
+// later write to x is never observable through the Option. arg is the `Some`
+// argument (nil for "none"); ok reports whether x is an Option construction at all.
+// It is the single classifier shared by the emit-time interception (emit.go
+// tryOptionValue) and the boxing-helper scan (needsOptionPrelude), so the two never
+// disagree about what gets boxed.
 func optionConstruction(x ast.Expr) (kind string, arg ast.Expr, ok bool) {
 	if sel, isSel := x.(*ast.SelectorExpr); isSel {
 		if base, isID := sel.X.(*ast.Ident); isID && base.Name == "Option" &&

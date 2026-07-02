@@ -23,5 +23,6 @@ func grandparent(name string) *User {
 		return nil
 	}
 	p := *o1
-	return &p
+	some := p
+	return &some
 }
