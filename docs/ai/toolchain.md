@@ -21,8 +21,9 @@ stdin). It checks the lexical stage only (no package context); for real correctn
 `goal check` on a package.
 
 **The iteration loop to run:** `goal check` first (fastest — located correctness feedback before
-any Go compile), then `goal run` (transpile + compile + run; Go errors map back to `.goal` lines
-via `//line` directives), then, if you have doctests, `goal build --emit` followed by
+any Go compile), then `goal run` (transpile + compile + run; Go errors and panics map back to the
+exact `.goal` **statement** line via per-statement `/*line*/` directives, so a lowered construct
+never shifts the reported line), then, if you have doctests, `goal build --emit` followed by
 `go test -count=1 ./...`.
 
 **Exit codes** — every `goal` command classifies failures so you can triage without parsing the

@@ -76,6 +76,7 @@ type section struct {
 var sections = []section{
 	{"intro", "What goal is"},
 	{"toolchain", "The toolchain"},
+	{"toolchain-contract", "The tooling contract"},
 	{"features", "The features"},
 	{"diagnostics", "Checker diagnostics"},
 	{"starter", "A complete starter program"},
@@ -138,6 +139,8 @@ func renderSection(s section, cmds []Command) (string, error) {
 		writeFragment(&b, "toolchain.md")
 		b.WriteString("\n")
 		writeCommands(&b, cmds)
+	case "toolchain-contract":
+		writeFragment(&b, "toolchain-contract.md")
 	case "features":
 		if err := writeFeatures(&b); err != nil {
 			return "", err
