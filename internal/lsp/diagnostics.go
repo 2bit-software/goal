@@ -4,87 +4,130 @@ package lsp
 
 //line diagnostics.go:4
 import (
+	"fmt"
 	"goal/internal/lexer"
 	"goal/internal/project"
 	"goal/internal/sema"
 	"goal/internal/token"
+	"goal/internal/typecheck"
 	"path/filepath"
 	"sort"
 	"strings"
 )
 
-//line diagnostics.goal:19
+//line diagnostics.goal:21
 func (s *Server) compile(uri, text string, version int) {
-	/*line diagnostics.goal:20*/ path, ok := uriToPath(uri)
-	/*line diagnostics.goal:21*/ if !ok {
-		/*line diagnostics.goal:22*/ s.compileSingle(uri, text, version)
-		/*line diagnostics.goal:23*/ return
+	/*line diagnostics.goal:22*/ path, ok := uriToPath(uri)
+	/*line diagnostics.goal:23*/ if !ok {
+		/*line diagnostics.goal:24*/ s.compileSingle(uri, text, version)
+		/*line diagnostics.goal:25*/ return
 	}
-	/*line diagnostics.goal:25*/ dir := filepath.Dir(path)
-	/*line diagnostics.goal:30*/ s.analysisMu.Lock()
-	/*line diagnostics.goal:31*/ defer s.analysisMu.Unlock()
-	/*line diagnostics.goal:33*/ disk, err := s.files(dir)
-	/*line diagnostics.goal:34*/ if err != nil {
-		/*line diagnostics.goal:35*/ s.logf("read dir %s: %v", dir, err)
-		/*line diagnostics.goal:36*/ s.compileSingle(uri, text, version)
-		/*line diagnostics.goal:37*/ return
+	/*line diagnostics.goal:27*/ dir := filepath.Dir(path)
+	/*line diagnostics.goal:32*/ s.analysisMu.Lock()
+	/*line diagnostics.goal:33*/ defer s.analysisMu.Unlock()
+	/*line diagnostics.goal:35*/ disk, err := s.files(dir)
+	/*line diagnostics.goal:36*/ if err != nil {
+		/*line diagnostics.goal:37*/ s.logf("read dir %s: %v", dir, err)
+		/*line diagnostics.goal:38*/ s.compileSingle(uri, text, version)
+		/*line diagnostics.goal:39*/ return
 	}
-	/*line diagnostics.goal:42*/ open := s.openFilesInDir(dir)
-	/*line diagnostics.goal:43*/ open[uri] = openFile{uri: uri, path: path, text: text, version: version}
-	/*line diagnostics.goal:45*/ views := mergePackageView(disk, open)
-	/*line diagnostics.goal:46*/ srcs := make([]string, len(views))
-	/*line diagnostics.goal:47*/ for i := range views {
-		/*line diagnostics.goal:48*/ srcs[i] = views[i].src
+	/*line diagnostics.goal:44*/ open := s.openFilesInDir(dir)
+	/*line diagnostics.goal:45*/ open[uri] = openFile{uri: uri, path: path, text: text, version: version}
+	/*line diagnostics.goal:47*/ views := mergePackageView(disk, open)
+	/*line diagnostics.goal:48*/ srcs := make([]string, len(views))
+	/*line diagnostics.goal:49*/ for i := range views {
+		/*line diagnostics.goal:50*/ srcs[i] = views[i].src
 	}
-	/*line diagnostics.goal:51*/ if conflictingPackageNames(srcs) {
-		/*line diagnostics.goal:52*/ s.logf("package name conflict in %s: single-file fallback", dir)
-		/*line diagnostics.goal:53*/ s.compileSingle(uri, text, version)
-		/*line diagnostics.goal:54*/ return
+	/*line diagnostics.goal:53*/ if conflictingPackageNames(srcs) {
+		/*line diagnostics.goal:54*/ s.logf("package name conflict in %s: single-file fallback", dir)
+		/*line diagnostics.goal:55*/ s.compileSingle(uri, text, version)
+		/*line diagnostics.goal:56*/ return
 	}
-	/*line diagnostics.goal:57*/ perFile, ferrs, err := sema.AnalyzePackageInDirWith(srcs, dir, sema.DirResolver(s.resolve))
-	/*line diagnostics.goal:58*/ if err != nil {
-		/*line diagnostics.goal:60*/ s.logf("analyze package %s: %v", dir, err)
-		/*line diagnostics.goal:61*/ return
+	/*line diagnostics.goal:59*/ perFile, ferrs, err := sema.AnalyzePackageInDirWith(srcs, dir, sema.DirResolver(s.resolve))
+	/*line diagnostics.goal:60*/ if err != nil {
+		/*line diagnostics.goal:62*/ s.logf("analyze package %s: %v", dir, err)
+		/*line diagnostics.goal:63*/ return
 	}
-	/*line diagnostics.goal:63*/ for _, fe := range ferrs {
-		/*line diagnostics.goal:64*/ s.logf("foreign resolve %s: %v", dir, fe)
+	/*line diagnostics.goal:65*/ for _, fe := range ferrs {
+		/*line diagnostics.goal:66*/ s.logf("foreign resolve %s: %v", dir, fe)
 	}
-	/*line diagnostics.goal:69*/ for i := range views {
-		/*line diagnostics.goal:70*/ of := views[i].open
-		/*line diagnostics.goal:71*/ if of == nil {
-			/*line diagnostics.goal:72*/ continue
+	/*line diagnostics.goal:76*/ depth := s.depthDiags(dir, views)
+	/*line diagnostics.goal:77*/ depthByBase := map[string][]typecheck.Diagnostic{}
+	/*line diagnostics.goal:78*/ suppress := map[string]bool{}
+	/*line diagnostics.goal:79*/ for _, d := range depth {
+		/*line diagnostics.goal:80*/ base := filepath.Base(d.Pos.Filename)
+		/*line diagnostics.goal:81*/ depthByBase[base] = append(depthByBase[base], d)
+		/*line diagnostics.goal:82*/ suppress[dedupKey(base, d.Pos.Line, d.Feature)] = true
+	}
+	/*line diagnostics.goal:87*/ for i := range views {
+		/*line diagnostics.goal:88*/ of := views[i].open
+		/*line diagnostics.goal:89*/ if of == nil {
+			/*line diagnostics.goal:90*/ continue
 		}
-		/*line diagnostics.goal:74*/ if s.superseded(of.uri, of.version) {
-			/*line diagnostics.goal:75*/ continue
+		/*line diagnostics.goal:92*/ if s.superseded(of.uri, of.version) {
+			/*line diagnostics.goal:93*/ continue
 		}
-		/*line diagnostics.goal:77*/ tokEnd := tokenEnds(of.text)
-		/*line diagnostics.goal:78*/ out := make([]Diagnostic, 0, len(perFile[i]))
-		/*line diagnostics.goal:79*/ for _, d := range perFile[i] {
-			/*line diagnostics.goal:80*/ out = append(out, toLSP(of.text, tokEnd, d))
+		/*line diagnostics.goal:95*/ base := filepath.Base(of.path)
+		/*line diagnostics.goal:96*/ tokEnd := tokenEnds(of.text)
+		/*line diagnostics.goal:97*/ out := make([]Diagnostic, 0, len(perFile[i]))
+		/*line diagnostics.goal:98*/ for _, d := range perFile[i] {
+			/*line diagnostics.goal:99*/ if suppress[dedupKey(base, d.Pos.Line, d.Feature)] {
+				/*line diagnostics.goal:100*/ continue
+			}
+			/*line diagnostics.goal:102*/ out = append(out, toLSP(of.text, tokEnd, d))
 		}
-		/*line diagnostics.goal:82*/ s.publish(of.uri, of.version, out)
+		/*line diagnostics.goal:104*/ for _, d := range depthByBase[base] {
+			/*line diagnostics.goal:105*/ out = append(out, depthToLSP(of.text, d))
+		}
+		/*line diagnostics.goal:107*/ s.publish(of.uri, of.version, out)
 	}
 }
 
-//line diagnostics.goal:89
+//line diagnostics.goal:116
+func (s *Server) depthDiags(dir string, views []packageEntry) []typecheck.Diagnostic {
+	/*line diagnostics.goal:117*/ name := ""
+	/*line diagnostics.goal:118*/ files := make([]project.File, 0, len(views))
+	/*line diagnostics.goal:119*/ for i := range views {
+		/*line diagnostics.goal:120*/ v := views[i]
+		/*line diagnostics.goal:121*/ if clause := project.PackageClause(v.src); clause != "" && name == "" {
+			/*line diagnostics.goal:122*/ name = clause
+		}
+		/*line diagnostics.goal:124*/ files = append(files, project.File{Path: v.path, Name: filepath.Base(v.path), Src: v.src})
+	}
+	/*line diagnostics.goal:126*/ if name == "" {
+		/*line diagnostics.goal:127*/ return nil
+	}
+	/*line diagnostics.goal:129*/ pkg := &project.Package{Dir: dir, Name: name, Files: files}
+	/*line diagnostics.goal:130*/ var tc typecheck.TypeChecker = typecheck.GoTypesChecker{}
+
+	/*line diagnostics.goal:133*/
+	ds, cerr := tc.Check(pkg)
+	/*line diagnostics.goal:134*/ if cerr != nil {
+		/*line diagnostics.goal:135*/ s.logf("depth stage %s: %v", dir, cerr)
+		/*line diagnostics.goal:136*/ return nil
+	}
+	/*line diagnostics.goal:138*/ return ds
+}
+
+//line diagnostics.goal:144
 func (s *Server) compileSingle(uri, text string, version int) {
-	/*line diagnostics.goal:90*/ diags, err := sema.Analyze(text)
-	/*line diagnostics.goal:91*/ if err != nil {
-		/*line diagnostics.goal:92*/ s.logf("analyze %s: %v", uri, err)
-		/*line diagnostics.goal:93*/ return
+	/*line diagnostics.goal:145*/ diags, err := sema.Analyze(text)
+	/*line diagnostics.goal:146*/ if err != nil {
+		/*line diagnostics.goal:147*/ s.logf("analyze %s: %v", uri, err)
+		/*line diagnostics.goal:148*/ return
 	}
-	/*line diagnostics.goal:95*/ tokEnd := tokenEnds(text)
-	/*line diagnostics.goal:96*/ out := make([]Diagnostic, 0, len(diags))
-	/*line diagnostics.goal:97*/ for _, d := range diags {
-		/*line diagnostics.goal:98*/ out = append(out, toLSP(text, tokEnd, d))
+	/*line diagnostics.goal:150*/ tokEnd := tokenEnds(text)
+	/*line diagnostics.goal:151*/ out := make([]Diagnostic, 0, len(diags))
+	/*line diagnostics.goal:152*/ for _, d := range diags {
+		/*line diagnostics.goal:153*/ out = append(out, toLSP(text, tokEnd, d))
 	}
-	/*line diagnostics.goal:100*/ if s.superseded(uri, version) {
-		/*line diagnostics.goal:101*/ return
+	/*line diagnostics.goal:155*/ if s.superseded(uri, version) {
+		/*line diagnostics.goal:156*/ return
 	}
-	/*line diagnostics.goal:103*/ s.publish(uri, version, out)
+	/*line diagnostics.goal:158*/ s.publish(uri, version, out)
 }
 
-//line diagnostics.goal:107
+//line diagnostics.goal:162
 type openFile struct {
 	uri     string
 	path    string
@@ -92,122 +135,149 @@ type openFile struct {
 	version int
 }
 
-//line diagnostics.goal:115
+//line diagnostics.goal:170
 func (s *Server) openFilesInDir(dir string) map[string]openFile {
-	/*line diagnostics.goal:116*/ s.mu.Lock()
-	/*line diagnostics.goal:117*/ defer s.mu.Unlock()
-	/*line diagnostics.goal:118*/ out := map[string]openFile{}
-	/*line diagnostics.goal:119*/ for uri, d := range s.docs {
-		/*line diagnostics.goal:120*/ p, ok := uriToPath(uri)
-		/*line diagnostics.goal:121*/ if !ok || filepath.Dir(p) != dir {
-			/*line diagnostics.goal:122*/ continue
+	/*line diagnostics.goal:171*/ s.mu.Lock()
+	/*line diagnostics.goal:172*/ defer s.mu.Unlock()
+	/*line diagnostics.goal:173*/ out := map[string]openFile{}
+	/*line diagnostics.goal:174*/ for uri, d := range s.docs {
+		/*line diagnostics.goal:175*/ p, ok := uriToPath(uri)
+		/*line diagnostics.goal:176*/ if !ok || filepath.Dir(p) != dir {
+			/*line diagnostics.goal:177*/ continue
 		}
-		/*line diagnostics.goal:124*/ out[uri] = openFile{uri: uri, path: p, text: d.text, version: d.version}
+		/*line diagnostics.goal:179*/ out[uri] = openFile{uri: uri, path: p, text: d.text, version: d.version}
 	}
-	/*line diagnostics.goal:126*/ return out
+	/*line diagnostics.goal:181*/ return out
 }
 
-//line diagnostics.goal:131
+//line diagnostics.goal:188
 type packageEntry struct {
+	path string
 	src  string
 	open *openFile
 }
 
-//line diagnostics.goal:139
+//line diagnostics.goal:197
 func mergePackageView(disk []fileSrc, open map[string]openFile) []packageEntry {
-	/*line diagnostics.goal:140*/ byPath := map[string]*packageEntry{}
-	/*line diagnostics.goal:141*/ paths := make([]string, 0, len(disk)+len(open))
-	/*line diagnostics.goal:142*/ for _, f := range disk {
-		/*line diagnostics.goal:143*/ byPath[f.path] = &packageEntry{src: f.src}
-		/*line diagnostics.goal:144*/ paths = append(paths, f.path)
+	/*line diagnostics.goal:198*/ byPath := map[string]*packageEntry{}
+	/*line diagnostics.goal:199*/ paths := make([]string, 0, len(disk)+len(open))
+	/*line diagnostics.goal:200*/ for _, f := range disk {
+		/*line diagnostics.goal:201*/ byPath[f.path] = &packageEntry{path: f.path, src: f.src}
+		/*line diagnostics.goal:202*/ paths = append(paths, f.path)
 	}
-	/*line diagnostics.goal:146*/ for _, of := range open {
-		/*line diagnostics.goal:147*/ o := of
-		/*line diagnostics.goal:148*/ if e, found := byPath[o.path]; found {
-			/*line diagnostics.goal:149*/ e.src = o.text
-			/*line diagnostics.goal:150*/ e.open = &o
-			/*line diagnostics.goal:151*/ continue
+	/*line diagnostics.goal:204*/ for _, of := range open {
+		/*line diagnostics.goal:205*/ o := of
+		/*line diagnostics.goal:206*/ if e, found := byPath[o.path]; found {
+			/*line diagnostics.goal:207*/ e.src = o.text
+			/*line diagnostics.goal:208*/ e.open = &o
+			/*line diagnostics.goal:209*/ continue
 		}
-		/*line diagnostics.goal:153*/ byPath[o.path] = &packageEntry{src: o.text, open: &o}
-		/*line diagnostics.goal:154*/ paths = append(paths, o.path)
+		/*line diagnostics.goal:211*/ byPath[o.path] = &packageEntry{path: o.path, src: o.text, open: &o}
+		/*line diagnostics.goal:212*/ paths = append(paths, o.path)
 	}
-	/*line diagnostics.goal:156*/ sort.Strings(paths)
-	/*line diagnostics.goal:157*/ views := make([]packageEntry, len(paths))
-	/*line diagnostics.goal:158*/ for i, p := range paths {
-		/*line diagnostics.goal:159*/ views[i] = *byPath[p]
+	/*line diagnostics.goal:214*/ sort.Strings(paths)
+	/*line diagnostics.goal:215*/ views := make([]packageEntry, len(paths))
+	/*line diagnostics.goal:216*/ for i, p := range paths {
+		/*line diagnostics.goal:217*/ views[i] = *byPath[p]
 	}
-	/*line diagnostics.goal:161*/ return views
+	/*line diagnostics.goal:219*/ return views
 }
 
-//line diagnostics.goal:167
+//line diagnostics.goal:225
 func conflictingPackageNames(srcs []string) bool {
-	/*line diagnostics.goal:168*/ name := ""
-	/*line diagnostics.goal:169*/ for _, src := range srcs {
-		/*line diagnostics.goal:170*/ got := project.PackageClause(src)
-		/*line diagnostics.goal:171*/ if got == "" {
-			/*line diagnostics.goal:172*/ continue
+	/*line diagnostics.goal:226*/ name := ""
+	/*line diagnostics.goal:227*/ for _, src := range srcs {
+		/*line diagnostics.goal:228*/ got := project.PackageClause(src)
+		/*line diagnostics.goal:229*/ if got == "" {
+			/*line diagnostics.goal:230*/ continue
 		}
-		/*line diagnostics.goal:174*/ if name == "" {
-			/*line diagnostics.goal:175*/ name = got
-			/*line diagnostics.goal:176*/ continue
+		/*line diagnostics.goal:232*/ if name == "" {
+			/*line diagnostics.goal:233*/ name = got
+			/*line diagnostics.goal:234*/ continue
 		}
-		/*line diagnostics.goal:178*/ if got != name {
-			/*line diagnostics.goal:179*/ return true
+		/*line diagnostics.goal:236*/ if got != name {
+			/*line diagnostics.goal:237*/ return true
 		}
 	}
-	/*line diagnostics.goal:182*/ return false
+	/*line diagnostics.goal:240*/ return false
 }
 
-//line diagnostics.goal:187
+//line diagnostics.goal:245
 func (s *Server) superseded(uri string, version int) bool {
-	/*line diagnostics.goal:188*/ s.mu.Lock()
-	/*line diagnostics.goal:189*/ defer s.mu.Unlock()
-	/*line diagnostics.goal:190*/ cur := s.docs[uri]
-	/*line diagnostics.goal:191*/ return cur != nil && cur.version > version
+	/*line diagnostics.goal:246*/ s.mu.Lock()
+	/*line diagnostics.goal:247*/ defer s.mu.Unlock()
+	/*line diagnostics.goal:248*/ cur := s.docs[uri]
+	/*line diagnostics.goal:249*/ return cur != nil && cur.version > version
 }
 
-//line diagnostics.goal:194
+//line diagnostics.goal:252
 func (s *Server) publish(uri string, version int, diags []Diagnostic) {
-	/*line diagnostics.goal:195*/ s.notify("textDocument/publishDiagnostics", PublishDiagnosticsParams{URI: uri, Version: version, Diagnostics: diags})
+	/*line diagnostics.goal:253*/ s.notify("textDocument/publishDiagnostics", PublishDiagnosticsParams{URI: uri, Version: version, Diagnostics: diags})
 }
 
-//line diagnostics.goal:206
+//line diagnostics.goal:264
 func toLSP(text string, tokEnd map[int]int, d sema.Diagnostic) Diagnostic {
-	/*line diagnostics.goal:207*/ start := d.Pos
-	/*line diagnostics.goal:208*/ rng := Range{Start: Position{Line: start.Line - 1, Character: start.Col - 1}, End: Position{Line: start.Line - 1, Character: lineLength(text, start.Line)}}
-	/*line diagnostics.goal:212*/ if end, ok := tokEnd[d.Pos.Offset]; ok && end > d.Pos.Offset {
-		/*line diagnostics.goal:213*/ e := token.OffsetToPosition(text, end)
-		/*line diagnostics.goal:214*/ rng.End = Position{Line: e.Line - 1, Character: e.Col - 1}
+	/*line diagnostics.goal:265*/ start := d.Pos
+	/*line diagnostics.goal:266*/ rng := Range{Start: Position{Line: start.Line - 1, Character: start.Col - 1}, End: Position{Line: start.Line - 1, Character: lineLength(text, start.Line)}}
+	/*line diagnostics.goal:270*/ if end, ok := tokEnd[d.Pos.Offset]; ok && end > d.Pos.Offset {
+		/*line diagnostics.goal:271*/ e := token.OffsetToPosition(text, end)
+		/*line diagnostics.goal:272*/ rng.End = Position{Line: e.Line - 1, Character: e.Col - 1}
 	}
-	/*line diagnostics.goal:216*/ if rng.End.Line == rng.Start.Line && rng.End.Character <= rng.Start.Character {
-		/*line diagnostics.goal:217*/ rng.End.Character = rng.Start.Character + 1
+	/*line diagnostics.goal:274*/ if rng.End.Line == rng.Start.Line && rng.End.Character <= rng.Start.Character {
+		/*line diagnostics.goal:275*/ rng.End.Character = rng.Start.Character + 1
 	}
-	/*line diagnostics.goal:220*/ severity := 1
-	/*line diagnostics.goal:221*/ if _, ok := d.Severity.(sema.Severity_Warning); ok {
-		/*line diagnostics.goal:222*/ severity = 2
+	/*line diagnostics.goal:278*/ severity := 1
+	/*line diagnostics.goal:279*/ if _, ok := d.Severity.(sema.Severity_Warning); ok {
+		/*line diagnostics.goal:280*/ severity = 2
 	}
-	/*line diagnostics.goal:224*/ return Diagnostic{Range: rng, Severity: severity, Code: d.Code, Source: "goal", Message: d.Message}
+	/*line diagnostics.goal:282*/ return Diagnostic{Range: rng, Severity: severity, Code: d.Code, Source: "goal", Message: d.Message}
 }
 
-//line diagnostics.goal:236
+//line diagnostics.goal:295
+func dedupKey(file string, line int, feature string) string {
+	/*line diagnostics.goal:296*/ return fmt.Sprintf("%s:%d:%s", filepath.Base(file), line, feature)
+}
+
+//line diagnostics.goal:303
+func depthToLSP(text string, d typecheck.Diagnostic) Diagnostic {
+	/*line diagnostics.goal:304*/ line := d.Pos.Line
+	/*line diagnostics.goal:305*/ if line < 1 {
+		/*line diagnostics.goal:306*/ line = 1
+	}
+	/*line diagnostics.goal:308*/ col := d.Pos.Column
+	/*line diagnostics.goal:309*/ if col < 1 {
+		/*line diagnostics.goal:310*/ col = 1
+	}
+	/*line diagnostics.goal:312*/ rng := Range{Start: Position{Line: line - 1, Character: col - 1}, End: Position{Line: line - 1, Character: lineLength(text, line)}}
+	/*line diagnostics.goal:316*/ if rng.End.Character <= rng.Start.Character {
+		/*line diagnostics.goal:317*/ rng.End.Character = rng.Start.Character + 1
+	}
+	/*line diagnostics.goal:320*/ severity := 1
+	/*line diagnostics.goal:321*/ if _, ok := d.Severity.(sema.Severity_Warning); ok {
+		/*line diagnostics.goal:322*/ severity = 2
+	}
+	/*line diagnostics.goal:324*/ return Diagnostic{Range: rng, Severity: severity, Code: d.Code, Source: "goal", Message: d.Message}
+}
+
+//line diagnostics.goal:336
 func tokenEnds(text string) map[int]int {
-	/*line diagnostics.goal:237*/ toks := lexer.Tokens(text)
-	/*line diagnostics.goal:238*/ m := make(map[int]int, len(toks))
-	/*line diagnostics.goal:239*/ for _, t := range toks {
-		/*line diagnostics.goal:240*/ m[t.Pos.Offset] = t.Pos.Offset + len(t.Lit)
+	/*line diagnostics.goal:337*/ toks := lexer.Tokens(text)
+	/*line diagnostics.goal:338*/ m := make(map[int]int, len(toks))
+	/*line diagnostics.goal:339*/ for _, t := range toks {
+		/*line diagnostics.goal:340*/ m[t.Pos.Offset] = t.Pos.Offset + len(t.Lit)
 	}
-	/*line diagnostics.goal:242*/ return m
+	/*line diagnostics.goal:342*/ return m
 }
 
-//line diagnostics.goal:247
+//line diagnostics.goal:347
 func lineLength(src string, line1 int) int {
-	/*line diagnostics.goal:248*/ idx := line1 - 1
-	/*line diagnostics.goal:249*/ if idx < 0 {
-		/*line diagnostics.goal:250*/ return 0
+	/*line diagnostics.goal:348*/ idx := line1 - 1
+	/*line diagnostics.goal:349*/ if idx < 0 {
+		/*line diagnostics.goal:350*/ return 0
 	}
-	/*line diagnostics.goal:252*/ lines := strings.Split(src, "\n")
-	/*line diagnostics.goal:253*/ if idx >= len(lines) {
-		/*line diagnostics.goal:254*/ return 0
+	/*line diagnostics.goal:352*/ lines := strings.Split(src, "\n")
+	/*line diagnostics.goal:353*/ if idx >= len(lines) {
+		/*line diagnostics.goal:354*/ return 0
 	}
-	/*line diagnostics.goal:256*/ return len(strings.TrimRight(lines[idx], "\r"))
+	/*line diagnostics.goal:356*/ return len(strings.TrimRight(lines[idx], "\r"))
 }

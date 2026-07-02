@@ -38,134 +38,140 @@ type InitializeResult struct {
 
 //line protocol.goal:47
 type ServerCapabilities struct {
-	TextDocumentSync       int                    `json:"textDocumentSync"`
-	CodeActionProvider     *CodeActionOptions     `json:"codeActionProvider,omitempty"`
-	DocumentSymbolProvider bool                   `json:"documentSymbolProvider,omitempty"`
-	SemanticTokensProvider *SemanticTokensOptions `json:"semanticTokensProvider,omitempty"`
-	DefinitionProvider     bool                   `json:"definitionProvider,omitempty"`
-	HoverProvider          bool                   `json:"hoverProvider,omitempty"`
-	ReferencesProvider     bool                   `json:"referencesProvider,omitempty"`
-	RenameProvider         bool                   `json:"renameProvider,omitempty"`
+	TextDocumentSync           int                    `json:"textDocumentSync"`
+	CodeActionProvider         *CodeActionOptions     `json:"codeActionProvider,omitempty"`
+	DocumentSymbolProvider     bool                   `json:"documentSymbolProvider,omitempty"`
+	SemanticTokensProvider     *SemanticTokensOptions `json:"semanticTokensProvider,omitempty"`
+	DefinitionProvider         bool                   `json:"definitionProvider,omitempty"`
+	HoverProvider              bool                   `json:"hoverProvider,omitempty"`
+	ReferencesProvider         bool                   `json:"referencesProvider,omitempty"`
+	RenameProvider             bool                   `json:"renameProvider,omitempty"`
+	DocumentFormattingProvider bool                   `json:"documentFormattingProvider,omitempty"`
 }
 
-//line protocol.goal:61
+//line protocol.goal:65
+type DocumentFormattingParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+}
+
+//line protocol.goal:72
 type SemanticTokensOptions struct {
 	Legend SemanticTokensLegend `json:"legend"`
 	Full   bool                 `json:"full"`
 }
 
-//line protocol.goal:68
+//line protocol.goal:79
 type SemanticTokensLegend struct {
 	TokenTypes     []string `json:"tokenTypes"`
 	TokenModifiers []string `json:"tokenModifiers"`
 }
 
-//line protocol.goal:74
+//line protocol.goal:85
 type SemanticTokensParams struct {
 	TextDocument textDocumentIdentifier `json:"textDocument"`
 }
 
-//line protocol.goal:80
+//line protocol.goal:91
 type SemanticTokens struct {
 	Data []uint `json:"data"`
 }
 
-//line protocol.goal:85
+//line protocol.goal:96
 type CodeActionOptions struct {
 	CodeActionKinds []string `json:"codeActionKinds,omitempty"`
 }
 
-//line protocol.goal:91
+//line protocol.goal:102
 type CodeActionParams struct {
 	TextDocument textDocumentIdentifier `json:"textDocument"`
 	Range        Range                  `json:"range"`
 	Context      CodeActionContext      `json:"context"`
 }
 
-//line protocol.goal:99
+//line protocol.goal:110
 type CodeActionContext struct {
 	Only        []string     `json:"only,omitempty"`
 	Diagnostics []Diagnostic `json:"diagnostics,omitempty"`
 }
 
-//line protocol.goal:105
+//line protocol.goal:116
 type CodeAction struct {
 	Title string         `json:"title"`
 	Kind  string         `json:"kind,omitempty"`
 	Edit  *WorkspaceEdit `json:"edit,omitempty"`
 }
 
-//line protocol.goal:113
+//line protocol.goal:124
 type WorkspaceEdit struct {
 	DocumentChanges []TextDocumentEdit `json:"documentChanges"`
 }
 
-//line protocol.goal:118
+//line protocol.goal:129
 type TextDocumentEdit struct {
 	TextDocument versionedTextDocumentIdentifier `json:"textDocument"`
 	Edits        []TextEdit                      `json:"edits"`
 }
 
-//line protocol.goal:124
+//line protocol.goal:135
 type TextEdit struct {
 	Range   Range  `json:"range"`
 	NewText string `json:"newText"`
 }
 
-//line protocol.goal:130
+//line protocol.goal:141
 type DocumentSymbolParams struct {
 	TextDocument textDocumentIdentifier `json:"textDocument"`
 }
 
-//line protocol.goal:136
+//line protocol.goal:147
 type DefinitionParams struct {
 	TextDocument textDocumentIdentifier `json:"textDocument"`
 	Position     Position               `json:"position"`
 }
 
-//line protocol.goal:142
+//line protocol.goal:153
 type Location struct {
 	URI   string `json:"uri"`
 	Range Range  `json:"range"`
 }
 
-//line protocol.goal:149
+//line protocol.goal:160
 type HoverParams struct {
 	TextDocument textDocumentIdentifier `json:"textDocument"`
 	Position     Position               `json:"position"`
 }
 
-//line protocol.goal:157
+//line protocol.goal:168
 type ReferenceParams struct {
 	TextDocument textDocumentIdentifier `json:"textDocument"`
 	Position     Position               `json:"position"`
 	Context      ReferenceContext       `json:"context"`
 }
 
-//line protocol.goal:165
+//line protocol.goal:176
 type ReferenceContext struct {
 	IncludeDeclaration bool `json:"includeDeclaration"`
 }
 
-//line protocol.goal:171
+//line protocol.goal:182
 type RenameParams struct {
 	TextDocument textDocumentIdentifier `json:"textDocument"`
 	Position     Position               `json:"position"`
 	NewName      string                 `json:"newName"`
 }
 
-//line protocol.goal:180
+//line protocol.goal:191
 type Hover struct {
 	Contents MarkupContent `json:"contents"`
 }
 
-//line protocol.goal:186
+//line protocol.goal:197
 type MarkupContent struct {
 	Kind  string `json:"kind"`
 	Value string `json:"value"`
 }
 
-//line protocol.goal:193
+//line protocol.goal:204
 type DocumentSymbol struct {
 	Name           string           `json:"name"`
 	Detail         string           `json:"detail,omitempty"`
@@ -175,7 +181,7 @@ type DocumentSymbol struct {
 	Children       []DocumentSymbol `json:"children,omitempty"`
 }
 
-//line protocol.go:177
+//line protocol.go:183
 const (
 	symClass      = 5
 	symMethod     = 6
@@ -187,7 +193,7 @@ const (
 	symStruct     = 23
 )
 
-//line protocol.go:189
+//line protocol.go:195
 const (
 	semKeyword = iota
 	semType
@@ -206,58 +212,58 @@ const (
 	semOperator
 )
 
-//line protocol.goal:238
+//line protocol.goal:249
 var semanticTokenTypes = []string{semKeyword: "keyword", semType: "type", semEnum: "enum", semInterface: "interface", semStruct: "struct", semParameter: "parameter", semVariable: "variable", semProperty: "property", semEnumMember: "enumMember", semFunction: "function", semMethod: "method", semString: "string", semNumber: "number", semComment: "comment", semOperator: "operator"}
 
-//line protocol.goal:259
+//line protocol.goal:270
 var semanticTokenModifiers = []string{"declaration"}
 
-//line protocol.goal:263
+//line protocol.goal:274
 func defaultSemanticLegend() SemanticTokensLegend {
-	/*line protocol.goal:264*/ return SemanticTokensLegend{TokenTypes: semanticTokenTypes, TokenModifiers: semanticTokenModifiers}
+	/*line protocol.goal:275*/ return SemanticTokensLegend{TokenTypes: semanticTokenTypes, TokenModifiers: semanticTokenModifiers}
 }
 
-//line protocol.goal:271
+//line protocol.goal:282
 type ServerInfo struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 }
 
-//line protocol.goal:277
+//line protocol.goal:288
 type textDocumentItem struct {
 	URI     string `json:"uri"`
 	Version int    `json:"version"`
 	Text    string `json:"text"`
 }
 
-//line protocol.goal:284
+//line protocol.goal:295
 type versionedTextDocumentIdentifier struct {
 	URI     string `json:"uri"`
 	Version int    `json:"version"`
 }
 
-//line protocol.goal:290
+//line protocol.goal:301
 type textDocumentIdentifier struct {
 	URI string `json:"uri"`
 }
 
-//line protocol.goal:295
+//line protocol.goal:306
 type contentChange struct {
 	Text string `json:"text"`
 }
 
-//line protocol.goal:299
+//line protocol.goal:310
 type didOpenParams struct {
 	TextDocument textDocumentItem `json:"textDocument"`
 }
 
-//line protocol.goal:303
+//line protocol.goal:314
 type didChangeParams struct {
 	TextDocument   versionedTextDocumentIdentifier `json:"textDocument"`
 	ContentChanges []contentChange                 `json:"contentChanges"`
 }
 
-//line protocol.goal:308
+//line protocol.goal:319
 type didCloseParams struct {
 	TextDocument textDocumentIdentifier `json:"textDocument"`
 }

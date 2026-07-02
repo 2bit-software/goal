@@ -131,6 +131,8 @@ func (s *Server) handle(m *rpcMessage) (stop bool) {
 				HoverProvider:          true,
 				ReferencesProvider:     true,
 				RenameProvider:         true,
+
+				DocumentFormattingProvider: true,
 			},
 			ServerInfo: ServerInfo{Name: "goal-lsp", Version: serverVersion},
 		})
@@ -158,6 +160,8 @@ func (s *Server) handle(m *rpcMessage) (stop bool) {
 		s.reply(m.ID, s.references(m.Params))
 	case "textDocument/rename":
 		s.reply(m.ID, s.rename(m.Params))
+	case "textDocument/formatting":
+		s.reply(m.ID, s.formatting(m.Params))
 	case "initialized", "$/setTrace", "textDocument/didSave":
 		// no-op notifications
 	default:

@@ -53,6 +53,17 @@ type ServerCapabilities struct {
 	HoverProvider          bool                   `json:"hoverProvider,omitempty"`
 	ReferencesProvider     bool                   `json:"referencesProvider,omitempty"`
 	RenameProvider         bool                   `json:"renameProvider,omitempty"`
+
+	// DocumentFormattingProvider advertises textDocument/formatting: the server
+	// returns the buffer's canonical goalfmt layout as one whole-document edit.
+	DocumentFormattingProvider bool `json:"documentFormattingProvider,omitempty"`
+}
+
+// DocumentFormattingParams is a textDocument/formatting request for one document. The
+// client's FormattingOptions (tab size, insert-spaces) are intentionally ignored — goalfmt
+// imposes goal's single canonical layout — so only the document identity is decoded.
+type DocumentFormattingParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
 }
 
 // SemanticTokensOptions advertises the server's semantic-tokens support: the legend that

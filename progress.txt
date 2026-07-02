@@ -1,6 +1,13 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- Consuming a `Result`-returning call in `.goal` without propagating (found US-031):
+  you CANNOT single-bind it (`x := f()` -> "1 variable but 2 values") and you
+  CANNOT `match f() {...}` directly (the emitter binds the scrutinee to one temp,
+  which mismatches the 2-value lowering of an open Result). To TOLERATE the error,
+  use the Go-style two-value bind `v, err := f()`, exactly as cmd/goal's
+  `return tc.Check(pkg)` does. `?` remains the only single-expression in-`.goal`
+  form and it PROPAGATES (does not tolerate).
 - Editing any `internal/*/*.goal` fires the PostToolUse prek hook, which runs the
   FULL `task check` (vet + verify-generated + whole suite). verify-generated fails
   until the committed `.go` sibling is regenerated, so every `.goal` edit reports a
@@ -8640,4 +8647,35 @@
   - Computing LSP quickfixes ON DEMAND (re-run sema.Analyze against the current
     buffer in codeActions) is simpler and staleness-free versus stashing published
     diagnostics per-URI + version-gating (what the PRD note suggested).
+---
+
+## 2026-07-02 - US-031
+- Implemented LSP depth-stage diagnostics + textDocument/formatting.
+- The diagnostics server now runs the typed depth stage (typecheck.GoTypesChecker)
+  over the package view built from open buffers, merges its findings with the
+  lexical stage using the same dedupKey(basename,line,feature) suppression as
+  cmd/goal checkPackage (type-backed finding wins), and publishes both. Added a
+  textDocument/formatting handler (goalfmt.Source -> one whole-document TextEdit),
+  advertised via DocumentFormattingProvider.
+- Files changed: internal/lsp/diagnostics.goal (depth merge, depthDiags, dedupKey,
+  depthToLSP, packageEntry.path), internal/lsp/formatting.goal (new handler),
+  internal/lsp/server.goal (capability + route), internal/lsp/protocol.goal
+  (DocumentFormattingProvider + DocumentFormattingParams), + regenerated .go;
+  internal/lsptest/depth_format_test.go (new, Go-only tests).
+- Learnings for future iterations:
+  - Consuming a Result-returning call in .goal: you CANNOT single-bind it
+    (`x := f()` -> "1 variable but 2 values") nor `match f() {...}` directly (the
+    emitter binds the scrutinee to one temp, mismatching the 2-value lowering).
+    Use the Go-style two-value bind `v, err := f()` to tolerate the error, exactly
+    as cmd/goal's `return tc.Check(pkg)` does. `?` is the only in-.goal single-form.
+  - cmd/goal imports internal/lsp (the `goal lsp` subcommand), so a broken
+    internal/lsp .go breaks `go build ./cmd/goal`, which breaks `task generate`
+    (it builds bin/goal first). If you strand yourself, emit with the already-built
+    `bin/goal` binary directly: `./bin/goal build --emit=_bootstrap/gen ./internal`
+    then copy the files with the generated-header prepend loop from Taskfile.
+  - LSP tests: internal/lsp is emitted, so tests live in internal/lsptest (Go-only,
+    black-box through lsp.NewServer/Run). Depth checks need a REAL on-disk package
+    dir (write a t.TempDir() fixture + file:// URI) so compile() takes the package
+    path (not compileSingle, which has no depth stage); default debounce is 200ms
+    so sleep ~800ms before snapshotting publishDiagnostics.
 ---

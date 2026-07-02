@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"goal/internal/project"
 	"goal/internal/sema"
 	"goal/internal/token"
+	"goal/internal/typecheck"
 )
 
 // compile runs goal's static checks for the open document uri and publishes the findings,
@@ -64,6 +66,22 @@ func (s *Server) compile(uri, text string, version int) {
 		s.logf("foreign resolve %s: %v", dir, fe) // non-fatal: the type stays deferred
 	}
 
+	// Run the typed depth stage over the same package so in-editor findings match
+	// `goal check`: it grounds the conservative unresolved-* deferrals the lexical stage
+	// emits and adds go/types-backed findings. A mid-edit buffer often does not transpile;
+	// that failure is tolerated inside depthDiags (logged), so the lexical diagnostics still
+	// publish. depthByBase routes each finding to its file (a depth position names its file
+	// by //line basename), and suppress replaces the lexical deferral each one grounds —
+	// mirroring cmd/goal's checkPackage merge.
+	depth := s.depthDiags(dir, views)
+	depthByBase := map[string][]typecheck.Diagnostic{}
+	suppress := map[string]bool{}
+	for _, d := range depth {
+		base := filepath.Base(d.Pos.Filename)
+		depthByBase[base] = append(depthByBase[base], d)
+		suppress[dedupKey(base, d.Pos.Line, d.Feature)] = true
+	}
+
 	// Publish refreshed diagnostics for every open file in the package — fixing one file
 	// clears the stale cross-file diagnostics of its open siblings without touching them.
 	for i := range views {
@@ -74,13 +92,50 @@ func (s *Server) compile(uri, text string, version int) {
 		if s.superseded(of.uri, of.version) {
 			continue
 		}
+		base := filepath.Base(of.path)
 		tokEnd := tokenEnds(of.text)
 		out := make([]Diagnostic, 0, len(perFile[i]))
 		for _, d := range perFile[i] {
+			if suppress[dedupKey(base, d.Pos.Line, d.Feature)] {
+				continue // a type-backed finding owns this construct
+			}
 			out = append(out, toLSP(of.text, tokEnd, d))
+		}
+		for _, d := range depthByBase[base] {
+			out = append(out, depthToLSP(of.text, d))
 		}
 		s.publish(of.uri, of.version, out)
 	}
+}
+
+// depthDiags runs the typed depth stage (typecheck.GoTypesChecker) over the package view
+// and returns its findings. It tolerates a load failure: a mid-edit buffer that does not
+// transpile yields no depth findings (logged, not surfaced), leaving the lexical
+// diagnostics to stand — the same non-fatal contract `goal check` uses. It returns nil when
+// no file carries a package clause, since there is nothing to form a typed package from.
+func (s *Server) depthDiags(dir string, views []packageEntry) []typecheck.Diagnostic {
+	name := ""
+	files := make([]project.File, 0, len(views))
+	for i := range views {
+		v := views[i]
+		if clause := project.PackageClause(v.src); clause != "" && name == "" {
+			name = clause
+		}
+		files = append(files, project.File{Path: v.path, Name: filepath.Base(v.path), Src: v.src})
+	}
+	if name == "" {
+		return nil
+	}
+	pkg := &project.Package{Dir: dir, Name: name, Files: files}
+	var tc typecheck.TypeChecker = typecheck.GoTypesChecker{}
+	// Tolerate a load failure: a mid-edit buffer that does not transpile returns an
+	// error, which is logged rather than surfaced so the lexical diagnostics still stand.
+	ds, cerr := tc.Check(pkg)
+	if cerr != nil {
+		s.logf("depth stage %s: %v", dir, cerr)
+		return nil
+	}
+	return ds
 }
 
 // compileSingle analyzes the buffer in isolation and publishes its findings — the fallback
@@ -126,9 +181,12 @@ func (s *Server) openFilesInDir(dir string) map[string]openFile {
 	return out
 }
 
-// packageEntry is one source of the package view: its contents and, when the source is an
-// open document, that document so its diagnostics can be published back to its URI.
+// packageEntry is one source of the package view: its path and contents and, when the
+// source is an open document, that document so its diagnostics can be published back to its
+// URI. The path lets the view be projected into a project.Package for the depth stage and
+// routes a depth finding (which names its file by basename) back to the right file.
 type packageEntry struct {
+	path string
 	src  string
 	open *openFile
 }
@@ -140,7 +198,7 @@ func mergePackageView(disk []fileSrc, open map[string]openFile) []packageEntry {
 	byPath := map[string]*packageEntry{}
 	paths := make([]string, 0, len(disk)+len(open))
 	for _, f := range disk {
-		byPath[f.path] = &packageEntry{src: f.src}
+		byPath[f.path] = &packageEntry{path: f.path, src: f.src}
 		paths = append(paths, f.path)
 	}
 	for _, of := range open {
@@ -150,7 +208,7 @@ func mergePackageView(disk []fileSrc, open map[string]openFile) []packageEntry {
 			e.open = &o
 			continue
 		}
-		byPath[o.path] = &packageEntry{src: o.text, open: &o}
+		byPath[o.path] = &packageEntry{path: o.path, src: o.text, open: &o}
 		paths = append(paths, o.path)
 	}
 	sort.Strings(paths)
@@ -214,6 +272,48 @@ func toLSP(text string, tokEnd map[int]int, d sema.Diagnostic) Diagnostic {
 		rng.End = Position{Line: e.Line - 1, Character: e.Col - 1}
 	}
 	if rng.End.Line == rng.Start.Line && rng.End.Character <= rng.Start.Character {
+		rng.End.Character = rng.Start.Character + 1 // never an empty/inverted range
+	}
+
+	severity := 1 // Error
+	if _, ok := d.Severity.(sema.Severity_Warning); ok {
+		severity = 2 // Warning
+	}
+	return Diagnostic{
+		Range:    rng,
+		Severity: severity,
+		Code:     d.Code,
+		Source:   "goal",
+		Message:  d.Message,
+	}
+}
+
+// dedupKey identifies a construct across the lexical and depth stages by file basename,
+// line, and the feature that flagged it — the same key cmd/goal's checkPackage uses, so the
+// LSP suppresses a lexical deferral exactly where `goal check` does. The basename normalizes
+// the two stages' differing path spellings (full path vs. //line basename).
+func dedupKey(file string, line int, feature string) string {
+	return fmt.Sprintf("%s:%d:%s", filepath.Base(file), line, feature)
+}
+
+// depthToLSP converts a typed depth-stage finding into a protocol diagnostic. Unlike a
+// lexical finding it carries no reliable byte offset — its position comes from go/types via
+// the lowered Go's //line directives — so the range spans from the reported column to the
+// end of the line, the same fallback toLSP uses when a token end is unknown.
+func depthToLSP(text string, d typecheck.Diagnostic) Diagnostic {
+	line := d.Pos.Line
+	if line < 1 {
+		line = 1
+	}
+	col := d.Pos.Column
+	if col < 1 {
+		col = 1
+	}
+	rng := Range{
+		Start: Position{Line: line - 1, Character: col - 1},
+		End:   Position{Line: line - 1, Character: lineLength(text, line)},
+	}
+	if rng.End.Character <= rng.Start.Character {
 		rng.End.Character = rng.Start.Character + 1 // never an empty/inverted range
 	}
 

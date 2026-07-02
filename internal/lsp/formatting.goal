@@ -1,0 +1,48 @@
+package lsp
+
+import (
+	"encoding/json"
+	"strings"
+
+	"goal/internal/goalfmt"
+)
+
+// formatting answers a textDocument/formatting request: it returns the buffer's canonical
+// goalfmt layout as a single whole-document edit, so an editor's "Format Document" applies
+// the same layout `goal fmt` produces. It is best-effort — an unknown URI, source that does
+// not parse, or a buffer already in canonical form yields no edits (a nil []TextEdit
+// marshals to JSON null / an empty list), matching goalfmt's conservative contract of never
+// guessing at malformed input.
+func (s *Server) formatting(raw json.RawMessage) []TextEdit {
+	var p DocumentFormattingParams
+	if !s.decode(raw, &p, "formatting") {
+		return nil
+	}
+	text, _, ok := s.buffer(p.TextDocument.URI)
+	if !ok {
+		return nil
+	}
+	formatted, err := goalfmt.Source(text)
+	if err != nil || formatted == text {
+		// Malformed source (goalfmt returns the parse error) or an already-canonical
+		// buffer: leave the document untouched.
+		return nil
+	}
+	return []TextEdit{wholeDocumentEdit(text, formatted)}
+}
+
+// wholeDocumentEdit is a TextEdit that replaces the entire old document with newText. Its
+// range spans from the document start to the end of the last line, in 0-based line/character
+// coordinates (ASCII source is assumed for the last line's character count).
+func wholeDocumentEdit(old, newText string) TextEdit {
+	lines := strings.Split(old, "\n")
+	lastLine := len(lines) - 1
+	lastChar := len(lines[lastLine])
+	return TextEdit{
+		Range: Range{
+			Start: Position{Line: 0, Character: 0},
+			End:   Position{Line: lastLine, Character: lastChar},
+		},
+		NewText: newText,
+	}
+}
