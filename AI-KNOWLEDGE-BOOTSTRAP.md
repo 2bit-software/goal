@@ -610,7 +610,8 @@ func handle(id ID) {
 }
 ```
 
-**Lowers to:** `*T`. `Option.None` → `nil`, `Option.Some(v)` → `&v`, and `match` becomes
+**Lowers to:** `*T`. `Option.None` → `nil`, `Option.Some(v)` → a copy (`some := v; &some`)
+so later writes to `v` are never observable through the `Option`, and `match` becomes
 the nil-check `if p != nil { … } else { … }`.
 
 **No standalone "Rejected with" example:** unlike the other features here, `Option` has no

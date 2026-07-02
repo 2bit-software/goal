@@ -39,11 +39,44 @@ tasks:
       - go vet ./...
 
   check:
-    desc: Vet, verify generated Go is current, then test — the pre-commit gate
+    desc: Vet, verify generated Go is current, then test — the fast inner gate (use check-full for the pre-commit/pre-push gate)
     cmds:
       - task: vet
       - task: verify-generated
       - task: test
+
+  check-full:
+    desc: Full pre-commit/pre-push gate — runs check then the self-host fixpoint
+    cmds:
+      - task: check
+      - task: fixpoint
+
+  update-goldens:
+    desc: "REWRITES committed .go.expected goldens — regenerate the corpus goldens from the AST backend"
+    cmds:
+      - go test ./internal/corpus -run TestUpdateGoldens -update-goldens -count=1
+
+  corpus-gen:
+    desc: "REWRITES the committed corpus/manifest.json — regenerate the corpus manifest"
+    cmds:
+      - go run ./cmd/corpus-gen
+
+  site:
+    desc: Build the Pages site (compiles goal.wasm — takes minutes; same script the deploy workflow runs)
+    cmds:
+      - ./scripts/build-site.sh
+
+  e2e:
+    desc: "Headless playground gate — runs goal.wasm in Node against the seed outputs (SKIPPED if node is unavailable)"
+    deps: [site]
+    dir: playground-e2e
+    cmds:
+      - |
+        if ! command -v node >/dev/null 2>&1; then
+          echo "e2e: node not found on PATH — skipping playground gate"
+          exit 0
+        fi
+        node run.mjs
 
   generate:
     desc: Transpile the goal compiler source to committed, colocated Go (internal/<pkg>/<file>.go)
