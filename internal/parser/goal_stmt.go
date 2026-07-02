@@ -41,39 +41,46 @@ func (p *parser) collectDoc() *ast.DocComment {
 		/*line goal_stmt.goal:61*/ return nil
 	}
 	/*line goal_stmt.goal:63*/ doc := &ast.DocComment{Slash: p.cur().Pos}
-	/*line goal_stmt.goal:64*/ for p.at(token.DOC_COMMENT) {
-		/*line goal_stmt.goal:65*/ t := p.advance()
-		/*line goal_stmt.goal:66*/ doc.Lines = append(doc.Lines, stripDocPrefix(t.Lit))
+	/*line goal_stmt.goal:64*/ var lineNums []int
+
+	/*line goal_stmt.goal:65*/
+	for p.at(token.DOC_COMMENT) {
+		/*line goal_stmt.goal:66*/ t := p.advance()
+		/*line goal_stmt.goal:67*/ doc.Lines = append(doc.Lines, stripDocPrefix(t.Lit))
+		/*line goal_stmt.goal:68*/ lineNums = append(lineNums, t.Pos.Line)
 	}
-	/*line goal_stmt.goal:68*/ doc.Doctests = extractDoctests(doc.Lines)
-	/*line goal_stmt.goal:69*/ return doc
+	/*line goal_stmt.goal:70*/ doc.Doctests = extractDoctests(doc.Lines, lineNums)
+	/*line goal_stmt.goal:71*/ return doc
 }
 
-//line goal_stmt.goal:74
+//line goal_stmt.goal:76
 func stripDocPrefix(lit string) string {
-	/*line goal_stmt.goal:75*/ s := strings.TrimPrefix(lit, "///")
-	/*line goal_stmt.goal:76*/ s = strings.TrimPrefix(s, " ")
-	/*line goal_stmt.goal:77*/ return s
+	/*line goal_stmt.goal:77*/ s := strings.TrimPrefix(lit, "///")
+	/*line goal_stmt.goal:78*/ s = strings.TrimPrefix(s, " ")
+	/*line goal_stmt.goal:79*/ return s
 }
 
-//line goal_stmt.goal:85
-func extractDoctests(lines []string) []*ast.Doctest {
-	/*line goal_stmt.goal:86*/ var out []*ast.Doctest
+//line goal_stmt.goal:89
+func extractDoctests(lines []string, lineNums []int) []*ast.Doctest {
+	/*line goal_stmt.goal:90*/ var out []*ast.Doctest
 
-	/*line goal_stmt.goal:87*/
+	/*line goal_stmt.goal:91*/
 	var cur *ast.Doctest
 
-	/*line goal_stmt.goal:88*/
-	for _, ln := range lines {
-		/*line goal_stmt.goal:89*/ t := strings.TrimSpace(ln)
-		/*line goal_stmt.goal:90*/ if rest, ok := strings.CutPrefix(t, ">>>"); ok {
-			/*line goal_stmt.goal:91*/ cur = &ast.Doctest{Input: strings.TrimSpace(rest)}
-			/*line goal_stmt.goal:92*/ out = append(out, cur)
-			/*line goal_stmt.goal:93*/ continue
+	/*line goal_stmt.goal:92*/
+	for i, ln := range lines {
+		/*line goal_stmt.goal:93*/ t := strings.TrimSpace(ln)
+		/*line goal_stmt.goal:94*/ if rest, ok := strings.CutPrefix(t, ">>>"); ok {
+			/*line goal_stmt.goal:95*/ cur = &ast.Doctest{Input: strings.TrimSpace(rest)}
+			/*line goal_stmt.goal:96*/ if i < len(lineNums) {
+				/*line goal_stmt.goal:97*/ cur.Line = lineNums[i]
+			}
+			/*line goal_stmt.goal:99*/ out = append(out, cur)
+			/*line goal_stmt.goal:100*/ continue
 		}
-		/*line goal_stmt.goal:95*/ if cur != nil {
-			/*line goal_stmt.goal:96*/ cur.Expected = append(cur.Expected, t)
+		/*line goal_stmt.goal:102*/ if cur != nil {
+			/*line goal_stmt.goal:103*/ cur.Expected = append(cur.Expected, t)
 		}
 	}
-	/*line goal_stmt.goal:99*/ return out
+	/*line goal_stmt.goal:106*/ return out
 }

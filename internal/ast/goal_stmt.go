@@ -66,8 +66,9 @@ func (d *DocComment) End() token.Pos {
 	/*line goal_stmt.goal:64*/ return token.Pos{Offset: d.Slash.Offset + n, Line: d.Slash.Line, Col: d.Slash.Col + n}
 }
 
-//line goal_stmt.goal:71
+//line goal_stmt.goal:73
 type Doctest struct {
 	Input    string
 	Expected []string
+	Line     int
 }

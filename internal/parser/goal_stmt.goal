@@ -61,11 +61,13 @@ func (p *parser) collectDoc() *ast.DocComment {
 		return nil
 	}
 	doc := &ast.DocComment{Slash: p.cur().Pos}
+	var lineNums []int
 	for p.at(token.DOC_COMMENT) {
 		t := p.advance()
 		doc.Lines = append(doc.Lines, stripDocPrefix(t.Lit))
+		lineNums = append(lineNums, t.Pos.Line)
 	}
-	doc.Doctests = extractDoctests(doc.Lines)
+	doc.Doctests = extractDoctests(doc.Lines, lineNums)
 	return doc
 }
 
@@ -81,14 +83,19 @@ func stripDocPrefix(lit string) string {
 // whose trimmed text starts with `>>>` opens a new doctest whose Input is the
 // text after the `>>>`; the following non-`>>>` lines are its expected output,
 // up to the next `>>>` or the end of the run. Lines before the first `>>>` are
-// prose and contribute no doctest.
-func extractDoctests(lines []string) []*ast.Doctest {
+// prose and contribute no doctest. lineNums is parallel to lines (each element
+// is that line's source line number) so each doctest records the true .goal line
+// of its `>>>` example; pass nil to leave Line zero.
+func extractDoctests(lines []string, lineNums []int) []*ast.Doctest {
 	var out []*ast.Doctest
 	var cur *ast.Doctest
-	for _, ln := range lines {
+	for i, ln := range lines {
 		t := strings.TrimSpace(ln)
 		if rest, ok := strings.CutPrefix(t, ">>>"); ok {
 			cur = &ast.Doctest{Input: strings.TrimSpace(rest)}
+			if i < len(lineNums) {
+				cur.Line = lineNums[i]
+			}
 			out = append(out, cur)
 			continue
 		}

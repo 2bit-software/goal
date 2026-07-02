@@ -30,8 +30,8 @@ import (
 // second copy or the package fails to build with Result/Ok/Err redeclared. It
 // reports usedOption (a goalSome call in a doctest body) so the package driver
 // folds it into the single shared Option-helper decision.
-func emitDoctests(f *ast.File, info *sema.Info, suppressPrelude bool) (src string, usedOption bool, err error) {
-	goalTest := renderDoctests(f)
+func emitDoctests(f *ast.File, info *sema.Info, suppressPrelude bool, goalFile string) (src string, usedOption bool, err error) {
+	goalTest := renderDoctests(f, goalFile)
 	if goalTest == "" {
 		return "", false, nil
 	}
@@ -54,7 +54,7 @@ func emitDoctests(f *ast.File, info *sema.Info, suppressPrelude bool) (src strin
 // rendered source is parsed and emitted. The output is GOAL: it is not gofmt-able
 // until emitDoctests lowers it. Shape mirrors internal/pass.RenderDoctests so the
 // AST and splice engines produce the same sidecar.
-func renderDoctests(f *ast.File) string {
+func renderDoctests(f *ast.File, goalFile string) string {
 	pkg := "main"
 	if f != nil && f.Name != nil {
 		pkg = f.Name.Name
@@ -75,11 +75,19 @@ func renderDoctests(f *ast.File) string {
 				continue // malformed (no input or no expected line) — skip
 			}
 			counts[fn]++
+			// Anchor a doctest failure at its .goal source line so `go test` output
+			// names the source position, not the generated sidecar line (US-014).
+			// Only when the source file name is known (package mode) and the parser
+			// recorded a line; the name-less single-file path keeps the bare message.
+			prefix := ""
+			if goalFile != "" && dt.Line > 0 {
+				prefix = fmt.Sprintf("%s:%d: ", goalFile, dt.Line)
+			}
 			fmt.Fprintf(&body, "\nfunc TestDoctest_%s_%d(t *testing.T) {\n", fn, counts[fn])
 			fmt.Fprintf(&body, "\tgot := %s\n", expr)
 			fmt.Fprintf(&body, "\twant := %s\n", want)
 			fmt.Fprintf(&body, "\tif got != want {\n")
-			fmt.Fprintf(&body, "\t\tt.Errorf(\"doctest %s: got %%v, want %%v\", got, want)\n", fn)
+			fmt.Fprintf(&body, "\t\tt.Errorf(\"%sdoctest %s: got %%v, want %%v\", got, want)\n", prefix, fn)
 			fmt.Fprintf(&body, "\t}\n}\n")
 		}
 	}

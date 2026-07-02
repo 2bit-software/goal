@@ -67,8 +67,11 @@ func (d *DocComment) End() token.Pos {
 // Doctest is one `>>>` example inside a DocComment: an input expression and its
 // expected output. Input is the text after `>>> `; Expected is the run of
 // following non-`>>>` doc lines, in order. Doctest is plain data (not a Node);
-// it carries no source positions of its own.
+// Line is the only source position it carries — the source line of the `>>>`
+// example, so a failing doctest can be reported at its true .goal line. Line is
+// zero when the position is unknown.
 type Doctest struct {
 	Input    string   // the source after ">>> "
 	Expected []string // the expected-output lines following the input
+	Line     int      // source line of the ">>>" example; 0 when unknown
 }

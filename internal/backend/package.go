@@ -44,7 +44,7 @@ func TranspilePackage(pkg *project.Package) (pipeline.PackageOutput, error) {
 		/*line package.goal:64*/ gen := goName(f.Name)
 		/*line package.goal:65*/ mapped := pipeline.AddLineDirectives(f.Src, string(formatted), f.Name, gen)
 		/*line package.goal:66*/ out.Files = append(out.Files, pipeline.GoFile{Name: gen, Go: mapped})
-		/*line package.goal:68*/ testSrc, testUsedOption, err := emitDoctests(files[i], info, true)
+		/*line package.goal:68*/ testSrc, testUsedOption, err := emitDoctests(files[i], info, true, f.Name)
 		/*line package.goal:69*/ if err != nil {
 			/*line package.goal:70*/ return pipeline.PackageOutput{}, fmt.Errorf("%s: doctests: %w", f.Name, err)
 		}

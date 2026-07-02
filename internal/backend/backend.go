@@ -41,7 +41,7 @@ func (goBackend) Emit(file *ast.File, info *sema.Info) (pipeline.Output, error) 
 	/*line backend.goal:59*/ if err != nil {
 		/*line backend.goal:60*/ return pipeline.Output{}, err
 	}
-	/*line backend.goal:64*/ test, _, err := emitDoctests(file, info, true)
+	/*line backend.goal:64*/ test, _, err := emitDoctests(file, info, true, "")
 	/*line backend.goal:65*/ if err != nil {
 		/*line backend.goal:66*/ return pipeline.Output{}, fmt.Errorf("doctests: %w", err)
 	}

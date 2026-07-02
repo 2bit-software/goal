@@ -12,8 +12,8 @@ import (
 )
 
 //line doctest.goal:33
-func emitDoctests(f *ast.File, info *sema.Info, suppressPrelude bool) (src string, usedOption bool, err error) {
-	/*line doctest.goal:34*/ goalTest := renderDoctests(f)
+func emitDoctests(f *ast.File, info *sema.Info, suppressPrelude bool, goalFile string) (src string, usedOption bool, err error) {
+	/*line doctest.goal:34*/ goalTest := renderDoctests(f, goalFile)
 	/*line doctest.goal:35*/ if goalTest == "" {
 		/*line doctest.goal:36*/ return "", false, nil
 	}
@@ -25,7 +25,7 @@ func emitDoctests(f *ast.File, info *sema.Info, suppressPrelude bool) (src strin
 }
 
 //line doctest.goal:57
-func renderDoctests(f *ast.File) string {
+func renderDoctests(f *ast.File, goalFile string) string {
 	/*line doctest.goal:58*/ pkg := "main"
 	/*line doctest.goal:59*/ if f != nil && f.Name != nil {
 		/*line doctest.goal:60*/ pkg = f.Name.Name
@@ -47,21 +47,25 @@ func renderDoctests(f *ast.File) string {
 				/*line doctest.goal:75*/ continue
 			}
 			/*line doctest.goal:77*/ counts[fn]++
-			/*line doctest.goal:78*/ fmt.Fprintf(&body, "\nfunc TestDoctest_%s_%d(t *testing.T) {\n", fn, counts[fn])
-			/*line doctest.goal:79*/ fmt.Fprintf(&body, "\tgot := %s\n", expr)
-			/*line doctest.goal:80*/ fmt.Fprintf(&body, "\twant := %s\n", want)
-			/*line doctest.goal:81*/ fmt.Fprintf(&body, "\tif got != want {\n")
-			/*line doctest.goal:82*/ fmt.Fprintf(&body, "\t\tt.Errorf(\"doctest %s: got %%v, want %%v\", got, want)\n", fn)
-			/*line doctest.goal:83*/ fmt.Fprintf(&body, "\t}\n}\n")
+			/*line doctest.goal:82*/ prefix := ""
+			/*line doctest.goal:83*/ if goalFile != "" && dt.Line > 0 {
+				/*line doctest.goal:84*/ prefix = fmt.Sprintf("%s:%d: ", goalFile, dt.Line)
+			}
+			/*line doctest.goal:86*/ fmt.Fprintf(&body, "\nfunc TestDoctest_%s_%d(t *testing.T) {\n", fn, counts[fn])
+			/*line doctest.goal:87*/ fmt.Fprintf(&body, "\tgot := %s\n", expr)
+			/*line doctest.goal:88*/ fmt.Fprintf(&body, "\twant := %s\n", want)
+			/*line doctest.goal:89*/ fmt.Fprintf(&body, "\tif got != want {\n")
+			/*line doctest.goal:90*/ fmt.Fprintf(&body, "\t\tt.Errorf(\"%sdoctest %s: got %%v, want %%v\", got, want)\n", prefix, fn)
+			/*line doctest.goal:91*/ fmt.Fprintf(&body, "\t}\n}\n")
 		}
 	}
-	/*line doctest.goal:86*/ if body.Len() == 0 {
-		/*line doctest.goal:87*/ return ""
+	/*line doctest.goal:94*/ if body.Len() == 0 {
+		/*line doctest.goal:95*/ return ""
 	}
-	/*line doctest.goal:90*/ var b strings.Builder
+	/*line doctest.goal:98*/ var b strings.Builder
 
-	/*line doctest.goal:91*/
+	/*line doctest.goal:99*/
 	fmt.Fprintf(&b, "package %s\n\nimport \"testing\"\n", pkg)
-	/*line doctest.goal:92*/ b.WriteString(body.String())
-	/*line doctest.goal:93*/ return b.String()
+	/*line doctest.goal:100*/ b.WriteString(body.String())
+	/*line doctest.goal:101*/ return b.String()
 }
