@@ -2,10 +2,15 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+
+	"goal/internal/ast"
+	"goal/internal/fix"
 )
 
 const plainGoFix = `package app
@@ -109,6 +114,95 @@ func TestFixBadPath(t *testing.T) {
 	var out, errOut bytes.Buffer
 	if err := run([]string{"fix", "/no/such/path.goal"}, &out, &errOut); err == nil {
 		t.Fatal("expected an error for a missing path")
+	}
+}
+
+// When fix's own rewrite fails to reparse, `goal fix -inplace` must abort with a
+// diagnostic naming the file and leave the original file byte-identical — never
+// overwrite it with the corrupt intermediate.
+func TestFixInplaceAbortsOnReparseFailure(t *testing.T) {
+	dir := goalModule(t, map[string]string{"app/load.goal": plainGoFix})
+	file := filepath.Join(dir, "app", "load.goal")
+
+	// The first parse (of the pristine input) succeeds, so the fixers rewrite the
+	// file; the second parse (of that rewrite) fails, exercising the corruption
+	// guard. Restore the hook afterwards so other tests see the real parser.
+	orig := fix.ParseFileFn
+	defer func() { fix.ParseFileFn = orig }()
+	calls := 0
+	fix.ParseFileFn = func(src string) (*ast.File, error) {
+		calls++
+		if calls >= 2 {
+			return nil, fmt.Errorf("synthetic reparse failure")
+		}
+		return orig(src)
+	}
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"fix", "-inplace", file}, &out, &errOut)
+	if err == nil {
+		t.Fatal("expected fix to fail when its own rewrite cannot be reparsed")
+	}
+	if !strings.Contains(err.Error(), "load.goal") || !strings.Contains(err.Error(), "reparse") {
+		t.Fatalf("error must name the file and the reparse failure, got: %v", err)
+	}
+	on, _ := os.ReadFile(file)
+	if string(on) != plainGoFix {
+		t.Fatalf("-inplace must leave the file byte-identical on abort, but it changed:\n%s", on)
+	}
+}
+
+// A report emitted while another function's rewrite shifts the source must carry a
+// line number against the FINAL text, not the stale intermediate the report was
+// first detected in. `first` converts to Result (its body collapses, moving every
+// later line up); the exported `Second` cannot be auto-converted and is reported.
+func TestFixReportLineAgainstFinalText(t *testing.T) {
+	const twoFuncs = `package app
+
+func first(p string) ([]byte, error) {
+	f, err := read(p)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+func Second(p string) ([]byte, error) {
+	f, err := read(p)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+`
+	dir := goalModule(t, map[string]string{"app/load.goal": twoFuncs})
+	file := filepath.Join(dir, "app", "load.goal")
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"fix", file}, &out, &errOut); err != nil {
+		t.Fatalf("fix failed: %v\n%s", err, errOut.String())
+	}
+
+	// The exported-signature report for Second, e.g.
+	//   .../load.goal:11: skipped: [result-sig] exported `Second` ...
+	re := regexp.MustCompile(`:(\d+): .*Second`)
+	m := re.FindStringSubmatch(errOut.String())
+	if m == nil {
+		t.Fatalf("expected a report mentioning Second, got stderr:\n%s", errOut.String())
+	}
+	var line int
+	fmt.Sscanf(m[1], "%d", &line)
+
+	// The reported line must point at `func Second` in the REWRITTEN source (final
+	// text). Under the pre-fix behavior it pointed at Second's original line, which
+	// after first's body collapsed no longer holds the func declaration.
+	lines := strings.Split(out.String(), "\n")
+	if line < 1 || line > len(lines) {
+		t.Fatalf("reported line %d out of range for rewritten output (%d lines):\n%s", line, len(lines), out.String())
+	}
+	if !strings.Contains(lines[line-1], "func Second") {
+		t.Fatalf("report line %d should point at `func Second` in the final text, but line %d is:\n%q\nfull output:\n%s",
+			line, line, lines[line-1], out.String())
 	}
 }
 

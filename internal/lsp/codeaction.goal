@@ -29,10 +29,11 @@ func (s *Server) codeActions(raw json.RawMessage) []CodeAction {
 	if !ok {
 		return none
 	}
-	// fix.File is a total, conservative lexical rewrite — it never panics on partial source
-	// and returns the input unchanged when there is nothing to idiomatize.
-	out, _, _ := fix.File(text)
-	if out == text {
+	// fix.File is a conservative lexical rewrite — it never panics on partial source and
+	// returns the input unchanged when there is nothing to idiomatize. It errors only when
+	// its own rewrite fails to reparse; offer no action rather than a corrupting edit.
+	out, _, _, err := fix.File(text)
+	if err != nil || out == text {
 		return none
 	}
 	end := token.OffsetToPosition(text, len(text))

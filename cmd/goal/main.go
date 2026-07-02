@@ -424,7 +424,13 @@ func cmdFix(path string, inplace bool, out, errOut io.Writer) error {
 	}
 
 	for _, fr := range files {
-		newSrc, _, reports := fix.File(fr.src)
+		newSrc, _, reports, ferr := fix.File(fr.src)
+		if ferr != nil {
+			// fix's own rewrite failed to reparse: abort before writing so -inplace
+			// can never overwrite the file with corrupt output. fix.File already
+			// reverted newSrc to the pristine input; refuse the file loudly.
+			return fmt.Errorf("%s: %w", fr.path, ferr)
+		}
 		for _, r := range reports {
 			fmt.Fprintf(errOut, "%s:%d: %s: [%s] %s\n", fr.path, r.Line, r.Level, r.Rule, r.Msg)
 		}

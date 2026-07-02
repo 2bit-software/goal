@@ -29,23 +29,23 @@ func (s *Server) codeActions(raw json.RawMessage) []CodeAction {
 	/*line codeaction.goal:29*/ if !ok {
 		/*line codeaction.goal:30*/ return none
 	}
-	/*line codeaction.goal:34*/ out, _, _ := fix.File(text)
-	/*line codeaction.goal:35*/ if out == text {
-		/*line codeaction.goal:36*/ return none
+	/*line codeaction.goal:35*/ out, _, _, err := fix.File(text)
+	/*line codeaction.goal:36*/ if err != nil || out == text {
+		/*line codeaction.goal:37*/ return none
 	}
-	/*line codeaction.goal:38*/ end := token.OffsetToPosition(text, len(text))
-	/*line codeaction.goal:39*/ return []CodeAction{{Title: "Idiomatize file (goal fix)", Kind: fixAllKind, Edit: &WorkspaceEdit{DocumentChanges: []TextDocumentEdit{{TextDocument: versionedTextDocumentIdentifier{URI: p.TextDocument.URI, Version: version}, Edits: []TextEdit{{Range: Range{Start: Position{Line: 0, Character: 0}, End: Position{Line: end.Line - 1, Character: end.Col - 1}}, NewText: out}}}}}}}
+	/*line codeaction.goal:39*/ end := token.OffsetToPosition(text, len(text))
+	/*line codeaction.goal:40*/ return []CodeAction{{Title: "Idiomatize file (goal fix)", Kind: fixAllKind, Edit: &WorkspaceEdit{DocumentChanges: []TextDocumentEdit{{TextDocument: versionedTextDocumentIdentifier{URI: p.TextDocument.URI, Version: version}, Edits: []TextEdit{{Range: Range{Start: Position{Line: 0, Character: 0}, End: Position{Line: end.Line - 1, Character: end.Col - 1}}, NewText: out}}}}}}}
 }
 
-//line codeaction.goal:58
+//line codeaction.goal:59
 func wantsKind(only []string, kind string) bool {
-	/*line codeaction.goal:59*/ if len(only) == 0 {
-		/*line codeaction.goal:60*/ return true
+	/*line codeaction.goal:60*/ if len(only) == 0 {
+		/*line codeaction.goal:61*/ return true
 	}
-	/*line codeaction.goal:62*/ for _, o := range only {
-		/*line codeaction.goal:63*/ if o == kind || strings.HasPrefix(kind, o+".") {
-			/*line codeaction.goal:64*/ return true
+	/*line codeaction.goal:63*/ for _, o := range only {
+		/*line codeaction.goal:64*/ if o == kind || strings.HasPrefix(kind, o+".") {
+			/*line codeaction.goal:65*/ return true
 		}
 	}
-	/*line codeaction.goal:67*/ return false
+	/*line codeaction.goal:68*/ return false
 }

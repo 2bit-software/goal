@@ -16,6 +16,7 @@
 package fix
 
 import (
+	"fmt"
 	"strings"
 
 	"goal/internal/ast"
@@ -24,6 +25,12 @@ import (
 	"goal/internal/textedit"
 	"goal/internal/token"
 )
+
+// ParseFileFn is the reparse hook the fixed-point loop uses to re-read its own
+// output. It defaults to parser.ParseFile; it is a package variable so a test
+// can inject a synthetic parse failure and exercise the corruption-guard path
+// (fix's own rewrite is never emitted when it fails to reparse).
+var ParseFileFn = parser.ParseFile
 
 // Level classifies a Report: a Suggest is an opportunity fix chose not to apply, a Warn is
 // an applied change with a caveat the caller should know about, a Skip is a detected
@@ -72,7 +79,7 @@ const maxIters = 8
 // (== src when nothing changed), the changes applied, and reports for candidates that were
 // detected but not safely rewritten. It runs every fixer to a fixed point so interdependent
 // rewrites (signature conversion then body propagation) settle in one call.
-func File(src string) (out string, changes []Change, reports []Report) {
+func File(src string) (out string, changes []Change, reports []Report, err error) {
 	out = src
 	seen := map[string]bool{}
 	// add records a rule's reports, deduplicating by rule+message (not line, which shifts
@@ -87,9 +94,16 @@ func File(src string) (out string, changes []Change, reports []Report) {
 		}
 	}
 	for range maxIters {
-		file, err := parser.ParseFile(out)
-		if err != nil || file == nil {
-			// Unparseable source: fix is conservative and never guesses, so leave it as-is.
+		file, perr := ParseFileFn(out)
+		if perr != nil || file == nil {
+			if out != src {
+				// fix's OWN rewrite produced unparseable output. Never emit it: revert to
+				// the pristine input and surface the failure loudly so a caller (e.g.
+				// `goal fix -inplace`) cannot silently overwrite the file with garbage.
+				return src, nil, nil, fmt.Errorf("fix: rewritten source failed to reparse: %v", perr)
+			}
+			// Pristine input does not parse: fix is conservative and never guesses, so
+			// leave it as-is (reporting genuine parse errors stays goal check's job).
 			break
 		}
 		info := sema.Resolve(file)
@@ -101,12 +115,15 @@ func File(src string) (out string, changes []Change, reports []Report) {
 		reps = append(reps, fixPropagateInit(out, file, info, decls, &changes, &iterReports)...)
 		reps = append(reps, fixResultSig(out, file, info, decls, &changes, &iterReports)...)
 		reps = append(reps, fixSwitchToMatch(out, file, info, &changes, &iterReports)...)
-		add(iterReports)
 
 		if len(reps) == 0 {
-			// Converged. Every (T, error) function fix could convert is now Result-
-			// returning, so the post-hoc call-site analysis sees only the genuinely
-			// manual sites; run it once here, against the final source.
+			// Converged. Every candidate the rules could rewrite is rewritten, so this
+			// final pass re-detects only the genuinely manual sites (every Skip/Suggest
+			// re-fires each pass, which is why the seen-dedup exists). Harvest the reports
+			// HERE, against the final source, so every Report.Line is a position in the
+			// text the caller will see — not a stale intermediate whose lines have since
+			// shifted under a later splice.
+			add(iterReports)
 			var cs []Report
 			reportCallSites(out, file, info, &cs)
 			add(cs)
@@ -114,7 +131,7 @@ func File(src string) (out string, changes []Change, reports []Report) {
 		}
 		out = textedit.Splice(out, 0, len(out), reps)
 	}
-	return out, changes, reports
+	return out, changes, reports, nil
 }
 
 // typeDecls maps each top-level type name to its underlying form — "struct", "interface",
