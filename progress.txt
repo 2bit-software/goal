@@ -147,6 +147,18 @@
   foreign.goal) — that one change repairs the checker AND the emitter at once;
   never patch the lookup strings (fragile, and leaves the other consumer broken).
   (found in the audit-remediation US-018 generic-receiver fix.)
+- Classify a rendered TYPE STRING by WHOLE TOKEN, never by raw `HasPrefix`
+  (found US-019). `strings.HasPrefix(typ, "chan"/"func"/"interface")` matches
+  user types named `channelSet`/`funcTable`/`interfaceish` and misfires. The
+  shared classifier is `sema.TypeShape(typ) -> pointer/slice/array/map/chan/
+  func/interface/named`: chan iff `=="chan"`|prefix `"chan "`/`"chan<-"`/
+  `"<-chan"`; func iff `=="func"`|prefix `"func("`; interface iff
+  `=="interface{}"`|prefix `"interface{"`/`"interface {"` (space form from
+  foreign goTypeString). `map[`/`[]`/`[`/`*` already carry a non-ident char so
+  their prefixes are safe. Both the panic-safety checker (ZeroSafety) and the
+  backend zero-literal lowering (zeroLit) dispatch on this ONE sema helper so
+  they can never drift — same promotion pattern as sema.ZeroSafety (backend
+  imports sema, not vice versa).
 - The pinned corpus counts in internal/corpus/generate_test.go (transpile / pkg /
   check / doctest) DRIFT upward as stories add testdata cases, so the PRD notes'
   absolute numbers (e.g. "check 53->55") go stale. Read the CURRENT `want N` from
@@ -8158,4 +8170,28 @@
   - Interface methods in the fixtures are type-parameter-free (`Close() error`)
     so the Sig string-compare is a genuine match; a method mentioning T would
     legitimately mismatch.
+---
+
+## 2026-07-02T07:54:00Z - US-019
+- Introduced exported `sema.TypeShape(typ) string` (whole-token type-shape
+  classifier) and rewrote both `ZeroSafety` (internal/sema/zerosafety.goal) and
+  `zeroLit` (internal/backend/lower.goal) to dispatch on it, eliminating the two
+  duplicated `HasPrefix` lists so a user type named like a builtin (funcTable,
+  channelSet, interfaceish) is no longer misclassified as func/chan/interface.
+- Files: internal/sema/zerosafety.goal (+ generated .go), internal/backend/
+  lower.goal (+ generated .go), testdata/check/08-no-zero-value/
+  named_like_builtin.goal (new clean fixture), internal/corpus/generate_test.go
+  (check count 60->61), corpus/manifest.json (regenerated).
+- Learnings for future iterations:
+  - Whole-token type classification (see the new Codebase Patterns bullet):
+    HasPrefix on bare keywords is a bug magnet; route through sema.TypeShape.
+  - Behavior-preserving refactor: no `.go.expected` golden churned (verified via
+    git status after -update-goldens), because no corpus type was actually
+    misnamed — the fix only affects the newly-added fixture's class of types.
+  - The map/[]/[/pointer prefixes were ALREADY whole-token-safe (they carry a
+    non-identifier char); only chan/func/interface needed the token guard.
+  - No AI-KNOWLEDGE-BOOTSTRAP regen needed: the [unsafe-default] code and its
+    messages are unchanged (pure classification fix), so the catalog is untouched.
+  - `task fixpoint` was mandatory here (both checker AND emitter behavior shift);
+    it stayed FIXPOINT OK.
 ---
