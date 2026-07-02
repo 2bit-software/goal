@@ -12,40 +12,41 @@ import (
 
 //line definition.goal:16
 func (s *Server) definition(raw json.RawMessage) *Location {
-	var p DefinitionParams
+	/*line definition.goal:17*/ var p DefinitionParams
 
+	/*line definition.goal:18*/
 	if !s.decode(raw, &p, "definition") {
-		return nil
+		/*line definition.goal:19*/ return nil
 	}
-	text, _, ok := s.buffer(p.TextDocument.URI)
-	if !ok {
-		return nil
+	/*line definition.goal:21*/ text, _, ok := s.buffer(p.TextDocument.URI)
+	/*line definition.goal:22*/ if !ok {
+		/*line definition.goal:23*/ return nil
 	}
-	target, ok := resolveDefinition(text, p.Position.Line, p.Position.Character)
-	if !ok {
-		return nil
+	/*line definition.goal:25*/ target, ok := resolveDefinition(text, p.Position.Line, p.Position.Character)
+	/*line definition.goal:26*/ if !ok {
+		/*line definition.goal:27*/ return nil
 	}
-	return &Location{URI: p.TextDocument.URI, Range: target}
+	/*line definition.goal:29*/ return &Location{URI: p.TextDocument.URI, Range: target}
 }
 
 //line definition.goal:36
 func resolveDefinition(src string, line, char int) (Range, bool) {
-	off, ok := offsetForPosition(src, line, char)
-	if !ok {
-		return Range{}, false
+	/*line definition.goal:37*/ off, ok := offsetForPosition(src, line, char)
+	/*line definition.goal:38*/ if !ok {
+		/*line definition.goal:39*/ return Range{}, false
 	}
-	file, err := parser.ParseFile(src)
-	if err != nil || file == nil {
-		return Range{}, false
+	/*line definition.goal:41*/ file, err := parser.ParseFile(src)
+	/*line definition.goal:42*/ if err != nil || file == nil {
+		/*line definition.goal:43*/ return Range{}, false
 	}
-	idx := buildDeclIndex(src, file)
-	refs := collectRefs(src, file, idx)
-	for _, r := range refs {
-		if off >= r.start && off < r.end {
-			return r.target, true
+	/*line definition.goal:45*/ idx := buildDeclIndex(src, file)
+	/*line definition.goal:46*/ refs := collectRefs(src, file, idx)
+	/*line definition.goal:47*/ for _, r := range refs {
+		/*line definition.goal:48*/ if off >= r.start && off < r.end {
+			/*line definition.goal:49*/ return r.target, true
 		}
 	}
-	return Range{}, false
+	/*line definition.goal:52*/ return Range{}, false
 }
 
 //line definition.goal:59
@@ -57,25 +58,25 @@ type declIndex struct {
 
 //line definition.goal:68
 func buildDeclIndex(src string, file *ast.File) declIndex {
-	idx := declIndex{funcs: map[string]Range{}, types: map[string]Range{}, variants: map[string]map[string]Range{}}
-	put := func(m map[string]Range, name *ast.Ident) {
-		if name != nil && name.Name != "" {
-			m[name.Name] = identRange(src, name)
+	/*line definition.goal:69*/ idx := declIndex{funcs: map[string]Range{}, types: map[string]Range{}, variants: map[string]map[string]Range{}}
+	/*line definition.goal:74*/ put := func(m map[string]Range, name *ast.Ident) {
+		/*line definition.goal:75*/ if name != nil && name.Name != "" {
+			/*line definition.goal:76*/ m[name.Name] = identRange(src, name)
 		}
 	}
-	for _, d := range file.Decls {
-		switch decl := d.(type) {
+	/*line definition.goal:79*/ for _, d := range file.Decls {
+		/*line definition.goal:80*/ switch decl := d.(type) {
 		case *ast.FuncDecl:
 			put(idx.funcs, decl.Name)
 		case *ast.EnumDecl:
 			put(idx.types, decl.Name)
 			if decl.Name == nil || decl.Name.Name == "" {
-				continue
+				/*line definition.goal:86*/ continue
 			}
 			vm := map[string]Range{}
 			for _, vr := range decl.Variants {
-				if vr.Name != nil && vr.Name.Name != "" {
-					vm[vr.Name.Name] = identRange(src, vr.Name)
+				/*line definition.goal:90*/ if vr.Name != nil && vr.Name.Name != "" {
+					/*line definition.goal:91*/ vm[vr.Name.Name] = identRange(src, vr.Name)
 				}
 			}
 			idx.variants[decl.Name.Name] = vm
@@ -83,13 +84,13 @@ func buildDeclIndex(src string, file *ast.File) declIndex {
 			put(idx.types, decl.Name)
 		case *ast.GenDecl:
 			for _, sp := range decl.Specs {
-				if ts, ok := sp.(*ast.TypeSpec); ok {
-					put(idx.types, ts.Name)
+				/*line definition.goal:99*/ if ts, ok := sp.(*ast.TypeSpec); ok {
+					/*line definition.goal:100*/ put(idx.types, ts.Name)
 				}
 			}
 		}
 	}
-	return idx
+	/*line definition.goal:105*/ return idx
 }
 
 //line definition.goal:110
@@ -100,9 +101,9 @@ type defRef struct {
 
 //line definition.goal:120
 func collectRefs(src string, file *ast.File, idx declIndex) []defRef {
-	v := &refVisitor{src: src, idx: idx}
-	ast.Walk(v, file)
-	return v.refs
+	/*line definition.goal:121*/ v := &refVisitor{src: src, idx: idx}
+	/*line definition.goal:122*/ ast.Walk(v, file)
+	/*line definition.goal:123*/ return v.refs
 }
 
 //line definition.goal:126
@@ -114,7 +115,7 @@ type refVisitor struct {
 
 //line definition.goal:132
 func (v *refVisitor) Visit(n ast.Node) ast.Visitor {
-	switch d := n.(type) {
+	/*line definition.goal:133*/ switch d := n.(type) {
 	case *ast.CallExpr:
 		switch fun := d.Fun.(type) {
 		case *ast.Ident:
@@ -139,91 +140,91 @@ func (v *refVisitor) Visit(n ast.Node) ast.Visitor {
 	case *ast.ImplementsClause:
 		v.refType(d.Type)
 	}
-	return v
+	/*line definition.goal:158*/ return v
 }
 
 //line definition.goal:162
 func (v *refVisitor) refFunc(ident *ast.Ident) {
-	if ident == nil {
-		return
+	/*line definition.goal:163*/ if ident == nil {
+		/*line definition.goal:164*/ return
 	}
-	if r, ok := v.idx.funcs[ident.Name]; ok {
-		v.record(ident, r)
+	/*line definition.goal:166*/ if r, ok := v.idx.funcs[ident.Name]; ok {
+		/*line definition.goal:167*/ v.record(ident, r)
 	}
 }
 
 //line definition.goal:173
 func (v *refVisitor) refType(e ast.Expr) {
-	id, ok := e.(*ast.Ident)
-	if !ok {
-		return
+	/*line definition.goal:174*/ id, ok := e.(*ast.Ident)
+	/*line definition.goal:175*/ if !ok {
+		/*line definition.goal:176*/ return
 	}
-	if r, ok := v.idx.types[id.Name]; ok {
-		v.record(id, r)
+	/*line definition.goal:178*/ if r, ok := v.idx.types[id.Name]; ok {
+		/*line definition.goal:179*/ v.record(id, r)
 	}
 }
 
 //line definition.goal:186
 func (v *refVisitor) refEnumSelector(x ast.Expr, sel *ast.Ident) {
-	id, ok := x.(*ast.Ident)
-	if !ok {
-		return
+	/*line definition.goal:187*/ id, ok := x.(*ast.Ident)
+	/*line definition.goal:188*/ if !ok {
+		/*line definition.goal:189*/ return
 	}
-	if r, ok := v.idx.types[id.Name]; ok {
-		v.record(id, r)
+	/*line definition.goal:191*/ if r, ok := v.idx.types[id.Name]; ok {
+		/*line definition.goal:192*/ v.record(id, r)
 	}
-	if vm, ok := v.idx.variants[id.Name]; ok && sel != nil {
-		if r, ok := vm[sel.Name]; ok {
-			v.record(sel, r)
+	/*line definition.goal:194*/ if vm, ok := v.idx.variants[id.Name]; ok && sel != nil {
+		/*line definition.goal:195*/ if r, ok := vm[sel.Name]; ok {
+			/*line definition.goal:196*/ v.record(sel, r)
 		}
 	}
 }
 
 //line definition.goal:203
 func (v *refVisitor) refVariant(enumExpr ast.Expr, variant *ast.Ident) {
-	id, ok := enumExpr.(*ast.Ident)
-	if !ok {
-		return
+	/*line definition.goal:204*/ id, ok := enumExpr.(*ast.Ident)
+	/*line definition.goal:205*/ if !ok {
+		/*line definition.goal:206*/ return
 	}
-	if r, ok := v.idx.types[id.Name]; ok {
-		v.record(id, r)
+	/*line definition.goal:208*/ if r, ok := v.idx.types[id.Name]; ok {
+		/*line definition.goal:209*/ v.record(id, r)
 	}
-	if vm, ok := v.idx.variants[id.Name]; ok && variant != nil {
-		if r, ok := vm[variant.Name]; ok {
-			v.record(variant, r)
+	/*line definition.goal:211*/ if vm, ok := v.idx.variants[id.Name]; ok && variant != nil {
+		/*line definition.goal:212*/ if r, ok := vm[variant.Name]; ok {
+			/*line definition.goal:213*/ v.record(variant, r)
 		}
 	}
 }
 
 //line definition.goal:219
 func (v *refVisitor) record(ident *ast.Ident, target Range) {
-	if ident == nil || ident.Name == "" {
-		return
+	/*line definition.goal:220*/ if ident == nil || ident.Name == "" {
+		/*line definition.goal:221*/ return
 	}
-	v.refs = append(v.refs, defRef{start: ident.Pos().Offset, end: ident.End().Offset, target: target})
+	/*line definition.goal:223*/ v.refs = append(v.refs, defRef{start: ident.Pos().Offset, end: ident.End().Offset, target: target})
 }
 
 //line definition.goal:231
 func identRange(src string, id *ast.Ident) Range {
-	return rangeOf(src, id.Pos().Offset, id.End().Offset)
+	/*line definition.goal:232*/ return rangeOf(src, id.Pos().Offset, id.End().Offset)
 }
 
 //line definition.goal:239
 func offsetForPosition(src string, line, char int) (int, bool) {
-	if line < 0 || char < 0 {
-		return 0, false
+	/*line definition.goal:240*/ if line < 0 || char < 0 {
+		/*line definition.goal:241*/ return 0, false
 	}
-	start := 0
-	for cur := 0; cur < line; cur++ {
-		nl := strings.IndexByte(src[start:], '\n')
-		if nl < 0 {
-			return 0, false
+	/*line definition.goal:243*/ start := 0
+	/*line definition.goal:244*/ for cur := 0; cur < line; cur++ {
+		/*line definition.goal:245*/ nl := strings.IndexByte(src[start:], '\n')
+		/*line definition.goal:246*/ if nl < 0 {
+			/*line definition.goal:247*/ return 0, false
 		}
-		start += nl + 1
+		/*line definition.goal:249*/ start += nl + 1
 	}
-	off := start + char
-	if off > len(src) {
-		off = len(src)
+	/*line definition.goal:251*/ off := start + char
+	/*line definition.goal:252*/ if off > len(src) {
+		/*line definition.goal:253*/ off = len(src)
 	}
-	return off, true
+	/*line definition.goal:255*/ return off, true
 }

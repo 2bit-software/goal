@@ -22,22 +22,23 @@ func (AssertStmt) isNode() {}
 
 //line goal_stmt.goal:29
 func (s *AssertStmt) Pos() token.Pos {
-	return s.Assert
+	/*line goal_stmt.goal:29*/ return s.Assert
 }
 
 //line goal_stmt.goal:30
 func (s *AssertStmt) End() token.Pos {
-	if n := len(s.Args); n > 0 && s.Args[n-1] != nil {
-		return s.Args[n-1].End()
+	/*line goal_stmt.goal:31*/ if n := len(s.Args); n > 0 && s.Args[n-1] != nil {
+		/*line goal_stmt.goal:32*/ return s.Args[n-1].End()
 	}
-	if s.Msg != nil {
-		return s.Msg.End()
+	/*line goal_stmt.goal:34*/ if s.Msg != nil {
+		/*line goal_stmt.goal:35*/ return s.Msg.End()
 	}
-	if s.Cond != nil {
-		return s.Cond.End()
+	/*line goal_stmt.goal:37*/ if s.Cond != nil {
+		/*line goal_stmt.goal:38*/ return s.Cond.End()
 	}
-	const n = len("assert")
+	/*line goal_stmt.goal:40*/ const n = len("assert")
 
+	/*line goal_stmt.goal:41*/
 	return token.Pos{Offset: s.Assert.Offset + n, Line: s.Assert.Line, Col: s.Assert.Col + n}
 }
 
@@ -48,21 +49,21 @@ type DocComment struct {
 	Doctests []*Doctest
 }
 
-//line goal_stmt.go:50
+//line goal_stmt.go:51
 func (DocComment) isNode() {}
 
 //line goal_stmt.goal:29
 func (d *DocComment) Pos() token.Pos {
-	return d.Slash
+	/*line goal_stmt.goal:56*/ return d.Slash
 }
 
 //line goal_stmt.goal:30
 func (d *DocComment) End() token.Pos {
-	n := 0
-	if len(d.Lines) > 0 {
-		n = len(d.Lines[0]) + len("/// ")
+	/*line goal_stmt.goal:58*/ n := 0
+	/*line goal_stmt.goal:59*/ if len(d.Lines) > 0 {
+		/*line goal_stmt.goal:62*/ n = len(d.Lines[0]) + len("/// ")
 	}
-	return token.Pos{Offset: d.Slash.Offset + n, Line: d.Slash.Line, Col: d.Slash.Col + n}
+	/*line goal_stmt.goal:64*/ return token.Pos{Offset: d.Slash.Offset + n, Line: d.Slash.Line, Col: d.Slash.Col + n}
 }
 
 //line goal_stmt.goal:71

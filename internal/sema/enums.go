@@ -10,38 +10,39 @@ import (
 
 //line enums.goal:30
 func CheckEnumConstruction(file *ast.File, info *Info) []Diagnostic {
-	var diags []Diagnostic
+	/*line enums.goal:31*/ var diags []Diagnostic
 
+	/*line enums.goal:32*/
 	if file == nil || info == nil {
-		return diags
+		/*line enums.goal:33*/ return diags
 	}
-	local := localEnumNames(file)
-	ast.Walk(visitorFunc(func(n ast.Node) bool {
-		expr, ok := n.(ast.Expr)
-		if !ok {
-			return true
+	/*line enums.goal:35*/ local := localEnumNames(file)
+	/*line enums.goal:36*/ ast.Walk(visitorFunc(func(n ast.Node) bool {
+		/*line enums.goal:37*/ expr, ok := n.(ast.Expr)
+		/*line enums.goal:38*/ if !ok {
+			/*line enums.goal:39*/ return true
 		}
-		qual, variant, isVariant := errVariantArg(expr)
-		if !isVariant || !local[qual] {
-			return true
+		/*line enums.goal:41*/ qual, variant, isVariant := errVariantArg(expr)
+		/*line enums.goal:42*/ if !isVariant || !local[qual] {
+			/*line enums.goal:43*/ return true
 		}
-		enumDecl := info.Enums[qual]
-		if enumDecl == nil || enumDecl.VSet[variant] {
-			return true
+		/*line enums.goal:45*/ enumDecl := info.Enums[qual]
+		/*line enums.goal:46*/ if enumDecl == nil || enumDecl.VSet[variant] {
+			/*line enums.goal:47*/ return true
 		}
-		diags = append(diags, Diagnostic{Pos: expr.Pos(), Severity: Severity(Severity_Error{}), Feature: "01-enums", Code: "unknown-variant", Message: fmt.Sprintf("`%s.%s` names `%s`, which is not a variant of enum `%s` — its variants are %s", qual, variant, variant, qual, semaVariantList(enumDecl))})
-		return true
+		/*line enums.goal:49*/ diags = append(diags, Diagnostic{Pos: expr.Pos(), Severity: Severity(Severity_Error{}), Feature: "01-enums", Code: "unknown-variant", Message: fmt.Sprintf("`%s.%s` names `%s`, which is not a variant of enum `%s` — its variants are %s", qual, variant, variant, qual, semaVariantList(enumDecl))})
+		/*line enums.goal:57*/ return true
 	}), file)
-	return diags
+	/*line enums.goal:59*/ return diags
 }
 
 //line enums.goal:64
 func localEnumNames(file *ast.File) map[string]bool {
-	names := map[string]bool{}
-	for _, d := range file.Decls {
-		if ed, ok := d.(*ast.EnumDecl); ok && ed.Name != nil {
-			names[ed.Name.Name] = true
+	/*line enums.goal:65*/ names := map[string]bool{}
+	/*line enums.goal:66*/ for _, d := range file.Decls {
+		/*line enums.goal:67*/ if ed, ok := d.(*ast.EnumDecl); ok && ed.Name != nil {
+			/*line enums.goal:68*/ names[ed.Name.Name] = true
 		}
 	}
-	return names
+	/*line enums.goal:71*/ return names
 }

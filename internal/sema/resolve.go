@@ -12,80 +12,80 @@ import (
 
 //line resolve.goal:27
 func ResolvePackage(files []*ast.File) *Info {
-	merged := Resolve(nil)
-	for _, f := range files {
-		merged.Merge(Resolve(f))
+	/*line resolve.goal:28*/ merged := Resolve(nil)
+	/*line resolve.goal:29*/ for _, f := range files {
+		/*line resolve.goal:30*/ merged.Merge(Resolve(f))
 	}
-	merged.cascadeSealedImpls()
-	return merged
+	/*line resolve.goal:37*/ merged.cascadeSealedImpls()
+	/*line resolve.goal:38*/ return merged
 }
 
 //line resolve.goal:44
 func (info *Info) Merge(o *Info) {
-	maps.Copy(info.FuncSignatures, o.FuncSignatures)
-	maps.Copy(info.Enums, o.Enums)
-	maps.Copy(info.Sealed, o.Sealed)
-	for iface, impls := range o.SealedImpls {
-		for _, t := range impls {
-			info.addImplementor(iface, t)
+	/*line resolve.goal:45*/ maps.Copy(info.FuncSignatures, o.FuncSignatures)
+	/*line resolve.goal:46*/ maps.Copy(info.Enums, o.Enums)
+	/*line resolve.goal:47*/ maps.Copy(info.Sealed, o.Sealed)
+	/*line resolve.goal:48*/ for iface, impls := range o.SealedImpls {
+		/*line resolve.goal:49*/ for _, t := range impls {
+			/*line resolve.goal:50*/ info.addImplementor(iface, t)
 		}
 	}
-	maps.Copy(info.Structs, o.Structs)
-	maps.Copy(info.FromRegistry, o.FromRegistry)
-	maps.Copy(info.Methods, o.Methods)
-	maps.Copy(info.ForeignMethods, o.ForeignMethods)
-	maps.Copy(info.Interfaces, o.Interfaces)
-	maps.Copy(info.EmbeddedIfaces, o.EmbeddedIfaces)
+	/*line resolve.goal:53*/ maps.Copy(info.Structs, o.Structs)
+	/*line resolve.goal:54*/ maps.Copy(info.FromRegistry, o.FromRegistry)
+	/*line resolve.goal:55*/ maps.Copy(info.Methods, o.Methods)
+	/*line resolve.goal:56*/ maps.Copy(info.ForeignMethods, o.ForeignMethods)
+	/*line resolve.goal:57*/ maps.Copy(info.Interfaces, o.Interfaces)
+	/*line resolve.goal:58*/ maps.Copy(info.EmbeddedIfaces, o.EmbeddedIfaces)
 }
 
 //line resolve.goal:65
 func Resolve(f *ast.File) *Info {
-	info := &Info{FuncSignatures: map[string]FuncSig{}, Enums: map[string]*Enum{}, Sealed: map[string]bool{}, SealedImpls: map[string][]string{}, Structs: map[string][]Field{}, FromRegistry: map[[2]string]ConvEntry{}, Methods: map[string][]Method{}, ForeignMethods: map[string]FuncSig{}, Interfaces: map[string][]Method{}, EmbeddedIfaces: map[string][]string{}}
-	if f == nil {
-		return info
+	/*line resolve.goal:66*/ info := &Info{FuncSignatures: map[string]FuncSig{}, Enums: map[string]*Enum{}, Sealed: map[string]bool{}, SealedImpls: map[string][]string{}, Structs: map[string][]Field{}, FromRegistry: map[[2]string]ConvEntry{}, Methods: map[string][]Method{}, ForeignMethods: map[string]FuncSig{}, Interfaces: map[string][]Method{}, EmbeddedIfaces: map[string][]string{}}
+	/*line resolve.goal:78*/ if f == nil {
+		/*line resolve.goal:79*/ return info
 	}
-	for _, d := range f.Decls {
-		switch v1 := d.(type) {
+	/*line resolve.goal:81*/ for _, d := range f.Decls {
+		/*line resolve.goal:82*/ switch v1 := d.(type) {
 		case *ast.EnumDecl:
 			{
-				info.resolveEnum(v1)
+				/*line resolve.goal:84*/ info.resolveEnum(v1)
 			}
 		case *ast.SealedInterfaceDecl:
 			{
-				if v1.Name != nil {
-					info.Sealed[v1.Name.Name] = true
-					info.resolveInterfaceMethods(v1.Name.Name, v1.Methods)
+				/*line resolve.goal:87*/ if v1.Name != nil {
+					/*line resolve.goal:88*/ info.Sealed[v1.Name.Name] = true
+					/*line resolve.goal:91*/ info.resolveInterfaceMethods(v1.Name.Name, v1.Methods)
 				}
 			}
 		case *ast.GenDecl:
 			{
-				if v1.Tok == token.TYPE {
-					info.resolveTypeDecl(v1)
+				/*line resolve.goal:95*/ if v1.Tok == token.TYPE {
+					/*line resolve.goal:96*/ info.resolveTypeDecl(v1)
 				}
 			}
 		case *ast.FuncDecl:
 			{
-				info.resolveFunc(v1)
+				/*line resolve.goal:100*/ info.resolveFunc(v1)
 			}
 		default:
 			{
 			}
 		}
 	}
-	info.cascadeSealedImpls()
-	return info
+	/*line resolve.goal:105*/ info.cascadeSealedImpls()
+	/*line resolve.goal:106*/ return info
 }
 
 //line resolve.goal:119
 func (info *Info) cascadeSealedImpls() {
-	ifaces := make([]string, 0, len(info.SealedImpls))
-	for iface := range info.SealedImpls {
-		ifaces = append(ifaces, iface)
+	/*line resolve.goal:124*/ ifaces := make([]string, 0, len(info.SealedImpls))
+	/*line resolve.goal:125*/ for iface := range info.SealedImpls {
+		/*line resolve.goal:126*/ ifaces = append(ifaces, iface)
 	}
-	for _, iface := range ifaces {
-		for _, emb := range info.sealedEmbedClosure(iface) {
-			for _, impl := range info.SealedImpls[iface] {
-				info.addImplementor(emb, impl)
+	/*line resolve.goal:128*/ for _, iface := range ifaces {
+		/*line resolve.goal:129*/ for _, emb := range info.sealedEmbedClosure(iface) {
+			/*line resolve.goal:130*/ for _, impl := range info.SealedImpls[iface] {
+				/*line resolve.goal:131*/ info.addImplementor(emb, impl)
 			}
 		}
 	}
@@ -93,87 +93,88 @@ func (info *Info) cascadeSealedImpls() {
 
 //line resolve.goal:142
 func (info *Info) sealedEmbedClosure(iface string) []string {
-	return info.collectSealedEmbeds(iface, map[string]bool{}, nil)
+	/*line resolve.goal:143*/ return info.collectSealedEmbeds(iface, map[string]bool{}, nil)
 }
 
 //line resolve.goal:149
 func (info *Info) collectSealedEmbeds(name string, seen map[string]bool, out []string) []string {
-	for _, emb := range info.EmbeddedIfaces[name] {
-		if seen[emb] {
-			continue
+	/*line resolve.goal:150*/ for _, emb := range info.EmbeddedIfaces[name] {
+		/*line resolve.goal:151*/ if seen[emb] {
+			/*line resolve.goal:152*/ continue
 		}
-		seen[emb] = true
-		if info.Sealed[emb] {
-			out = append(out, emb)
+		/*line resolve.goal:154*/ seen[emb] = true
+		/*line resolve.goal:155*/ if info.Sealed[emb] {
+			/*line resolve.goal:156*/ out = append(out, emb)
 		}
-		out = info.collectSealedEmbeds(emb, seen, out)
+		/*line resolve.goal:158*/ out = info.collectSealedEmbeds(emb, seen, out)
 	}
-	return out
+	/*line resolve.goal:160*/ return out
 }
 
 //line resolve.goal:166
 func (info *Info) addImplementor(iface, impl string) {
-	if info.SealedImpls == nil {
-		info.SealedImpls = map[string][]string{}
+	/*line resolve.goal:167*/ if info.SealedImpls == nil {
+		/*line resolve.goal:168*/ info.SealedImpls = map[string][]string{}
 	}
-	for _, existing := range info.SealedImpls[iface] {
-		if existing == impl {
-			return
+	/*line resolve.goal:170*/ for _, existing := range info.SealedImpls[iface] {
+		/*line resolve.goal:171*/ if existing == impl {
+			/*line resolve.goal:172*/ return
 		}
 	}
-	info.SealedImpls[iface] = append(info.SealedImpls[iface], impl)
+	/*line resolve.goal:175*/ info.SealedImpls[iface] = append(info.SealedImpls[iface], impl)
 }
 
 //line resolve.goal:180
 func (info *Info) resolveEnum(d *ast.EnumDecl) {
-	if d.Name == nil {
-		return
+	/*line resolve.goal:181*/ if d.Name == nil {
+		/*line resolve.goal:182*/ return
 	}
-	e := &Enum{Name: d.Name.Name, VSet: map[string]bool{}, FieldSet: map[string]map[string]bool{}}
-	for _, v := range d.Variants {
-		if v == nil || v.Name == nil {
-			continue
+	/*line resolve.goal:184*/ e := &Enum{Name: d.Name.Name, VSet: map[string]bool{}, FieldSet: map[string]map[string]bool{}}
+	/*line resolve.goal:189*/ for _, v := range d.Variants {
+		/*line resolve.goal:190*/ if v == nil || v.Name == nil {
+			/*line resolve.goal:191*/ continue
 		}
-		var fields []Field
+		/*line resolve.goal:193*/ var fields []Field
 
+		/*line resolve.goal:194*/
 		fset := map[string]bool{}
-		for _, pf := range v.Payload {
-			if pf == nil || pf.Name == nil {
-				continue
+		/*line resolve.goal:195*/ for _, pf := range v.Payload {
+			/*line resolve.goal:196*/ if pf == nil || pf.Name == nil {
+				/*line resolve.goal:197*/ continue
 			}
-			fields = append(fields, Field{Name: pf.Name.Name, Type: typeString(pf.Type)})
-			fset[pf.Name.Name] = true
+			/*line resolve.goal:199*/ fields = append(fields, Field{Name: pf.Name.Name, Type: typeString(pf.Type)})
+			/*line resolve.goal:200*/ fset[pf.Name.Name] = true
 		}
-		e.Variants = append(e.Variants, Variant{Name: v.Name.Name, Fields: fields})
-		e.VSet[v.Name.Name] = true
-		e.FieldSet[v.Name.Name] = fset
+		/*line resolve.goal:202*/ e.Variants = append(e.Variants, Variant{Name: v.Name.Name, Fields: fields})
+		/*line resolve.goal:203*/ e.VSet[v.Name.Name] = true
+		/*line resolve.goal:204*/ e.FieldSet[v.Name.Name] = fset
 	}
-	info.Enums[e.Name] = e
+	/*line resolve.goal:206*/ info.Enums[e.Name] = e
 }
 
 //line resolve.goal:213
 func (info *Info) resolveTypeDecl(d *ast.GenDecl) {
-	for _, s := range d.Specs {
-		ts, ok := s.(*ast.TypeSpec)
-		if !ok || ts.Name == nil {
-			continue
+	/*line resolve.goal:214*/ for _, s := range d.Specs {
+		/*line resolve.goal:215*/ ts, ok := s.(*ast.TypeSpec)
+		/*line resolve.goal:216*/ if !ok || ts.Name == nil {
+			/*line resolve.goal:217*/ continue
 		}
-		switch v1 := ts.Type.(type) {
+		/*line resolve.goal:219*/ switch v1 := ts.Type.(type) {
 		case *ast.StructType:
 			{
-				if v1.Fields != nil {
-					info.Structs[ts.Name.Name] = structFields(v1.Fields)
+				/*line resolve.goal:221*/ if v1.Fields != nil {
+					/*line resolve.goal:222*/ info.Structs[ts.Name.Name] = structFields(v1.Fields)
 				}
-				if v1.Implements != nil {
-					iface := exprName(v1.Implements.Type)
-					if iface != "" {
-						info.addImplementor(iface, "*"+ts.Name.Name)
+				/*line resolve.goal:228*/ if v1.Implements != nil {
+					/*line resolve.goal:229*/ iface := exprName(v1.Implements.Type)
+					/*line resolve.goal:230*/ if iface != "" {
+						/*line resolve.goal:231*/ info.addImplementor(iface, "*"+ts.Name.Name)
 					}
 				}
 			}
 		case *ast.InterfaceType:
 			{
-				info.resolveInterface(ts.Name.Name, v1)
+				/*line resolve.goal:236*/ info.resolveInterface(ts.Name.Name, v1)
 			}
 		default:
 			{
@@ -184,59 +185,60 @@ func (info *Info) resolveTypeDecl(d *ast.GenDecl) {
 
 //line resolve.goal:249
 func (info *Info) resolveInterface(name string, it *ast.InterfaceType) {
-	info.resolveInterfaceMethods(name, it.Methods)
+	/*line resolve.goal:250*/ info.resolveInterfaceMethods(name, it.Methods)
 }
 
 //line resolve.goal:257
 func (info *Info) resolveInterfaceMethods(name string, methods *ast.FieldList) {
-	if _, seen := info.Interfaces[name]; !seen {
-		info.Interfaces[name] = nil
+	/*line resolve.goal:260*/ if _, seen := info.Interfaces[name]; !seen {
+		/*line resolve.goal:261*/ info.Interfaces[name] = nil
 	}
-	if methods == nil {
-		return
+	/*line resolve.goal:263*/ if methods == nil {
+		/*line resolve.goal:264*/ return
 	}
-	for _, f := range methods.List {
-		if f == nil {
-			continue
+	/*line resolve.goal:266*/ for _, f := range methods.List {
+		/*line resolve.goal:267*/ if f == nil {
+			/*line resolve.goal:268*/ continue
 		}
-		if len(f.Names) == 0 {
-			if emb := typeString(f.Type); emb != "" {
-				info.EmbeddedIfaces[name] = append(info.EmbeddedIfaces[name], emb)
+		/*line resolve.goal:270*/ if len(f.Names) == 0 {
+			/*line resolve.goal:272*/ if emb := typeString(f.Type); emb != "" {
+				/*line resolve.goal:273*/ info.EmbeddedIfaces[name] = append(info.EmbeddedIfaces[name], emb)
 			}
-			continue
+			/*line resolve.goal:275*/ continue
 		}
-		ft, ok := f.Type.(*ast.FuncType)
-		if !ok {
-			continue
+		/*line resolve.goal:277*/ ft, ok := f.Type.(*ast.FuncType)
+		/*line resolve.goal:278*/ if !ok {
+			/*line resolve.goal:279*/ continue
 		}
-		params := paramTypeListFL(ft.Params)
-		results := paramTypeListFL(ft.Results)
-		for _, n := range f.Names {
-			ret := funcSig(n.Name, ft)
-			info.Interfaces[name] = append(info.Interfaces[name], Method{Name: n.Name, Sig: joinTypes(params) + "|" + joinTypes(results), Arity: ret.Arity, EndsInError: ret.EndsInError, Return: ret})
+		/*line resolve.goal:281*/ params := paramTypeListFL(ft.Params)
+		/*line resolve.goal:282*/ results := paramTypeListFL(ft.Results)
+		/*line resolve.goal:283*/ for _, n := range f.Names {
+			/*line resolve.goal:284*/ ret := funcSig(n.Name, ft)
+			/*line resolve.goal:285*/ info.Interfaces[name] = append(info.Interfaces[name], Method{Name: n.Name, Sig: joinTypes(params) + "|" + joinTypes(results), Arity: ret.Arity, EndsInError: ret.EndsInError, Return: ret})
 		}
 	}
 }
 
 //line resolve.goal:299
 func structFields(fl *ast.FieldList) []Field {
-	var fields []Field
+	/*line resolve.goal:300*/ var fields []Field
 
+	/*line resolve.goal:301*/
 	for _, f := range fl.List {
-		if f == nil || len(f.Names) == 0 {
-			continue
+		/*line resolve.goal:302*/ if f == nil || len(f.Names) == 0 {
+			/*line resolve.goal:303*/ continue
 		}
-		typ := typeString(f.Type)
-		for _, n := range f.Names {
-			fields = append(fields, Field{Name: n.Name, Type: typ})
+		/*line resolve.goal:305*/ typ := typeString(f.Type)
+		/*line resolve.goal:306*/ for _, n := range f.Names {
+			/*line resolve.goal:307*/ fields = append(fields, Field{Name: n.Name, Type: typ})
 		}
 	}
-	return fields
+	/*line resolve.goal:310*/ return fields
 }
 
 //line resolve.goal:316
 func (info *Info) resolveFunc(d *ast.FuncDecl) {
-	var isConv bool
+	/*line resolve.goal:317*/ var isConv bool
 	switch d.Mod.(type) {
 	case ast.FuncMod_FuncFrom:
 		isConv = true
@@ -247,70 +249,70 @@ func (info *Info) resolveFunc(d *ast.FuncDecl) {
 	default:
 		panic("unreachable: non-exhaustive ast.FuncMod (compiler invariant violated)")
 	}
-	switch {
+	/*line resolve.goal:322*/ switch {
 	case isConv:
 		info.resolveConversion(d)
 	case d.Recv != nil:
 		info.resolveMethod(d)
 	default:
 		if d.Name != nil {
-			info.FuncSignatures[d.Name.Name] = funcSig(d.Name.Name, d.Type)
+			/*line resolve.goal:329*/ info.FuncSignatures[d.Name.Name] = funcSig(d.Name.Name, d.Type)
 		}
 	}
 }
 
 //line resolve.goal:337
 func (info *Info) resolveConversion(d *ast.FuncDecl) {
-	if d.Name == nil || d.Type == nil {
-		return
+	/*line resolve.goal:338*/ if d.Name == nil || d.Type == nil {
+		/*line resolve.goal:339*/ return
 	}
-	src := firstParamType(d.Type.Params)
-	if src == "" {
-		return
+	/*line resolve.goal:341*/ src := firstParamType(d.Type.Params)
+	/*line resolve.goal:342*/ if src == "" {
+		/*line resolve.goal:343*/ return
 	}
-	tgt, fallible := resultTarget(d.Type.Results)
-	info.FromRegistry[[2]string{src, tgt}] = ConvEntry{Name: d.Name.Name, Fallible: fallible}
+	/*line resolve.goal:345*/ tgt, fallible := resultTarget(d.Type.Results)
+	/*line resolve.goal:346*/ info.FromRegistry[[2]string{src, tgt}] = ConvEntry{Name: d.Name.Name, Fallible: fallible}
 }
 
 //line resolve.goal:351
 func (info *Info) resolveMethod(d *ast.FuncDecl) {
-	if d.Name == nil || d.Type == nil {
-		return
+	/*line resolve.goal:352*/ if d.Name == nil || d.Type == nil {
+		/*line resolve.goal:353*/ return
 	}
-	recv := receiverType(d.Recv)
-	if recv == "" {
-		return
+	/*line resolve.goal:355*/ recv := receiverType(d.Recv)
+	/*line resolve.goal:356*/ if recv == "" {
+		/*line resolve.goal:357*/ return
 	}
-	params := paramTypeListFL(d.Type.Params)
-	results := paramTypeList(resultFields(d.Type.Results))
-	raw := strings.TrimSpace(joinTypes(params) + " " + joinTypes(results))
-	ret := funcSig(d.Name.Name, d.Type)
-	info.Methods[recv] = append(info.Methods[recv], Method{Name: d.Name.Name, Sig: joinTypes(params) + "|" + joinTypes(results), Raw: raw, Arity: ret.Arity, EndsInError: ret.EndsInError, Return: ret})
+	/*line resolve.goal:359*/ params := paramTypeListFL(d.Type.Params)
+	/*line resolve.goal:360*/ results := paramTypeList(resultFields(d.Type.Results))
+	/*line resolve.goal:361*/ raw := strings.TrimSpace(joinTypes(params) + " " + joinTypes(results))
+	/*line resolve.goal:362*/ ret := funcSig(d.Name.Name, d.Type)
+	/*line resolve.goal:363*/ info.Methods[recv] = append(info.Methods[recv], Method{Name: d.Name.Name, Sig: joinTypes(params) + "|" + joinTypes(results), Raw: raw, Arity: ret.Arity, EndsInError: ret.EndsInError, Return: ret})
 }
 
 //line resolve.goal:377
 func funcSig(name string, t *ast.FuncType) FuncSig {
-	sig := FuncSig{Name: name, Mode: Mode(Mode_ModeNone{})}
-	if t == nil {
-		return sig
+	/*line resolve.goal:378*/ sig := FuncSig{Name: name, Mode: Mode(Mode_ModeNone{})}
+	/*line resolve.goal:379*/ if t == nil {
+		/*line resolve.goal:380*/ return sig
 	}
-	sig.Arity = resultArity(t.Results)
-	sig.EndsInError = resultEndsInError(t.Results)
-	if head, args := resultGeneric(t.Results); head != "" {
-		switch {
+	/*line resolve.goal:382*/ sig.Arity = resultArity(t.Results)
+	/*line resolve.goal:383*/ sig.EndsInError = resultEndsInError(t.Results)
+	/*line resolve.goal:385*/ if head, args := resultGeneric(t.Results); head != "" {
+		/*line resolve.goal:386*/ switch {
 		case head == "Result" && len(args) == 2:
 			sig.T, sig.E = args[0], args[1]
 			if sig.E == "error" {
-				sig.Mode = Mode(Mode_ModeResult{})
+				/*line resolve.goal:390*/ sig.Mode = Mode(Mode_ModeResult{})
 			} else {
-				sig.Mode = Mode(Mode_ModeResultClosed{})
+				/*line resolve.goal:392*/ sig.Mode = Mode(Mode_ModeResultClosed{})
 			}
 		case head == "Option" && len(args) == 1:
 			sig.Mode = Mode(Mode_ModeOption{})
 			sig.T = args[0]
 		}
 	}
-	var arity int
+	/*line resolve.goal:401*/ var arity int
 	switch sig.Mode.(type) {
 	case Mode_ModeResult:
 		arity = 2
@@ -323,7 +325,7 @@ func funcSig(name string, t *ast.FuncType) FuncSig {
 	default:
 		panic("unreachable: non-exhaustive Mode (compiler invariant violated)")
 	}
-	var endsInError bool
+	/*line resolve.goal:407*/ var endsInError bool
 	switch sig.Mode.(type) {
 	case Mode_ModeResult:
 		endsInError = true
@@ -336,190 +338,191 @@ func funcSig(name string, t *ast.FuncType) FuncSig {
 	default:
 		panic("unreachable: non-exhaustive Mode (compiler invariant violated)")
 	}
-	sig.Arity, sig.EndsInError = arity, endsInError
-	return sig
+	/*line resolve.goal:413*/ sig.Arity, sig.EndsInError = arity, endsInError
+	/*line resolve.goal:414*/ return sig
 }
 
 //line resolve.goal:420
 func resultGeneric(fl *ast.FieldList) (head string, args []string) {
-	if fl == nil || len(fl.List) != 1 {
-		return "", nil
+	/*line resolve.goal:421*/ if fl == nil || len(fl.List) != 1 {
+		/*line resolve.goal:422*/ return "", nil
 	}
-	f := fl.List[0]
-	if len(f.Names) != 0 {
-		return "", nil
+	/*line resolve.goal:424*/ f := fl.List[0]
+	/*line resolve.goal:425*/ if len(f.Names) != 0 {
+		/*line resolve.goal:426*/ return "", nil
 	}
-	switch v1 := f.Type.(type) {
+	/*line resolve.goal:428*/ switch v1 := f.Type.(type) {
 	case *ast.IndexExpr:
 		{
-			if id, ok := v1.X.(*ast.Ident); ok {
-				return id.Name, []string{typeString(v1.Index)}
+			/*line resolve.goal:430*/ if id, ok := v1.X.(*ast.Ident); ok {
+				/*line resolve.goal:431*/ return id.Name, []string{typeString(v1.Index)}
 			}
 		}
 	case *ast.IndexListExpr:
 		{
-			if id, ok := v1.X.(*ast.Ident); ok {
-				out := make([]string, 0, len(v1.Indices))
-				for _, idx := range v1.Indices {
-					out = append(out, typeString(idx))
+			/*line resolve.goal:435*/ if id, ok := v1.X.(*ast.Ident); ok {
+				/*line resolve.goal:436*/ out := make([]string, 0, len(v1.Indices))
+				/*line resolve.goal:437*/ for _, idx := range v1.Indices {
+					/*line resolve.goal:438*/ out = append(out, typeString(idx))
 				}
-				return id.Name, out
+				/*line resolve.goal:440*/ return id.Name, out
 			}
 		}
 	default:
 		{
 		}
 	}
-	return "", nil
+	/*line resolve.goal:445*/ return "", nil
 }
 
 //line resolve.goal:451
 func resultTarget(fl *ast.FieldList) (tgt string, fallible bool) {
-	fields := resultFields(fl)
-	if len(fields) == 0 {
-		return "", false
+	/*line resolve.goal:452*/ fields := resultFields(fl)
+	/*line resolve.goal:453*/ if len(fields) == 0 {
+		/*line resolve.goal:454*/ return "", false
 	}
-	if len(fields) > 1 {
-		return typeString(fields[0].Type), true
+	/*line resolve.goal:456*/ if len(fields) > 1 {
+		/*line resolve.goal:457*/ return typeString(fields[0].Type), true
 	}
-	return typeString(fields[0].Type), false
+	/*line resolve.goal:459*/ return typeString(fields[0].Type), false
 }
 
 //line resolve.goal:464
 func resultArity(fl *ast.FieldList) int {
-	n := 0
-	for _, f := range resultFields(fl) {
-		if c := len(f.Names); c > 0 {
-			n += c
+	/*line resolve.goal:465*/ n := 0
+	/*line resolve.goal:466*/ for _, f := range resultFields(fl) {
+		/*line resolve.goal:467*/ if c := len(f.Names); c > 0 {
+			/*line resolve.goal:468*/ n += c
 		} else {
-			n++
+			/*line resolve.goal:470*/ n++
 		}
 	}
-	return n
+	/*line resolve.goal:473*/ return n
 }
 
 //line resolve.goal:477
 func resultEndsInError(fl *ast.FieldList) bool {
-	fields := resultFields(fl)
-	if len(fields) == 0 {
-		return false
+	/*line resolve.goal:478*/ fields := resultFields(fl)
+	/*line resolve.goal:479*/ if len(fields) == 0 {
+		/*line resolve.goal:480*/ return false
 	}
-	return typeString(fields[len(fields)-1].Type) == "error"
+	/*line resolve.goal:482*/ return typeString(fields[len(fields)-1].Type) == "error"
 }
 
 //line resolve.goal:486
 func resultFields(fl *ast.FieldList) []*ast.Field {
-	if fl == nil {
-		return nil
+	/*line resolve.goal:487*/ if fl == nil {
+		/*line resolve.goal:488*/ return nil
 	}
-	return fl.List
+	/*line resolve.goal:490*/ return fl.List
 }
 
 //line resolve.goal:495
 func firstParamType(fl *ast.FieldList) string {
-	if fl == nil || len(fl.List) == 0 {
-		return ""
+	/*line resolve.goal:496*/ if fl == nil || len(fl.List) == 0 {
+		/*line resolve.goal:497*/ return ""
 	}
-	return typeString(fl.List[0].Type)
+	/*line resolve.goal:499*/ return typeString(fl.List[0].Type)
 }
 
 //line resolve.goal:504
 func paramTypeList(fields []*ast.Field) []string {
-	var out []string
+	/*line resolve.goal:505*/ var out []string
 
+	/*line resolve.goal:506*/
 	for _, f := range fields {
-		typ := typeString(f.Type)
-		if c := len(f.Names); c > 0 {
-			for range f.Names {
-				out = append(out, typ)
+		/*line resolve.goal:507*/ typ := typeString(f.Type)
+		/*line resolve.goal:508*/ if c := len(f.Names); c > 0 {
+			/*line resolve.goal:509*/ for range f.Names {
+				/*line resolve.goal:510*/ out = append(out, typ)
 			}
 		} else {
-			out = append(out, typ)
+			/*line resolve.goal:513*/ out = append(out, typ)
 		}
 	}
-	return out
+	/*line resolve.goal:516*/ return out
 }
 
 //line resolve.goal:519
 func paramTypeListFL(fl *ast.FieldList) []string {
-	if fl == nil {
-		return nil
+	/*line resolve.goal:520*/ if fl == nil {
+		/*line resolve.goal:521*/ return nil
 	}
-	return paramTypeList(fl.List)
+	/*line resolve.goal:523*/ return paramTypeList(fl.List)
 }
 
 //line resolve.goal:526
 func joinTypes(types []string) string {
-	return strings.Join(types, ",")
+	/*line resolve.goal:526*/ return strings.Join(types, ",")
 }
 
 //line resolve.goal:530
 func receiverType(fl *ast.FieldList) string {
-	if fl == nil || len(fl.List) == 0 {
-		return ""
+	/*line resolve.goal:531*/ if fl == nil || len(fl.List) == 0 {
+		/*line resolve.goal:532*/ return ""
 	}
-	return strings.TrimPrefix(typeString(fl.List[0].Type), "*")
+	/*line resolve.goal:534*/ return strings.TrimPrefix(typeString(fl.List[0].Type), "*")
 }
 
 //line resolve.goal:540
 func typeString(x ast.Expr) string {
-	if x == nil {
-		return ""
+	/*line resolve.goal:543*/ if x == nil {
+		/*line resolve.goal:544*/ return ""
 	}
-	switch v1 := x.(type) {
+	/*line resolve.goal:546*/ switch v1 := x.(type) {
 	case *ast.Ident:
 		{
-			return v1.Name
+			/*line resolve.goal:548*/ return v1.Name
 		}
 	case *ast.BasicLit:
 		{
-			return v1.Value
+			/*line resolve.goal:551*/ return v1.Value
 		}
 	case *ast.SelectorExpr:
 		{
-			return typeString(v1.X) + "." + selName(v1.Sel)
+			/*line resolve.goal:554*/ return typeString(v1.X) + "." + selName(v1.Sel)
 		}
 	case *ast.StarExpr:
 		{
-			return "*" + typeString(v1.X)
+			/*line resolve.goal:557*/ return "*" + typeString(v1.X)
 		}
 	case *ast.ParenExpr:
 		{
-			return "(" + typeString(v1.X) + ")"
+			/*line resolve.goal:560*/ return "(" + typeString(v1.X) + ")"
 		}
 	case *ast.ArrayType:
 		{
-			if v1.Len != nil {
-				return "[" + typeString(v1.Len) + "]" + typeString(v1.Elt)
+			/*line resolve.goal:563*/ if v1.Len != nil {
+				/*line resolve.goal:564*/ return "[" + typeString(v1.Len) + "]" + typeString(v1.Elt)
 			}
-			return "[]" + typeString(v1.Elt)
+			/*line resolve.goal:566*/ return "[]" + typeString(v1.Elt)
 		}
 	case *ast.MapType:
 		{
-			return "map[" + typeString(v1.Key) + "]" + typeString(v1.Value)
+			/*line resolve.goal:569*/ return "map[" + typeString(v1.Key) + "]" + typeString(v1.Value)
 		}
 	case *ast.IndexExpr:
 		{
-			return typeString(v1.X) + "[" + typeString(v1.Index) + "]"
+			/*line resolve.goal:572*/ return typeString(v1.X) + "[" + typeString(v1.Index) + "]"
 		}
 	case *ast.IndexListExpr:
 		{
-			parts := make([]string, 0, len(v1.Indices))
-			for _, idx := range v1.Indices {
-				parts = append(parts, typeString(idx))
+			/*line resolve.goal:575*/ parts := make([]string, 0, len(v1.Indices))
+			/*line resolve.goal:576*/ for _, idx := range v1.Indices {
+				/*line resolve.goal:577*/ parts = append(parts, typeString(idx))
 			}
-			return typeString(v1.X) + "[" + strings.Join(parts, ", ") + "]"
+			/*line resolve.goal:579*/ return typeString(v1.X) + "[" + strings.Join(parts, ", ") + "]"
 		}
 	case *ast.Ellipsis:
 		{
-			if v1.Elt != nil {
-				return "..." + typeString(v1.Elt)
+			/*line resolve.goal:582*/ if v1.Elt != nil {
+				/*line resolve.goal:583*/ return "..." + typeString(v1.Elt)
 			}
-			return "..."
+			/*line resolve.goal:585*/ return "..."
 		}
 	case *ast.ChanType:
 		{
-			switch v1.Dir.(type) {
+			/*line resolve.goal:588*/ switch v1.Dir.(type) {
 			case ast.ChanDir_RecvOnly:
 				return "<-chan " + typeString(v1.Value)
 			case ast.ChanDir_SendOnly:
@@ -532,75 +535,76 @@ func typeString(x ast.Expr) string {
 		}
 	case *ast.FuncType:
 		{
-			return "func" + funcTypeString(v1)
+			/*line resolve.goal:595*/ return "func" + funcTypeString(v1)
 		}
 	case *ast.InterfaceType:
 		{
-			if v1.Methods == nil || len(v1.Methods.List) == 0 {
-				return "interface{}"
+			/*line resolve.goal:598*/ if v1.Methods == nil || len(v1.Methods.List) == 0 {
+				/*line resolve.goal:599*/ return "interface{}"
 			}
-			return "interface{ ... }"
+			/*line resolve.goal:601*/ return "interface{ ... }"
 		}
 	case *ast.StructType:
 		{
-			if v1.Fields == nil || len(v1.Fields.List) == 0 {
-				return "struct{}"
+			/*line resolve.goal:604*/ if v1.Fields == nil || len(v1.Fields.List) == 0 {
+				/*line resolve.goal:605*/ return "struct{}"
 			}
-			return "struct{ ... }"
+			/*line resolve.goal:607*/ return "struct{ ... }"
 		}
 	default:
 		{
-			return ""
+			/*line resolve.goal:610*/ return ""
 		}
 	}
 }
 
 //line resolve.goal:616
 func funcTypeString(t *ast.FuncType) string {
-	var b strings.Builder
+	/*line resolve.goal:617*/ var b strings.Builder
 
+	/*line resolve.goal:618*/
 	b.WriteString("(")
-	b.WriteString(strings.Join(fieldTypes(t.Params), ", "))
-	b.WriteString(")")
-	if t.Results != nil && len(t.Results.List) > 0 {
-		res := fieldTypes(t.Results)
-		if len(t.Results.List) > 1 || len(t.Results.List[0].Names) > 0 {
-			b.WriteString(" (")
-			b.WriteString(strings.Join(res, ", "))
-			b.WriteString(")")
+	/*line resolve.goal:619*/ b.WriteString(strings.Join(fieldTypes(t.Params), ", "))
+	/*line resolve.goal:620*/ b.WriteString(")")
+	/*line resolve.goal:621*/ if t.Results != nil && len(t.Results.List) > 0 {
+		/*line resolve.goal:622*/ res := fieldTypes(t.Results)
+		/*line resolve.goal:623*/ if len(t.Results.List) > 1 || len(t.Results.List[0].Names) > 0 {
+			/*line resolve.goal:624*/ b.WriteString(" (")
+			/*line resolve.goal:625*/ b.WriteString(strings.Join(res, ", "))
+			/*line resolve.goal:626*/ b.WriteString(")")
 		} else {
-			b.WriteString(" ")
-			b.WriteString(res[0])
+			/*line resolve.goal:628*/ b.WriteString(" ")
+			/*line resolve.goal:629*/ b.WriteString(res[0])
 		}
 	}
-	return b.String()
+	/*line resolve.goal:632*/ return b.String()
 }
 
 //line resolve.goal:637
 func fieldTypes(fl *ast.FieldList) []string {
-	if fl == nil {
-		return nil
+	/*line resolve.goal:638*/ if fl == nil {
+		/*line resolve.goal:639*/ return nil
 	}
-	out := make([]string, 0, len(fl.List))
-	for _, f := range fl.List {
-		typ := typeString(f.Type)
-		if len(f.Names) > 0 {
-			names := make([]string, 0, len(f.Names))
-			for _, n := range f.Names {
-				names = append(names, n.Name)
+	/*line resolve.goal:641*/ out := make([]string, 0, len(fl.List))
+	/*line resolve.goal:642*/ for _, f := range fl.List {
+		/*line resolve.goal:643*/ typ := typeString(f.Type)
+		/*line resolve.goal:644*/ if len(f.Names) > 0 {
+			/*line resolve.goal:645*/ names := make([]string, 0, len(f.Names))
+			/*line resolve.goal:646*/ for _, n := range f.Names {
+				/*line resolve.goal:647*/ names = append(names, n.Name)
 			}
-			out = append(out, strings.Join(names, ", ")+" "+typ)
+			/*line resolve.goal:649*/ out = append(out, strings.Join(names, ", ")+" "+typ)
 		} else {
-			out = append(out, typ)
+			/*line resolve.goal:651*/ out = append(out, typ)
 		}
 	}
-	return out
+	/*line resolve.goal:654*/ return out
 }
 
 //line resolve.goal:657
 func selName(id *ast.Ident) string {
-	if id == nil {
-		return ""
+	/*line resolve.goal:658*/ if id == nil {
+		/*line resolve.goal:659*/ return ""
 	}
-	return id.Name
+	/*line resolve.goal:661*/ return id.Name
 }

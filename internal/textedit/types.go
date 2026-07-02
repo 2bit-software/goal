@@ -7,23 +7,23 @@ import "strings"
 
 //line types.goal:7
 func BaseType(t string) string {
-	t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
-	if i := strings.LastIndexByte(t, '.'); i >= 0 {
-		t = t[i+1:]
+	/*line types.goal:8*/ t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
+	/*line types.goal:9*/ if i := strings.LastIndexByte(t, '.'); i >= 0 {
+		/*line types.goal:10*/ t = t[i+1:]
 	}
-	return t
+	/*line types.goal:12*/ return t
 }
 
 //line types.goal:21
 func ZeroLit(typ string, decls map[string]string, depth int) string {
-	typ = strings.TrimSpace(typ)
-	switch {
+	/*line types.goal:22*/ typ = strings.TrimSpace(typ)
+	/*line types.goal:23*/ switch {
 	case strings.HasPrefix(typ, "*"), strings.HasPrefix(typ, "[]"), strings.HasPrefix(typ, "map["), strings.HasPrefix(typ, "chan"), strings.HasPrefix(typ, "func"), strings.HasPrefix(typ, "interface"), typ == "any", typ == "error":
 		return "nil"
 	case strings.HasPrefix(typ, "["):
 		return typ + "{}"
 	}
-	switch typ {
+	/*line types.goal:32*/ switch typ {
 	case "string":
 		return `""`
 	case "bool":
@@ -31,9 +31,9 @@ func ZeroLit(typ string, decls map[string]string, depth int) string {
 	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr", "byte", "rune", "float32", "float64", "complex64", "complex128":
 		return "0"
 	}
-	if depth < 8 {
-		if under, ok := decls[BaseType(typ)]; ok {
-			switch under {
+	/*line types.goal:42*/ if depth < 8 {
+		/*line types.goal:43*/ if under, ok := decls[BaseType(typ)]; ok {
+			/*line types.goal:44*/ switch under {
 			case "struct":
 				return typ + "{}"
 			case "interface":
@@ -43,5 +43,5 @@ func ZeroLit(typ string, decls map[string]string, depth int) string {
 			}
 		}
 	}
-	return typ + "{}"
+	/*line types.goal:57*/ return typ + "{}"
 }

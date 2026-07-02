@@ -15,46 +15,46 @@ type hostFunc func(args []Value) ([]Value, error)
 
 //line host.goal:33
 var hostFuncs = map[string]hostFunc{"fmt.Sprintf": func(args []Value) ([]Value, error) {
-	if len(args) < 1 {
-		return nil, fmt.Errorf("interp: fmt.Sprintf expects at least 1 argument, got %d", len(args))
+	/*line host.goal:35*/ if len(args) < 1 {
+		/*line host.goal:36*/ return nil, fmt.Errorf("interp: fmt.Sprintf expects at least 1 argument, got %d", len(args))
 	}
-	if args[0].Kind != KindString {
-		return nil, fmt.Errorf("interp: fmt.Sprintf format must be string, got %s", args[0].Kind)
+	/*line host.goal:38*/ if args[0].Kind != KindString {
+		/*line host.goal:39*/ return nil, fmt.Errorf("interp: fmt.Sprintf format must be string, got %s", args[0].Kind)
 	}
-	return []Value{StrVal(fmt.Sprintf(args[0].Str, goArgs(args[1:])...))}, nil
+	/*line host.goal:41*/ return []Value{StrVal(fmt.Sprintf(args[0].Str, goArgs(args[1:])...))}, nil
 }, "fmt.Sprint": func(args []Value) ([]Value, error) {
-	return []Value{StrVal(fmt.Sprint(goArgs(args)...))}, nil
+	/*line host.goal:44*/ return []Value{StrVal(fmt.Sprint(goArgs(args)...))}, nil
 }, "fmt.Errorf": func(args []Value) ([]Value, error) {
-	if len(args) < 1 {
-		return nil, fmt.Errorf("interp: fmt.Errorf expects at least 1 argument, got %d", len(args))
+	/*line host.goal:50*/ if len(args) < 1 {
+		/*line host.goal:51*/ return nil, fmt.Errorf("interp: fmt.Errorf expects at least 1 argument, got %d", len(args))
 	}
-	if args[0].Kind != KindString {
-		return nil, fmt.Errorf("interp: fmt.Errorf format must be string, got %s", args[0].Kind)
+	/*line host.goal:53*/ if args[0].Kind != KindString {
+		/*line host.goal:54*/ return nil, fmt.Errorf("interp: fmt.Errorf format must be string, got %s", args[0].Kind)
 	}
-	return []Value{errVal(fmt.Errorf(args[0].Str, goArgs(args[1:])...).Error())}, nil
+	/*line host.goal:56*/ return []Value{errVal(fmt.Errorf(args[0].Str, goArgs(args[1:])...).Error())}, nil
 }, "errors.New": func(args []Value) ([]Value, error) {
-	if len(args) != 1 {
-		return nil, fmt.Errorf("interp: errors.New expects 1 argument, got %d", len(args))
+	/*line host.goal:59*/ if len(args) != 1 {
+		/*line host.goal:60*/ return nil, fmt.Errorf("interp: errors.New expects 1 argument, got %d", len(args))
 	}
-	if args[0].Kind != KindString {
-		return nil, fmt.Errorf("interp: errors.New argument must be string, got %s", args[0].Kind)
+	/*line host.goal:62*/ if args[0].Kind != KindString {
+		/*line host.goal:63*/ return nil, fmt.Errorf("interp: errors.New argument must be string, got %s", args[0].Kind)
 	}
-	return []Value{errVal(args[0].Str)}, nil
+	/*line host.goal:65*/ return []Value{errVal(args[0].Str)}, nil
 }}
 
 //line host.goal:73
 func errVal(msg string) Value {
-	return StructVal("error", map[string]Value{"message": StrVal(msg)})
+	/*line host.goal:74*/ return StructVal("error", map[string]Value{"message": StrVal(msg)})
 }
 
 //line host.goal:78
 func isErrorValue(v Value) bool {
-	return v.Kind == KindStruct && v.Struct != nil && v.Struct.TypeID == "error"
+	/*line host.goal:79*/ return v.Kind == KindStruct && v.Struct != nil && v.Struct.TypeID == "error"
 }
 
 //line host.goal:86
 func goArg(v Value) any {
-	switch v.Kind {
+	/*line host.goal:87*/ switch v.Kind {
 	case KindNil:
 		return nil
 	case KindInt:
@@ -67,8 +67,8 @@ func goArg(v Value) any {
 		return v.Bool
 	case KindStruct:
 		if isErrorValue(v) {
-			msg, _ := v.Struct.Fields["message"]
-			return errors.New(msg.Str)
+			/*line host.goal:100*/ msg, _ := v.Struct.Fields["message"]
+			/*line host.goal:101*/ return errors.New(msg.Str)
 		}
 		return v.String()
 	default:
@@ -78,35 +78,35 @@ func goArg(v Value) any {
 
 //line host.goal:110
 func goArgs(vs []Value) []any {
-	out := make([]any, len(vs))
-	for i, v := range vs {
-		out[i] = goArg(v)
+	/*line host.goal:111*/ out := make([]any, len(vs))
+	/*line host.goal:112*/ for i, v := range vs {
+		/*line host.goal:113*/ out[i] = goArg(v)
 	}
-	return out
+	/*line host.goal:115*/ return out
 }
 
 //line host.goal:124
 func (ip *Interp) evalHostCall(sel *ast.SelectorExpr, call *ast.CallExpr, scope *Env) ([]Value, error) {
-	pkg := sel.X.(*ast.Ident)
-	path := ip.imports[pkg.Name]
-	key := path + "." + sel.Sel.Name
-	args := make([]Value, len(call.Args))
-	for i, a := range call.Args {
-		v, err := ip.evalExpr(a, scope)
-		if err != nil {
-			return nil, err
+	/*line host.goal:125*/ pkg := sel.X.(*ast.Ident)
+	/*line host.goal:126*/ path := ip.imports[pkg.Name]
+	/*line host.goal:127*/ key := path + "." + sel.Sel.Name
+	/*line host.goal:129*/ args := make([]Value, len(call.Args))
+	/*line host.goal:130*/ for i, a := range call.Args {
+		/*line host.goal:131*/ v, err := ip.evalExpr(a, scope)
+		/*line host.goal:132*/ if err != nil {
+			/*line host.goal:133*/ return nil, err
 		}
-		args[i] = v
+		/*line host.goal:135*/ args[i] = v
 	}
-	if key == "fmt.Println" {
-		return nil, ip.emitStdout(sel.Pos(), func(w io.Writer) error {
-			_, err := fmt.Fprintln(w, goArgs(args)...)
-			return err
+	/*line host.goal:141*/ if key == "fmt.Println" {
+		/*line host.goal:142*/ return nil, ip.emitStdout(sel.Pos(), func(w io.Writer) error {
+			/*line host.goal:143*/ _, err := fmt.Fprintln(w, goArgs(args)...)
+			/*line host.goal:144*/ return err
 		})
 	}
-	fn, ok := hostFuncs[key]
-	if !ok {
-		return nil, fmt.Errorf("interp: %s: unresolved imported call %s (no host function registered)", sel.Pos().String(), key)
+	/*line host.goal:148*/ fn, ok := hostFuncs[key]
+	/*line host.goal:149*/ if !ok {
+		/*line host.goal:150*/ return nil, fmt.Errorf("interp: %s: unresolved imported call %s (no host function registered)", sel.Pos().String(), key)
 	}
-	return fn(args)
+	/*line host.goal:152*/ return fn(args)
 }

@@ -13,26 +13,27 @@ import (
 
 //line sourcemap.goal:29
 func AddLineDirectives(goalSrc, genGo, goalFile, genFile string) string {
-	goalLine := declLines(goalSrc)
-	sites := declSites(genGo)
-	if len(sites) == 0 {
-		return genGo
+	/*line sourcemap.goal:30*/ goalLine := declLines(goalSrc)
+	/*line sourcemap.goal:31*/ sites := declSites(genGo)
+	/*line sourcemap.goal:32*/ if len(sites) == 0 {
+		/*line sourcemap.goal:33*/ return genGo
 	}
-	var b strings.Builder
+	/*line sourcemap.goal:36*/ var b strings.Builder
 
+	/*line sourcemap.goal:37*/
 	prev := 0
-	for _, s := range sites {
-		b.WriteString(genGo[prev:s.off])
-		physical := strings.Count(b.String(), "\n") + 1
-		if ln, ok := goalLine[s.name]; ok {
-			fmt.Fprintf(&b, "//line %s:%d\n", goalFile, ln)
+	/*line sourcemap.goal:38*/ for _, s := range sites {
+		/*line sourcemap.goal:39*/ b.WriteString(genGo[prev:s.off])
+		/*line sourcemap.goal:40*/ physical := strings.Count(b.String(), "\n") + 1
+		/*line sourcemap.goal:41*/ if ln, ok := goalLine[s.name]; ok {
+			/*line sourcemap.goal:42*/ fmt.Fprintf(&b, "//line %s:%d\n", goalFile, ln)
 		} else {
-			fmt.Fprintf(&b, "//line %s:%d\n", genFile, physical+1)
+			/*line sourcemap.goal:45*/ fmt.Fprintf(&b, "//line %s:%d\n", genFile, physical+1)
 		}
-		prev = s.off
+		/*line sourcemap.goal:47*/ prev = s.off
 	}
-	b.WriteString(genGo[prev:])
-	return b.String()
+	/*line sourcemap.goal:49*/ b.WriteString(genGo[prev:])
+	/*line sourcemap.goal:50*/ return b.String()
 }
 
 //line sourcemap.goal:56
@@ -43,60 +44,60 @@ type declSite struct {
 
 //line sourcemap.goal:66
 func declSites(src string) []declSite {
-	file, _ := parser.ParseFile(src)
-	if file == nil {
-		return nil
+	/*line sourcemap.goal:67*/ file, _ := parser.ParseFile(src)
+	/*line sourcemap.goal:68*/ if file == nil {
+		/*line sourcemap.goal:69*/ return nil
 	}
-	sites := make([]declSite, 0, len(file.Decls))
-	for _, d := range file.Decls {
-		sites = append(sites, declSite{off: d.Pos().Offset, name: declName(d)})
+	/*line sourcemap.goal:71*/ sites := make([]declSite, 0, len(file.Decls))
+	/*line sourcemap.goal:72*/ for _, d := range file.Decls {
+		/*line sourcemap.goal:73*/ sites = append(sites, declSite{off: d.Pos().Offset, name: declName(d)})
 	}
-	return sites
+	/*line sourcemap.goal:75*/ return sites
 }
 
 //line sourcemap.goal:80
 func declLines(src string) map[string]int {
-	lines := map[string]int{}
-	for _, s := range declSites(src) {
-		if s.name == "" || s.name == "_" {
-			continue
+	/*line sourcemap.goal:81*/ lines := map[string]int{}
+	/*line sourcemap.goal:82*/ for _, s := range declSites(src) {
+		/*line sourcemap.goal:83*/ if s.name == "" || s.name == "_" {
+			/*line sourcemap.goal:84*/ continue
 		}
-		if _, dup := lines[s.name]; !dup {
-			lines[s.name] = strings.Count(src[:s.off], "\n") + 1
+		/*line sourcemap.goal:86*/ if _, dup := lines[s.name]; !dup {
+			/*line sourcemap.goal:87*/ lines[s.name] = strings.Count(src[:s.off], "\n") + 1
 		}
 	}
-	return lines
+	/*line sourcemap.goal:90*/ return lines
 }
 
 //line sourcemap.goal:96
 func declName(d ast.Decl) string {
-	switch d := d.(type) {
+	/*line sourcemap.goal:97*/ switch d := d.(type) {
 	case *ast.FuncDecl:
 		if d.Name != nil {
-			return d.Name.Name
+			/*line sourcemap.goal:100*/ return d.Name.Name
 		}
 	case *ast.EnumDecl:
 		if d.Name != nil {
-			return d.Name.Name
+			/*line sourcemap.goal:104*/ return d.Name.Name
 		}
 	case *ast.SealedInterfaceDecl:
 		if d.Name != nil {
-			return d.Name.Name
+			/*line sourcemap.goal:108*/ return d.Name.Name
 		}
 	case *ast.GenDecl:
 		if d.Tok == token.IMPORT || len(d.Specs) != 1 {
-			return ""
+			/*line sourcemap.goal:114*/ return ""
 		}
 		switch s := d.Specs[0].(type) {
 		case *ast.TypeSpec:
 			if s.Name != nil {
-				return s.Name.Name
+				/*line sourcemap.goal:119*/ return s.Name.Name
 			}
 		case *ast.ValueSpec:
 			if len(s.Names) == 1 && s.Names[0] != nil {
-				return s.Names[0].Name
+				/*line sourcemap.goal:123*/ return s.Names[0].Name
 			}
 		}
 	}
-	return ""
+	/*line sourcemap.goal:127*/ return ""
 }

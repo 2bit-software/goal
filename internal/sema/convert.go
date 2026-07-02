@@ -12,14 +12,15 @@ import (
 
 //line convert.goal:30
 func CheckConvert(file *ast.File, info *Info) []Diagnostic {
-	var diags []Diagnostic
+	/*line convert.goal:31*/ var diags []Diagnostic
 
+	/*line convert.goal:32*/
 	for _, d := range file.Decls {
-		fd, ok := d.(*ast.FuncDecl)
-		if !ok {
-			continue
+		/*line convert.goal:33*/ fd, ok := d.(*ast.FuncDecl)
+		/*line convert.goal:34*/ if !ok {
+			/*line convert.goal:35*/ continue
 		}
-		var isDerive bool
+		/*line convert.goal:37*/ var isDerive bool
 		switch fd.Mod.(type) {
 		case ast.FuncMod_FuncDerive:
 			isDerive = true
@@ -30,144 +31,145 @@ func CheckConvert(file *ast.File, info *Info) []Diagnostic {
 		default:
 			panic("unreachable: non-exhaustive ast.FuncMod (compiler invariant violated)")
 		}
-		if !isDerive {
-			continue
+		/*line convert.goal:42*/ if !isDerive {
+			/*line convert.goal:43*/ continue
 		}
-		diags = append(diags, checkOneConvert(fd, info)...)
+		/*line convert.goal:45*/ diags = append(diags, checkOneConvert(fd, info)...)
 	}
-	return diags
+	/*line convert.goal:47*/ return diags
 }
 
 //line convert.goal:54
 func checkOneConvert(d *ast.FuncDecl, info *Info) []Diagnostic {
-	if d.Name == nil || d.Type == nil {
-		return nil
+	/*line convert.goal:55*/ if d.Name == nil || d.Type == nil {
+		/*line convert.goal:56*/ return nil
 	}
-	pos := d.Name.Pos()
-	srcType := firstParamType(d.Type.Params)
-	if srcType == "" {
-		return nil
+	/*line convert.goal:58*/ pos := d.Name.Pos()
+	/*line convert.goal:59*/ srcType := firstParamType(d.Type.Params)
+	/*line convert.goal:60*/ if srcType == "" {
+		/*line convert.goal:61*/ return nil
 	}
-	tgtType, fallible := resultTarget(d.Type.Results)
-	if tgtType == "" {
-		return nil
+	/*line convert.goal:63*/ tgtType, fallible := resultTarget(d.Type.Results)
+	/*line convert.goal:64*/ if tgtType == "" {
+		/*line convert.goal:65*/ return nil
 	}
-	overridden := convertOverrides(d.Body)
-	tgtFields, ok := info.Structs[derefTypeName(tgtType)]
-	if !ok {
-		return []Diagnostic{{Pos: pos, Severity: Severity(Severity_Warning{}), Feature: "12-derive-convert", Code: "unresolved-derive-type", Message: fmt.Sprintf("cannot verify `derive func` is total: target type `%s` is not a struct declared in this file or a resolvable import — completeness deferred", tgtType)}}
+	/*line convert.goal:67*/ overridden := convertOverrides(d.Body)
+	/*line convert.goal:69*/ tgtFields, ok := info.Structs[derefTypeName(tgtType)]
+	/*line convert.goal:70*/ if !ok {
+		/*line convert.goal:71*/ return []Diagnostic{{Pos: pos, Severity: Severity(Severity_Warning{}), Feature: "12-derive-convert", Code: "unresolved-derive-type", Message: fmt.Sprintf("cannot verify `derive func` is total: target type `%s` is not a struct declared in this file or a resolvable import — completeness deferred", tgtType)}}
 	}
-	srcFields, srcKnown := info.Structs[derefTypeName(srcType)]
-	if !srcKnown {
-		return []Diagnostic{{Pos: pos, Severity: Severity(Severity_Warning{}), Feature: "12-derive-convert", Code: "unresolved-derive-type", Message: fmt.Sprintf("cannot verify `derive func` is total: source type `%s` is not a struct declared in this file or a resolvable import — completeness deferred", srcType)}}
+	/*line convert.goal:80*/ srcFields, srcKnown := info.Structs[derefTypeName(srcType)]
+	/*line convert.goal:81*/ if !srcKnown {
+		/*line convert.goal:82*/ return []Diagnostic{{Pos: pos, Severity: Severity(Severity_Warning{}), Feature: "12-derive-convert", Code: "unresolved-derive-type", Message: fmt.Sprintf("cannot verify `derive func` is total: source type `%s` is not a struct declared in this file or a resolvable import — completeness deferred", srcType)}}
 	}
-	var diags []Diagnostic
+	/*line convert.goal:92*/ var diags []Diagnostic
 
+	/*line convert.goal:93*/
 	for _, f := range tgtFields {
-		if overridden[strings.ToLower(f.Name)] {
-			continue
+		/*line convert.goal:94*/ if overridden[strings.ToLower(f.Name)] {
+			/*line convert.goal:95*/ continue
 		}
-		sf, found := findConvField(srcFields, f.Name)
-		if !found {
-			diags = append(diags, Diagnostic{Pos: pos, Severity: Severity(Severity_Error{}), Feature: "12-derive-convert", Code: "unsourced-field", Message: fmt.Sprintf("`derive func` target field `%s.%s` has no same-named source field on `%s` and no explicit override — add `%s: …` or `%s: _`, or a same-named field on `%s`", tgtType, f.Name, srcType, f.Name, f.Name, srcType)})
-			continue
+		/*line convert.goal:97*/ sf, found := findConvField(srcFields, f.Name)
+		/*line convert.goal:98*/ if !found {
+			/*line convert.goal:99*/ diags = append(diags, Diagnostic{Pos: pos, Severity: Severity(Severity_Error{}), Feature: "12-derive-convert", Code: "unsourced-field", Message: fmt.Sprintf("`derive func` target field `%s.%s` has no same-named source field on `%s` and no explicit override — add `%s: …` or `%s: _`, or a same-named field on `%s`", tgtType, f.Name, srcType, f.Name, f.Name, srcType)})
+			/*line convert.goal:107*/ continue
 		}
-		if diag, ok := resolvableConvField(pos, tgtType, srcType, f, sf, fallible, info); !ok {
-			diags = append(diags, diag)
+		/*line convert.goal:109*/ if diag, ok := resolvableConvField(pos, tgtType, srcType, f, sf, fallible, info); !ok {
+			/*line convert.goal:110*/ diags = append(diags, diag)
 		}
 	}
-	return diags
+	/*line convert.goal:113*/ return diags
 }
 
 //line convert.goal:122
 func resolvableConvField(pos token.Pos, tgtType, srcType string, f, sf Field, fallible bool, info *Info) (Diagnostic, bool) {
-	tf := strings.TrimSpace(f.Type)
-	sfType := strings.TrimSpace(sf.Type)
-	if sfType == tf {
-		return Diagnostic{}, true
+	/*line convert.goal:123*/ tf := strings.TrimSpace(f.Type)
+	/*line convert.goal:124*/ sfType := strings.TrimSpace(sf.Type)
+	/*line convert.goal:125*/ if sfType == tf {
+		/*line convert.goal:126*/ return Diagnostic{}, true
 	}
-	if e, ok := info.FromRegistry[[2]string{sfType, tf}]; ok {
-		if e.Fallible && !fallible {
-			return Diagnostic{Pos: pos, Severity: Severity(Severity_Error{}), Feature: "12-derive-convert", Code: "fallible-in-total-derive", Message: fmt.Sprintf("`derive func` target field `%s.%s` needs the fallible conversion `%s` (`%s`→`%s`), but this derive is total — declare it returning `(%s, error)`", tgtType, f.Name, e.Name, sfType, tf, tgtType)}, false
+	/*line convert.goal:128*/ if e, ok := info.FromRegistry[[2]string{sfType, tf}]; ok {
+		/*line convert.goal:129*/ if e.Fallible && !fallible {
+			/*line convert.goal:130*/ return Diagnostic{Pos: pos, Severity: Severity(Severity_Error{}), Feature: "12-derive-convert", Code: "fallible-in-total-derive", Message: fmt.Sprintf("`derive func` target field `%s.%s` needs the fallible conversion `%s` (`%s`→`%s`), but this derive is total — declare it returning `(%s, error)`", tgtType, f.Name, e.Name, sfType, tf, tgtType)}, false
 		}
-		return Diagnostic{}, true
+		/*line convert.goal:139*/ return Diagnostic{}, true
 	}
-	if strings.HasPrefix(sfType, "[]") && strings.HasPrefix(tf, "[]") {
-		a := strings.TrimSpace(sfType[2:])
-		b := strings.TrimSpace(tf[2:])
-		if a == b {
-			return Diagnostic{}, true
+	/*line convert.goal:142*/ if strings.HasPrefix(sfType, "[]") && strings.HasPrefix(tf, "[]") {
+		/*line convert.goal:143*/ a := strings.TrimSpace(sfType[2:])
+		/*line convert.goal:144*/ b := strings.TrimSpace(tf[2:])
+		/*line convert.goal:145*/ if a == b {
+			/*line convert.goal:146*/ return Diagnostic{}, true
 		}
-		if e, ok := info.FromRegistry[[2]string{a, b}]; ok && !e.Fallible {
-			return Diagnostic{}, true
+		/*line convert.goal:148*/ if e, ok := info.FromRegistry[[2]string{a, b}]; ok && !e.Fallible {
+			/*line convert.goal:149*/ return Diagnostic{}, true
 		}
-		return deferConvField(pos, tgtType, srcType, f, sfType), false
+		/*line convert.goal:151*/ return deferConvField(pos, tgtType, srcType, f, sfType), false
 	}
-	if isDeferredConvShape(sfType) || isDeferredConvShape(tf) {
-		return deferConvField(pos, tgtType, srcType, f, sfType), false
+	/*line convert.goal:154*/ if isDeferredConvShape(sfType) || isDeferredConvShape(tf) {
+		/*line convert.goal:155*/ return deferConvField(pos, tgtType, srcType, f, sfType), false
 	}
-	if _, srcStruct := info.Structs[sfType]; srcStruct {
-		if _, tgtStruct := info.Structs[tf]; tgtStruct {
-			return deferConvField(pos, tgtType, srcType, f, sfType), false
+	/*line convert.goal:158*/ if _, srcStruct := info.Structs[sfType]; srcStruct {
+		/*line convert.goal:159*/ if _, tgtStruct := info.Structs[tf]; tgtStruct {
+			/*line convert.goal:160*/ return deferConvField(pos, tgtType, srcType, f, sfType), false
 		}
 	}
-	return Diagnostic{Pos: pos, Severity: Severity(Severity_Error{}), Feature: "12-derive-convert", Code: "unbridged-field", Message: fmt.Sprintf("`derive func` target field `%s.%s` is `%s` but its source `%s.%s` is `%s`, and no `from func` converts `%s`→`%s` — register one or override the field explicitly", tgtType, f.Name, tf, srcType, sf.Name, sfType, sfType, tf)}, false
+	/*line convert.goal:164*/ return Diagnostic{Pos: pos, Severity: Severity(Severity_Error{}), Feature: "12-derive-convert", Code: "unbridged-field", Message: fmt.Sprintf("`derive func` target field `%s.%s` is `%s` but its source `%s.%s` is `%s`, and no `from func` converts `%s`→`%s` — register one or override the field explicitly", tgtType, f.Name, tf, srcType, sf.Name, sfType, sfType, tf)}, false
 }
 
 //line convert.goal:176
 func derefTypeName(s string) string {
-	s = strings.TrimSpace(s)
-	if rest, ok := strings.CutPrefix(s, "*"); ok {
-		return strings.TrimSpace(rest)
+	/*line convert.goal:177*/ s = strings.TrimSpace(s)
+	/*line convert.goal:178*/ if rest, ok := strings.CutPrefix(s, "*"); ok {
+		/*line convert.goal:179*/ return strings.TrimSpace(rest)
 	}
-	return s
+	/*line convert.goal:181*/ return s
 }
 
 //line convert.goal:186
 func isDeferredConvShape(typ string) bool {
-	typ = strings.TrimSpace(typ)
-	return strings.HasPrefix(typ, "map[") || strings.HasPrefix(typ, "Option[") || strings.HasPrefix(typ, "*")
+	/*line convert.goal:187*/ typ = strings.TrimSpace(typ)
+	/*line convert.goal:188*/ return strings.HasPrefix(typ, "map[") || strings.HasPrefix(typ, "Option[") || strings.HasPrefix(typ, "*")
 }
 
 //line convert.goal:195
 func deferConvField(pos token.Pos, tgtType, srcType string, f Field, sfType string) Diagnostic {
-	return Diagnostic{Pos: pos, Severity: Severity(Severity_Warning{}), Feature: "12-derive-convert", Code: "unresolved-derive-field", Message: fmt.Sprintf("cannot verify `derive func` field `%s.%s` (`%s`→`%s`): needs a map/Option/nested recursion the v1 checker keeps minimal — completeness deferred for this field", tgtType, f.Name, sfType, strings.TrimSpace(f.Type))}
+	/*line convert.goal:196*/ return Diagnostic{Pos: pos, Severity: Severity(Severity_Warning{}), Feature: "12-derive-convert", Code: "unresolved-derive-field", Message: fmt.Sprintf("cannot verify `derive func` field `%s.%s` (`%s`→`%s`): needs a map/Option/nested recursion the v1 checker keeps minimal — completeness deferred for this field", tgtType, f.Name, sfType, strings.TrimSpace(f.Type))}
 }
 
 //line convert.goal:209
 func convertOverrides(body *ast.BlockStmt) map[string]bool {
-	out := map[string]bool{}
-	if body == nil {
-		return out
+	/*line convert.goal:210*/ out := map[string]bool{}
+	/*line convert.goal:211*/ if body == nil {
+		/*line convert.goal:212*/ return out
 	}
-	for _, s := range body.List {
-		ret, ok := s.(*ast.ReturnStmt)
-		if !ok || len(ret.Results) != 1 {
-			continue
+	/*line convert.goal:214*/ for _, s := range body.List {
+		/*line convert.goal:215*/ ret, ok := s.(*ast.ReturnStmt)
+		/*line convert.goal:216*/ if !ok || len(ret.Results) != 1 {
+			/*line convert.goal:217*/ continue
 		}
-		cl, ok := ret.Results[0].(*ast.CompositeLit)
-		if !ok {
-			continue
+		/*line convert.goal:219*/ cl, ok := ret.Results[0].(*ast.CompositeLit)
+		/*line convert.goal:220*/ if !ok {
+			/*line convert.goal:221*/ continue
 		}
-		for _, el := range cl.Elts {
-			kv, ok := el.(*ast.KeyValueExpr)
-			if !ok {
-				continue
+		/*line convert.goal:223*/ for _, el := range cl.Elts {
+			/*line convert.goal:224*/ kv, ok := el.(*ast.KeyValueExpr)
+			/*line convert.goal:225*/ if !ok {
+				/*line convert.goal:226*/ continue
 			}
-			if key, ok := kv.Key.(*ast.Ident); ok {
-				out[strings.ToLower(key.Name)] = true
+			/*line convert.goal:228*/ if key, ok := kv.Key.(*ast.Ident); ok {
+				/*line convert.goal:229*/ out[strings.ToLower(key.Name)] = true
 			}
 		}
 	}
-	return out
+	/*line convert.goal:233*/ return out
 }
 
 //line convert.goal:237
 func findConvField(fields []Field, name string) (Field, bool) {
-	for _, f := range fields {
-		if strings.EqualFold(f.Name, name) {
-			return f, true
+	/*line convert.goal:238*/ for _, f := range fields {
+		/*line convert.goal:239*/ if strings.EqualFold(f.Name, name) {
+			/*line convert.goal:240*/ return f, true
 		}
 	}
-	return Field{}, false
+	/*line convert.goal:243*/ return Field{}, false
 }

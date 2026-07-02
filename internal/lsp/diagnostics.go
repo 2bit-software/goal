@@ -15,73 +15,73 @@ import (
 
 //line diagnostics.goal:19
 func (s *Server) compile(uri, text string, version int) {
-	path, ok := uriToPath(uri)
-	if !ok {
-		s.compileSingle(uri, text, version)
-		return
+	/*line diagnostics.goal:20*/ path, ok := uriToPath(uri)
+	/*line diagnostics.goal:21*/ if !ok {
+		/*line diagnostics.goal:22*/ s.compileSingle(uri, text, version)
+		/*line diagnostics.goal:23*/ return
 	}
-	dir := filepath.Dir(path)
-	s.analysisMu.Lock()
-	defer s.analysisMu.Unlock()
-	disk, err := s.files(dir)
-	if err != nil {
-		s.logf("read dir %s: %v", dir, err)
-		s.compileSingle(uri, text, version)
-		return
+	/*line diagnostics.goal:25*/ dir := filepath.Dir(path)
+	/*line diagnostics.goal:30*/ s.analysisMu.Lock()
+	/*line diagnostics.goal:31*/ defer s.analysisMu.Unlock()
+	/*line diagnostics.goal:33*/ disk, err := s.files(dir)
+	/*line diagnostics.goal:34*/ if err != nil {
+		/*line diagnostics.goal:35*/ s.logf("read dir %s: %v", dir, err)
+		/*line diagnostics.goal:36*/ s.compileSingle(uri, text, version)
+		/*line diagnostics.goal:37*/ return
 	}
-	open := s.openFilesInDir(dir)
-	open[uri] = openFile{uri: uri, path: path, text: text, version: version}
-	views := mergePackageView(disk, open)
-	srcs := make([]string, len(views))
-	for i := range views {
-		srcs[i] = views[i].src
+	/*line diagnostics.goal:42*/ open := s.openFilesInDir(dir)
+	/*line diagnostics.goal:43*/ open[uri] = openFile{uri: uri, path: path, text: text, version: version}
+	/*line diagnostics.goal:45*/ views := mergePackageView(disk, open)
+	/*line diagnostics.goal:46*/ srcs := make([]string, len(views))
+	/*line diagnostics.goal:47*/ for i := range views {
+		/*line diagnostics.goal:48*/ srcs[i] = views[i].src
 	}
-	if conflictingPackageNames(srcs) {
-		s.logf("package name conflict in %s: single-file fallback", dir)
-		s.compileSingle(uri, text, version)
-		return
+	/*line diagnostics.goal:51*/ if conflictingPackageNames(srcs) {
+		/*line diagnostics.goal:52*/ s.logf("package name conflict in %s: single-file fallback", dir)
+		/*line diagnostics.goal:53*/ s.compileSingle(uri, text, version)
+		/*line diagnostics.goal:54*/ return
 	}
-	perFile, ferrs, err := sema.AnalyzePackageInDirWith(srcs, dir, sema.DirResolver(s.resolve))
-	if err != nil {
-		s.logf("analyze package %s: %v", dir, err)
-		return
+	/*line diagnostics.goal:57*/ perFile, ferrs, err := sema.AnalyzePackageInDirWith(srcs, dir, sema.DirResolver(s.resolve))
+	/*line diagnostics.goal:58*/ if err != nil {
+		/*line diagnostics.goal:60*/ s.logf("analyze package %s: %v", dir, err)
+		/*line diagnostics.goal:61*/ return
 	}
-	for _, fe := range ferrs {
-		s.logf("foreign resolve %s: %v", dir, fe)
+	/*line diagnostics.goal:63*/ for _, fe := range ferrs {
+		/*line diagnostics.goal:64*/ s.logf("foreign resolve %s: %v", dir, fe)
 	}
-	for i := range views {
-		of := views[i].open
-		if of == nil {
-			continue
+	/*line diagnostics.goal:69*/ for i := range views {
+		/*line diagnostics.goal:70*/ of := views[i].open
+		/*line diagnostics.goal:71*/ if of == nil {
+			/*line diagnostics.goal:72*/ continue
 		}
-		if s.superseded(of.uri, of.version) {
-			continue
+		/*line diagnostics.goal:74*/ if s.superseded(of.uri, of.version) {
+			/*line diagnostics.goal:75*/ continue
 		}
-		tokEnd := tokenEnds(of.text)
-		out := make([]Diagnostic, 0, len(perFile[i]))
-		for _, d := range perFile[i] {
-			out = append(out, toLSP(of.text, tokEnd, d))
+		/*line diagnostics.goal:77*/ tokEnd := tokenEnds(of.text)
+		/*line diagnostics.goal:78*/ out := make([]Diagnostic, 0, len(perFile[i]))
+		/*line diagnostics.goal:79*/ for _, d := range perFile[i] {
+			/*line diagnostics.goal:80*/ out = append(out, toLSP(of.text, tokEnd, d))
 		}
-		s.publish(of.uri, of.version, out)
+		/*line diagnostics.goal:82*/ s.publish(of.uri, of.version, out)
 	}
 }
 
 //line diagnostics.goal:89
 func (s *Server) compileSingle(uri, text string, version int) {
-	diags, err := sema.Analyze(text)
-	if err != nil {
-		s.logf("analyze %s: %v", uri, err)
-		return
+	/*line diagnostics.goal:90*/ diags, err := sema.Analyze(text)
+	/*line diagnostics.goal:91*/ if err != nil {
+		/*line diagnostics.goal:92*/ s.logf("analyze %s: %v", uri, err)
+		/*line diagnostics.goal:93*/ return
 	}
-	tokEnd := tokenEnds(text)
-	out := make([]Diagnostic, 0, len(diags))
-	for _, d := range diags {
-		out = append(out, toLSP(text, tokEnd, d))
+	/*line diagnostics.goal:95*/ tokEnd := tokenEnds(text)
+	/*line diagnostics.goal:96*/ out := make([]Diagnostic, 0, len(diags))
+	/*line diagnostics.goal:97*/ for _, d := range diags {
+		/*line diagnostics.goal:98*/ out = append(out, toLSP(text, tokEnd, d))
 	}
-	if s.superseded(uri, version) {
-		return
+	/*line diagnostics.goal:100*/ if s.superseded(uri, version) {
+		/*line diagnostics.goal:101*/ return
 	}
-	s.publish(uri, version, out)
+	/*line diagnostics.goal:103*/ s.publish(uri, version, out)
 }
 
 //line diagnostics.goal:107
@@ -94,17 +94,17 @@ type openFile struct {
 
 //line diagnostics.goal:115
 func (s *Server) openFilesInDir(dir string) map[string]openFile {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := map[string]openFile{}
-	for uri, d := range s.docs {
-		p, ok := uriToPath(uri)
-		if !ok || filepath.Dir(p) != dir {
-			continue
+	/*line diagnostics.goal:116*/ s.mu.Lock()
+	/*line diagnostics.goal:117*/ defer s.mu.Unlock()
+	/*line diagnostics.goal:118*/ out := map[string]openFile{}
+	/*line diagnostics.goal:119*/ for uri, d := range s.docs {
+		/*line diagnostics.goal:120*/ p, ok := uriToPath(uri)
+		/*line diagnostics.goal:121*/ if !ok || filepath.Dir(p) != dir {
+			/*line diagnostics.goal:122*/ continue
 		}
-		out[uri] = openFile{uri: uri, path: p, text: d.text, version: d.version}
+		/*line diagnostics.goal:124*/ out[uri] = openFile{uri: uri, path: p, text: d.text, version: d.version}
 	}
-	return out
+	/*line diagnostics.goal:126*/ return out
 }
 
 //line diagnostics.goal:131
@@ -115,99 +115,99 @@ type packageEntry struct {
 
 //line diagnostics.goal:139
 func mergePackageView(disk []fileSrc, open map[string]openFile) []packageEntry {
-	byPath := map[string]*packageEntry{}
-	paths := make([]string, 0, len(disk)+len(open))
-	for _, f := range disk {
-		byPath[f.path] = &packageEntry{src: f.src}
-		paths = append(paths, f.path)
+	/*line diagnostics.goal:140*/ byPath := map[string]*packageEntry{}
+	/*line diagnostics.goal:141*/ paths := make([]string, 0, len(disk)+len(open))
+	/*line diagnostics.goal:142*/ for _, f := range disk {
+		/*line diagnostics.goal:143*/ byPath[f.path] = &packageEntry{src: f.src}
+		/*line diagnostics.goal:144*/ paths = append(paths, f.path)
 	}
-	for _, of := range open {
-		o := of
-		if e, found := byPath[o.path]; found {
-			e.src = o.text
-			e.open = &o
-			continue
+	/*line diagnostics.goal:146*/ for _, of := range open {
+		/*line diagnostics.goal:147*/ o := of
+		/*line diagnostics.goal:148*/ if e, found := byPath[o.path]; found {
+			/*line diagnostics.goal:149*/ e.src = o.text
+			/*line diagnostics.goal:150*/ e.open = &o
+			/*line diagnostics.goal:151*/ continue
 		}
-		byPath[o.path] = &packageEntry{src: o.text, open: &o}
-		paths = append(paths, o.path)
+		/*line diagnostics.goal:153*/ byPath[o.path] = &packageEntry{src: o.text, open: &o}
+		/*line diagnostics.goal:154*/ paths = append(paths, o.path)
 	}
-	sort.Strings(paths)
-	views := make([]packageEntry, len(paths))
-	for i, p := range paths {
-		views[i] = *byPath[p]
+	/*line diagnostics.goal:156*/ sort.Strings(paths)
+	/*line diagnostics.goal:157*/ views := make([]packageEntry, len(paths))
+	/*line diagnostics.goal:158*/ for i, p := range paths {
+		/*line diagnostics.goal:159*/ views[i] = *byPath[p]
 	}
-	return views
+	/*line diagnostics.goal:161*/ return views
 }
 
 //line diagnostics.goal:167
 func conflictingPackageNames(srcs []string) bool {
-	name := ""
-	for _, src := range srcs {
-		got := project.PackageClause(src)
-		if got == "" {
-			continue
+	/*line diagnostics.goal:168*/ name := ""
+	/*line diagnostics.goal:169*/ for _, src := range srcs {
+		/*line diagnostics.goal:170*/ got := project.PackageClause(src)
+		/*line diagnostics.goal:171*/ if got == "" {
+			/*line diagnostics.goal:172*/ continue
 		}
-		if name == "" {
-			name = got
-			continue
+		/*line diagnostics.goal:174*/ if name == "" {
+			/*line diagnostics.goal:175*/ name = got
+			/*line diagnostics.goal:176*/ continue
 		}
-		if got != name {
-			return true
+		/*line diagnostics.goal:178*/ if got != name {
+			/*line diagnostics.goal:179*/ return true
 		}
 	}
-	return false
+	/*line diagnostics.goal:182*/ return false
 }
 
 //line diagnostics.goal:187
 func (s *Server) superseded(uri string, version int) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	cur := s.docs[uri]
-	return cur != nil && cur.version > version
+	/*line diagnostics.goal:188*/ s.mu.Lock()
+	/*line diagnostics.goal:189*/ defer s.mu.Unlock()
+	/*line diagnostics.goal:190*/ cur := s.docs[uri]
+	/*line diagnostics.goal:191*/ return cur != nil && cur.version > version
 }
 
 //line diagnostics.goal:194
 func (s *Server) publish(uri string, version int, diags []Diagnostic) {
-	s.notify("textDocument/publishDiagnostics", PublishDiagnosticsParams{URI: uri, Version: version, Diagnostics: diags})
+	/*line diagnostics.goal:195*/ s.notify("textDocument/publishDiagnostics", PublishDiagnosticsParams{URI: uri, Version: version, Diagnostics: diags})
 }
 
 //line diagnostics.goal:206
 func toLSP(text string, tokEnd map[int]int, d sema.Diagnostic) Diagnostic {
-	start := d.Pos
-	rng := Range{Start: Position{Line: start.Line - 1, Character: start.Col - 1}, End: Position{Line: start.Line - 1, Character: lineLength(text, start.Line)}}
-	if end, ok := tokEnd[d.Pos.Offset]; ok && end > d.Pos.Offset {
-		e := token.OffsetToPosition(text, end)
-		rng.End = Position{Line: e.Line - 1, Character: e.Col - 1}
+	/*line diagnostics.goal:207*/ start := d.Pos
+	/*line diagnostics.goal:208*/ rng := Range{Start: Position{Line: start.Line - 1, Character: start.Col - 1}, End: Position{Line: start.Line - 1, Character: lineLength(text, start.Line)}}
+	/*line diagnostics.goal:212*/ if end, ok := tokEnd[d.Pos.Offset]; ok && end > d.Pos.Offset {
+		/*line diagnostics.goal:213*/ e := token.OffsetToPosition(text, end)
+		/*line diagnostics.goal:214*/ rng.End = Position{Line: e.Line - 1, Character: e.Col - 1}
 	}
-	if rng.End.Line == rng.Start.Line && rng.End.Character <= rng.Start.Character {
-		rng.End.Character = rng.Start.Character + 1
+	/*line diagnostics.goal:216*/ if rng.End.Line == rng.Start.Line && rng.End.Character <= rng.Start.Character {
+		/*line diagnostics.goal:217*/ rng.End.Character = rng.Start.Character + 1
 	}
-	severity := 1
-	if _, ok := d.Severity.(sema.Severity_Warning); ok {
-		severity = 2
+	/*line diagnostics.goal:220*/ severity := 1
+	/*line diagnostics.goal:221*/ if _, ok := d.Severity.(sema.Severity_Warning); ok {
+		/*line diagnostics.goal:222*/ severity = 2
 	}
-	return Diagnostic{Range: rng, Severity: severity, Code: d.Code, Source: "goal", Message: d.Message}
+	/*line diagnostics.goal:224*/ return Diagnostic{Range: rng, Severity: severity, Code: d.Code, Source: "goal", Message: d.Message}
 }
 
 //line diagnostics.goal:236
 func tokenEnds(text string) map[int]int {
-	toks := lexer.Tokens(text)
-	m := make(map[int]int, len(toks))
-	for _, t := range toks {
-		m[t.Pos.Offset] = t.Pos.Offset + len(t.Lit)
+	/*line diagnostics.goal:237*/ toks := lexer.Tokens(text)
+	/*line diagnostics.goal:238*/ m := make(map[int]int, len(toks))
+	/*line diagnostics.goal:239*/ for _, t := range toks {
+		/*line diagnostics.goal:240*/ m[t.Pos.Offset] = t.Pos.Offset + len(t.Lit)
 	}
-	return m
+	/*line diagnostics.goal:242*/ return m
 }
 
 //line diagnostics.goal:247
 func lineLength(src string, line1 int) int {
-	idx := line1 - 1
-	if idx < 0 {
-		return 0
+	/*line diagnostics.goal:248*/ idx := line1 - 1
+	/*line diagnostics.goal:249*/ if idx < 0 {
+		/*line diagnostics.goal:250*/ return 0
 	}
-	lines := strings.Split(src, "\n")
-	if idx >= len(lines) {
-		return 0
+	/*line diagnostics.goal:252*/ lines := strings.Split(src, "\n")
+	/*line diagnostics.goal:253*/ if idx >= len(lines) {
+		/*line diagnostics.goal:254*/ return 0
 	}
-	return len(strings.TrimRight(lines[idx], "\r"))
+	/*line diagnostics.goal:256*/ return len(strings.TrimRight(lines[idx], "\r"))
 }

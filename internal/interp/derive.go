@@ -25,339 +25,343 @@ type deriveErrVal struct {
 
 //line derive.goal:47
 func (deriveErrVal) Error() string {
-	return "interp: derive conversion produced an error"
+	/*line derive.goal:47*/ return "interp: derive conversion produced an error"
 }
 
 //line derive.goal:54
 func (ip *Interp) evalDerive(decl *ast.FuncDecl, call *ast.CallExpr, scope *Env) ([]Value, error) {
-	if decl.Type == nil || decl.Type.Params == nil || len(decl.Type.Params.List) == 0 || len(decl.Type.Params.List[0].Names) == 0 {
-		return nil, fmt.Errorf("interp: %s: derive func needs a single named source parameter", call.Pos())
+	/*line derive.goal:55*/ if decl.Type == nil || decl.Type.Params == nil || len(decl.Type.Params.List) == 0 || len(decl.Type.Params.List[0].Names) == 0 {
+		/*line derive.goal:57*/ return nil, fmt.Errorf("interp: %s: derive func needs a single named source parameter", call.Pos())
 	}
-	if len(call.Args) != 1 {
-		return nil, fmt.Errorf("interp: %s: derive %s expects 1 argument, got %d", call.Pos(), decl.Name.Name, len(call.Args))
+	/*line derive.goal:59*/ if len(call.Args) != 1 {
+		/*line derive.goal:60*/ return nil, fmt.Errorf("interp: %s: derive %s expects 1 argument, got %d", call.Pos(), decl.Name.Name, len(call.Args))
 	}
-	src, err := ip.evalExpr(call.Args[0], scope)
-	if err != nil {
-		return nil, err
+	/*line derive.goal:62*/ src, err := ip.evalExpr(call.Args[0], scope)
+	/*line derive.goal:63*/ if err != nil {
+		/*line derive.goal:64*/ return nil, err
 	}
-	srcName := decl.Type.Params.List[0].Names[0].Name
-	srcType := typeName(decl.Type.Params.List[0].Type)
-	tgtType, fallible, ok := deriveTargetType(decl.Type.Results)
-	if !ok {
-		return nil, fmt.Errorf("interp: %s: derive %s: cannot determine target type from result list", call.Pos(), decl.Name.Name)
+	/*line derive.goal:66*/ srcName := decl.Type.Params.List[0].Names[0].Name
+	/*line derive.goal:67*/ srcType := typeName(decl.Type.Params.List[0].Type)
+	/*line derive.goal:68*/ tgtType, fallible, ok := deriveTargetType(decl.Type.Results)
+	/*line derive.goal:69*/ if !ok {
+		/*line derive.goal:70*/ return nil, fmt.Errorf("interp: %s: derive %s: cannot determine target type from result list", call.Pos(), decl.Name.Name)
 	}
-	overrides := deriveOverridesOf(decl.Body)
-	convScope := ip.root.NewChild()
-	convScope.Define(srcName, src)
-	out, err := ip.deriveConvert(decl.Name.Name, src, srcType, tgtType, fallible, overrides, convScope)
-	if fallible {
-		var de deriveErrVal
+	/*line derive.goal:72*/ overrides := deriveOverridesOf(decl.Body)
+	/*line derive.goal:76*/ convScope := ip.root.NewChild()
+	/*line derive.goal:77*/ convScope.Define(srcName, src)
+	/*line derive.goal:79*/ out, err := ip.deriveConvert(decl.Name.Name, src, srcType, tgtType, fallible, overrides, convScope)
+	/*line derive.goal:80*/ if fallible {
+		/*line derive.goal:81*/ var de deriveErrVal
 
+		/*line derive.goal:82*/
 		if errors.As(err, &de) {
-			return []Value{out, de.val}, nil
+			/*line derive.goal:83*/ return []Value{out, de.val}, nil
 		}
-		if err != nil {
-			return nil, err
+		/*line derive.goal:85*/ if err != nil {
+			/*line derive.goal:86*/ return nil, err
 		}
-		return []Value{out, NilVal()}, nil
+		/*line derive.goal:88*/ return []Value{out, NilVal()}, nil
 	}
-	if err != nil {
-		return nil, err
+	/*line derive.goal:90*/ if err != nil {
+		/*line derive.goal:91*/ return nil, err
 	}
-	return []Value{out}, nil
+	/*line derive.goal:93*/ return []Value{out}, nil
 }
 
 //line derive.goal:102
 func (ip *Interp) deriveConvert(name string, src Value, srcType, tgtType string, fallible bool, overrides []deriveOverride, scope *Env) (Value, error) {
-	tgtVal := baseTypeName(derefTypeName(tgtType))
-	tgtFields, ok := ip.structFields(tgtVal)
-	if !ok {
-		return Value{}, fmt.Errorf("interp: derive %s: unknown target struct %q", name, tgtType)
+	/*line derive.goal:103*/ tgtVal := baseTypeName(derefTypeName(tgtType))
+	/*line derive.goal:104*/ tgtFields, ok := ip.structFields(tgtVal)
+	/*line derive.goal:105*/ if !ok {
+		/*line derive.goal:106*/ return Value{}, fmt.Errorf("interp: derive %s: unknown target struct %q", name, tgtType)
 	}
-	if src.Kind == KindNil {
-		return ip.zeroValue(tgtVal, 0), nil
+	/*line derive.goal:110*/ if src.Kind == KindNil {
+		/*line derive.goal:111*/ return ip.zeroValue(tgtVal, 0), nil
 	}
-	if src.Kind != KindStruct || src.Struct == nil {
-		return Value{}, fmt.Errorf("interp: derive %s: source value is %s, not a struct", name, src.Kind)
+	/*line derive.goal:113*/ if src.Kind != KindStruct || src.Struct == nil {
+		/*line derive.goal:114*/ return Value{}, fmt.Errorf("interp: derive %s: source value is %s, not a struct", name, src.Kind)
 	}
-	srcFields, _ := ip.structFields(baseTypeName(derefTypeName(srcType)))
-	overridden := map[string]bool{}
-	for _, o := range overrides {
-		overridden[strings.ToLower(o.Name)] = true
+	/*line derive.goal:116*/ srcFields, _ := ip.structFields(baseTypeName(derefTypeName(srcType)))
+	/*line derive.goal:118*/ overridden := map[string]bool{}
+	/*line derive.goal:119*/ for _, o := range overrides {
+		/*line derive.goal:120*/ overridden[strings.ToLower(o.Name)] = true
 	}
-	out := make(map[string]Value, len(tgtFields))
-	for _, o := range overrides {
-		if o.Skip {
-			continue
+	/*line derive.goal:123*/ out := make(map[string]Value, len(tgtFields))
+	/*line derive.goal:126*/ for _, o := range overrides {
+		/*line derive.goal:127*/ if o.Skip {
+			/*line derive.goal:128*/ continue
 		}
-		v, err := ip.evalExpr(o.Value, scope)
-		if err != nil {
-			return Value{}, err
+		/*line derive.goal:130*/ v, err := ip.evalExpr(o.Value, scope)
+		/*line derive.goal:131*/ if err != nil {
+			/*line derive.goal:132*/ return Value{}, err
 		}
-		out[o.Name] = v
+		/*line derive.goal:134*/ out[o.Name] = v
 	}
-	for _, f := range tgtFields {
-		if overridden[strings.ToLower(f.Name)] {
-			continue
+	/*line derive.goal:138*/ for _, f := range tgtFields {
+		/*line derive.goal:139*/ if overridden[strings.ToLower(f.Name)] {
+			/*line derive.goal:140*/ continue
 		}
-		sf, found := findFieldFold(srcFields, f.Name)
-		if !found {
-			return Value{}, fmt.Errorf("interp: derive %s: target field %q of %s is not sourced from %s (add an explicit override or a `from func`)", name, f.Name, tgtType, srcType)
+		/*line derive.goal:142*/ sf, found := findFieldFold(srcFields, f.Name)
+		/*line derive.goal:143*/ if !found {
+			/*line derive.goal:144*/ return Value{}, fmt.Errorf("interp: derive %s: target field %q of %s is not sourced from %s (add an explicit override or a `from func`)", name, f.Name, tgtType, srcType)
 		}
-		srcVal, ok := src.Struct.Fields[sf.Name]
-		if !ok {
-			srcVal = ip.zeroValue(sf.Type, 0)
+		/*line derive.goal:146*/ srcVal, ok := src.Struct.Fields[sf.Name]
+		/*line derive.goal:147*/ if !ok {
+			/*line derive.goal:148*/ srcVal = ip.zeroValue(sf.Type, 0)
 		}
-		v, err := ip.convertFieldValue(srcVal, sf.Type, f.Type, fallible)
-		if err != nil {
-			var de deriveErrVal
+		/*line derive.goal:150*/ v, err := ip.convertFieldValue(srcVal, sf.Type, f.Type, fallible)
+		/*line derive.goal:151*/ if err != nil {
+			/*line derive.goal:154*/ var de deriveErrVal
 
+			/*line derive.goal:155*/
 			if errors.As(err, &de) {
-				return StructVal(tgtVal, out), err
+				/*line derive.goal:156*/ return StructVal(tgtVal, out), err
 			}
-			return Value{}, fmt.Errorf("interp: derive %s, field %q: %w", name, f.Name, err)
+			/*line derive.goal:158*/ return Value{}, fmt.Errorf("interp: derive %s, field %q: %w", name, f.Name, err)
 		}
-		out[f.Name] = v
+		/*line derive.goal:160*/ out[f.Name] = v
 	}
-	for _, f := range tgtFields {
-		if _, set := out[f.Name]; !set {
-			out[f.Name] = ip.zeroValue(f.Type, 0)
+	/*line derive.goal:164*/ for _, f := range tgtFields {
+		/*line derive.goal:165*/ if _, set := out[f.Name]; !set {
+			/*line derive.goal:166*/ out[f.Name] = ip.zeroValue(f.Type, 0)
 		}
 	}
-	return StructVal(tgtVal, out), nil
+	/*line derive.goal:169*/ return StructVal(tgtVal, out), nil
 }
 
 //line derive.goal:179
 func (ip *Interp) convertFieldValue(v Value, sf, tf string, fallible bool) (Value, error) {
-	sf, tf = strings.TrimSpace(sf), strings.TrimSpace(tf)
-	if sf == tf {
-		return v, nil
+	/*line derive.goal:180*/ sf, tf = strings.TrimSpace(sf), strings.TrimSpace(tf)
+	/*line derive.goal:181*/ if sf == tf {
+		/*line derive.goal:182*/ return v, nil
 	}
-	reg := ip.info.FromRegistry
-	if entry, ok := reg[[2]string{sf, tf}]; ok {
-		if !entry.Fallible {
-			out, err := ip.callNamedConv(entry.Name, v)
-			if err != nil {
-				return Value{}, err
+	/*line derive.goal:184*/ reg := ip.info.FromRegistry
+	/*line derive.goal:185*/ if entry, ok := reg[[2]string{sf, tf}]; ok {
+		/*line derive.goal:186*/ if !entry.Fallible {
+			/*line derive.goal:187*/ out, err := ip.callNamedConv(entry.Name, v)
+			/*line derive.goal:188*/ if err != nil {
+				/*line derive.goal:189*/ return Value{}, err
 			}
-			if len(out) != 1 {
-				return Value{}, fmt.Errorf("conversion %s returned %d values (want 1)", entry.Name, len(out))
+			/*line derive.goal:191*/ if len(out) != 1 {
+				/*line derive.goal:192*/ return Value{}, fmt.Errorf("conversion %s returned %d values (want 1)", entry.Name, len(out))
 			}
-			return out[0], nil
+			/*line derive.goal:194*/ return out[0], nil
 		}
-		if !fallible {
-			return Value{}, fmt.Errorf("conversion %s->%s is fallible; declare the derive func returning (T, error)", sf, tf)
+		/*line derive.goal:196*/ if !fallible {
+			/*line derive.goal:197*/ return Value{}, fmt.Errorf("conversion %s->%s is fallible; declare the derive func returning (T, error)", sf, tf)
 		}
-		out, err := ip.callNamedConv(entry.Name, v)
-		if err != nil {
-			return Value{}, err
+		/*line derive.goal:199*/ out, err := ip.callNamedConv(entry.Name, v)
+		/*line derive.goal:200*/ if err != nil {
+			/*line derive.goal:201*/ return Value{}, err
 		}
-		if len(out) != 2 {
-			return Value{}, fmt.Errorf("fallible conversion %s returned %d values (want 2)", entry.Name, len(out))
+		/*line derive.goal:203*/ if len(out) != 2 {
+			/*line derive.goal:204*/ return Value{}, fmt.Errorf("fallible conversion %s returned %d values (want 2)", entry.Name, len(out))
 		}
-		if out[1].Kind != KindNil {
-			return Value{}, deriveErrVal{val: out[1]}
+		/*line derive.goal:206*/ if out[1].Kind != KindNil {
+			/*line derive.goal:207*/ return Value{}, deriveErrVal{val: out[1]}
 		}
-		return out[0], nil
+		/*line derive.goal:209*/ return out[0], nil
 	}
-	if se, ok := sliceElem(sf); ok {
-		te, ok := sliceElem(tf)
-		if !ok {
-			return Value{}, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+	/*line derive.goal:212*/ if se, ok := sliceElem(sf); ok {
+		/*line derive.goal:213*/ te, ok := sliceElem(tf)
+		/*line derive.goal:214*/ if !ok {
+			/*line derive.goal:215*/ return Value{}, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
 		}
-		return ip.convertElements(v, se, te)
+		/*line derive.goal:217*/ return ip.convertElements(v, se, te)
 	}
-	if sn, se, ok := arrayElem(sf); ok {
-		tn, te, ok := arrayElem(tf)
-		if !ok || sn != tn {
-			return Value{}, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+	/*line derive.goal:220*/ if sn, se, ok := arrayElem(sf); ok {
+		/*line derive.goal:221*/ tn, te, ok := arrayElem(tf)
+		/*line derive.goal:222*/ if !ok || sn != tn {
+			/*line derive.goal:223*/ return Value{}, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
 		}
-		return ip.convertElements(v, se, te)
+		/*line derive.goal:225*/ return ip.convertElements(v, se, te)
 	}
-	if sk, sv, ok := mapKeyVal(sf); ok {
-		tk, tv, ok := mapKeyVal(tf)
-		if !ok || sk != tk {
-			return Value{}, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+	/*line derive.goal:228*/ if sk, sv, ok := mapKeyVal(sf); ok {
+		/*line derive.goal:229*/ tk, tv, ok := mapKeyVal(tf)
+		/*line derive.goal:230*/ if !ok || sk != tk {
+			/*line derive.goal:231*/ return Value{}, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
 		}
-		if v.Kind != KindMap || v.Map == nil {
-			return MapVal(nil), nil
+		/*line derive.goal:233*/ if v.Kind != KindMap || v.Map == nil {
+			/*line derive.goal:234*/ return MapVal(nil), nil
 		}
-		entries := make(map[string]Value, len(v.Map.Entries))
-		for k, ev := range v.Map.Entries {
-			cv, err := ip.convertFieldValue(ev, sv, tv, false)
-			if err != nil {
-				return Value{}, err
+		/*line derive.goal:236*/ entries := make(map[string]Value, len(v.Map.Entries))
+		/*line derive.goal:237*/ for k, ev := range v.Map.Entries {
+			/*line derive.goal:238*/ cv, err := ip.convertFieldValue(ev, sv, tv, false)
+			/*line derive.goal:239*/ if err != nil {
+				/*line derive.goal:240*/ return Value{}, err
 			}
-			entries[k] = cv
+			/*line derive.goal:242*/ entries[k] = cv
 		}
-		return MapVal(entries), nil
+		/*line derive.goal:244*/ return MapVal(entries), nil
 	}
-	if _, srcStruct := ip.structFields(baseTypeName(derefTypeName(sf))); srcStruct {
-		if _, tgtStruct := ip.structFields(baseTypeName(derefTypeName(tf))); tgtStruct {
-			return ip.deriveConvert("(nested)", v, sf, tf, fallible, nil, nil)
+	/*line derive.goal:247*/ if _, srcStruct := ip.structFields(baseTypeName(derefTypeName(sf))); srcStruct {
+		/*line derive.goal:248*/ if _, tgtStruct := ip.structFields(baseTypeName(derefTypeName(tf))); tgtStruct {
+			/*line derive.goal:249*/ return ip.deriveConvert("(nested)", v, sf, tf, fallible, nil, nil)
 		}
 	}
-	return Value{}, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+	/*line derive.goal:252*/ return Value{}, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
 }
 
 //line derive.goal:258
 func (ip *Interp) convertElements(v Value, se, te string) (Value, error) {
-	if v.Kind != KindSlice {
-		return SliceVal(), nil
+	/*line derive.goal:259*/ if v.Kind != KindSlice {
+		/*line derive.goal:260*/ return SliceVal(), nil
 	}
-	out := make([]Value, 0, len(v.Slice))
-	for _, ev := range v.Slice {
-		cv, err := ip.convertFieldValue(ev, se, te, false)
-		if err != nil {
-			var de deriveErrVal
+	/*line derive.goal:262*/ out := make([]Value, 0, len(v.Slice))
+	/*line derive.goal:263*/ for _, ev := range v.Slice {
+		/*line derive.goal:264*/ cv, err := ip.convertFieldValue(ev, se, te, false)
+		/*line derive.goal:265*/ if err != nil {
+			/*line derive.goal:266*/ var de deriveErrVal
 
+			/*line derive.goal:267*/
 			if errors.As(err, &de) {
-				return Value{}, fmt.Errorf("no total element conversion %s -> %s for container recursion", se, te)
+				/*line derive.goal:268*/ return Value{}, fmt.Errorf("no total element conversion %s -> %s for container recursion", se, te)
 			}
-			return Value{}, err
+			/*line derive.goal:270*/ return Value{}, err
 		}
-		out = append(out, cv)
+		/*line derive.goal:272*/ out = append(out, cv)
 	}
-	return SliceVal(out...), nil
+	/*line derive.goal:274*/ return SliceVal(out...), nil
 }
 
 //line derive.goal:280
 func (ip *Interp) callNamedConv(name string, arg Value) ([]Value, error) {
-	fn, err := ip.root.Lookup(name)
-	if err != nil {
-		return nil, fmt.Errorf("from conversion %s is not callable: %w", name, err)
+	/*line derive.goal:281*/ fn, err := ip.root.Lookup(name)
+	/*line derive.goal:282*/ if err != nil {
+		/*line derive.goal:283*/ return nil, fmt.Errorf("from conversion %s is not callable: %w", name, err)
 	}
-	if fn.Kind != KindFunc || fn.Func == nil {
-		return nil, fmt.Errorf("from conversion %s is not a function", name)
+	/*line derive.goal:285*/ if fn.Kind != KindFunc || fn.Func == nil {
+		/*line derive.goal:286*/ return nil, fmt.Errorf("from conversion %s is not a function", name)
 	}
-	return ip.callFunc(fn.Func, []Value{arg})
+	/*line derive.goal:288*/ return ip.callFunc(fn.Func, []Value{arg})
 }
 
 //line derive.goal:295
 func deriveTargetType(fl *ast.FieldList) (tgt string, fallible bool, ok bool) {
-	if fl == nil || len(fl.List) == 0 {
-		return "", false, false
+	/*line derive.goal:296*/ if fl == nil || len(fl.List) == 0 {
+		/*line derive.goal:297*/ return "", false, false
 	}
-	tgt = typeName(fl.List[0].Type)
-	if tgt == "" {
-		return "", false, false
+	/*line derive.goal:299*/ tgt = typeName(fl.List[0].Type)
+	/*line derive.goal:300*/ if tgt == "" {
+		/*line derive.goal:301*/ return "", false, false
 	}
-	count := 0
-	for _, f := range fl.List {
-		if n := len(f.Names); n > 0 {
-			count += n
+	/*line derive.goal:303*/ count := 0
+	/*line derive.goal:304*/ for _, f := range fl.List {
+		/*line derive.goal:305*/ if n := len(f.Names); n > 0 {
+			/*line derive.goal:306*/ count += n
 		} else {
-			count++
+			/*line derive.goal:308*/ count++
 		}
 	}
-	return tgt, count > 1, true
+	/*line derive.goal:311*/ return tgt, count > 1, true
 }
 
 //line derive.goal:317
 func deriveOverridesOf(body *ast.BlockStmt) []deriveOverride {
-	if body == nil {
-		return nil
+	/*line derive.goal:318*/ if body == nil {
+		/*line derive.goal:319*/ return nil
 	}
-	for _, s := range body.List {
-		ret, ok := s.(*ast.ReturnStmt)
-		if !ok || len(ret.Results) != 1 {
-			continue
+	/*line derive.goal:321*/ for _, s := range body.List {
+		/*line derive.goal:322*/ ret, ok := s.(*ast.ReturnStmt)
+		/*line derive.goal:323*/ if !ok || len(ret.Results) != 1 {
+			/*line derive.goal:324*/ continue
 		}
-		cl, ok := ret.Results[0].(*ast.CompositeLit)
-		if !ok {
-			continue
+		/*line derive.goal:326*/ cl, ok := ret.Results[0].(*ast.CompositeLit)
+		/*line derive.goal:327*/ if !ok {
+			/*line derive.goal:328*/ continue
 		}
-		var out []deriveOverride
+		/*line derive.goal:330*/ var out []deriveOverride
 
+		/*line derive.goal:331*/
 		for _, el := range cl.Elts {
-			kv, ok := el.(*ast.KeyValueExpr)
-			if !ok {
-				continue
+			/*line derive.goal:332*/ kv, ok := el.(*ast.KeyValueExpr)
+			/*line derive.goal:333*/ if !ok {
+				/*line derive.goal:334*/ continue
 			}
-			key, ok := kv.Key.(*ast.Ident)
-			if !ok {
-				continue
+			/*line derive.goal:336*/ key, ok := kv.Key.(*ast.Ident)
+			/*line derive.goal:337*/ if !ok {
+				/*line derive.goal:338*/ continue
 			}
-			if id, ok := kv.Value.(*ast.Ident); ok && id.Name == "_" {
-				out = append(out, deriveOverride{Name: key.Name, Skip: true})
-				continue
+			/*line derive.goal:340*/ if id, ok := kv.Value.(*ast.Ident); ok && id.Name == "_" {
+				/*line derive.goal:341*/ out = append(out, deriveOverride{Name: key.Name, Skip: true})
+				/*line derive.goal:342*/ continue
 			}
-			out = append(out, deriveOverride{Name: key.Name, Value: kv.Value})
+			/*line derive.goal:344*/ out = append(out, deriveOverride{Name: key.Name, Value: kv.Value})
 		}
-		return out
+		/*line derive.goal:346*/ return out
 	}
-	return nil
+	/*line derive.goal:348*/ return nil
 }
 
 //line derive.goal:354
 func findFieldFold(fields []sema.Field, name string) (sema.Field, bool) {
-	for _, f := range fields {
-		if strings.EqualFold(f.Name, name) {
-			return f, true
+	/*line derive.goal:355*/ for _, f := range fields {
+		/*line derive.goal:356*/ if strings.EqualFold(f.Name, name) {
+			/*line derive.goal:357*/ return f, true
 		}
 	}
-	return sema.Field{}, false
+	/*line derive.goal:360*/ return sema.Field{}, false
 }
 
 //line derive.goal:365
 func derefTypeName(s string) string {
-	s = strings.TrimSpace(s)
-	if rest, ok := strings.CutPrefix(s, "*"); ok {
-		return strings.TrimSpace(rest)
+	/*line derive.goal:366*/ s = strings.TrimSpace(s)
+	/*line derive.goal:367*/ if rest, ok := strings.CutPrefix(s, "*"); ok {
+		/*line derive.goal:368*/ return strings.TrimSpace(rest)
 	}
-	return s
+	/*line derive.goal:370*/ return s
 }
 
 //line derive.goal:374
 func sliceElem(s string) (string, bool) {
-	s = strings.TrimSpace(s)
-	if rest, ok := strings.CutPrefix(s, "[]"); ok {
-		return strings.TrimSpace(rest), true
+	/*line derive.goal:375*/ s = strings.TrimSpace(s)
+	/*line derive.goal:376*/ if rest, ok := strings.CutPrefix(s, "[]"); ok {
+		/*line derive.goal:377*/ return strings.TrimSpace(rest), true
 	}
-	return "", false
+	/*line derive.goal:379*/ return "", false
 }
 
 //line derive.goal:384
 func arrayElem(s string) (n, elem string, ok bool) {
-	s = strings.TrimSpace(s)
-	if !strings.HasPrefix(s, "[") || strings.HasPrefix(s, "[]") {
-		return "", "", false
+	/*line derive.goal:385*/ s = strings.TrimSpace(s)
+	/*line derive.goal:386*/ if !strings.HasPrefix(s, "[") || strings.HasPrefix(s, "[]") {
+		/*line derive.goal:387*/ return "", "", false
 	}
-	closeIdx := strings.IndexByte(s, ']')
-	if closeIdx < 0 {
-		return "", "", false
+	/*line derive.goal:389*/ closeIdx := strings.IndexByte(s, ']')
+	/*line derive.goal:390*/ if closeIdx < 0 {
+		/*line derive.goal:391*/ return "", "", false
 	}
-	n = strings.TrimSpace(s[1:closeIdx])
-	if n == "" {
-		return "", "", false
+	/*line derive.goal:393*/ n = strings.TrimSpace(s[1:closeIdx])
+	/*line derive.goal:394*/ if n == "" {
+		/*line derive.goal:395*/ return "", "", false
 	}
-	return n, strings.TrimSpace(s[closeIdx+1:]), true
+	/*line derive.goal:397*/ return n, strings.TrimSpace(s[closeIdx+1:]), true
 }
 
 //line derive.goal:402
 func mapKeyVal(s string) (k, v string, ok bool) {
-	s = strings.TrimSpace(s)
-	if !strings.HasPrefix(s, "map[") {
-		return "", "", false
+	/*line derive.goal:403*/ s = strings.TrimSpace(s)
+	/*line derive.goal:404*/ if !strings.HasPrefix(s, "map[") {
+		/*line derive.goal:405*/ return "", "", false
 	}
-	depth := 0
-	for i := len("map[") - 1; i < len(s); i++ {
-		switch s[i] {
+	/*line derive.goal:407*/ depth := 0
+	/*line derive.goal:408*/ for i := len("map[") - 1; i < len(s); i++ {
+		/*line derive.goal:409*/ switch s[i] {
 		case '[':
 			depth++
 		case ']':
 			depth--
 			if depth == 0 {
-				return strings.TrimSpace(s[len("map["):i]), strings.TrimSpace(s[i+1:]), true
+				/*line derive.goal:415*/ return strings.TrimSpace(s[len("map["):i]), strings.TrimSpace(s[i+1:]), true
 			}
 		}
 	}
-	return "", "", false
+	/*line derive.goal:419*/ return "", "", false
 }
 
 //line derive.goal:426
 func typeName(x ast.Expr) string {
-	switch x := x.(type) {
+	/*line derive.goal:427*/ switch x := x.(type) {
 	case nil:
 		return ""
 	case *ast.Ident:
@@ -367,12 +371,12 @@ func typeName(x ast.Expr) string {
 	case *ast.SelectorExpr:
 		base := typeName(x.X)
 		if base == "" || x.Sel == nil {
-			return ""
+			/*line derive.goal:437*/ return ""
 		}
 		return base + "." + x.Sel.Name
 	case *ast.ArrayType:
 		if x.Len != nil {
-			return "[" + typeName(x.Len) + "]" + typeName(x.Elt)
+			/*line derive.goal:442*/ return "[" + typeName(x.Len) + "]" + typeName(x.Elt)
 		}
 		return "[]" + typeName(x.Elt)
 	case *ast.MapType:
@@ -382,7 +386,7 @@ func typeName(x ast.Expr) string {
 	case *ast.IndexListExpr:
 		parts := make([]string, 0, len(x.Indices))
 		for _, idx := range x.Indices {
-			parts = append(parts, typeName(idx))
+			/*line derive.goal:452*/ parts = append(parts, typeName(idx))
 		}
 		return typeName(x.X) + "[" + strings.Join(parts, ", ") + "]"
 	case *ast.BasicLit:

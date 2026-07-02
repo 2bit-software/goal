@@ -39,12 +39,12 @@ func (EnumDecl) isNode() {}
 
 //line goal_decl.goal:40
 func (d *EnumDecl) Pos() token.Pos {
-	return d.Enum
+	/*line goal_decl.goal:40*/ return d.Enum
 }
 
 //line goal_decl.goal:41
 func (d *EnumDecl) End() token.Pos {
-	return token.Pos{Offset: d.Rbrace.Offset + 1, Line: d.Rbrace.Line, Col: d.Rbrace.Col + 1}
+	/*line goal_decl.goal:42*/ return token.Pos{Offset: d.Rbrace.Offset + 1, Line: d.Rbrace.Line, Col: d.Rbrace.Col + 1}
 }
 
 //line goal_decl.goal:48
@@ -60,21 +60,21 @@ func (Variant) isNode() {}
 
 //line goal_decl.goal:40
 func (v *Variant) Pos() token.Pos {
-	if v.Name != nil {
-		return v.Name.Pos()
+	/*line goal_decl.goal:56*/ if v.Name != nil {
+		/*line goal_decl.goal:57*/ return v.Name.Pos()
 	}
-	return v.Lbrace
+	/*line goal_decl.goal:59*/ return v.Lbrace
 }
 
 //line goal_decl.goal:41
 func (v *Variant) End() token.Pos {
-	if v.Rbrace != (token.Pos{}) {
-		return token.Pos{Offset: v.Rbrace.Offset + 1, Line: v.Rbrace.Line, Col: v.Rbrace.Col + 1}
+	/*line goal_decl.goal:62*/ if v.Rbrace != (token.Pos{}) {
+		/*line goal_decl.goal:63*/ return token.Pos{Offset: v.Rbrace.Offset + 1, Line: v.Rbrace.Line, Col: v.Rbrace.Col + 1}
 	}
-	if v.Name != nil {
-		return v.Name.End()
+	/*line goal_decl.goal:65*/ if v.Name != nil {
+		/*line goal_decl.goal:66*/ return v.Name.End()
 	}
-	return token.Pos{}
+	/*line goal_decl.goal:68*/ return token.Pos{}
 }
 
 //line goal_decl.goal:72
@@ -88,24 +88,24 @@ func (PayloadField) isNode() {}
 
 //line goal_decl.goal:40
 func (f *PayloadField) Pos() token.Pos {
-	if f.Name != nil {
-		return f.Name.Pos()
+	/*line goal_decl.goal:78*/ if f.Name != nil {
+		/*line goal_decl.goal:79*/ return f.Name.Pos()
 	}
-	if f.Type != nil {
-		return f.Type.Pos()
+	/*line goal_decl.goal:81*/ if f.Type != nil {
+		/*line goal_decl.goal:82*/ return f.Type.Pos()
 	}
-	return token.Pos{}
+	/*line goal_decl.goal:84*/ return token.Pos{}
 }
 
 //line goal_decl.goal:41
 func (f *PayloadField) End() token.Pos {
-	if f.Type != nil {
-		return f.Type.End()
+	/*line goal_decl.goal:87*/ if f.Type != nil {
+		/*line goal_decl.goal:88*/ return f.Type.End()
 	}
-	if f.Name != nil {
-		return f.Name.End()
+	/*line goal_decl.goal:90*/ if f.Name != nil {
+		/*line goal_decl.goal:91*/ return f.Name.End()
 	}
-	return token.Pos{}
+	/*line goal_decl.goal:93*/ return token.Pos{}
 }
 
 //line goal_decl.goal:100
@@ -124,18 +124,18 @@ func (SealedInterfaceDecl) isNode() {}
 
 //line goal_decl.goal:40
 func (d *SealedInterfaceDecl) Pos() token.Pos {
-	return d.Sealed
+	/*line goal_decl.goal:107*/ return d.Sealed
 }
 
 //line goal_decl.goal:41
 func (d *SealedInterfaceDecl) End() token.Pos {
-	if d.Methods != nil {
-		return d.Methods.End()
+	/*line goal_decl.goal:109*/ if d.Methods != nil {
+		/*line goal_decl.goal:110*/ return d.Methods.End()
 	}
-	if d.Name != nil {
-		return d.Name.End()
+	/*line goal_decl.goal:112*/ if d.Name != nil {
+		/*line goal_decl.goal:113*/ return d.Name.End()
 	}
-	return d.Interface
+	/*line goal_decl.goal:115*/ return d.Interface
 }
 
 //line goal_decl.goal:122
@@ -149,15 +149,16 @@ func (ImplementsClause) isNode() {}
 
 //line goal_decl.goal:40
 func (c *ImplementsClause) Pos() token.Pos {
-	return c.Implements
+	/*line goal_decl.goal:127*/ return c.Implements
 }
 
 //line goal_decl.goal:41
 func (c *ImplementsClause) End() token.Pos {
-	if c.Type != nil {
-		return c.Type.End()
+	/*line goal_decl.goal:129*/ if c.Type != nil {
+		/*line goal_decl.goal:130*/ return c.Type.End()
 	}
-	const n = len("implements")
+	/*line goal_decl.goal:132*/ const n = len("implements")
 
+	/*line goal_decl.goal:133*/
 	return token.Pos{Offset: c.Implements.Offset + n, Line: c.Implements.Line, Col: c.Implements.Col + n}
 }

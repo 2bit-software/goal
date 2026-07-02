@@ -693,3 +693,82 @@ func f() []Inner {
 		})
 	}
 }
+
+// TestPanicMapsToStatementLine proves per-statement /*line*/ directives (US-013):
+// a `?` propagation on line 13 lowers into several Go lines, yet the panic on the
+// NEXT source line (14) must still report at crash.goal:14, not an off-by-N line.
+// Before US-013 the decl-level //line alone drifted the position by the number of
+// lines the `?` lowering added.
+func TestPanicMapsToStatementLine(t *testing.T) {
+	const src = `package main
+
+import "fmt"
+
+func mightFail(bad bool) Result[int, error] {
+	if bad {
+		return Result.Err(fmt.Errorf("bad"))
+	}
+	return Result.Ok(7)
+}
+
+func crash() Result[int, error] {
+	x := mightFail(false)?
+	panic(fmt.Sprintf("boom %d", x))
+}
+
+func main() {
+	v, e := crash()
+	fmt.Println(v, e)
+}
+`
+	dir := goalModule(t, map[string]string{"crash.goal": src})
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"run", dir}, &out, &errOut)
+	if err == nil {
+		t.Fatal("expected the program to panic and run to fail")
+	}
+	// The panic traceback must name the true .goal line of the panic statement.
+	if !strings.Contains(errOut.String(), "crash.goal:14") {
+		t.Errorf("panic not mapped to crash.goal:14 (the panic statement's true line):\n%s", errOut.String())
+	}
+}
+
+// TestBuildErrorMapsToStatementLine proves per-statement directives carry Go build
+// errors to the true .goal line even after a reflowing lowering: the type error is
+// on source line 14, one line after a `?` propagation that expands into multiple Go
+// lines. Without statement-level /*line*/ directives the error would land off-by-N.
+func TestBuildErrorMapsToStatementLine(t *testing.T) {
+	const src = `package main
+
+import "fmt"
+
+func mightFail(bad bool) Result[int, error] {
+	if bad {
+		return Result.Err(fmt.Errorf("bad"))
+	}
+	return Result.Ok(7)
+}
+
+func compute() Result[int, error] {
+	x := mightFail(false)?
+	var y int = "nope"
+	return Result.Ok(x + y)
+}
+
+func main() {
+	v, e := compute()
+	fmt.Println(v, e)
+}
+`
+	dir := goalModule(t, map[string]string{"compute.goal": src})
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"build", dir}, &out, &errOut)
+	if err == nil {
+		t.Fatal("expected build to fail on the type error")
+	}
+	if !strings.Contains(errOut.String(), "compute.goal:14") {
+		t.Errorf("build error not mapped to compute.goal:14 (the type-error statement's true line):\n%s", errOut.String())
+	}
+}

@@ -39,7 +39,11 @@ func emitDoctests(f *ast.File, info *sema.Info, suppressPrelude bool) (src strin
 	if err != nil {
 		return "", false, fmt.Errorf("doctest sidecar parse: %w\n--- rendered ---\n%s", err, goalTest)
 	}
-	return emitFileWith(testFile, info, suppressPrelude)
+	// The doctest sidecar is a re-parse of rendered goal text (not the original
+	// source), so per-statement /*line*/ directives would point into synthetic
+	// coordinates — pass "" to suppress them. Mapping doctest failures to .goal
+	// positions is US-014's concern.
+	return emitFileWith(testFile, info, suppressPrelude, "")
 }
 
 // renderDoctests builds a goal-shaped `_test.go` source from the structured

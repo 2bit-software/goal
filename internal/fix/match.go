@@ -11,43 +11,43 @@ import (
 
 //line match.goal:15
 func fixSwitchToMatch(src string, file *ast.File, info *sema.Info, changes *[]Change, reports *[]Report) []textedit.Replacement {
-	ast.Walk(visitFn(func(n ast.Node) bool {
-		sw, ok := n.(*ast.SwitchStmt)
-		if !ok {
-			return true
+	/*line match.goal:16*/ ast.Walk(visitFn(func(n ast.Node) bool {
+		/*line match.goal:17*/ sw, ok := n.(*ast.SwitchStmt)
+		/*line match.goal:18*/ if !ok {
+			/*line match.goal:19*/ return true
 		}
-		enumName := switchEnumQualifier(sw, info)
-		if enumName == "" {
-			return true
+		/*line match.goal:21*/ enumName := switchEnumQualifier(sw, info)
+		/*line match.goal:22*/ if enumName == "" {
+			/*line match.goal:23*/ return true
 		}
-		addReport(reports, Report{lineOf(src, sw.Switch.Offset), Suggest, "match", "`switch` over enum `" + enumName + "`; a `match` would be checked for exhaustiveness"})
-		return true
+		/*line match.goal:25*/ addReport(reports, Report{lineOf(src, sw.Switch.Offset), Suggest, "match", "`switch` over enum `" + enumName + "`; a `match` would be checked for exhaustiveness"})
+		/*line match.goal:27*/ return true
 	}), file)
-	return nil
+	/*line match.goal:29*/ return nil
 }
 
 //line match.goal:36
 func switchEnumQualifier(sw *ast.SwitchStmt, info *sema.Info) string {
-	if sw.Body == nil {
-		return ""
+	/*line match.goal:37*/ if sw.Body == nil {
+		/*line match.goal:38*/ return ""
 	}
-	for _, st := range sw.Body.List {
-		cc, ok := st.(*ast.CaseClause)
-		if !ok || len(cc.List) == 0 {
-			continue
+	/*line match.goal:40*/ for _, st := range sw.Body.List {
+		/*line match.goal:41*/ cc, ok := st.(*ast.CaseClause)
+		/*line match.goal:42*/ if !ok || len(cc.List) == 0 {
+			/*line match.goal:43*/ continue
 		}
-		sel, ok := cc.List[0].(*ast.SelectorExpr)
-		if !ok {
-			return ""
+		/*line match.goal:46*/ sel, ok := cc.List[0].(*ast.SelectorExpr)
+		/*line match.goal:47*/ if !ok {
+			/*line match.goal:48*/ return ""
 		}
-		q := identName(sel.X)
-		if q == "" {
-			return ""
+		/*line match.goal:50*/ q := identName(sel.X)
+		/*line match.goal:51*/ if q == "" {
+			/*line match.goal:52*/ return ""
 		}
-		if info.Enums != nil && info.Enums[q] != nil {
-			return q
+		/*line match.goal:54*/ if info.Enums != nil && info.Enums[q] != nil {
+			/*line match.goal:55*/ return q
 		}
-		return ""
+		/*line match.goal:57*/ return ""
 	}
-	return ""
+	/*line match.goal:59*/ return ""
 }

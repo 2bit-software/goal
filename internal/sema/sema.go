@@ -85,5 +85,5 @@ type Info struct {
 
 //line sema.goal:135
 func New() *Info {
-	return &Info{}
+	/*line sema.goal:136*/ return &Info{}
 }

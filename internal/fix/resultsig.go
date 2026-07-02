@@ -21,205 +21,207 @@ type sigCand struct {
 
 //line resultsig.goal:40
 func fixResultSig(src string, file *ast.File, info *sema.Info, decls map[string]string, changes *[]Change, reports *[]Report) []textedit.Replacement {
-	var cands []*sigCand
+	/*line resultsig.goal:43*/ var cands []*sigCand
 
+	/*line resultsig.goal:44*/
 	for _, d := range file.Decls {
-		c, rep := classifyResultSig(src, d, info, decls)
-		if rep != nil {
-			addReport(reports, *rep)
+		/*line resultsig.goal:45*/ c, rep := classifyResultSig(src, d, info, decls)
+		/*line resultsig.goal:46*/ if rep != nil {
+			/*line resultsig.goal:47*/ addReport(reports, *rep)
 		}
-		if c != nil {
-			cands = append(cands, c)
+		/*line resultsig.goal:49*/ if c != nil {
+			/*line resultsig.goal:50*/ cands = append(cands, c)
 		}
 	}
-	if len(cands) == 0 {
-		return nil
+	/*line resultsig.goal:53*/ if len(cands) == 0 {
+		/*line resultsig.goal:54*/ return nil
 	}
-	successTOf := map[string]string{}
-	for _, c := range cands {
-		successTOf[c.fn.Name.Name] = c.successT
+	/*line resultsig.goal:60*/ successTOf := map[string]string{}
+	/*line resultsig.goal:61*/ for _, c := range cands {
+		/*line resultsig.goal:62*/ successTOf[c.fn.Name.Name] = c.successT
 	}
-	willResult := func(name string) bool {
-		if _, ok := successTOf[name]; ok {
-			return true
+	/*line resultsig.goal:64*/ willResult := func(name string) bool {
+		/*line resultsig.goal:65*/ if _, ok := successTOf[name]; ok {
+			/*line resultsig.goal:66*/ return true
 		}
-		m := info.FuncSignatures[name].Mode
-		return isModeResult(m) || isModeOption(m)
+		/*line resultsig.goal:68*/ m := info.FuncSignatures[name].Mode
+		/*line resultsig.goal:69*/ return isModeResult(m) || isModeOption(m)
 	}
-	safe := safeLocalPropagationCalls(src, file, info, decls, successTOf, willResult)
-	var reps []textedit.Replacement
+	/*line resultsig.goal:71*/ safe := safeLocalPropagationCalls(src, file, info, decls, successTOf, willResult)
+	/*line resultsig.goal:74*/ var reps []textedit.Replacement
 
+	/*line resultsig.goal:75*/
 	for _, c := range cands {
-		name := c.fn.Name.Name
-		if isExported(name) {
-			addReport(reports, Report{c.nameLine, Skip, "result-sig", "exported `" + name + "` has callers fix cannot see; not auto-converted to Result"})
-			continue
+		/*line resultsig.goal:76*/ name := c.fn.Name.Name
+		/*line resultsig.goal:77*/ if isExported(name) {
+			/*line resultsig.goal:78*/ addReport(reports, Report{c.nameLine, Skip, "result-sig", "exported `" + name + "` has callers fix cannot see; not auto-converted to Result"})
+			/*line resultsig.goal:80*/ continue
 		}
-		if off, unsafe := unsafeRefOffset(file, name, safe); unsafe {
-			addReport(reports, Report{lineOf(src, off), Skip, "result-sig", "`" + name + "` is called where `?` cannot apply (e.g. a tail return or unguarded call); not auto-converted to Result"})
-			continue
+		/*line resultsig.goal:82*/ if off, unsafe := unsafeRefOffset(file, name, safe); unsafe {
+			/*line resultsig.goal:83*/ addReport(reports, Report{lineOf(src, off), Skip, "result-sig", "`" + name + "` is called where `?` cannot apply (e.g. a tail return or unguarded call); not auto-converted to Result"})
+			/*line resultsig.goal:85*/ continue
 		}
-		reps = append(reps, textedit.Replacement{Start: c.res.Opening.Offset, End: c.res.Closing.Offset + 1, Text: "Result[" + c.successT + ", error]"})
-		reps = append(reps, c.successReps...)
-		addChange(changes, Change{c.nameLine, "result-sig"})
+		/*line resultsig.goal:87*/ reps = append(reps, textedit.Replacement{Start: c.res.Opening.Offset, End: c.res.Closing.Offset + 1, Text: "Result[" + c.successT + ", error]"})
+		/*line resultsig.goal:91*/ reps = append(reps, c.successReps...)
+		/*line resultsig.goal:92*/ addChange(changes, Change{c.nameLine, "result-sig"})
 	}
-	return reps
+	/*line resultsig.goal:94*/ return reps
 }
 
 //line resultsig.goal:101
 func classifyResultSig(src string, d ast.Decl, info *sema.Info, decls map[string]string) (*sigCand, *Report) {
-	fn, ok := d.(*ast.FuncDecl)
-	if !ok || fn.Name == nil || fn.Body == nil || fn.Type == nil {
-		return nil, nil
+	/*line resultsig.goal:102*/ fn, ok := d.(*ast.FuncDecl)
+	/*line resultsig.goal:103*/ if !ok || fn.Name == nil || fn.Body == nil || fn.Type == nil {
+		/*line resultsig.goal:104*/ return nil, nil
 	}
-	if sig, ok := info.FuncSignatures[fn.Name.Name]; !ok || !isModeNone(sig.Mode) {
-		return nil, nil
+	/*line resultsig.goal:106*/ if sig, ok := info.FuncSignatures[fn.Name.Name]; !ok || !isModeNone(sig.Mode) {
+		/*line resultsig.goal:107*/ return nil, nil
 	}
-	nameLine := lineOf(src, fn.Name.Pos().Offset)
-	res := fn.Type.Results
-	if res == nil || len(res.List) == 0 {
-		return nil, nil
+	/*line resultsig.goal:109*/ nameLine := lineOf(src, fn.Name.Pos().Offset)
+	/*line resultsig.goal:110*/ res := fn.Type.Results
+	/*line resultsig.goal:111*/ if res == nil || len(res.List) == 0 {
+		/*line resultsig.goal:112*/ return nil, nil
 	}
-	if res.Opening == (token.Pos{}) {
-		if len(res.List) == 1 && len(res.List[0].Names) == 0 && identName(res.List[0].Type) == "error" {
-			return nil, &Report{nameLine, Skip, "result-sig", "`" + fn.Name.Name + "` returns a bare `error`; not auto-converted to Result"}
+	/*line resultsig.goal:116*/ if res.Opening == (token.Pos{}) {
+		/*line resultsig.goal:117*/ if len(res.List) == 1 && len(res.List[0].Names) == 0 && identName(res.List[0].Type) == "error" {
+			/*line resultsig.goal:118*/ return nil, &Report{nameLine, Skip, "result-sig", "`" + fn.Name.Name + "` returns a bare `error`; not auto-converted to Result"}
 		}
-		return nil, nil
+		/*line resultsig.goal:121*/ return nil, nil
 	}
-	types := flattenResultTypes(res)
-	if types == nil {
-		return nil, nil
+	/*line resultsig.goal:124*/ types := flattenResultTypes(res)
+	/*line resultsig.goal:125*/ if types == nil {
+		/*line resultsig.goal:126*/ return nil, nil
 	}
-	if len(types) < 2 {
-		return nil, nil
+	/*line resultsig.goal:128*/ if len(types) < 2 {
+		/*line resultsig.goal:129*/ return nil, nil
 	}
-	if identName(types[len(types)-1]) != "error" {
-		return nil, nil
+	/*line resultsig.goal:131*/ if identName(types[len(types)-1]) != "error" {
+		/*line resultsig.goal:132*/ return nil, nil
 	}
-	if len(types) > 2 {
-		return nil, &Report{nameLine, Skip, "result-sig", "`" + fn.Name.Name + "` returns multiple non-error values; not auto-converted to Result"}
+	/*line resultsig.goal:134*/ if len(types) > 2 {
+		/*line resultsig.goal:135*/ return nil, &Report{nameLine, Skip, "result-sig", "`" + fn.Name.Name + "` returns multiple non-error values; not auto-converted to Result"}
 	}
-	successT := nodeText(src, types[0])
-	successReps, conforms, badLine := classifyReturns(src, fn, successT, decls)
-	if !conforms {
-		return nil, &Report{badLine, Skip, "result-sig", "`" + fn.Name.Name + "` has a non-propagating return; not auto-converted to Result"}
+	/*line resultsig.goal:138*/ successT := nodeText(src, types[0])
+	/*line resultsig.goal:142*/ successReps, conforms, badLine := classifyReturns(src, fn, successT, decls)
+	/*line resultsig.goal:143*/ if !conforms {
+		/*line resultsig.goal:144*/ return nil, &Report{badLine, Skip, "result-sig", "`" + fn.Name.Name + "` has a non-propagating return; not auto-converted to Result"}
 	}
-	return &sigCand{fn: fn, nameLine: nameLine, successT: successT, res: res, successReps: successReps}, nil
+	/*line resultsig.goal:147*/ return &sigCand{fn: fn, nameLine: nameLine, successT: successT, res: res, successReps: successReps}, nil
 }
 
 //line resultsig.goal:155
 func safeLocalPropagationCalls(src string, file *ast.File, info *sema.Info, decls map[string]string, successTOf map[string]string, willResult func(string) bool) map[int]bool {
-	safe := map[int]bool{}
-	for _, d := range file.Decls {
-		fn, ok := d.(*ast.FuncDecl)
-		if !ok || fn.Name == nil || fn.Body == nil || !willResult(fn.Name.Name) {
-			continue
+	/*line resultsig.goal:156*/ safe := map[int]bool{}
+	/*line resultsig.goal:157*/ for _, d := range file.Decls {
+		/*line resultsig.goal:158*/ fn, ok := d.(*ast.FuncDecl)
+		/*line resultsig.goal:159*/ if !ok || fn.Name == nil || fn.Body == nil || !willResult(fn.Name.Name) {
+			/*line resultsig.goal:160*/ continue
 		}
-		sigT := successTOf[fn.Name.Name]
-		if sigT == "" {
-			sigT = info.FuncSignatures[fn.Name.Name].T
+		/*line resultsig.goal:164*/ sigT := successTOf[fn.Name.Name]
+		/*line resultsig.goal:165*/ if sigT == "" {
+			/*line resultsig.goal:166*/ sigT = info.FuncSignatures[fn.Name.Name].T
 		}
-		forEachBlock(fn.Body, func(list []ast.Stmt) {
-			for i := 0; i+1 < len(list); i++ {
-				as, ok := list[i].(*ast.AssignStmt)
-				if !ok || as.Tok != token.DEFINE || len(as.Rhs) != 1 {
-					continue
+		/*line resultsig.goal:168*/ forEachBlock(fn.Body, func(list []ast.Stmt) {
+			/*line resultsig.goal:169*/ for i := 0; i+1 < len(list); i++ {
+				/*line resultsig.goal:170*/ as, ok := list[i].(*ast.AssignStmt)
+				/*line resultsig.goal:171*/ if !ok || as.Tok != token.DEFINE || len(as.Rhs) != 1 {
+					/*line resultsig.goal:172*/ continue
 				}
-				ifs, ok := list[i+1].(*ast.IfStmt)
-				if !ok || ifs.Init != nil || ifs.Else != nil {
-					continue
+				/*line resultsig.goal:174*/ ifs, ok := list[i+1].(*ast.IfStmt)
+				/*line resultsig.goal:175*/ if !ok || ifs.Init != nil || ifs.Else != nil {
+					/*line resultsig.goal:176*/ continue
 				}
-				condVar, ok := nilGuardVar(ifs.Cond, true)
-				if !ok {
-					continue
+				/*line resultsig.goal:178*/ condVar, ok := nilGuardVar(ifs.Cond, true)
+				/*line resultsig.goal:179*/ if !ok {
+					/*line resultsig.goal:180*/ continue
 				}
-				if _, ok := propagationLHS(as, condVar, true); !ok {
-					continue
+				/*line resultsig.goal:182*/ if _, ok := propagationLHS(as, condVar, true); !ok {
+					/*line resultsig.goal:183*/ continue
 				}
-				if ifs.Body == nil || len(ifs.Body.List) != 1 {
-					continue
+				/*line resultsig.goal:185*/ if ifs.Body == nil || len(ifs.Body.List) != 1 {
+					/*line resultsig.goal:186*/ continue
 				}
-				ret, ok := ifs.Body.List[0].(*ast.ReturnStmt)
-				if !ok || !validPropagationReturn(src, ret, true, condVar, sigT, decls) {
-					continue
+				/*line resultsig.goal:188*/ ret, ok := ifs.Body.List[0].(*ast.ReturnStmt)
+				/*line resultsig.goal:189*/ if !ok || !validPropagationReturn(src, ret, true, condVar, sigT, decls) {
+					/*line resultsig.goal:190*/ continue
 				}
-				if !adjacentSingleLine(src, as, ifs) {
-					continue
+				/*line resultsig.goal:192*/ if !adjacentSingleLine(src, as, ifs) {
+					/*line resultsig.goal:193*/ continue
 				}
-				if call, ok := as.Rhs[0].(*ast.CallExpr); ok {
-					if id, ok := call.Fun.(*ast.Ident); ok {
-						safe[id.Pos().Offset] = true
+				/*line resultsig.goal:195*/ if call, ok := as.Rhs[0].(*ast.CallExpr); ok {
+					/*line resultsig.goal:196*/ if id, ok := call.Fun.(*ast.Ident); ok {
+						/*line resultsig.goal:197*/ safe[id.Pos().Offset] = true
 					}
 				}
 			}
 		})
 	}
-	return safe
+	/*line resultsig.goal:203*/ return safe
 }
 
 //line resultsig.goal:209
 func unsafeRefOffset(file *ast.File, name string, safe map[int]bool) (int, bool) {
-	declOff := map[int]bool{}
-	for _, d := range file.Decls {
-		if fn, ok := d.(*ast.FuncDecl); ok && fn.Name != nil && fn.Name.Name == name {
-			declOff[fn.Name.Pos().Offset] = true
+	/*line resultsig.goal:210*/ declOff := map[int]bool{}
+	/*line resultsig.goal:211*/ for _, d := range file.Decls {
+		/*line resultsig.goal:212*/ if fn, ok := d.(*ast.FuncDecl); ok && fn.Name != nil && fn.Name.Name == name {
+			/*line resultsig.goal:213*/ declOff[fn.Name.Pos().Offset] = true
 		}
 	}
-	bad, found := 0, false
-	ast.Walk(visitFn(func(n ast.Node) bool {
-		if found {
-			return false
+	/*line resultsig.goal:216*/ bad, found := 0, false
+	/*line resultsig.goal:217*/ ast.Walk(visitFn(func(n ast.Node) bool {
+		/*line resultsig.goal:218*/ if found {
+			/*line resultsig.goal:219*/ return false
 		}
-		if id, ok := n.(*ast.Ident); ok && id.Name == name {
-			off := id.Pos().Offset
-			if !declOff[off] && !safe[off] {
-				bad, found = off, true
+		/*line resultsig.goal:221*/ if id, ok := n.(*ast.Ident); ok && id.Name == name {
+			/*line resultsig.goal:222*/ off := id.Pos().Offset
+			/*line resultsig.goal:223*/ if !declOff[off] && !safe[off] {
+				/*line resultsig.goal:224*/ bad, found = off, true
 			}
 		}
-		return true
+		/*line resultsig.goal:227*/ return true
 	}), file)
-	return bad, found
+	/*line resultsig.goal:229*/ return bad, found
 }
 
 //line resultsig.goal:234
 func flattenResultTypes(fl *ast.FieldList) []ast.Expr {
-	out := make([]ast.Expr, 0, len(fl.List))
-	for _, f := range fl.List {
-		if len(f.Names) > 0 || f.Type == nil {
-			return nil
+	/*line resultsig.goal:235*/ out := make([]ast.Expr, 0, len(fl.List))
+	/*line resultsig.goal:236*/ for _, f := range fl.List {
+		/*line resultsig.goal:237*/ if len(f.Names) > 0 || f.Type == nil {
+			/*line resultsig.goal:238*/ return nil
 		}
-		out = append(out, f.Type)
+		/*line resultsig.goal:240*/ out = append(out, f.Type)
 	}
-	return out
+	/*line resultsig.goal:242*/ return out
 }
 
 //line resultsig.goal:249
 func classifyReturns(src string, fn *ast.FuncDecl, successT string, decls map[string]string) (reps []textedit.Replacement, conforms bool, badLine int) {
-	conforms = true
-	walkReturns(fn.Body, func(ret *ast.ReturnStmt) {
-		if !conforms {
-			return
+	/*line resultsig.goal:250*/ conforms = true
+	/*line resultsig.goal:251*/ walkReturns(fn.Body, func(ret *ast.ReturnStmt) {
+		/*line resultsig.goal:252*/ if !conforms {
+			/*line resultsig.goal:253*/ return
 		}
-		line := lineOf(src, ret.Return.Offset)
-		ops := ret.Results
-		if len(ops) == 0 {
-			conforms, badLine = false, line
-			return
+		/*line resultsig.goal:255*/ line := lineOf(src, ret.Return.Offset)
+		/*line resultsig.goal:256*/ ops := ret.Results
+		/*line resultsig.goal:257*/ if len(ops) == 0 {
+			/*line resultsig.goal:258*/ conforms, badLine = false, line
+			/*line resultsig.goal:259*/ return
 		}
-		if len(ops) == 1 {
-			if call, ok := ops[0].(*ast.CallExpr); ok && isSelector(call.Fun, "Result", "Err") {
-				return
+		/*line resultsig.goal:262*/ if len(ops) == 1 {
+			/*line resultsig.goal:263*/ if call, ok := ops[0].(*ast.CallExpr); ok && isSelector(call.Fun, "Result", "Err") {
+				/*line resultsig.goal:264*/ return
 			}
-			conforms, badLine = false, line
-			return
+			/*line resultsig.goal:266*/ conforms, badLine = false, line
+			/*line resultsig.goal:267*/ return
 		}
-		if len(ops) != 2 {
-			conforms, badLine = false, line
-			return
+		/*line resultsig.goal:269*/ if len(ops) != 2 {
+			/*line resultsig.goal:270*/ conforms, badLine = false, line
+			/*line resultsig.goal:271*/ return
 		}
-		last := ops[1]
-		value := nodeText(src, ops[0])
-		switch {
+		/*line resultsig.goal:273*/ last := ops[1]
+		/*line resultsig.goal:274*/ value := nodeText(src, ops[0])
+		/*line resultsig.goal:275*/ switch {
 		case identName(last) == "nil":
 			reps = append(reps, textedit.Replacement{Start: ops[0].Pos().Offset, End: ops[1].End().Offset, Text: "Result.Ok(" + value + ")"})
 		case isIdentExpr(last) && value == textedit.ZeroLit(successT, decls, 0):
@@ -227,58 +229,59 @@ func classifyReturns(src string, fn *ast.FuncDecl, successT string, decls map[st
 			conforms, badLine = false, line
 		}
 	})
-	return reps, conforms, badLine
+	/*line resultsig.goal:287*/ return reps, conforms, badLine
 }
 
 //line resultsig.goal:291
 func isIdentExpr(e ast.Expr) bool {
-	_, ok := e.(*ast.Ident)
-	return ok
+	/*line resultsig.goal:292*/ _, ok := e.(*ast.Ident)
+	/*line resultsig.goal:293*/ return ok
 }
 
 //line resultsig.goal:299
 func walkReturns(block *ast.BlockStmt, f func(*ast.ReturnStmt)) {
-	if block == nil {
-		return
+	/*line resultsig.goal:300*/ if block == nil {
+		/*line resultsig.goal:301*/ return
 	}
-	var visitStmt func(ast.Stmt)
+	/*line resultsig.goal:303*/ var visitStmt func(ast.Stmt)
 
+	/*line resultsig.goal:304*/
 	visitList := func(ss []ast.Stmt) {
-		for _, s := range ss {
-			visitStmt(s)
+		/*line resultsig.goal:305*/ for _, s := range ss {
+			/*line resultsig.goal:306*/ visitStmt(s)
 		}
 	}
-	visitStmt = func(s ast.Stmt) {
-		switch s := s.(type) {
+	/*line resultsig.goal:309*/ visitStmt = func(s ast.Stmt) {
+		/*line resultsig.goal:310*/ switch s := s.(type) {
 		case *ast.ReturnStmt:
 			f(s)
 		case *ast.BlockStmt:
 			visitList(s.List)
 		case *ast.IfStmt:
 			if s.Init != nil {
-				visitStmt(s.Init)
+				/*line resultsig.goal:317*/ visitStmt(s.Init)
 			}
 			if s.Body != nil {
-				visitList(s.Body.List)
+				/*line resultsig.goal:320*/ visitList(s.Body.List)
 			}
 			if s.Else != nil {
-				visitStmt(s.Else)
+				/*line resultsig.goal:323*/ visitStmt(s.Else)
 			}
 		case *ast.ForStmt:
 			if s.Body != nil {
-				visitList(s.Body.List)
+				/*line resultsig.goal:327*/ visitList(s.Body.List)
 			}
 		case *ast.RangeStmt:
 			if s.Body != nil {
-				visitList(s.Body.List)
+				/*line resultsig.goal:331*/ visitList(s.Body.List)
 			}
 		case *ast.SwitchStmt:
 			if s.Body != nil {
-				visitList(s.Body.List)
+				/*line resultsig.goal:335*/ visitList(s.Body.List)
 			}
 		case *ast.CaseClause:
 			visitList(s.Body)
 		}
 	}
-	visitList(block.List)
+	/*line resultsig.goal:341*/ visitList(block.List)
 }

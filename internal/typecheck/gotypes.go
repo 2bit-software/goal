@@ -11,24 +11,25 @@ import (
 
 //line gotypes.goal:31
 func goTypeDiags(p *Package) []Diagnostic {
-	var diags []Diagnostic
+	/*line gotypes.goal:32*/ var diags []Diagnostic
 
+	/*line gotypes.goal:33*/
 	for _, e := range p.Errors {
-		te, ok := e.(types.Error)
-		if !ok {
-			continue
+		/*line gotypes.goal:34*/ te, ok := e.(types.Error)
+		/*line gotypes.goal:35*/ if !ok {
+			/*line gotypes.goal:36*/ continue
 		}
-		if te.Soft {
-			continue
+		/*line gotypes.goal:38*/ if te.Soft {
+			/*line gotypes.goal:39*/ continue
 		}
-		if strings.HasPrefix(te.Msg, "could not import") {
-			continue
+		/*line gotypes.goal:41*/ if strings.HasPrefix(te.Msg, "could not import") {
+			/*line gotypes.goal:42*/ continue
 		}
-		pos := te.Fset.Position(te.Pos)
-		if !strings.HasSuffix(pos.Filename, ".goal") {
-			continue
+		/*line gotypes.goal:44*/ pos := te.Fset.Position(te.Pos)
+		/*line gotypes.goal:45*/ if !strings.HasSuffix(pos.Filename, ".goal") {
+			/*line gotypes.goal:46*/ continue
 		}
-		diags = append(diags, Diagnostic{Pos: pos, Severity: sema.Severity(sema.Severity_Error{}), Feature: "go-types", Code: "go-type-error", Message: te.Msg})
+		/*line gotypes.goal:48*/ diags = append(diags, Diagnostic{Pos: pos, Severity: sema.Severity(sema.Severity_Error{}), Feature: "go-types", Code: "go-type-error", Message: te.Msg})
 	}
-	return diags
+	/*line gotypes.goal:56*/ return diags
 }

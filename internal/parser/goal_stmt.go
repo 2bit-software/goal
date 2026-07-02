@@ -11,67 +11,69 @@ import (
 
 //line goal_stmt.goal:26
 func (p *parser) parseAssertStmt() *ast.AssertStmt {
-	kw := p.expect(token.ASSERT)
-	s := &ast.AssertStmt{Assert: kw.Pos}
-	s.Cond = p.parseExpr()
-	if p.at(token.COMMA) {
-		comma := p.advance()
-		s.Comma = comma.Pos
-		s.Msg = p.parseExpr()
-		for p.at(token.COMMA) {
-			p.advance()
-			s.Args = append(s.Args, p.parseExpr())
+	/*line goal_stmt.goal:27*/ kw := p.expect(token.ASSERT)
+	/*line goal_stmt.goal:28*/ s := &ast.AssertStmt{Assert: kw.Pos}
+	/*line goal_stmt.goal:29*/ s.Cond = p.parseExpr()
+	/*line goal_stmt.goal:30*/ if p.at(token.COMMA) {
+		/*line goal_stmt.goal:31*/ comma := p.advance()
+		/*line goal_stmt.goal:32*/ s.Comma = comma.Pos
+		/*line goal_stmt.goal:33*/ s.Msg = p.parseExpr()
+		/*line goal_stmt.goal:34*/ for p.at(token.COMMA) {
+			/*line goal_stmt.goal:35*/ p.advance()
+			/*line goal_stmt.goal:36*/ s.Args = append(s.Args, p.parseExpr())
 		}
 	}
-	return s
+	/*line goal_stmt.goal:39*/ return s
 }
 
 //line goal_stmt.goal:47
 func (p *parser) parseModFuncDecl(mod ast.FuncMod) *ast.FuncDecl {
-	modTok := p.advance()
-	fd := p.parseFuncDecl()
-	fd.Mod = mod
-	fd.ModPos = modTok.Pos
-	return fd
+	/*line goal_stmt.goal:48*/ modTok := p.advance()
+	/*line goal_stmt.goal:49*/ fd := p.parseFuncDecl()
+	/*line goal_stmt.goal:50*/ fd.Mod = mod
+	/*line goal_stmt.goal:51*/ fd.ModPos = modTok.Pos
+	/*line goal_stmt.goal:52*/ return fd
 }
 
 //line goal_stmt.goal:59
 func (p *parser) collectDoc() *ast.DocComment {
-	if !p.at(token.DOC_COMMENT) {
-		return nil
+	/*line goal_stmt.goal:60*/ if !p.at(token.DOC_COMMENT) {
+		/*line goal_stmt.goal:61*/ return nil
 	}
-	doc := &ast.DocComment{Slash: p.cur().Pos}
-	for p.at(token.DOC_COMMENT) {
-		t := p.advance()
-		doc.Lines = append(doc.Lines, stripDocPrefix(t.Lit))
+	/*line goal_stmt.goal:63*/ doc := &ast.DocComment{Slash: p.cur().Pos}
+	/*line goal_stmt.goal:64*/ for p.at(token.DOC_COMMENT) {
+		/*line goal_stmt.goal:65*/ t := p.advance()
+		/*line goal_stmt.goal:66*/ doc.Lines = append(doc.Lines, stripDocPrefix(t.Lit))
 	}
-	doc.Doctests = extractDoctests(doc.Lines)
-	return doc
+	/*line goal_stmt.goal:68*/ doc.Doctests = extractDoctests(doc.Lines)
+	/*line goal_stmt.goal:69*/ return doc
 }
 
 //line goal_stmt.goal:74
 func stripDocPrefix(lit string) string {
-	s := strings.TrimPrefix(lit, "///")
-	s = strings.TrimPrefix(s, " ")
-	return s
+	/*line goal_stmt.goal:75*/ s := strings.TrimPrefix(lit, "///")
+	/*line goal_stmt.goal:76*/ s = strings.TrimPrefix(s, " ")
+	/*line goal_stmt.goal:77*/ return s
 }
 
 //line goal_stmt.goal:85
 func extractDoctests(lines []string) []*ast.Doctest {
-	var out []*ast.Doctest
+	/*line goal_stmt.goal:86*/ var out []*ast.Doctest
 
+	/*line goal_stmt.goal:87*/
 	var cur *ast.Doctest
 
+	/*line goal_stmt.goal:88*/
 	for _, ln := range lines {
-		t := strings.TrimSpace(ln)
-		if rest, ok := strings.CutPrefix(t, ">>>"); ok {
-			cur = &ast.Doctest{Input: strings.TrimSpace(rest)}
-			out = append(out, cur)
-			continue
+		/*line goal_stmt.goal:89*/ t := strings.TrimSpace(ln)
+		/*line goal_stmt.goal:90*/ if rest, ok := strings.CutPrefix(t, ">>>"); ok {
+			/*line goal_stmt.goal:91*/ cur = &ast.Doctest{Input: strings.TrimSpace(rest)}
+			/*line goal_stmt.goal:92*/ out = append(out, cur)
+			/*line goal_stmt.goal:93*/ continue
 		}
-		if cur != nil {
-			cur.Expected = append(cur.Expected, t)
+		/*line goal_stmt.goal:95*/ if cur != nil {
+			/*line goal_stmt.goal:96*/ cur.Expected = append(cur.Expected, t)
 		}
 	}
-	return out
+	/*line goal_stmt.goal:99*/ return out
 }

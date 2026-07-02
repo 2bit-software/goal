@@ -24,7 +24,7 @@ const (
 
 //line fix.goal:39
 func (l Level) String() string {
-	switch l {
+	/*line fix.goal:40*/ switch l {
 	case Warn:
 		return "warning"
 	case Skip:
@@ -53,59 +53,62 @@ const maxIters = 8
 
 //line fix.goal:75
 func File(src string) (out string, changes []Change, reports []Report) {
-	out = src
-	seen := map[string]bool{}
-	add := func(rs []Report) {
-		for _, r := range rs {
-			key := r.Rule + "\x00" + r.Msg
-			if !seen[key] {
-				seen[key] = true
-				reports = append(reports, r)
+	/*line fix.goal:76*/ out = src
+	/*line fix.goal:77*/ seen := map[string]bool{}
+	/*line fix.goal:80*/ add := func(rs []Report) {
+		/*line fix.goal:81*/ for _, r := range rs {
+			/*line fix.goal:82*/ key := r.Rule + "\x00" + r.Msg
+			/*line fix.goal:83*/ if !seen[key] {
+				/*line fix.goal:84*/ seen[key] = true
+				/*line fix.goal:85*/ reports = append(reports, r)
 			}
 		}
 	}
-	for range maxIters {
-		file, err := parser.ParseFile(out)
-		if err != nil || file == nil {
-			break
+	/*line fix.goal:89*/ for range maxIters {
+		/*line fix.goal:90*/ file, err := parser.ParseFile(out)
+		/*line fix.goal:91*/ if err != nil || file == nil {
+			/*line fix.goal:93*/ break
 		}
-		info := sema.Resolve(file)
-		decls := typeDecls(out, file)
-		var reps []textedit.Replacement
+		/*line fix.goal:95*/ info := sema.Resolve(file)
+		/*line fix.goal:96*/ decls := typeDecls(out, file)
+		/*line fix.goal:98*/ var reps []textedit.Replacement
 
+		/*line fix.goal:99*/
 		var iterReports []Report
 
+		/*line fix.goal:100*/
 		reps = append(reps, fixPropagate(out, file, info, decls, &changes, &iterReports)...)
-		reps = append(reps, fixPropagateInit(out, file, info, decls, &changes, &iterReports)...)
-		reps = append(reps, fixResultSig(out, file, info, decls, &changes, &iterReports)...)
-		reps = append(reps, fixSwitchToMatch(out, file, info, &changes, &iterReports)...)
-		add(iterReports)
-		if len(reps) == 0 {
-			var cs []Report
+		/*line fix.goal:101*/ reps = append(reps, fixPropagateInit(out, file, info, decls, &changes, &iterReports)...)
+		/*line fix.goal:102*/ reps = append(reps, fixResultSig(out, file, info, decls, &changes, &iterReports)...)
+		/*line fix.goal:103*/ reps = append(reps, fixSwitchToMatch(out, file, info, &changes, &iterReports)...)
+		/*line fix.goal:104*/ add(iterReports)
+		/*line fix.goal:106*/ if len(reps) == 0 {
+			/*line fix.goal:110*/ var cs []Report
 
+			/*line fix.goal:111*/
 			reportCallSites(out, file, info, &cs)
-			add(cs)
-			break
+			/*line fix.goal:112*/ add(cs)
+			/*line fix.goal:113*/ break
 		}
-		out = textedit.Splice(out, 0, len(out), reps)
+		/*line fix.goal:115*/ out = textedit.Splice(out, 0, len(out), reps)
 	}
-	return out, changes, reports
+	/*line fix.goal:117*/ return out, changes, reports
 }
 
 //line fix.goal:123
 func typeDecls(src string, file *ast.File) map[string]string {
-	m := map[string]string{}
-	for _, d := range file.Decls {
-		gd, ok := d.(*ast.GenDecl)
-		if !ok || gd.Tok != token.TYPE {
-			continue
+	/*line fix.goal:124*/ m := map[string]string{}
+	/*line fix.goal:125*/ for _, d := range file.Decls {
+		/*line fix.goal:126*/ gd, ok := d.(*ast.GenDecl)
+		/*line fix.goal:127*/ if !ok || gd.Tok != token.TYPE {
+			/*line fix.goal:128*/ continue
 		}
-		for _, sp := range gd.Specs {
-			ts, ok := sp.(*ast.TypeSpec)
-			if !ok || ts.Name == nil || ts.Type == nil {
-				continue
+		/*line fix.goal:130*/ for _, sp := range gd.Specs {
+			/*line fix.goal:131*/ ts, ok := sp.(*ast.TypeSpec)
+			/*line fix.goal:132*/ if !ok || ts.Name == nil || ts.Type == nil {
+				/*line fix.goal:133*/ continue
 			}
-			switch ts.Type.(type) {
+			/*line fix.goal:135*/ switch ts.Type.(type) {
 			case *ast.StructType:
 				m[ts.Name.Name] = "struct"
 			case *ast.InterfaceType:
@@ -115,74 +118,74 @@ func typeDecls(src string, file *ast.File) map[string]string {
 			}
 		}
 	}
-	return m
+	/*line fix.goal:145*/ return m
 }
 
 //line fix.goal:152
 func nodeText(src string, node ast.Node) string {
-	lo, hi := node.Pos().Offset, node.End().Offset
-	if lo < 0 || hi > len(src) || lo > hi {
-		return ""
+	/*line fix.goal:153*/ lo, hi := node.Pos().Offset, node.End().Offset
+	/*line fix.goal:154*/ if lo < 0 || hi > len(src) || lo > hi {
+		/*line fix.goal:155*/ return ""
 	}
-	return strings.TrimSpace(src[lo:hi])
+	/*line fix.goal:157*/ return strings.TrimSpace(src[lo:hi])
 }
 
 //line fix.goal:161
 func identName(e ast.Expr) string {
-	if id, ok := e.(*ast.Ident); ok {
-		return id.Name
+	/*line fix.goal:162*/ if id, ok := e.(*ast.Ident); ok {
+		/*line fix.goal:163*/ return id.Name
 	}
-	return ""
+	/*line fix.goal:165*/ return ""
 }
 
 //line fix.goal:170
 func identNames(es []ast.Expr) []string {
-	names := make([]string, 0, len(es))
-	for _, e := range es {
-		id, ok := e.(*ast.Ident)
-		if !ok {
-			return nil
+	/*line fix.goal:171*/ names := make([]string, 0, len(es))
+	/*line fix.goal:172*/ for _, e := range es {
+		/*line fix.goal:173*/ id, ok := e.(*ast.Ident)
+		/*line fix.goal:174*/ if !ok {
+			/*line fix.goal:175*/ return nil
 		}
-		names = append(names, id.Name)
+		/*line fix.goal:177*/ names = append(names, id.Name)
 	}
-	return names
+	/*line fix.goal:179*/ return names
 }
 
 //line fix.goal:183
 func isSelector(e ast.Expr, x, sel string) bool {
-	se, ok := e.(*ast.SelectorExpr)
-	return ok && identName(se.X) == x && se.Sel != nil && se.Sel.Name == sel
+	/*line fix.goal:184*/ se, ok := e.(*ast.SelectorExpr)
+	/*line fix.goal:185*/ return ok && identName(se.X) == x && se.Sel != nil && se.Sel.Name == sel
 }
 
 //line fix.goal:190
 func isResultErrOf(e ast.Expr, condVar string) bool {
-	call, ok := e.(*ast.CallExpr)
-	if !ok || len(call.Args) != 1 {
-		return false
+	/*line fix.goal:191*/ call, ok := e.(*ast.CallExpr)
+	/*line fix.goal:192*/ if !ok || len(call.Args) != 1 {
+		/*line fix.goal:193*/ return false
 	}
-	return isSelector(call.Fun, "Result", "Err") && identName(call.Args[0]) == condVar
+	/*line fix.goal:195*/ return isSelector(call.Fun, "Result", "Err") && identName(call.Args[0]) == condVar
 }
 
 //line fix.goal:201
 func forEachBlock(b *ast.BlockStmt, f func([]ast.Stmt)) {
-	if b == nil {
-		return
+	/*line fix.goal:202*/ if b == nil {
+		/*line fix.goal:203*/ return
 	}
-	f(b.List)
-	for _, s := range b.List {
-		descendStmt(s, f)
+	/*line fix.goal:205*/ f(b.List)
+	/*line fix.goal:206*/ for _, s := range b.List {
+		/*line fix.goal:207*/ descendStmt(s, f)
 	}
 }
 
 //line fix.goal:211
 func descendStmt(s ast.Stmt, f func([]ast.Stmt)) {
-	switch s := s.(type) {
+	/*line fix.goal:212*/ switch s := s.(type) {
 	case *ast.BlockStmt:
 		forEachBlock(s, f)
 	case *ast.IfStmt:
 		forEachBlock(s.Body, f)
 		if s.Else != nil {
-			descendStmt(s.Else, f)
+			/*line fix.goal:218*/ descendStmt(s.Else, f)
 		}
 	case *ast.ForStmt:
 		forEachBlock(s.Body, f)
@@ -190,11 +193,11 @@ func descendStmt(s ast.Stmt, f func([]ast.Stmt)) {
 		forEachBlock(s.Body, f)
 	case *ast.SwitchStmt:
 		if s.Body != nil {
-			for _, cc := range s.Body.List {
-				if c, ok := cc.(*ast.CaseClause); ok {
-					f(c.Body)
-					for _, cs := range c.Body {
-						descendStmt(cs, f)
+			/*line fix.goal:226*/ for _, cc := range s.Body.List {
+				/*line fix.goal:227*/ if c, ok := cc.(*ast.CaseClause); ok {
+					/*line fix.goal:228*/ f(c.Body)
+					/*line fix.goal:229*/ for _, cs := range c.Body {
+						/*line fix.goal:230*/ descendStmt(cs, f)
 					}
 				}
 			}
@@ -207,78 +210,81 @@ type visitFn func(ast.Node) bool
 
 //line fix.goal:242
 func (f visitFn) Visit(n ast.Node) ast.Visitor {
-	if n == nil {
-		return nil
+	/*line fix.goal:243*/ if n == nil {
+		/*line fix.goal:244*/ return nil
 	}
-	if f(n) {
-		return f
+	/*line fix.goal:246*/ if f(n) {
+		/*line fix.goal:247*/ return f
 	}
-	return nil
+	/*line fix.goal:249*/ return nil
 }
 
 //line fix.goal:256
 func lineOf(src string, off int) int {
-	if off > len(src) {
-		off = len(src)
+	/*line fix.goal:257*/ if off > len(src) {
+		/*line fix.goal:258*/ off = len(src)
 	}
-	return strings.Count(src[:off], "\n") + 1
+	/*line fix.goal:260*/ return strings.Count(src[:off], "\n") + 1
 }
 
 //line fix.goal:264
 func indentOf(src string, lineStart int) string {
-	end := lineStart
-	for end < len(src) && (src[end] == ' ' || src[end] == '\t') {
-		end++
+	/*line fix.goal:265*/ end := lineStart
+	/*line fix.goal:266*/ for end < len(src) && (src[end] == ' ' || src[end] == '\t') {
+		/*line fix.goal:267*/ end++
 	}
-	return src[lineStart:end]
+	/*line fix.goal:269*/ return src[lineStart:end]
 }
 
 //line fix.goal:273
 func lineStartBefore(src string, off int) int {
-	return strings.LastIndexByte(src[:off], '\n') + 1
+	/*line fix.goal:274*/ return strings.LastIndexByte(src[:off], '\n') + 1
 }
 
 //line fix.goal:280
 func spanHasComment(src string, lo, hi int) bool {
-	if lo < 0 || hi > len(src) || lo > hi {
-		return false
+	/*line fix.goal:281*/ if lo < 0 || hi > len(src) || lo > hi {
+		/*line fix.goal:282*/ return false
 	}
-	s := src[lo:hi]
-	return strings.Contains(s, "//") || strings.Contains(s, "/*")
+	/*line fix.goal:284*/ s := src[lo:hi]
+	/*line fix.goal:285*/ return strings.Contains(s, "//") || strings.Contains(s, "/*")
 }
 
 //line fix.goal:289
 func isExported(name string) bool {
-	return name != "" && name[0] >= 'A' && name[0] <= 'Z'
+	/*line fix.goal:290*/ return name != "" && name[0] >= 'A' && name[0] <= 'Z'
 }
 
 //line fix.goal:300
 func addReport(reports *[]Report, r Report) {
-	*reports = append(*reports, r)
+	/*line fix.goal:301*/ *reports = append(*reports, r)
 }
 
 //line fix.goal:304
 func addChange(changes *[]Change, c Change) {
-	*changes = append(*changes, c)
+	/*line fix.goal:305*/ *changes = append(*changes, c)
 }
 
 //line fix.goal:315
 func isModeNone(m sema.Mode) bool {
-	_, ok := m.(sema.Mode_ModeNone)
-
+	/*line fix.goal:315*/ _, ok := m.(sema.Mode_ModeNone)
+	/*line fix.goal:315*/
+	/*line fix.goal:315*/
 	return ok
 }
 
 //line fix.goal:316
 func isModeResult(m sema.Mode) bool {
-	_, ok := m.(sema.Mode_ModeResult)
-
+	/*line fix.goal:316*/ _, ok := m.(sema.Mode_ModeResult)
+	/*line fix.goal:316*/
+	/*line fix.goal:316*/
 	return ok
 }
 
 //line fix.goal:317
 func isModeOption(m sema.Mode) bool {
-	_, ok := m.(sema.Mode_ModeOption)
-
+	/*line fix.goal:317*/ _, ok := m.(sema.Mode_ModeOption)
+	/*line fix.goal:317*/
+	/*line fix.goal:317*/
 	return ok
 }

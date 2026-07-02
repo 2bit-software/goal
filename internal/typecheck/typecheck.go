@@ -31,36 +31,37 @@ type Package struct {
 
 //line typecheck.goal:68
 func Load(pkg *project.Package) (ok *Package, err1 error) {
-	out, err := backend.TranspilePackage(pkg)
-	if err != nil {
-		return ok, fmt.Errorf("transpile: %w", err)
+	/*line typecheck.goal:69*/ out, err := backend.TranspilePackage(pkg)
+	/*line typecheck.goal:70*/ if err != nil {
+		/*line typecheck.goal:71*/ return ok, fmt.Errorf("transpile: %w", err)
 	}
-	goalFiles := make([]*goalast.File, len(pkg.Files))
-	for i, f := range pkg.Files {
-		gf, perr := goalparser.ParseFile(f.Src)
-		if perr != nil {
-			return ok, fmt.Errorf("parse goal source %s: %w", f.Path, perr)
+	/*line typecheck.goal:78*/ goalFiles := make([]*goalast.File, len(pkg.Files))
+	/*line typecheck.goal:79*/ for i, f := range pkg.Files {
+		/*line typecheck.goal:80*/ gf, perr := goalparser.ParseFile(f.Src)
+		/*line typecheck.goal:81*/ if perr != nil {
+			/*line typecheck.goal:82*/ return ok, fmt.Errorf("parse goal source %s: %w", f.Path, perr)
 		}
-		goalFiles[i] = gf
+		/*line typecheck.goal:84*/ goalFiles[i] = gf
 	}
-	semaInfo := sema.ResolvePackage(goalFiles)
-	fset := token.NewFileSet()
-	var files []*ast.File
+	/*line typecheck.goal:86*/ semaInfo := sema.ResolvePackage(goalFiles)
+	/*line typecheck.goal:88*/ fset := token.NewFileSet()
+	/*line typecheck.goal:89*/ var files []*ast.File
 
+	/*line typecheck.goal:90*/
 	for _, gf := range out.Files {
-		f, err := parser.ParseFile(fset, gf.Name, gf.Go, parser.SkipObjectResolution)
-		if err != nil {
-			return ok, fmt.Errorf("parse generated %s: %w", gf.Name, err)
+		/*line typecheck.goal:91*/ f, err := parser.ParseFile(fset, gf.Name, gf.Go, parser.SkipObjectResolution)
+		/*line typecheck.goal:92*/ if err != nil {
+			/*line typecheck.goal:93*/ return ok, fmt.Errorf("parse generated %s: %w", gf.Name, err)
 		}
-		files = append(files, f)
+		/*line typecheck.goal:95*/ files = append(files, f)
 	}
-	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}, Types: map[ast.Expr]types.TypeAndValue{}, Selections: map[*ast.SelectorExpr]*types.Selection{}}
-	p := &Package{Fset: fset, Info: info, Files: files, Sema: semaInfo, Src: pkg, goalFiles: goalFiles}
-	conf := types.Config{Importer: importer.Default(), Error: func(e error) {
-		p.Errors = append(p.Errors, e)
+	/*line typecheck.goal:98*/ info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}, Types: map[ast.Expr]types.TypeAndValue{}, Selections: map[*ast.SelectorExpr]*types.Selection{}}
+	/*line typecheck.goal:104*/ p := &Package{Fset: fset, Info: info, Files: files, Sema: semaInfo, Src: pkg, goalFiles: goalFiles}
+	/*line typecheck.goal:105*/ conf := types.Config{Importer: importer.Default(), Error: func(e error) {
+		/*line typecheck.goal:107*/ p.Errors = append(p.Errors, e)
 	}}
-	p.Types, _ = conf.Check(pkg.Name, fset, files, info)
-	return p, nil
+	/*line typecheck.goal:110*/ p.Types, _ = conf.Check(pkg.Name, fset, files, info)
+	/*line typecheck.goal:111*/ return p, nil
 }
 
 //line typecheck.goal:118
@@ -74,18 +75,18 @@ type Diagnostic struct {
 
 //line typecheck.goal:127
 func (d Diagnostic) String() string {
-	return fmt.Sprintf("%s: %s: [%s] %s", d.Pos, d.Severity, d.Code, d.Message)
+	/*line typecheck.goal:128*/ return fmt.Sprintf("%s: %s: [%s] %s", d.Pos, d.Severity, d.Code, d.Message)
 }
 
 //line typecheck.goal:134
 func (p *Package) GoalPos(n ast.Node) token.Position {
-	return p.Fset.Position(n.Pos())
+	/*line typecheck.goal:135*/ return p.Fset.Position(n.Pos())
 }
 
 //line typecheck.goal:140
 func (p *Package) Lookup(name string) types.Object {
-	if p.Types == nil {
-		return nil
+	/*line typecheck.goal:141*/ if p.Types == nil {
+		/*line typecheck.goal:142*/ return nil
 	}
-	return p.Types.Scope().Lookup(name)
+	/*line typecheck.goal:144*/ return p.Types.Scope().Lookup(name)
 }

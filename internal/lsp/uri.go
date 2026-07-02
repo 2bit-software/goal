@@ -10,12 +10,12 @@ import (
 
 //line uri.goal:12
 func uriToPath(uri string) (path string, ok bool) {
-	u, err := url.Parse(uri)
-	if err != nil || u.Scheme != "file" {
-		return "", false
+	/*line uri.goal:13*/ u, err := url.Parse(uri)
+	/*line uri.goal:14*/ if err != nil || u.Scheme != "file" {
+		/*line uri.goal:15*/ return "", false
 	}
-	if u.Path == "" {
-		return "", false
+	/*line uri.goal:17*/ if u.Path == "" {
+		/*line uri.goal:18*/ return "", false
 	}
-	return filepath.Clean(u.Path), true
+	/*line uri.goal:20*/ return filepath.Clean(u.Path), true
 }

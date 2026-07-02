@@ -11,76 +11,77 @@ import (
 
 //line assert.goal:28
 func CheckAssert(file *ast.File, info *Info) []Diagnostic {
-	var diags []Diagnostic
+	/*line assert.goal:29*/ var diags []Diagnostic
 
+	/*line assert.goal:30*/
 	ast.Walk(visitorFunc(func(n ast.Node) bool {
-		a, ok := n.(*ast.AssertStmt)
-		if !ok || a.Cond == nil {
-			return true
+		/*line assert.goal:31*/ a, ok := n.(*ast.AssertStmt)
+		/*line assert.goal:32*/ if !ok || a.Cond == nil {
+			/*line assert.goal:33*/ return true
 		}
-		verdict, decidable := foldAssertCond(a.Cond)
-		if !decidable {
-			return true
+		/*line assert.goal:35*/ verdict, decidable := foldAssertCond(a.Cond)
+		/*line assert.goal:36*/ if !decidable {
+			/*line assert.goal:37*/ return true
 		}
-		condText := renderCond(a.Cond)
-		if verdict {
-			diags = append(diags, Diagnostic{Pos: a.Assert, Severity: Severity(Severity_Warning{}), Feature: "10-assert", Code: "assert-always-true", Message: "assert condition `" + condText + "` is always true (dead code: " + "the runtime check can never fail)"})
+		/*line assert.goal:39*/ condText := renderCond(a.Cond)
+		/*line assert.goal:40*/ if verdict {
+			/*line assert.goal:41*/ diags = append(diags, Diagnostic{Pos: a.Assert, Severity: Severity(Severity_Warning{}), Feature: "10-assert", Code: "assert-always-true", Message: "assert condition `" + condText + "` is always true (dead code: " + "the runtime check can never fail)"})
 		} else {
-			diags = append(diags, Diagnostic{Pos: a.Assert, Severity: Severity(Severity_Error{}), Feature: "10-assert", Code: "assert-always-false", Message: "assert condition `" + condText + "` is statically false: " + "this assert always panics"})
+			/*line assert.goal:50*/ diags = append(diags, Diagnostic{Pos: a.Assert, Severity: Severity(Severity_Error{}), Feature: "10-assert", Code: "assert-always-false", Message: "assert condition `" + condText + "` is statically false: " + "this assert always panics"})
 		}
-		return true
+		/*line assert.goal:59*/ return true
 	}), file)
-	return diags
+	/*line assert.goal:61*/ return diags
 }
 
 //line assert.goal:70
 func foldAssertCond(cond ast.Expr) (value bool, decidable bool) {
-	switch v1 := cond.(type) {
+	/*line assert.goal:71*/ switch v1 := cond.(type) {
 	case *ast.Ident:
 		{
-			switch v1.Name {
+			/*line assert.goal:73*/ switch v1.Name {
 			case "true":
 				return true, true
 			case "false":
 				return false, true
 			}
-			return false, false
+			/*line assert.goal:79*/ return false, false
 		}
 	case *ast.BinaryExpr:
 		{
-			lhs, lok := constIntLit(v1.X)
-			if !lok {
-				return false, false
+			/*line assert.goal:82*/ lhs, lok := constIntLit(v1.X)
+			/*line assert.goal:83*/ if !lok {
+				/*line assert.goal:84*/ return false, false
 			}
-			rhs, rok := constIntLit(v1.Y)
-			if !rok {
-				return false, false
+			/*line assert.goal:86*/ rhs, rok := constIntLit(v1.Y)
+			/*line assert.goal:87*/ if !rok {
+				/*line assert.goal:88*/ return false, false
 			}
-			return evalIntCompare(lhs, v1.Op, rhs)
+			/*line assert.goal:90*/ return evalIntCompare(lhs, v1.Op, rhs)
 		}
 	default:
 		{
-			return false, false
+			/*line assert.goal:93*/ return false, false
 		}
 	}
 }
 
 //line assert.goal:102
 func constIntLit(x ast.Expr) (int64, bool) {
-	lit, ok := x.(*ast.BasicLit)
-	if !ok || lit.Kind != token.INT {
-		return 0, false
+	/*line assert.goal:103*/ lit, ok := x.(*ast.BasicLit)
+	/*line assert.goal:104*/ if !ok || lit.Kind != token.INT {
+		/*line assert.goal:105*/ return 0, false
 	}
-	v, err := strconv.ParseInt(lit.Value, 0, 64)
-	if err != nil {
-		return 0, false
+	/*line assert.goal:107*/ v, err := strconv.ParseInt(lit.Value, 0, 64)
+	/*line assert.goal:108*/ if err != nil {
+		/*line assert.goal:109*/ return 0, false
 	}
-	return v, true
+	/*line assert.goal:111*/ return v, true
 }
 
 //line assert.goal:117
 func evalIntCompare(lhs int64, op token.Kind, rhs int64) (bool, bool) {
-	switch op {
+	/*line assert.goal:118*/ switch op {
 	case token.LSS:
 		return lhs < rhs, true
 	case token.LEQ:
@@ -94,27 +95,27 @@ func evalIntCompare(lhs int64, op token.Kind, rhs int64) (bool, bool) {
 	case token.NEQ:
 		return lhs != rhs, true
 	}
-	return false, false
+	/*line assert.goal:132*/ return false, false
 }
 
 //line assert.goal:139
 func renderCond(cond ast.Expr) string {
-	switch v1 := cond.(type) {
+	/*line assert.goal:140*/ switch v1 := cond.(type) {
 	case *ast.Ident:
 		{
-			return v1.Name
+			/*line assert.goal:142*/ return v1.Name
 		}
 	case *ast.BasicLit:
 		{
-			return v1.Value
+			/*line assert.goal:145*/ return v1.Value
 		}
 	case *ast.BinaryExpr:
 		{
-			return renderCond(v1.X) + " " + v1.Op.String() + " " + renderCond(v1.Y)
+			/*line assert.goal:148*/ return renderCond(v1.X) + " " + v1.Op.String() + " " + renderCond(v1.Y)
 		}
 	default:
 		{
-			return ""
+			/*line assert.goal:151*/ return ""
 		}
 	}
 }

@@ -11,59 +11,62 @@ import (
 
 //line references.goal:15
 func (s *Server) references(raw json.RawMessage) []Location {
-	var p ReferenceParams
+	/*line references.goal:16*/ var p ReferenceParams
 
+	/*line references.goal:17*/
 	if !s.decode(raw, &p, "references") {
-		return nil
+		/*line references.goal:18*/ return nil
 	}
-	text, _, ok := s.buffer(p.TextDocument.URI)
-	if !ok {
-		return nil
+	/*line references.goal:20*/ text, _, ok := s.buffer(p.TextDocument.URI)
+	/*line references.goal:21*/ if !ok {
+		/*line references.goal:22*/ return nil
 	}
-	_, occ, ok := resolveOccurrences(text, p.Position.Line, p.Position.Character)
-	if !ok {
-		return nil
+	/*line references.goal:24*/ _, occ, ok := resolveOccurrences(text, p.Position.Line, p.Position.Character)
+	/*line references.goal:25*/ if !ok {
+		/*line references.goal:26*/ return nil
 	}
-	var out []Location
+	/*line references.goal:28*/ var out []Location
 
+	/*line references.goal:29*/
 	for _, o := range occ {
-		if o.isDecl && !p.Context.IncludeDeclaration {
-			continue
+		/*line references.goal:30*/ if o.isDecl && !p.Context.IncludeDeclaration {
+			/*line references.goal:31*/ continue
 		}
-		out = append(out, Location{URI: p.TextDocument.URI, Range: rangeOf(text, o.start, o.end)})
+		/*line references.goal:33*/ out = append(out, Location{URI: p.TextDocument.URI, Range: rangeOf(text, o.start, o.end)})
 	}
-	return out
+	/*line references.goal:35*/ return out
 }
 
 //line references.goal:43
 func (s *Server) rename(raw json.RawMessage) *WorkspaceEdit {
-	var p RenameParams
+	/*line references.goal:44*/ var p RenameParams
 
+	/*line references.goal:45*/
 	if !s.decode(raw, &p, "rename") {
-		return nil
+		/*line references.goal:46*/ return nil
 	}
-	if !isIdent(p.NewName) {
-		return nil
+	/*line references.goal:48*/ if !isIdent(p.NewName) {
+		/*line references.goal:49*/ return nil
 	}
-	text, version, ok := s.buffer(p.TextDocument.URI)
-	if !ok {
-		return nil
+	/*line references.goal:51*/ text, version, ok := s.buffer(p.TextDocument.URI)
+	/*line references.goal:52*/ if !ok {
+		/*line references.goal:53*/ return nil
 	}
-	_, occ, ok := resolveOccurrences(text, p.Position.Line, p.Position.Character)
-	if !ok {
-		return nil
+	/*line references.goal:55*/ _, occ, ok := resolveOccurrences(text, p.Position.Line, p.Position.Character)
+	/*line references.goal:56*/ if !ok {
+		/*line references.goal:57*/ return nil
 	}
-	edits := make([]TextEdit, 0, len(occ))
-	for _, o := range occ {
-		edits = append(edits, TextEdit{Range: rangeOf(text, o.start, o.end), NewText: p.NewName})
+	/*line references.goal:59*/ edits := make([]TextEdit, 0, len(occ))
+	/*line references.goal:60*/ for _, o := range occ {
+		/*line references.goal:61*/ edits = append(edits, TextEdit{Range: rangeOf(text, o.start, o.end), NewText: p.NewName})
 	}
-	return &WorkspaceEdit{DocumentChanges: []TextDocumentEdit{{TextDocument: versionedTextDocumentIdentifier{URI: p.TextDocument.URI, Version: version}, Edits: edits}}}
+	/*line references.goal:63*/ return &WorkspaceEdit{DocumentChanges: []TextDocumentEdit{{TextDocument: versionedTextDocumentIdentifier{URI: p.TextDocument.URI, Version: version}, Edits: edits}}}
 }
 
 //line references.goal:71
 type symKind int
 
-//line references.go:65
+//line references.go:68
 const (
 	symKindFunc symKind = iota
 	symKindType
@@ -86,64 +89,66 @@ type occurrence struct {
 
 //line references.goal:100
 func resolveOccurrences(src string, line, char int) (symKey, []occurrence, bool) {
-	off, ok := offsetForPosition(src, line, char)
-	if !ok {
-		return symKey{}, nil, false
+	/*line references.goal:101*/ off, ok := offsetForPosition(src, line, char)
+	/*line references.goal:102*/ if !ok {
+		/*line references.goal:103*/ return symKey{}, nil, false
 	}
-	file, err := parser.ParseFile(src)
-	if err != nil || file == nil {
-		return symKey{}, nil, false
+	/*line references.goal:105*/ file, err := parser.ParseFile(src)
+	/*line references.goal:106*/ if err != nil || file == nil {
+		/*line references.goal:107*/ return symKey{}, nil, false
 	}
-	idx := buildDeclIndex(src, file)
-	all := collectOccurrences(file, idx)
-	var key symKey
+	/*line references.goal:109*/ idx := buildDeclIndex(src, file)
+	/*line references.goal:110*/ all := collectOccurrences(file, idx)
+	/*line references.goal:111*/ var key symKey
 
+	/*line references.goal:112*/
 	found := false
-	for _, o := range all {
-		if off >= o.start && off < o.end {
-			key = o.key
-			found = true
-			break
+	/*line references.goal:113*/ for _, o := range all {
+		/*line references.goal:114*/ if off >= o.start && off < o.end {
+			/*line references.goal:115*/ key = o.key
+			/*line references.goal:116*/ found = true
+			/*line references.goal:117*/ break
 		}
 	}
-	if !found {
-		return symKey{}, nil, false
+	/*line references.goal:120*/ if !found {
+		/*line references.goal:121*/ return symKey{}, nil, false
 	}
-	var out []occurrence
+	/*line references.goal:123*/ var out []occurrence
 
+	/*line references.goal:124*/
 	for _, o := range all {
-		if o.key == key {
-			out = append(out, o)
+		/*line references.goal:125*/ if o.key == key {
+			/*line references.goal:126*/ out = append(out, o)
 		}
 	}
-	return key, out, true
+	/*line references.goal:129*/ return key, out, true
 }
 
 //line references.goal:136
 func collectOccurrences(file *ast.File, idx declIndex) []occurrence {
-	v := &occVisitor{idx: idx}
-	for _, d := range file.Decls {
-		switch decl := d.(type) {
+	/*line references.goal:137*/ v := &occVisitor{idx: idx}
+	/*line references.goal:139*/ for _, d := range file.Decls {
+		/*line references.goal:140*/ switch decl := d.(type) {
 		case *ast.FuncDecl:
 			v.decl(decl.Name, symKey{kind: symKindFunc, name: name(decl.Name)})
 		case *ast.EnumDecl:
 			en := name(decl.Name)
 			v.decl(decl.Name, symKey{kind: symKindType, name: en})
 			for _, vr := range decl.Variants {
-				v.decl(vr.Name, symKey{kind: symKindVariant, enumName: en, name: name(vr.Name)})
+				/*line references.goal:147*/ v.decl(vr.Name, symKey{kind: symKindVariant, enumName: en, name: name(vr.Name)})
 			}
 		case *ast.SealedInterfaceDecl:
 			v.decl(decl.Name, symKey{kind: symKindType, name: name(decl.Name)})
 		case *ast.GenDecl:
 			for _, sp := range decl.Specs {
-				if ts, ok := sp.(*ast.TypeSpec); ok {
-					v.decl(ts.Name, symKey{kind: symKindType, name: name(ts.Name)})
+				/*line references.goal:153*/ if ts, ok := sp.(*ast.TypeSpec); ok {
+					/*line references.goal:154*/ v.decl(ts.Name, symKey{kind: symKindType, name: name(ts.Name)})
 				}
 			}
 		}
 	}
-	ast.Walk(v, file)
-	return v.occ
+	/*line references.goal:159*/ ast.Walk(v, file)
+	/*line references.goal:160*/ return v.occ
 }
 
 //line references.goal:166
@@ -154,7 +159,7 @@ type occVisitor struct {
 
 //line references.goal:171
 func (v *occVisitor) Visit(n ast.Node) ast.Visitor {
-	switch d := n.(type) {
+	/*line references.goal:172*/ switch d := n.(type) {
 	case *ast.CallExpr:
 		switch fun := d.Fun.(type) {
 		case *ast.Ident:
@@ -179,94 +184,94 @@ func (v *occVisitor) Visit(n ast.Node) ast.Visitor {
 	case *ast.ImplementsClause:
 		v.refType(d.Type)
 	}
-	return v
+	/*line references.goal:197*/ return v
 }
 
 //line references.goal:201
 func (v *occVisitor) refFunc(ident *ast.Ident) {
-	if ident == nil {
-		return
+	/*line references.goal:202*/ if ident == nil {
+		/*line references.goal:203*/ return
 	}
-	if _, ok := v.idx.funcs[ident.Name]; ok {
-		v.ref(ident, symKey{kind: symKindFunc, name: ident.Name})
+	/*line references.goal:205*/ if _, ok := v.idx.funcs[ident.Name]; ok {
+		/*line references.goal:206*/ v.ref(ident, symKey{kind: symKindFunc, name: ident.Name})
 	}
 }
 
 //line references.goal:213
 func (v *occVisitor) refType(e ast.Expr) {
-	id, ok := e.(*ast.Ident)
-	if !ok {
-		return
+	/*line references.goal:214*/ id, ok := e.(*ast.Ident)
+	/*line references.goal:215*/ if !ok {
+		/*line references.goal:216*/ return
 	}
-	if _, ok := v.idx.types[id.Name]; ok {
-		v.ref(id, symKey{kind: symKindType, name: id.Name})
+	/*line references.goal:218*/ if _, ok := v.idx.types[id.Name]; ok {
+		/*line references.goal:219*/ v.ref(id, symKey{kind: symKindType, name: id.Name})
 	}
 }
 
 //line references.goal:225
 func (v *occVisitor) refEnumSelector(x ast.Expr, sel *ast.Ident) {
-	id, ok := x.(*ast.Ident)
-	if !ok {
-		return
+	/*line references.goal:226*/ id, ok := x.(*ast.Ident)
+	/*line references.goal:227*/ if !ok {
+		/*line references.goal:228*/ return
 	}
-	if _, ok := v.idx.types[id.Name]; ok {
-		v.ref(id, symKey{kind: symKindType, name: id.Name})
+	/*line references.goal:230*/ if _, ok := v.idx.types[id.Name]; ok {
+		/*line references.goal:231*/ v.ref(id, symKey{kind: symKindType, name: id.Name})
 	}
-	if vm, ok := v.idx.variants[id.Name]; ok && sel != nil {
-		if _, ok := vm[sel.Name]; ok {
-			v.ref(sel, symKey{kind: symKindVariant, enumName: id.Name, name: sel.Name})
+	/*line references.goal:233*/ if vm, ok := v.idx.variants[id.Name]; ok && sel != nil {
+		/*line references.goal:234*/ if _, ok := vm[sel.Name]; ok {
+			/*line references.goal:235*/ v.ref(sel, symKey{kind: symKindVariant, enumName: id.Name, name: sel.Name})
 		}
 	}
 }
 
 //line references.goal:242
 func (v *occVisitor) refVariant(enumExpr ast.Expr, variant *ast.Ident) {
-	id, ok := enumExpr.(*ast.Ident)
-	if !ok {
-		return
+	/*line references.goal:243*/ id, ok := enumExpr.(*ast.Ident)
+	/*line references.goal:244*/ if !ok {
+		/*line references.goal:245*/ return
 	}
-	if _, ok := v.idx.types[id.Name]; ok {
-		v.ref(id, symKey{kind: symKindType, name: id.Name})
+	/*line references.goal:247*/ if _, ok := v.idx.types[id.Name]; ok {
+		/*line references.goal:248*/ v.ref(id, symKey{kind: symKindType, name: id.Name})
 	}
-	if vm, ok := v.idx.variants[id.Name]; ok && variant != nil {
-		if _, ok := vm[variant.Name]; ok {
-			v.ref(variant, symKey{kind: symKindVariant, enumName: id.Name, name: variant.Name})
+	/*line references.goal:250*/ if vm, ok := v.idx.variants[id.Name]; ok && variant != nil {
+		/*line references.goal:251*/ if _, ok := vm[variant.Name]; ok {
+			/*line references.goal:252*/ v.ref(variant, symKey{kind: symKindVariant, enumName: id.Name, name: variant.Name})
 		}
 	}
 }
 
 //line references.goal:258
 func (v *occVisitor) decl(ident *ast.Ident, key symKey) {
-	if !named(ident) {
-		return
+	/*line references.goal:259*/ if !named(ident) {
+		/*line references.goal:260*/ return
 	}
-	v.occ = append(v.occ, occurrence{start: ident.Pos().Offset, end: ident.End().Offset, key: key, isDecl: true})
+	/*line references.goal:262*/ v.occ = append(v.occ, occurrence{start: ident.Pos().Offset, end: ident.End().Offset, key: key, isDecl: true})
 }
 
 //line references.goal:271
 func (v *occVisitor) ref(ident *ast.Ident, key symKey) {
-	if !named(ident) {
-		return
+	/*line references.goal:272*/ if !named(ident) {
+		/*line references.goal:273*/ return
 	}
-	v.occ = append(v.occ, occurrence{start: ident.Pos().Offset, end: ident.End().Offset, key: key})
+	/*line references.goal:275*/ v.occ = append(v.occ, occurrence{start: ident.Pos().Offset, end: ident.End().Offset, key: key})
 }
 
 //line references.goal:285
 func isIdent(s string) bool {
-	if s == "" {
-		return false
+	/*line references.goal:286*/ if s == "" {
+		/*line references.goal:287*/ return false
 	}
-	for i, r := range s {
-		switch {
+	/*line references.goal:289*/ for i, r := range s {
+		/*line references.goal:290*/ switch {
 		case r == '_':
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
 		case r >= '0' && r <= '9':
 			if i == 0 {
-				return false
+				/*line references.goal:295*/ return false
 			}
 		default:
 			return false
 		}
 	}
-	return true
+	/*line references.goal:301*/ return true
 }

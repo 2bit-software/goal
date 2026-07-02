@@ -12,34 +12,35 @@ import (
 
 //line symbols.goal:16
 func (s *Server) documentSymbols(raw json.RawMessage) []DocumentSymbol {
-	var p DocumentSymbolParams
+	/*line symbols.goal:17*/ var p DocumentSymbolParams
 
+	/*line symbols.goal:18*/
 	if !s.decode(raw, &p, "documentSymbol") {
-		return []DocumentSymbol{}
+		/*line symbols.goal:19*/ return []DocumentSymbol{}
 	}
-	text, _, ok := s.buffer(p.TextDocument.URI)
-	if !ok {
-		return []DocumentSymbol{}
+	/*line symbols.goal:21*/ text, _, ok := s.buffer(p.TextDocument.URI)
+	/*line symbols.goal:22*/ if !ok {
+		/*line symbols.goal:23*/ return []DocumentSymbol{}
 	}
-	return collectSymbols(text)
+	/*line symbols.goal:25*/ return collectSymbols(text)
 }
 
 //line symbols.goal:34
 func collectSymbols(src string) []DocumentSymbol {
-	out := []DocumentSymbol{}
-	file, err := parser.ParseFile(src)
-	if err != nil || file == nil {
-		return out
+	/*line symbols.goal:35*/ out := []DocumentSymbol{}
+	/*line symbols.goal:36*/ file, err := parser.ParseFile(src)
+	/*line symbols.goal:37*/ if err != nil || file == nil {
+		/*line symbols.goal:38*/ return out
 	}
-	for _, d := range file.Decls {
-		out = append(out, symbolsFor(src, d)...)
+	/*line symbols.goal:40*/ for _, d := range file.Decls {
+		/*line symbols.goal:41*/ out = append(out, symbolsFor(src, d)...)
 	}
-	return out
+	/*line symbols.goal:43*/ return out
 }
 
 //line symbols.goal:49
 func symbolsFor(src string, d ast.Decl) []DocumentSymbol {
-	switch decl := d.(type) {
+	/*line symbols.goal:50*/ switch decl := d.(type) {
 	case *ast.EnumDecl:
 		return single(src, decl.Name, symEnum, "", decl.Pos(), decl.End())
 	case *ast.SealedInterfaceDecl:
@@ -47,7 +48,7 @@ func symbolsFor(src string, d ast.Decl) []DocumentSymbol {
 	case *ast.FuncDecl:
 		kind := symFunction
 		if decl.Recv != nil {
-			kind = symMethod
+			/*line symbols.goal:58*/ kind = symMethod
 		}
 		detail := ""
 		switch decl.Mod.(type) {
@@ -59,32 +60,32 @@ func symbolsFor(src string, d ast.Decl) []DocumentSymbol {
 		return single(src, decl.Name, kind, detail, decl.Pos(), decl.End())
 	case *ast.GenDecl:
 		if decl.Tok != token.TYPE {
-			return nil
+			/*line symbols.goal:74*/ return nil
 		}
 		var out []DocumentSymbol
 
 		for _, sp := range decl.Specs {
-			ts, ok := sp.(*ast.TypeSpec)
-			if !ok {
-				continue
+			/*line symbols.goal:78*/ ts, ok := sp.(*ast.TypeSpec)
+			/*line symbols.goal:79*/ if !ok {
+				/*line symbols.goal:80*/ continue
 			}
-			start := ts.Pos()
-			if len(decl.Specs) == 1 {
-				start = decl.Pos()
+			/*line symbols.goal:82*/ start := ts.Pos()
+			/*line symbols.goal:83*/ if len(decl.Specs) == 1 {
+				/*line symbols.goal:84*/ start = decl.Pos()
 			}
-			out = append(out, single(src, ts.Name, typeSpecKind(ts), "", start, ts.End())...)
+			/*line symbols.goal:86*/ out = append(out, single(src, ts.Name, typeSpecKind(ts), "", start, ts.End())...)
 		}
 		return out
 	}
-	return nil
+	/*line symbols.goal:90*/ return nil
 }
 
 //line symbols.goal:95
 func typeSpecKind(ts *ast.TypeSpec) int {
-	if ts.Assign != (token.Pos{}) {
-		return symClass
+	/*line symbols.goal:96*/ if ts.Assign != (token.Pos{}) {
+		/*line symbols.goal:97*/ return symClass
 	}
-	switch ts.Type.(type) {
+	/*line symbols.goal:99*/ switch ts.Type.(type) {
 	case *ast.StructType:
 		return symStruct
 	case *ast.InterfaceType:
@@ -96,15 +97,15 @@ func typeSpecKind(ts *ast.TypeSpec) int {
 
 //line symbols.goal:112
 func single(src string, name *ast.Ident, kind int, detail string, start, end token.Pos) []DocumentSymbol {
-	if name == nil || name.Name == "" {
-		return nil
+	/*line symbols.goal:113*/ if name == nil || name.Name == "" {
+		/*line symbols.goal:114*/ return nil
 	}
-	return []DocumentSymbol{{Name: name.Name, Detail: detail, Kind: kind, Range: rangeOf(src, start.Offset, end.Offset), SelectionRange: rangeOf(src, name.Pos().Offset, name.End().Offset)}}
+	/*line symbols.goal:116*/ return []DocumentSymbol{{Name: name.Name, Detail: detail, Kind: kind, Range: rangeOf(src, start.Offset, end.Offset), SelectionRange: rangeOf(src, name.Pos().Offset, name.End().Offset)}}
 }
 
 //line symbols.goal:126
 func rangeOf(srcText string, startOff, endOff int) Range {
-	s := token.OffsetToPosition(srcText, startOff)
-	e := token.OffsetToPosition(srcText, endOff)
-	return Range{Start: Position{Line: s.Line - 1, Character: s.Col - 1}, End: Position{Line: e.Line - 1, Character: e.Col - 1}}
+	/*line symbols.goal:127*/ s := token.OffsetToPosition(srcText, startOff)
+	/*line symbols.goal:128*/ e := token.OffsetToPosition(srcText, endOff)
+	/*line symbols.goal:129*/ return Range{Start: Position{Line: s.Line - 1, Character: s.Col - 1}, End: Position{Line: e.Line - 1, Character: e.Col - 1}}
 }

@@ -19,7 +19,7 @@ const (
 
 //line cap.goal:27
 func (c Capability) String() string {
-	switch c {
+	/*line cap.goal:28*/ switch c {
 	case Stdout:
 		return "Stdout"
 	case Stdin:
@@ -43,7 +43,7 @@ func (c Capability) String() string {
 
 //line cap.goal:53
 func allCapabilities() []Capability {
-	return []Capability{Stdout, Stdin, FileRead, FileWrite, Net, Concurrency, Time, Env}
+	/*line cap.goal:54*/ return []Capability{Stdout, Stdin, FileRead, FileWrite, Net, Concurrency, Time, Env}
 }
 
 //line cap.goal:59
@@ -53,49 +53,51 @@ type CapabilitySet struct {
 
 //line cap.goal:64
 func (s CapabilitySet) Has(c Capability) bool {
-	return s.bits&(1<<uint(c)) != 0
+	/*line cap.goal:65*/ return s.bits&(1<<uint(c)) != 0
 }
 
 //line cap.goal:69
 func (s *CapabilitySet) Grant(c Capability) {
-	s.bits |= 1 << uint(c)
+	/*line cap.goal:70*/ s.bits |= 1 << uint(c)
 }
 
 //line cap.goal:75
 func GrantAll() CapabilitySet {
-	var s CapabilitySet
+	/*line cap.goal:76*/ var s CapabilitySet
 
+	/*line cap.goal:77*/
 	for _, c := range allCapabilities() {
-		s.Grant(c)
+		/*line cap.goal:78*/ s.Grant(c)
 	}
-	return s
+	/*line cap.goal:80*/ return s
 }
 
 //line cap.goal:84
 func DenyAll() CapabilitySet {
-	return CapabilitySet{}
+	/*line cap.goal:85*/ return CapabilitySet{}
 }
 
 //line cap.goal:90
 func itoa(n int) string {
-	if n == 0 {
-		return "0"
+	/*line cap.goal:91*/ if n == 0 {
+		/*line cap.goal:92*/ return "0"
 	}
-	neg := n < 0
-	if neg {
-		n = -n
+	/*line cap.goal:94*/ neg := n < 0
+	/*line cap.goal:95*/ if neg {
+		/*line cap.goal:96*/ n = -n
 	}
-	var buf [20]byte
+	/*line cap.goal:98*/ var buf [20]byte
 
+	/*line cap.goal:99*/
 	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
+	/*line cap.goal:100*/ for n > 0 {
+		/*line cap.goal:101*/ i--
+		/*line cap.goal:102*/ buf[i] = byte('0' + n%10)
+		/*line cap.goal:103*/ n /= 10
 	}
-	if neg {
-		i--
-		buf[i] = '-'
+	/*line cap.goal:105*/ if neg {
+		/*line cap.goal:106*/ i--
+		/*line cap.goal:107*/ buf[i] = '-'
 	}
-	return string(buf[i:])
+	/*line cap.goal:109*/ return string(buf[i:])
 }

@@ -17,28 +17,29 @@ type Replacement struct {
 
 //line textedit.goal:26
 func Splice(src string, lo, hi int, reps []Replacement) string {
-	sort.Slice(reps, func(a, b int) bool {
-		return reps[a].Start < reps[b].Start
+	/*line textedit.goal:27*/ sort.Slice(reps, func(a, b int) bool {
+		/*line textedit.goal:27*/ return reps[a].Start < reps[b].Start
 	})
-	var b strings.Builder
+	/*line textedit.goal:28*/ var b strings.Builder
 
+	/*line textedit.goal:29*/
 	prev := lo
-	for _, r := range reps {
-		if r.Start < prev {
-			continue
+	/*line textedit.goal:30*/ for _, r := range reps {
+		/*line textedit.goal:31*/ if r.Start < prev {
+			/*line textedit.goal:32*/ continue
 		}
-		b.WriteString(src[prev:r.Start])
-		b.WriteString(r.Text)
-		prev = r.End
+		/*line textedit.goal:34*/ b.WriteString(src[prev:r.Start])
+		/*line textedit.goal:35*/ b.WriteString(r.Text)
+		/*line textedit.goal:36*/ prev = r.End
 	}
-	b.WriteString(src[prev:hi])
-	return b.String()
+	/*line textedit.goal:38*/ b.WriteString(src[prev:hi])
+	/*line textedit.goal:39*/ return b.String()
 }
 
 //line textedit.goal:45
 func IsLineStart(src string, p int) bool {
-	for k := p - 1; k >= 0; k-- {
-		switch src[k] {
+	/*line textedit.goal:46*/ for k := p - 1; k >= 0; k-- {
+		/*line textedit.goal:47*/ switch src[k] {
 		case '\n':
 			return true
 		case ' ', '\t':
@@ -47,53 +48,53 @@ func IsLineStart(src string, p int) bool {
 			return false
 		}
 	}
-	return true
+	/*line textedit.goal:56*/ return true
 }
 
 //line textedit.goal:60
 func NextNewline(src string, p int) int {
-	if nl := strings.IndexByte(src[p:], '\n'); nl >= 0 {
-		return p + nl
+	/*line textedit.goal:61*/ if nl := strings.IndexByte(src[p:], '\n'); nl >= 0 {
+		/*line textedit.goal:62*/ return p + nl
 	}
-	return len(src)
+	/*line textedit.goal:64*/ return len(src)
 }
 
 //line textedit.goal:69
 func LeadIdent(s string) string {
-	end := 0
-	for end < len(s) {
-		r := rune(s[end])
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
-			end++
-			continue
+	/*line textedit.goal:70*/ end := 0
+	/*line textedit.goal:71*/ for end < len(s) {
+		/*line textedit.goal:72*/ r := rune(s[end])
+		/*line textedit.goal:73*/ if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			/*line textedit.goal:74*/ end++
+			/*line textedit.goal:75*/ continue
 		}
-		break
+		/*line textedit.goal:77*/ break
 	}
-	return s[:end]
+	/*line textedit.goal:79*/ return s[:end]
 }
 
 //line textedit.goal:83
 func IsIdent(s string) bool {
-	if s == "" {
-		return false
+	/*line textedit.goal:84*/ if s == "" {
+		/*line textedit.goal:85*/ return false
 	}
-	r := []rune(s)[0]
-	return unicode.IsLetter(r) || r == '_'
+	/*line textedit.goal:87*/ r := []rune(s)[0]
+	/*line textedit.goal:88*/ return unicode.IsLetter(r) || r == '_'
 }
 
 //line textedit.goal:93
 func SplitAssign(s string) (name, rhs string, ok bool) {
-	if lhs, after, found := strings.Cut(s, ":="); found {
-		return strings.TrimSpace(lhs), strings.TrimSpace(after), true
+	/*line textedit.goal:94*/ if lhs, after, found := strings.Cut(s, ":="); found {
+		/*line textedit.goal:95*/ return strings.TrimSpace(lhs), strings.TrimSpace(after), true
 	}
-	return "", strings.TrimSpace(s), false
+	/*line textedit.goal:97*/ return "", strings.TrimSpace(s), false
 }
 
 //line textedit.goal:102
 func IsStmtKeyword(s string) bool {
-	switch s {
+	/*line textedit.goal:103*/ switch s {
 	case "return", "go", "defer", "if", "else", "for", "switch", "select", "case", "default", "var", "const", "type", "func", "range", "break", "continue", "goto", "fallthrough", "match", "assert", "enum", "import", "package":
 		return true
 	}
-	return false
+	/*line textedit.goal:109*/ return false
 }

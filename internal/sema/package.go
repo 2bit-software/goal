@@ -10,33 +10,34 @@ import (
 
 //line package.goal:35
 func AnalyzePackageInDir(srcs []string, dir string) (ok [][]Diagnostic, err1 error) {
-	diags, _, err := AnalyzePackageInDirWith(srcs, dir, nil)
-	if err != nil {
-		return ok, err
+	/*line package.goal:36*/ diags, _, err := AnalyzePackageInDirWith(srcs, dir, nil)
+	/*line package.goal:37*/ if err != nil {
+		/*line package.goal:38*/ return ok, err
 	}
-	return diags, nil
+	/*line package.goal:40*/ return diags, nil
 }
 
 //line package.goal:49
 func AnalyzePackageInDirWith(srcs []string, dir string, resolve DirResolver) ([][]Diagnostic, []error, error) {
-	files := make([]*ast.File, len(srcs))
-	for i, src := range srcs {
-		f, err := parser.ParseFile(src)
-		if err != nil {
-			return nil, nil, err
+	/*line package.goal:50*/ files := make([]*ast.File, len(srcs))
+	/*line package.goal:51*/ for i, src := range srcs {
+		/*line package.goal:52*/ f, err := parser.ParseFile(src)
+		/*line package.goal:53*/ if err != nil {
+			/*line package.goal:54*/ return nil, nil, err
 		}
-		files[i] = f
+		/*line package.goal:56*/ files[i] = f
 	}
-	info := ResolvePackage(files)
-	var imports []*ast.ImportSpec
+	/*line package.goal:63*/ info := ResolvePackage(files)
+	/*line package.goal:64*/ var imports []*ast.ImportSpec
 
+	/*line package.goal:65*/
 	for _, f := range files {
-		imports = append(imports, f.Imports...)
+		/*line package.goal:66*/ imports = append(imports, f.Imports...)
 	}
-	ferrs := EnrichForeign(info, imports, dir, resolve)
-	out := make([][]Diagnostic, len(files))
-	for i, f := range files {
-		out[i] = append(lexDiagnostics(srcs[i]), Check(f, info)...)
+	/*line package.goal:68*/ ferrs := EnrichForeign(info, imports, dir, resolve)
+	/*line package.goal:70*/ out := make([][]Diagnostic, len(files))
+	/*line package.goal:71*/ for i, f := range files {
+		/*line package.goal:72*/ out[i] = append(lexDiagnostics(srcs[i]), Check(f, info)...)
 	}
-	return out, ferrs, nil
+	/*line package.goal:74*/ return out, ferrs, nil
 }

@@ -11,30 +11,31 @@ import (
 
 //line analyze.goal:22
 func Analyze(src string) (ok []Diagnostic, err error) {
-	file, err := parser.ParseFile(src)
+	/*line analyze.goal:23*/ file, err := parser.ParseFile(src)
 	if err != nil {
 		return ok, err
 	}
-	info := Resolve(file)
-	diags := lexDiagnostics(src)
-	return append(diags, Check(file, info)...), nil
+	/*line analyze.goal:24*/ info := Resolve(file)
+	/*line analyze.goal:25*/ diags := lexDiagnostics(src)
+	/*line analyze.goal:26*/ return append(diags, Check(file, info)...), nil
 }
 
 //line analyze.goal:35
 func lexDiagnostics(src string) []Diagnostic {
-	_, errs := lexer.Scan(src)
-	var diags []Diagnostic
+	/*line analyze.goal:36*/ _, errs := lexer.Scan(src)
+	/*line analyze.goal:37*/ var diags []Diagnostic
 
+	/*line analyze.goal:38*/
 	for _, e := range errs {
-		diags = append(diags, Diagnostic{Pos: e.Pos, Severity: Severity(Severity_Error{}), Feature: "00-lex", Code: e.Code, Message: e.Msg})
+		/*line analyze.goal:39*/ diags = append(diags, Diagnostic{Pos: e.Pos, Severity: Severity(Severity_Error{}), Feature: "00-lex", Code: e.Code, Message: e.Msg})
 	}
-	return diags
+	/*line analyze.goal:47*/ return diags
 }
 
 //line analyze.goal:52
 func HasErrors(diags []Diagnostic) bool {
-	for _, d := range diags {
-		var isErr bool
+	/*line analyze.goal:53*/ for _, d := range diags {
+		/*line analyze.goal:54*/ var isErr bool
 		switch d.Severity.(type) {
 		case Severity_Error:
 			isErr = true
@@ -43,14 +44,14 @@ func HasErrors(diags []Diagnostic) bool {
 		default:
 			panic("unreachable: non-exhaustive Severity (compiler invariant violated)")
 		}
-		if isErr {
-			return true
+		/*line analyze.goal:58*/ if isErr {
+			/*line analyze.goal:59*/ return true
 		}
 	}
-	return false
+	/*line analyze.goal:62*/ return false
 }
 
 //line analyze.goal:68
 func (d Diagnostic) Render(filename string) string {
-	return fmt.Sprintf("%s:%d:%d: %s: [%s] %s", filename, d.Pos.Line, d.Pos.Col, SeverityLabel(d.Severity), d.Code, d.Message)
+	/*line analyze.goal:69*/ return fmt.Sprintf("%s:%d:%d: %s: [%s] %s", filename, d.Pos.Line, d.Pos.Col, SeverityLabel(d.Severity), d.Code, d.Message)
 }

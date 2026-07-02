@@ -22,85 +22,85 @@ type parser struct {
 
 //line parser.goal:54
 func ParseFile(src string) (*ast.File, error) {
-	p := newParser(src)
-	file := p.parseFile()
-	if len(p.errs) > 0 {
-		return file, errors.Join(p.errs...)
+	/*line parser.goal:55*/ p := newParser(src)
+	/*line parser.goal:56*/ file := p.parseFile()
+	/*line parser.goal:57*/ if len(p.errs) > 0 {
+		/*line parser.goal:58*/ return file, errors.Join(p.errs...)
 	}
-	return file, nil
+	/*line parser.goal:60*/ return file, nil
 }
 
 //line parser.goal:66
 func newParser(src string) *parser {
-	all := lexer.Tokens(src)
-	toks := make([]token.Token, 0, len(all))
-	for _, t := range all {
-		if t.Kind == token.COMMENT {
-			continue
+	/*line parser.goal:67*/ all := lexer.Tokens(src)
+	/*line parser.goal:68*/ toks := make([]token.Token, 0, len(all))
+	/*line parser.goal:69*/ for _, t := range all {
+		/*line parser.goal:70*/ if t.Kind == token.COMMENT {
+			/*line parser.goal:71*/ continue
 		}
-		toks = append(toks, t)
+		/*line parser.goal:73*/ toks = append(toks, t)
 	}
-	if len(toks) == 0 {
-		toks = append(toks, token.Token{Kind: token.EOF})
+	/*line parser.goal:75*/ if len(toks) == 0 {
+		/*line parser.goal:76*/ toks = append(toks, token.Token{Kind: token.EOF})
 	}
-	return &parser{toks: toks}
+	/*line parser.goal:78*/ return &parser{toks: toks}
 }
 
 //line parser.goal:85
 func (p *parser) cur() token.Token {
-	return p.toks[p.pos]
+	/*line parser.goal:85*/ return p.toks[p.pos]
 }
 
 //line parser.goal:88
 func (p *parser) kind() token.Kind {
-	return p.toks[p.pos].Kind
+	/*line parser.goal:88*/ return p.toks[p.pos].Kind
 }
 
 //line parser.goal:91
 func (p *parser) at(k token.Kind) bool {
-	return p.toks[p.pos].Kind == k
+	/*line parser.goal:91*/ return p.toks[p.pos].Kind == k
 }
 
 //line parser.goal:94
 func (p *parser) peekKind() token.Kind {
-	if p.pos+1 < len(p.toks) {
-		return p.toks[p.pos+1].Kind
+	/*line parser.goal:95*/ if p.pos+1 < len(p.toks) {
+		/*line parser.goal:96*/ return p.toks[p.pos+1].Kind
 	}
-	return token.EOF
+	/*line parser.goal:98*/ return token.EOF
 }
 
 //line parser.goal:103
 func (p *parser) kindAt(n int) token.Kind {
-	if p.pos+n < len(p.toks) {
-		return p.toks[p.pos+n].Kind
+	/*line parser.goal:104*/ if p.pos+n < len(p.toks) {
+		/*line parser.goal:105*/ return p.toks[p.pos+n].Kind
 	}
-	return token.EOF
+	/*line parser.goal:107*/ return token.EOF
 }
 
 //line parser.goal:114
 func (p *parser) onNewLine() bool {
-	if p.pos == 0 {
-		return false
+	/*line parser.goal:115*/ if p.pos == 0 {
+		/*line parser.goal:116*/ return false
 	}
-	return p.cur().Pos.Line > p.toks[p.pos-1].Pos.Line
+	/*line parser.goal:118*/ return p.cur().Pos.Line > p.toks[p.pos-1].Pos.Line
 }
 
 //line parser.goal:123
 func (p *parser) advance() token.Token {
-	t := p.toks[p.pos]
-	if p.pos < len(p.toks)-1 {
-		p.pos++
+	/*line parser.goal:124*/ t := p.toks[p.pos]
+	/*line parser.goal:125*/ if p.pos < len(p.toks)-1 {
+		/*line parser.goal:126*/ p.pos++
 	}
-	return t
+	/*line parser.goal:128*/ return t
 }
 
 //line parser.goal:133
 func (p *parser) expect(k token.Kind) token.Token {
-	t := p.cur()
-	if t.Kind != k {
-		p.errorf(t.Pos, "expected %s, found %s", k.String(), describe(t))
+	/*line parser.goal:134*/ t := p.cur()
+	/*line parser.goal:135*/ if t.Kind != k {
+		/*line parser.goal:136*/ p.errorf(t.Pos, "expected %s, found %s", k.String(), describe(t))
 	}
-	return p.advance()
+	/*line parser.goal:138*/ return p.advance()
 }
 
 //line parser.goal:146
@@ -111,12 +111,12 @@ type Error struct {
 
 //line parser.goal:146
 func (e *Error) Error() string {
-	return e.Pos.String() + ": " + e.Msg
+	/*line parser.goal:152*/ return e.Pos.String() + ": " + e.Msg
 }
 
 //line parser.goal:155
 func (p *parser) errorf(pos token.Pos, format string, args ...any) {
-	p.errs = append(p.errs, &Error{Pos: pos, Msg: fmt.Sprintf(format, args...)})
+	/*line parser.goal:156*/ p.errs = append(p.errs, &Error{Pos: pos, Msg: fmt.Sprintf(format, args...)})
 }
 
 //line parser.goal:161
@@ -131,38 +131,39 @@ type singleUnwrap interface {
 
 //line parser.goal:169
 func CollectErrors(err error) []*Error {
-	return collectErrs(err, map[string]bool{})
+	/*line parser.goal:170*/ return collectErrs(err, map[string]bool{})
 }
 
 //line parser.goal:174
 func collectErrs(err error, seen map[string]bool) []*Error {
-	if err == nil {
-		return nil
+	/*line parser.goal:175*/ if err == nil {
+		/*line parser.goal:176*/ return nil
 	}
-	if pe, ok := err.(*Error); ok {
-		key := fmt.Sprintf("%d:%d:%s", pe.Pos.Line, pe.Pos.Col, pe.Msg)
-		if seen[key] {
-			return nil
+	/*line parser.goal:178*/ if pe, ok := err.(*Error); ok {
+		/*line parser.goal:179*/ key := fmt.Sprintf("%d:%d:%s", pe.Pos.Line, pe.Pos.Col, pe.Msg)
+		/*line parser.goal:180*/ if seen[key] {
+			/*line parser.goal:181*/ return nil
 		}
-		seen[key] = true
-		return []*Error{pe}
+		/*line parser.goal:183*/ seen[key] = true
+		/*line parser.goal:184*/ return []*Error{pe}
 	}
-	var out []*Error
+	/*line parser.goal:186*/ var out []*Error
 
+	/*line parser.goal:187*/
 	switch x := err.(type) {
 	case multiUnwrap:
 		for _, sub := range x.Unwrap() {
-			out = append(out, collectErrs(sub, seen)...)
+			/*line parser.goal:190*/ out = append(out, collectErrs(sub, seen)...)
 		}
 	case singleUnwrap:
 		out = append(out, collectErrs(x.Unwrap(), seen)...)
 	}
-	return out
+	/*line parser.goal:195*/ return out
 }
 
 //line parser.goal:199
 func describe(t token.Token) string {
-	switch {
+	/*line parser.goal:200*/ switch {
 	case t.Kind == token.EOF:
 		return "EOF"
 	case t.Lit != "":
@@ -174,46 +175,46 @@ func describe(t token.Token) string {
 
 //line parser.goal:211
 func (p *parser) ident() *ast.Ident {
-	t := p.expect(token.IDENT)
-	return &ast.Ident{NamePos: t.Pos, Name: t.Lit}
+	/*line parser.goal:212*/ t := p.expect(token.IDENT)
+	/*line parser.goal:213*/ return &ast.Ident{NamePos: t.Pos, Name: t.Lit}
 }
 
 //line parser.goal:221
 func (p *parser) parseFile() *ast.File {
-	file := &ast.File{}
-	pkg := p.expect(token.PACKAGE)
-	file.Package = pkg.Pos
-	name := p.expect(token.IDENT)
-	file.Name = &ast.Ident{NamePos: name.Pos, Name: name.Lit}
-	for !p.at(token.EOF) {
-		doc := p.collectDoc()
-		if p.at(token.EOF) {
-			break
+	/*line parser.goal:222*/ file := &ast.File{}
+	/*line parser.goal:224*/ pkg := p.expect(token.PACKAGE)
+	/*line parser.goal:225*/ file.Package = pkg.Pos
+	/*line parser.goal:226*/ name := p.expect(token.IDENT)
+	/*line parser.goal:227*/ file.Name = &ast.Ident{NamePos: name.Pos, Name: name.Lit}
+	/*line parser.goal:229*/ for !p.at(token.EOF) {
+		/*line parser.goal:232*/ doc := p.collectDoc()
+		/*line parser.goal:233*/ if p.at(token.EOF) {
+			/*line parser.goal:234*/ break
 		}
-		d := p.parseDecl()
-		if d == nil {
-			p.errorf(p.cur().Pos, "expected declaration, found %s", describe(p.cur()))
-			p.advance()
-			continue
+		/*line parser.goal:236*/ d := p.parseDecl()
+		/*line parser.goal:237*/ if d == nil {
+			/*line parser.goal:240*/ p.errorf(p.cur().Pos, "expected declaration, found %s", describe(p.cur()))
+			/*line parser.goal:241*/ p.advance()
+			/*line parser.goal:242*/ continue
 		}
-		if fd, ok := d.(*ast.FuncDecl); ok && doc != nil {
-			fd.Doc = doc
+		/*line parser.goal:244*/ if fd, ok := d.(*ast.FuncDecl); ok && doc != nil {
+			/*line parser.goal:245*/ fd.Doc = doc
 		}
-		file.Decls = append(file.Decls, d)
-		if gd, ok := d.(*ast.GenDecl); ok && gd.Tok == token.IMPORT {
-			for _, s := range gd.Specs {
-				if is, ok := s.(*ast.ImportSpec); ok {
-					file.Imports = append(file.Imports, is)
+		/*line parser.goal:247*/ file.Decls = append(file.Decls, d)
+		/*line parser.goal:248*/ if gd, ok := d.(*ast.GenDecl); ok && gd.Tok == token.IMPORT {
+			/*line parser.goal:249*/ for _, s := range gd.Specs {
+				/*line parser.goal:250*/ if is, ok := s.(*ast.ImportSpec); ok {
+					/*line parser.goal:251*/ file.Imports = append(file.Imports, is)
 				}
 			}
 		}
 	}
-	return file
+	/*line parser.goal:256*/ return file
 }
 
 //line parser.goal:261
 func (p *parser) parseDecl() ast.Decl {
-	switch p.kind() {
+	/*line parser.goal:262*/ switch p.kind() {
 	case token.IMPORT, token.CONST, token.VAR, token.TYPE:
 		return p.parseGenDecl(p.kind())
 	case token.FUNC:
@@ -222,13 +223,13 @@ func (p *parser) parseDecl() ast.Decl {
 		return p.parseEnumDecl()
 	default:
 		if p.isContextual("sealed") {
-			return p.parseSealedInterfaceDecl()
+			/*line parser.goal:273*/ return p.parseSealedInterfaceDecl()
 		}
 		if p.isContextual("from") && p.peekKind() == token.FUNC {
-			return p.parseModFuncDecl(ast.FuncMod(ast.FuncMod_FuncFrom{}))
+			/*line parser.goal:279*/ return p.parseModFuncDecl(ast.FuncMod(ast.FuncMod_FuncFrom{}))
 		}
 		if p.isContextual("derive") && p.peekKind() == token.FUNC {
-			return p.parseModFuncDecl(ast.FuncMod(ast.FuncMod_FuncDerive{}))
+			/*line parser.goal:282*/ return p.parseModFuncDecl(ast.FuncMod(ast.FuncMod_FuncDerive{}))
 		}
 		return nil
 	}
@@ -236,23 +237,23 @@ func (p *parser) parseDecl() ast.Decl {
 
 //line parser.goal:290
 func (p *parser) parseGenDecl(tok token.Kind) *ast.GenDecl {
-	keyword := p.expect(tok)
-	d := &ast.GenDecl{TokPos: keyword.Pos, Tok: tok}
-	if p.at(token.LPAREN) {
-		p.advance()
-		for !p.at(token.RPAREN) && !p.at(token.EOF) {
-			d.Specs = append(d.Specs, p.parseSpec(tok))
+	/*line parser.goal:291*/ keyword := p.expect(tok)
+	/*line parser.goal:292*/ d := &ast.GenDecl{TokPos: keyword.Pos, Tok: tok}
+	/*line parser.goal:293*/ if p.at(token.LPAREN) {
+		/*line parser.goal:294*/ p.advance()
+		/*line parser.goal:295*/ for !p.at(token.RPAREN) && !p.at(token.EOF) {
+			/*line parser.goal:296*/ d.Specs = append(d.Specs, p.parseSpec(tok))
 		}
-		p.expect(token.RPAREN)
+		/*line parser.goal:298*/ p.expect(token.RPAREN)
 	} else {
-		d.Specs = append(d.Specs, p.parseSpec(tok))
+		/*line parser.goal:300*/ d.Specs = append(d.Specs, p.parseSpec(tok))
 	}
-	return d
+	/*line parser.goal:302*/ return d
 }
 
 //line parser.goal:307
 func (p *parser) parseSpec(tok token.Kind) ast.Spec {
-	switch tok {
+	/*line parser.goal:308*/ switch tok {
 	case token.IMPORT:
 		return p.parseImportSpec()
 	case token.TYPE:
@@ -264,8 +265,8 @@ func (p *parser) parseSpec(tok token.Kind) ast.Spec {
 
 //line parser.goal:320
 func (p *parser) parseImportSpec() *ast.ImportSpec {
-	spec := &ast.ImportSpec{}
-	switch p.kind() {
+	/*line parser.goal:321*/ spec := &ast.ImportSpec{}
+	/*line parser.goal:322*/ switch p.kind() {
 	case token.PERIOD:
 		t := p.advance()
 		spec.Name = &ast.Ident{NamePos: t.Pos, Name: "."}
@@ -273,133 +274,133 @@ func (p *parser) parseImportSpec() *ast.ImportSpec {
 		t := p.advance()
 		spec.Name = &ast.Ident{NamePos: t.Pos, Name: t.Lit}
 	}
-	if p.at(token.STRING) {
-		t := p.advance()
-		spec.Path = &ast.BasicLit{ValuePos: t.Pos, Kind: token.STRING, Value: t.Lit}
+	/*line parser.goal:330*/ if p.at(token.STRING) {
+		/*line parser.goal:331*/ t := p.advance()
+		/*line parser.goal:332*/ spec.Path = &ast.BasicLit{ValuePos: t.Pos, Kind: token.STRING, Value: t.Lit}
 	} else {
-		p.errorf(p.cur().Pos, "expected import path, found %s", describe(p.cur()))
-		p.advance()
+		/*line parser.goal:334*/ p.errorf(p.cur().Pos, "expected import path, found %s", describe(p.cur()))
+		/*line parser.goal:335*/ p.advance()
 	}
-	return spec
+	/*line parser.goal:337*/ return spec
 }
 
 //line parser.goal:343
 func (p *parser) parseTypeSpec() *ast.TypeSpec {
-	spec := &ast.TypeSpec{Name: p.ident()}
-	if p.atTypeParams() {
-		spec.TypeParams = p.parseTypeParams()
+	/*line parser.goal:344*/ spec := &ast.TypeSpec{Name: p.ident()}
+	/*line parser.goal:345*/ if p.atTypeParams() {
+		/*line parser.goal:346*/ spec.TypeParams = p.parseTypeParams()
 	}
-	if p.at(token.ASSIGN) {
-		spec.Assign = p.advance().Pos
+	/*line parser.goal:348*/ if p.at(token.ASSIGN) {
+		/*line parser.goal:349*/ spec.Assign = p.advance().Pos
 	}
-	spec.Type = p.parseType()
-	return spec
+	/*line parser.goal:351*/ spec.Type = p.parseType()
+	/*line parser.goal:352*/ return spec
 }
 
 //line parser.goal:360
 func (p *parser) atTypeParams() bool {
-	if !p.at(token.LBRACK) || p.peekKind() != token.IDENT {
-		return false
+	/*line parser.goal:361*/ if !p.at(token.LBRACK) || p.peekKind() != token.IDENT {
+		/*line parser.goal:362*/ return false
 	}
-	k2 := p.kindAt(2)
-	return k2 == token.COMMA || startsTypeKind(k2)
+	/*line parser.goal:364*/ k2 := p.kindAt(2)
+	/*line parser.goal:365*/ return k2 == token.COMMA || startsTypeKind(k2)
 }
 
 //line parser.goal:371
 func (p *parser) parseTypeParams() *ast.FieldList {
-	fl := &ast.FieldList{}
-	lb := p.expect(token.LBRACK)
-	fl.Opening = lb.Pos
-	for !p.at(token.RBRACK) && !p.at(token.EOF) {
-		f := &ast.Field{Names: []*ast.Ident{p.ident()}}
-		for p.at(token.COMMA) && p.peekKind() == token.IDENT {
-			p.advance()
-			f.Names = append(f.Names, p.ident())
+	/*line parser.goal:372*/ fl := &ast.FieldList{}
+	/*line parser.goal:373*/ lb := p.expect(token.LBRACK)
+	/*line parser.goal:374*/ fl.Opening = lb.Pos
+	/*line parser.goal:375*/ for !p.at(token.RBRACK) && !p.at(token.EOF) {
+		/*line parser.goal:376*/ f := &ast.Field{Names: []*ast.Ident{p.ident()}}
+		/*line parser.goal:377*/ for p.at(token.COMMA) && p.peekKind() == token.IDENT {
+			/*line parser.goal:378*/ p.advance()
+			/*line parser.goal:379*/ f.Names = append(f.Names, p.ident())
 		}
-		f.Type = p.parseType()
-		fl.List = append(fl.List, f)
-		if p.at(token.COMMA) {
-			p.advance()
+		/*line parser.goal:381*/ f.Type = p.parseType()
+		/*line parser.goal:382*/ fl.List = append(fl.List, f)
+		/*line parser.goal:383*/ if p.at(token.COMMA) {
+			/*line parser.goal:384*/ p.advance()
 		} else {
-			break
+			/*line parser.goal:386*/ break
 		}
 	}
-	rb := p.expect(token.RBRACK)
-	fl.Closing = rb.Pos
-	return fl
+	/*line parser.goal:389*/ rb := p.expect(token.RBRACK)
+	/*line parser.goal:390*/ fl.Closing = rb.Pos
+	/*line parser.goal:391*/ return fl
 }
 
 //line parser.goal:396
 func (p *parser) parseValueSpec() *ast.ValueSpec {
-	spec := &ast.ValueSpec{Names: p.parseIdentList()}
-	if !p.at(token.ASSIGN) && p.startsType() && !p.onNewLine() {
-		spec.Type = p.parseType()
+	/*line parser.goal:397*/ spec := &ast.ValueSpec{Names: p.parseIdentList()}
+	/*line parser.goal:403*/ if !p.at(token.ASSIGN) && p.startsType() && !p.onNewLine() {
+		/*line parser.goal:404*/ spec.Type = p.parseType()
 	}
-	if p.at(token.ASSIGN) {
-		p.advance()
-		spec.Values = p.parseExprList()
+	/*line parser.goal:406*/ if p.at(token.ASSIGN) {
+		/*line parser.goal:407*/ p.advance()
+		/*line parser.goal:408*/ spec.Values = p.parseExprList()
 	}
-	return spec
+	/*line parser.goal:410*/ return spec
 }
 
 //line parser.goal:416
 func (p *parser) parseFuncDecl() *ast.FuncDecl {
-	keyword := p.expect(token.FUNC)
-	fd := &ast.FuncDecl{Mod: ast.FuncMod(ast.FuncMod_FuncPlain{})}
-	ft := &ast.FuncType{Func: keyword.Pos}
-	if p.at(token.LPAREN) {
-		fd.Recv = p.parseParamList()
+	/*line parser.goal:417*/ keyword := p.expect(token.FUNC)
+	/*line parser.goal:420*/ fd := &ast.FuncDecl{Mod: ast.FuncMod(ast.FuncMod_FuncPlain{})}
+	/*line parser.goal:421*/ ft := &ast.FuncType{Func: keyword.Pos}
+	/*line parser.goal:422*/ if p.at(token.LPAREN) {
+		/*line parser.goal:423*/ fd.Recv = p.parseParamList()
 	}
-	fd.Name = p.ident()
-	if fd.Recv == nil && p.atTypeParams() {
-		ft.TypeParams = p.parseTypeParams()
+	/*line parser.goal:425*/ fd.Name = p.ident()
+	/*line parser.goal:431*/ if fd.Recv == nil && p.atTypeParams() {
+		/*line parser.goal:432*/ ft.TypeParams = p.parseTypeParams()
 	}
-	ft.Params = p.parseParamList()
-	ft.Results = p.parseResults(ft.Params.Closing)
-	fd.Type = ft
-	if p.at(token.LBRACE) {
-		fd.Body = p.parseBlock()
+	/*line parser.goal:434*/ ft.Params = p.parseParamList()
+	/*line parser.goal:435*/ ft.Results = p.parseResults(ft.Params.Closing)
+	/*line parser.goal:436*/ fd.Type = ft
+	/*line parser.goal:437*/ if p.at(token.LBRACE) {
+		/*line parser.goal:438*/ fd.Body = p.parseBlock()
 	}
-	return fd
+	/*line parser.goal:440*/ return fd
 }
 
 //line parser.goal:447
 func (p *parser) parseIdentList() []*ast.Ident {
-	list := []*ast.Ident{p.ident()}
-	for p.at(token.COMMA) {
-		p.advance()
-		list = append(list, p.ident())
+	/*line parser.goal:448*/ list := []*ast.Ident{p.ident()}
+	/*line parser.goal:449*/ for p.at(token.COMMA) {
+		/*line parser.goal:450*/ p.advance()
+		/*line parser.goal:451*/ list = append(list, p.ident())
 	}
-	return list
+	/*line parser.goal:453*/ return list
 }
 
 //line parser.goal:457
 func (p *parser) parseExprList() []ast.Expr {
-	list := []ast.Expr{p.parseExpr()}
-	for p.at(token.COMMA) {
-		p.advance()
-		list = append(list, p.parseExpr())
+	/*line parser.goal:458*/ list := []ast.Expr{p.parseExpr()}
+	/*line parser.goal:459*/ for p.at(token.COMMA) {
+		/*line parser.goal:460*/ p.advance()
+		/*line parser.goal:461*/ list = append(list, p.parseExpr())
 	}
-	return list
+	/*line parser.goal:463*/ return list
 }
 
 //line parser.goal:470
 func (p *parser) startsType() bool {
-	return startsTypeKind(p.kind())
+	/*line parser.goal:470*/ return startsTypeKind(p.kind())
 }
 
 //line parser.goal:472
 func startsTypeKind(k token.Kind) bool {
-	switch k {
+	/*line parser.goal:473*/ switch k {
 	case token.IDENT, token.MUL, token.LBRACK, token.MAP, token.STRUCT, token.INTERFACE, token.FUNC, token.CHAN, token.ARROW, token.LPAREN, token.ELLIPSIS:
 		return true
 	}
-	return false
+	/*line parser.goal:479*/ return false
 }
 
 //line parser.goal:483
 func (p *parser) parseType() ast.Expr {
-	switch p.kind() {
+	/*line parser.goal:484*/ switch p.kind() {
 	case token.IDENT:
 		return p.parseTypeName()
 	case token.MUL:
@@ -437,242 +438,243 @@ func (p *parser) parseType() ast.Expr {
 
 //line parser.goal:522
 func (p *parser) parseTypeName() ast.Expr {
-	return p.typeNameFrom(p.ident())
+	/*line parser.goal:523*/ return p.typeNameFrom(p.ident())
 }
 
 //line parser.goal:528
 func (p *parser) typeNameFrom(id *ast.Ident) ast.Expr {
-	var x ast.Expr = id
+	/*line parser.goal:529*/ var x ast.Expr = id
 
+	/*line parser.goal:530*/
 	if p.at(token.PERIOD) {
-		p.advance()
-		x = &ast.SelectorExpr{X: id, Sel: p.ident()}
+		/*line parser.goal:531*/ p.advance()
+		/*line parser.goal:532*/ x = &ast.SelectorExpr{X: id, Sel: p.ident()}
 	}
-	if p.at(token.LBRACK) {
-		x = p.parseIndexSuffix(x)
+	/*line parser.goal:534*/ if p.at(token.LBRACK) {
+		/*line parser.goal:535*/ x = p.parseIndexSuffix(x)
 	}
-	return x
+	/*line parser.goal:537*/ return x
 }
 
 //line parser.goal:541
 func (p *parser) parseArrayOrSliceType() ast.Expr {
-	lb := p.expect(token.LBRACK)
-	arr := &ast.ArrayType{Lbrack: lb.Pos}
-	if p.at(token.ELLIPSIS) {
-		e := p.advance()
-		arr.Len = &ast.Ellipsis{Ellipsis: e.Pos}
+	/*line parser.goal:542*/ lb := p.expect(token.LBRACK)
+	/*line parser.goal:543*/ arr := &ast.ArrayType{Lbrack: lb.Pos}
+	/*line parser.goal:544*/ if p.at(token.ELLIPSIS) {
+		/*line parser.goal:545*/ e := p.advance()
+		/*line parser.goal:546*/ arr.Len = &ast.Ellipsis{Ellipsis: e.Pos}
 	} else if !p.at(token.RBRACK) {
-		arr.Len = p.parseExpr()
+		/*line parser.goal:548*/ arr.Len = p.parseExpr()
 	}
-	p.expect(token.RBRACK)
-	arr.Elt = p.parseType()
-	return arr
+	/*line parser.goal:550*/ p.expect(token.RBRACK)
+	/*line parser.goal:551*/ arr.Elt = p.parseType()
+	/*line parser.goal:552*/ return arr
 }
 
 //line parser.goal:556
 func (p *parser) parseMapType() ast.Expr {
-	m := p.expect(token.MAP)
-	p.expect(token.LBRACK)
-	key := p.parseType()
-	p.expect(token.RBRACK)
-	return &ast.MapType{Map: m.Pos, Key: key, Value: p.parseType()}
+	/*line parser.goal:557*/ m := p.expect(token.MAP)
+	/*line parser.goal:558*/ p.expect(token.LBRACK)
+	/*line parser.goal:559*/ key := p.parseType()
+	/*line parser.goal:560*/ p.expect(token.RBRACK)
+	/*line parser.goal:561*/ return &ast.MapType{Map: m.Pos, Key: key, Value: p.parseType()}
 }
 
 //line parser.goal:565
 func (p *parser) parseChanType() ast.Expr {
-	c := &ast.ChanType{Begin: p.cur().Pos, Dir: ast.ChanDir(ast.ChanDir_SendRecv{})}
-	if p.at(token.ARROW) {
-		p.advance()
-		p.expect(token.CHAN)
-		c.Dir = ast.ChanDir(ast.ChanDir_RecvOnly{})
+	/*line parser.goal:566*/ c := &ast.ChanType{Begin: p.cur().Pos, Dir: ast.ChanDir(ast.ChanDir_SendRecv{})}
+	/*line parser.goal:567*/ if p.at(token.ARROW) {
+		/*line parser.goal:568*/ p.advance()
+		/*line parser.goal:569*/ p.expect(token.CHAN)
+		/*line parser.goal:570*/ c.Dir = ast.ChanDir(ast.ChanDir_RecvOnly{})
 	} else {
-		p.expect(token.CHAN)
-		if p.at(token.ARROW) {
-			p.advance()
-			c.Dir = ast.ChanDir(ast.ChanDir_SendOnly{})
+		/*line parser.goal:572*/ p.expect(token.CHAN)
+		/*line parser.goal:573*/ if p.at(token.ARROW) {
+			/*line parser.goal:574*/ p.advance()
+			/*line parser.goal:575*/ c.Dir = ast.ChanDir(ast.ChanDir_SendOnly{})
 		}
 	}
-	c.Value = p.parseType()
-	return c
+	/*line parser.goal:578*/ c.Value = p.parseType()
+	/*line parser.goal:579*/ return c
 }
 
 //line parser.goal:585
 func (p *parser) parseStructType() ast.Expr {
-	kw := p.expect(token.STRUCT)
-	st := &ast.StructType{Struct: kw.Pos}
-	st.Implements = p.parseImplementsClause()
-	fl := &ast.FieldList{}
-	lb := p.expect(token.LBRACE)
-	fl.Opening = lb.Pos
-	for !p.at(token.RBRACE) && !p.at(token.EOF) {
-		fl.List = append(fl.List, p.parseField())
+	/*line parser.goal:586*/ kw := p.expect(token.STRUCT)
+	/*line parser.goal:587*/ st := &ast.StructType{Struct: kw.Pos}
+	/*line parser.goal:588*/ st.Implements = p.parseImplementsClause()
+	/*line parser.goal:589*/ fl := &ast.FieldList{}
+	/*line parser.goal:590*/ lb := p.expect(token.LBRACE)
+	/*line parser.goal:591*/ fl.Opening = lb.Pos
+	/*line parser.goal:592*/ for !p.at(token.RBRACE) && !p.at(token.EOF) {
+		/*line parser.goal:593*/ fl.List = append(fl.List, p.parseField())
 	}
-	rb := p.expect(token.RBRACE)
-	fl.Closing = rb.Pos
-	st.Fields = fl
-	return st
+	/*line parser.goal:595*/ rb := p.expect(token.RBRACE)
+	/*line parser.goal:596*/ fl.Closing = rb.Pos
+	/*line parser.goal:597*/ st.Fields = fl
+	/*line parser.goal:598*/ return st
 }
 
 //line parser.goal:603
 func (p *parser) parseField() *ast.Field {
-	f := &ast.Field{}
-	if p.at(token.IDENT) {
-		names := []*ast.Ident{p.ident()}
-		for p.at(token.COMMA) {
-			p.advance()
-			names = append(names, p.ident())
+	/*line parser.goal:604*/ f := &ast.Field{}
+	/*line parser.goal:605*/ if p.at(token.IDENT) {
+		/*line parser.goal:606*/ names := []*ast.Ident{p.ident()}
+		/*line parser.goal:607*/ for p.at(token.COMMA) {
+			/*line parser.goal:608*/ p.advance()
+			/*line parser.goal:609*/ names = append(names, p.ident())
 		}
-		if p.startsType() {
-			f.Names = names
-			f.Type = p.parseType()
+		/*line parser.goal:611*/ if p.startsType() {
+			/*line parser.goal:612*/ f.Names = names
+			/*line parser.goal:613*/ f.Type = p.parseType()
 		} else if len(names) == 1 {
-			f.Type = p.typeNameFrom(names[0])
+			/*line parser.goal:616*/ f.Type = p.typeNameFrom(names[0])
 		} else {
-			f.Names = names
-			p.errorf(p.cur().Pos, "expected field type, found %s", describe(p.cur()))
+			/*line parser.goal:618*/ f.Names = names
+			/*line parser.goal:619*/ p.errorf(p.cur().Pos, "expected field type, found %s", describe(p.cur()))
 		}
 	} else {
-		f.Type = p.parseType()
+		/*line parser.goal:622*/ f.Type = p.parseType()
 	}
-	if p.at(token.STRING) {
-		t := p.advance()
-		f.Tag = &ast.BasicLit{ValuePos: t.Pos, Kind: token.STRING, Value: t.Lit}
+	/*line parser.goal:624*/ if p.at(token.STRING) {
+		/*line parser.goal:625*/ t := p.advance()
+		/*line parser.goal:626*/ f.Tag = &ast.BasicLit{ValuePos: t.Pos, Kind: token.STRING, Value: t.Lit}
 	}
-	return f
+	/*line parser.goal:628*/ return f
 }
 
 //line parser.goal:632
 func (p *parser) parseInterfaceType() ast.Expr {
-	kw := p.expect(token.INTERFACE)
-	return &ast.InterfaceType{Interface: kw.Pos, Methods: p.parseInterfaceBody()}
+	/*line parser.goal:633*/ kw := p.expect(token.INTERFACE)
+	/*line parser.goal:634*/ return &ast.InterfaceType{Interface: kw.Pos, Methods: p.parseInterfaceBody()}
 }
 
 //line parser.goal:640
 func (p *parser) parseInterfaceBody() *ast.FieldList {
-	ml := &ast.FieldList{}
-	lb := p.expect(token.LBRACE)
-	ml.Opening = lb.Pos
-	for !p.at(token.RBRACE) && !p.at(token.EOF) {
-		ml.List = append(ml.List, p.parseMethodSpec())
+	/*line parser.goal:641*/ ml := &ast.FieldList{}
+	/*line parser.goal:642*/ lb := p.expect(token.LBRACE)
+	/*line parser.goal:643*/ ml.Opening = lb.Pos
+	/*line parser.goal:644*/ for !p.at(token.RBRACE) && !p.at(token.EOF) {
+		/*line parser.goal:645*/ ml.List = append(ml.List, p.parseMethodSpec())
 	}
-	rb := p.expect(token.RBRACE)
-	ml.Closing = rb.Pos
-	return ml
+	/*line parser.goal:647*/ rb := p.expect(token.RBRACE)
+	/*line parser.goal:648*/ ml.Closing = rb.Pos
+	/*line parser.goal:649*/ return ml
 }
 
 //line parser.goal:654
 func (p *parser) parseMethodSpec() *ast.Field {
-	f := &ast.Field{}
-	name := p.ident()
-	if p.at(token.LPAREN) {
-		f.Names = []*ast.Ident{name}
-		f.Type = p.parseSignature()
+	/*line parser.goal:655*/ f := &ast.Field{}
+	/*line parser.goal:656*/ name := p.ident()
+	/*line parser.goal:657*/ if p.at(token.LPAREN) {
+		/*line parser.goal:658*/ f.Names = []*ast.Ident{name}
+		/*line parser.goal:659*/ f.Type = p.parseSignature()
 	} else {
-		f.Type = p.typeNameFrom(name)
+		/*line parser.goal:661*/ f.Type = p.typeNameFrom(name)
 	}
-	return f
+	/*line parser.goal:663*/ return f
 }
 
 //line parser.goal:668
 func (p *parser) parseSignature() *ast.FuncType {
-	ft := &ast.FuncType{}
-	ft.Params = p.parseParamList()
-	ft.Results = p.parseResults(ft.Params.Closing)
-	return ft
+	/*line parser.goal:669*/ ft := &ast.FuncType{}
+	/*line parser.goal:670*/ ft.Params = p.parseParamList()
+	/*line parser.goal:671*/ ft.Results = p.parseResults(ft.Params.Closing)
+	/*line parser.goal:672*/ return ft
 }
 
 //line parser.goal:677
 func (p *parser) parseParamList() *ast.FieldList {
-	fl := &ast.FieldList{}
-	lp := p.expect(token.LPAREN)
-	fl.Opening = lp.Pos
-	for !p.at(token.RPAREN) && !p.at(token.EOF) {
-		fl.List = append(fl.List, p.parseParam())
-		if p.at(token.COMMA) {
-			p.advance()
+	/*line parser.goal:678*/ fl := &ast.FieldList{}
+	/*line parser.goal:679*/ lp := p.expect(token.LPAREN)
+	/*line parser.goal:680*/ fl.Opening = lp.Pos
+	/*line parser.goal:681*/ for !p.at(token.RPAREN) && !p.at(token.EOF) {
+		/*line parser.goal:682*/ fl.List = append(fl.List, p.parseParam())
+		/*line parser.goal:683*/ if p.at(token.COMMA) {
+			/*line parser.goal:684*/ p.advance()
 		} else {
-			break
+			/*line parser.goal:686*/ break
 		}
 	}
-	rp := p.expect(token.RPAREN)
-	fl.Closing = rp.Pos
-	return fl
+	/*line parser.goal:689*/ rp := p.expect(token.RPAREN)
+	/*line parser.goal:690*/ fl.Closing = rp.Pos
+	/*line parser.goal:691*/ return fl
 }
 
 //line parser.goal:697
 func (p *parser) parseParam() *ast.Field {
-	f := &ast.Field{}
-	if p.nameThenType() {
-		names := []*ast.Ident{p.ident()}
-		for p.at(token.COMMA) {
-			p.advance()
-			names = append(names, p.ident())
+	/*line parser.goal:698*/ f := &ast.Field{}
+	/*line parser.goal:699*/ if p.nameThenType() {
+		/*line parser.goal:700*/ names := []*ast.Ident{p.ident()}
+		/*line parser.goal:701*/ for p.at(token.COMMA) {
+			/*line parser.goal:702*/ p.advance()
+			/*line parser.goal:703*/ names = append(names, p.ident())
 		}
-		f.Names = names
-		f.Type = p.parseTypeOrVariadic()
+		/*line parser.goal:705*/ f.Names = names
+		/*line parser.goal:706*/ f.Type = p.parseTypeOrVariadic()
 	} else {
-		f.Type = p.parseTypeOrVariadic()
+		/*line parser.goal:708*/ f.Type = p.parseTypeOrVariadic()
 	}
-	return f
+	/*line parser.goal:710*/ return f
 }
 
 //line parser.goal:719
 func (p *parser) nameThenType() bool {
-	if !p.at(token.IDENT) {
-		return false
+	/*line parser.goal:720*/ if !p.at(token.IDENT) {
+		/*line parser.goal:721*/ return false
 	}
-	i := 0
-	for p.kindAt(i) == token.IDENT && p.kindAt(i+1) == token.COMMA {
-		i += 2
+	/*line parser.goal:723*/ i := 0
+	/*line parser.goal:724*/ for p.kindAt(i) == token.IDENT && p.kindAt(i+1) == token.COMMA {
+		/*line parser.goal:725*/ i += 2
 	}
-	return p.kindAt(i) == token.IDENT && startsTypeKind(p.kindAt(i+1))
+	/*line parser.goal:727*/ return p.kindAt(i) == token.IDENT && startsTypeKind(p.kindAt(i+1))
 }
 
 //line parser.goal:731
 func (p *parser) parseTypeOrVariadic() ast.Expr {
-	if p.at(token.ELLIPSIS) {
-		e := p.advance()
-		return &ast.Ellipsis{Ellipsis: e.Pos, Elt: p.parseType()}
+	/*line parser.goal:732*/ if p.at(token.ELLIPSIS) {
+		/*line parser.goal:733*/ e := p.advance()
+		/*line parser.goal:734*/ return &ast.Ellipsis{Ellipsis: e.Pos, Elt: p.parseType()}
 	}
-	return p.parseType()
+	/*line parser.goal:736*/ return p.parseType()
 }
 
 //line parser.goal:746
 func (p *parser) parseResults(paramsEnd token.Pos) *ast.FieldList {
-	if p.cur().Pos.Line != paramsEnd.Line {
-		return nil
+	/*line parser.goal:747*/ if p.cur().Pos.Line != paramsEnd.Line {
+		/*line parser.goal:748*/ return nil
 	}
-	if p.at(token.LPAREN) {
-		return p.parseParamList()
+	/*line parser.goal:750*/ if p.at(token.LPAREN) {
+		/*line parser.goal:751*/ return p.parseParamList()
 	}
-	if p.startsType() {
-		return &ast.FieldList{List: []*ast.Field{{Type: p.parseType()}}}
+	/*line parser.goal:753*/ if p.startsType() {
+		/*line parser.goal:754*/ return &ast.FieldList{List: []*ast.Field{{Type: p.parseType()}}}
 	}
-	return nil
+	/*line parser.goal:756*/ return nil
 }
 
 //line parser.goal:769
 func (p *parser) parseBlock() *ast.BlockStmt {
-	lb := p.expect(token.LBRACE)
-	b := &ast.BlockStmt{Lbrace: lb.Pos}
-	for !p.at(token.RBRACE) && !p.at(token.EOF) {
-		if p.at(token.DOC_COMMENT) {
-			p.advance()
-			continue
+	/*line parser.goal:770*/ lb := p.expect(token.LBRACE)
+	/*line parser.goal:771*/ b := &ast.BlockStmt{Lbrace: lb.Pos}
+	/*line parser.goal:772*/ for !p.at(token.RBRACE) && !p.at(token.EOF) {
+		/*line parser.goal:775*/ if p.at(token.DOC_COMMENT) {
+			/*line parser.goal:776*/ p.advance()
+			/*line parser.goal:777*/ continue
 		}
-		b.List = append(b.List, p.parseStmt())
+		/*line parser.goal:779*/ b.List = append(b.List, p.parseStmt())
 	}
-	rb := p.expect(token.RBRACE)
-	b.Rbrace = rb.Pos
-	return b
+	/*line parser.goal:781*/ rb := p.expect(token.RBRACE)
+	/*line parser.goal:782*/ b.Rbrace = rb.Pos
+	/*line parser.goal:783*/ return b
 }
 
 //line parser.goal:787
 func (p *parser) parseStmt() ast.Stmt {
-	if p.at(token.IDENT) && p.peekKind() == token.COLON {
-		return p.parseLabeledStmt()
+	/*line parser.goal:790*/ if p.at(token.IDENT) && p.peekKind() == token.COLON {
+		/*line parser.goal:791*/ return p.parseLabeledStmt()
 	}
-	switch p.kind() {
+	/*line parser.goal:793*/ switch p.kind() {
 	case token.LBRACE:
 		return p.parseBlock()
 	case token.IF:
@@ -707,12 +709,12 @@ func (p *parser) parseStmt() ast.Stmt {
 
 //line parser.goal:832
 func (p *parser) parseSimpleStmt(allowRange bool) ast.Stmt {
-	lhs := p.parseExprList()
-	switch p.kind() {
+	/*line parser.goal:833*/ lhs := p.parseExprList()
+	/*line parser.goal:834*/ switch p.kind() {
 	case token.ASSIGN, token.DEFINE, token.ADD_ASSIGN, token.SUB_ASSIGN, token.MUL_ASSIGN, token.QUO_ASSIGN, token.REM_ASSIGN, token.AND_ASSIGN, token.OR_ASSIGN, token.XOR_ASSIGN, token.SHL_ASSIGN, token.SHR_ASSIGN, token.AND_NOT_ASSIGN:
 		tok := p.advance()
 		if allowRange && p.at(token.RANGE) && (tok.Kind == token.ASSIGN || tok.Kind == token.DEFINE) {
-			return p.parseRangeRest(lhs, tok)
+			/*line parser.goal:841*/ return p.parseRangeRest(lhs, tok)
 		}
 		rhs := p.parseExprList()
 		return &ast.AssignStmt{Lhs: lhs, TokPos: tok.Pos, Tok: tok.Kind, Rhs: rhs}
@@ -724,7 +726,7 @@ func (p *parser) parseSimpleStmt(allowRange bool) ast.Stmt {
 		return &ast.IncDecStmt{X: lhs[0], TokPos: tok.Pos, Tok: tok.Kind}
 	default:
 		if len(lhs) > 1 {
-			p.errorf(p.cur().Pos, "expected := or = (multiple expressions in statement), found %s", describe(p.cur()))
+			/*line parser.goal:853*/ p.errorf(p.cur().Pos, "expected := or = (multiple expressions in statement), found %s", describe(p.cur()))
 		}
 		return &ast.ExprStmt{X: lhs[0]}
 	}
@@ -732,273 +734,275 @@ func (p *parser) parseSimpleStmt(allowRange bool) ast.Stmt {
 
 //line parser.goal:861
 func (p *parser) parseRangeRest(lhs []ast.Expr, tok token.Token) *ast.RangeStmt {
-	p.expect(token.RANGE)
-	rs := &ast.RangeStmt{TokPos: tok.Pos, Tok: tok.Kind, X: p.parseExpr()}
-	if len(lhs) > 0 {
-		rs.Key = lhs[0]
+	/*line parser.goal:862*/ p.expect(token.RANGE)
+	/*line parser.goal:863*/ rs := &ast.RangeStmt{TokPos: tok.Pos, Tok: tok.Kind, X: p.parseExpr()}
+	/*line parser.goal:864*/ if len(lhs) > 0 {
+		/*line parser.goal:865*/ rs.Key = lhs[0]
 	}
-	if len(lhs) > 1 {
-		rs.Value = lhs[1]
+	/*line parser.goal:867*/ if len(lhs) > 1 {
+		/*line parser.goal:868*/ rs.Value = lhs[1]
 	}
-	return rs
+	/*line parser.goal:870*/ return rs
 }
 
 //line parser.goal:875
 func (p *parser) parseIfStmt() ast.Stmt {
-	ifPos := p.expect(token.IF).Pos
-	s := &ast.IfStmt{If: ifPos}
-	prev := p.exprLev
-	p.exprLev = -1
-	s1 := p.parseSimpleStmt(false)
-	if p.at(token.SEMICOLON) {
-		p.advance()
-		s.Init = s1
-		s.Cond = p.parseExpr()
+	/*line parser.goal:876*/ ifPos := p.expect(token.IF).Pos
+	/*line parser.goal:877*/ s := &ast.IfStmt{If: ifPos}
+	/*line parser.goal:879*/ prev := p.exprLev
+	/*line parser.goal:880*/ p.exprLev = -1
+	/*line parser.goal:881*/ s1 := p.parseSimpleStmt(false)
+	/*line parser.goal:882*/ if p.at(token.SEMICOLON) {
+		/*line parser.goal:883*/ p.advance()
+		/*line parser.goal:884*/ s.Init = s1
+		/*line parser.goal:885*/ s.Cond = p.parseExpr()
 	} else {
-		s.Cond = p.condExpr(s1, "if")
+		/*line parser.goal:887*/ s.Cond = p.condExpr(s1, "if")
 	}
-	p.exprLev = prev
-	s.Body = p.parseBlock()
-	if p.at(token.ELSE) {
-		p.advance()
-		if p.at(token.IF) {
-			s.Else = p.parseIfStmt()
+	/*line parser.goal:889*/ p.exprLev = prev
+	/*line parser.goal:891*/ s.Body = p.parseBlock()
+	/*line parser.goal:892*/ if p.at(token.ELSE) {
+		/*line parser.goal:893*/ p.advance()
+		/*line parser.goal:894*/ if p.at(token.IF) {
+			/*line parser.goal:895*/ s.Else = p.parseIfStmt()
 		} else {
-			s.Else = p.parseBlock()
+			/*line parser.goal:897*/ s.Else = p.parseBlock()
 		}
 	}
-	return s
+	/*line parser.goal:900*/ return s
 }
 
 //line parser.goal:905
 func (p *parser) parseForStmt() ast.Stmt {
-	forPos := p.expect(token.FOR).Pos
-	if p.at(token.LBRACE) {
-		return &ast.ForStmt{For: forPos, Body: p.parseBlock()}
+	/*line parser.goal:906*/ forPos := p.expect(token.FOR).Pos
+	/*line parser.goal:909*/ if p.at(token.LBRACE) {
+		/*line parser.goal:910*/ return &ast.ForStmt{For: forPos, Body: p.parseBlock()}
 	}
-	prev := p.exprLev
-	p.exprLev = -1
-	if p.at(token.RANGE) {
-		p.advance()
-		x := p.parseExpr()
-		p.exprLev = prev
-		return &ast.RangeStmt{For: forPos, X: x, Body: p.parseBlock()}
+	/*line parser.goal:913*/ prev := p.exprLev
+	/*line parser.goal:914*/ p.exprLev = -1
+	/*line parser.goal:917*/ if p.at(token.RANGE) {
+		/*line parser.goal:918*/ p.advance()
+		/*line parser.goal:919*/ x := p.parseExpr()
+		/*line parser.goal:920*/ p.exprLev = prev
+		/*line parser.goal:921*/ return &ast.RangeStmt{For: forPos, X: x, Body: p.parseBlock()}
 	}
-	var s1 ast.Stmt
+	/*line parser.goal:924*/ var s1 ast.Stmt
 
+	/*line parser.goal:925*/
 	if !p.at(token.SEMICOLON) {
-		s1 = p.parseSimpleStmt(true)
-		if rs, ok := s1.(*ast.RangeStmt); ok {
-			rs.For = forPos
-			p.exprLev = prev
-			rs.Body = p.parseBlock()
-			return rs
+		/*line parser.goal:926*/ s1 = p.parseSimpleStmt(true)
+		/*line parser.goal:927*/ if rs, ok := s1.(*ast.RangeStmt); ok {
+			/*line parser.goal:928*/ rs.For = forPos
+			/*line parser.goal:929*/ p.exprLev = prev
+			/*line parser.goal:930*/ rs.Body = p.parseBlock()
+			/*line parser.goal:931*/ return rs
 		}
 	}
-	if p.at(token.SEMICOLON) {
-		p.advance()
-		s := &ast.ForStmt{For: forPos, Init: s1}
-		if !p.at(token.SEMICOLON) {
-			s.Cond = p.parseExpr()
+	/*line parser.goal:936*/ if p.at(token.SEMICOLON) {
+		/*line parser.goal:937*/ p.advance()
+		/*line parser.goal:938*/ s := &ast.ForStmt{For: forPos, Init: s1}
+		/*line parser.goal:939*/ if !p.at(token.SEMICOLON) {
+			/*line parser.goal:940*/ s.Cond = p.parseExpr()
 		}
-		p.expect(token.SEMICOLON)
-		if !p.at(token.LBRACE) {
-			s.Post = p.parseSimpleStmt(false)
+		/*line parser.goal:942*/ p.expect(token.SEMICOLON)
+		/*line parser.goal:943*/ if !p.at(token.LBRACE) {
+			/*line parser.goal:944*/ s.Post = p.parseSimpleStmt(false)
 		}
-		p.exprLev = prev
-		s.Body = p.parseBlock()
-		return s
+		/*line parser.goal:946*/ p.exprLev = prev
+		/*line parser.goal:947*/ s.Body = p.parseBlock()
+		/*line parser.goal:948*/ return s
 	}
-	s := &ast.ForStmt{For: forPos, Cond: p.condExpr(s1, "for")}
-	p.exprLev = prev
-	s.Body = p.parseBlock()
-	return s
+	/*line parser.goal:952*/ s := &ast.ForStmt{For: forPos, Cond: p.condExpr(s1, "for")}
+	/*line parser.goal:953*/ p.exprLev = prev
+	/*line parser.goal:954*/ s.Body = p.parseBlock()
+	/*line parser.goal:955*/ return s
 }
 
 //line parser.goal:959
 func (p *parser) parseSwitchStmt() ast.Stmt {
-	swPos := p.expect(token.SWITCH).Pos
-	prev := p.exprLev
-	p.exprLev = -1
-	var init, guard ast.Stmt
+	/*line parser.goal:960*/ swPos := p.expect(token.SWITCH).Pos
+	/*line parser.goal:965*/ prev := p.exprLev
+	/*line parser.goal:966*/ p.exprLev = -1
+	/*line parser.goal:967*/ var init, guard ast.Stmt
 
+	/*line parser.goal:968*/
 	if !p.at(token.LBRACE) && !p.at(token.SEMICOLON) {
-		guard = p.parseSimpleStmt(false)
+		/*line parser.goal:969*/ guard = p.parseSimpleStmt(false)
 	}
-	if p.at(token.SEMICOLON) {
-		p.advance()
-		init = guard
-		guard = nil
-		if !p.at(token.LBRACE) {
-			guard = p.parseSimpleStmt(false)
+	/*line parser.goal:971*/ if p.at(token.SEMICOLON) {
+		/*line parser.goal:972*/ p.advance()
+		/*line parser.goal:973*/ init = guard
+		/*line parser.goal:974*/ guard = nil
+		/*line parser.goal:975*/ if !p.at(token.LBRACE) {
+			/*line parser.goal:976*/ guard = p.parseSimpleStmt(false)
 		}
 	}
-	p.exprLev = prev
-	if isTypeSwitchGuard(guard) {
-		ts := &ast.TypeSwitchStmt{Switch: swPos, Init: init, Assign: guard}
-		ts.Body = p.parseCaseBody()
-		return ts
+	/*line parser.goal:979*/ p.exprLev = prev
+	/*line parser.goal:982*/ if isTypeSwitchGuard(guard) {
+		/*line parser.goal:983*/ ts := &ast.TypeSwitchStmt{Switch: swPos, Init: init, Assign: guard}
+		/*line parser.goal:984*/ ts.Body = p.parseCaseBody()
+		/*line parser.goal:985*/ return ts
 	}
-	return &ast.SwitchStmt{Switch: swPos, Init: init, Tag: stmtExpr(guard), Body: p.parseCaseBody()}
+	/*line parser.goal:987*/ return &ast.SwitchStmt{Switch: swPos, Init: init, Tag: stmtExpr(guard), Body: p.parseCaseBody()}
 }
 
 //line parser.goal:992
 func isTypeSwitchGuard(s ast.Stmt) bool {
-	switch v := s.(type) {
+	/*line parser.goal:993*/ switch v := s.(type) {
 	case *ast.ExprStmt:
 		{
-			ta, ok := v.X.(*ast.TypeAssertExpr)
-			return ok && ta.Type == nil
+			/*line parser.goal:995*/ ta, ok := v.X.(*ast.TypeAssertExpr)
+			/*line parser.goal:996*/ return ok && ta.Type == nil
 		}
 	case *ast.AssignStmt:
 		{
-			if v.Tok != token.DEFINE || len(v.Rhs) != 1 {
-				return false
+			/*line parser.goal:999*/ if v.Tok != token.DEFINE || len(v.Rhs) != 1 {
+				/*line parser.goal:1000*/ return false
 			}
-			ta, ok := v.Rhs[0].(*ast.TypeAssertExpr)
-			return ok && ta.Type == nil
+			/*line parser.goal:1002*/ ta, ok := v.Rhs[0].(*ast.TypeAssertExpr)
+			/*line parser.goal:1003*/ return ok && ta.Type == nil
 		}
 	default:
 		{
-			return false
+			/*line parser.goal:1006*/ return false
 		}
 	}
 }
 
 //line parser.goal:1013
 func (p *parser) parseCaseBody() *ast.BlockStmt {
-	lb := p.expect(token.LBRACE)
-	body := &ast.BlockStmt{Lbrace: lb.Pos}
-	for p.at(token.CASE) || p.at(token.DEFAULT) {
-		body.List = append(body.List, p.parseCaseClause())
+	/*line parser.goal:1014*/ lb := p.expect(token.LBRACE)
+	/*line parser.goal:1015*/ body := &ast.BlockStmt{Lbrace: lb.Pos}
+	/*line parser.goal:1016*/ for p.at(token.CASE) || p.at(token.DEFAULT) {
+		/*line parser.goal:1017*/ body.List = append(body.List, p.parseCaseClause())
 	}
-	body.Rbrace = p.expect(token.RBRACE).Pos
-	return body
+	/*line parser.goal:1019*/ body.Rbrace = p.expect(token.RBRACE).Pos
+	/*line parser.goal:1020*/ return body
 }
 
 //line parser.goal:1025
 func (p *parser) parseSelectStmt() ast.Stmt {
-	pos := p.expect(token.SELECT).Pos
-	lb := p.expect(token.LBRACE)
-	body := &ast.BlockStmt{Lbrace: lb.Pos}
-	for p.at(token.CASE) || p.at(token.DEFAULT) {
-		body.List = append(body.List, p.parseCommClause())
+	/*line parser.goal:1026*/ pos := p.expect(token.SELECT).Pos
+	/*line parser.goal:1027*/ lb := p.expect(token.LBRACE)
+	/*line parser.goal:1028*/ body := &ast.BlockStmt{Lbrace: lb.Pos}
+	/*line parser.goal:1029*/ for p.at(token.CASE) || p.at(token.DEFAULT) {
+		/*line parser.goal:1030*/ body.List = append(body.List, p.parseCommClause())
 	}
-	body.Rbrace = p.expect(token.RBRACE).Pos
-	return &ast.SelectStmt{Select: pos, Body: body}
+	/*line parser.goal:1032*/ body.Rbrace = p.expect(token.RBRACE).Pos
+	/*line parser.goal:1033*/ return &ast.SelectStmt{Select: pos, Body: body}
 }
 
 //line parser.goal:1038
 func (p *parser) parseCommClause() ast.Stmt {
-	cc := &ast.CommClause{Case: p.cur().Pos}
-	if p.at(token.CASE) {
-		p.advance()
-		cc.Comm = p.parseSimpleStmt(false)
+	/*line parser.goal:1039*/ cc := &ast.CommClause{Case: p.cur().Pos}
+	/*line parser.goal:1040*/ if p.at(token.CASE) {
+		/*line parser.goal:1041*/ p.advance()
+		/*line parser.goal:1042*/ cc.Comm = p.parseSimpleStmt(false)
 	} else {
-		p.expect(token.DEFAULT)
+		/*line parser.goal:1044*/ p.expect(token.DEFAULT)
 	}
-	cc.Colon = p.expect(token.COLON).Pos
-	for !p.at(token.CASE) && !p.at(token.DEFAULT) && !p.at(token.RBRACE) && !p.at(token.EOF) {
-		if p.at(token.SEMICOLON) {
-			p.advance()
-			continue
+	/*line parser.goal:1046*/ cc.Colon = p.expect(token.COLON).Pos
+	/*line parser.goal:1047*/ for !p.at(token.CASE) && !p.at(token.DEFAULT) && !p.at(token.RBRACE) && !p.at(token.EOF) {
+		/*line parser.goal:1048*/ if p.at(token.SEMICOLON) {
+			/*line parser.goal:1049*/ p.advance()
+			/*line parser.goal:1050*/ continue
 		}
-		cc.Body = append(cc.Body, p.parseStmt())
+		/*line parser.goal:1052*/ cc.Body = append(cc.Body, p.parseStmt())
 	}
-	return cc
+	/*line parser.goal:1054*/ return cc
 }
 
 //line parser.goal:1060
 func (p *parser) parseLabeledStmt() ast.Stmt {
-	label := p.ident()
-	colon := p.expect(token.COLON)
-	ls := &ast.LabeledStmt{Label: label, Colon: colon.Pos}
-	if p.at(token.RBRACE) || p.at(token.EOF) {
-		ls.Stmt = &ast.EmptyStmt{Semicolon: colon.Pos}
+	/*line parser.goal:1061*/ label := p.ident()
+	/*line parser.goal:1062*/ colon := p.expect(token.COLON)
+	/*line parser.goal:1063*/ ls := &ast.LabeledStmt{Label: label, Colon: colon.Pos}
+	/*line parser.goal:1064*/ if p.at(token.RBRACE) || p.at(token.EOF) {
+		/*line parser.goal:1065*/ ls.Stmt = &ast.EmptyStmt{Semicolon: colon.Pos}
 	} else {
-		ls.Stmt = p.parseStmt()
+		/*line parser.goal:1067*/ ls.Stmt = p.parseStmt()
 	}
-	return ls
+	/*line parser.goal:1069*/ return ls
 }
 
 //line parser.goal:1073
 func (p *parser) parseCaseClause() ast.Stmt {
-	cc := &ast.CaseClause{Case: p.cur().Pos}
-	if p.at(token.CASE) {
-		p.advance()
-		cc.List = p.parseExprList()
+	/*line parser.goal:1074*/ cc := &ast.CaseClause{Case: p.cur().Pos}
+	/*line parser.goal:1075*/ if p.at(token.CASE) {
+		/*line parser.goal:1076*/ p.advance()
+		/*line parser.goal:1077*/ cc.List = p.parseExprList()
 	} else {
-		p.expect(token.DEFAULT)
+		/*line parser.goal:1079*/ p.expect(token.DEFAULT)
 	}
-	cc.Colon = p.expect(token.COLON).Pos
-	for !p.at(token.CASE) && !p.at(token.DEFAULT) && !p.at(token.RBRACE) && !p.at(token.EOF) {
-		if p.at(token.SEMICOLON) {
-			p.advance()
-			continue
+	/*line parser.goal:1081*/ cc.Colon = p.expect(token.COLON).Pos
+	/*line parser.goal:1082*/ for !p.at(token.CASE) && !p.at(token.DEFAULT) && !p.at(token.RBRACE) && !p.at(token.EOF) {
+		/*line parser.goal:1083*/ if p.at(token.SEMICOLON) {
+			/*line parser.goal:1084*/ p.advance()
+			/*line parser.goal:1085*/ continue
 		}
-		cc.Body = append(cc.Body, p.parseStmt())
+		/*line parser.goal:1087*/ cc.Body = append(cc.Body, p.parseStmt())
 	}
-	return cc
+	/*line parser.goal:1089*/ return cc
 }
 
 //line parser.goal:1093
 func (p *parser) parseReturnStmt() ast.Stmt {
-	pos := p.expect(token.RETURN).Pos
-	r := &ast.ReturnStmt{Return: pos}
-	if startsExpr(p.kind()) {
-		r.Results = p.parseExprList()
+	/*line parser.goal:1094*/ pos := p.expect(token.RETURN).Pos
+	/*line parser.goal:1095*/ r := &ast.ReturnStmt{Return: pos}
+	/*line parser.goal:1096*/ if startsExpr(p.kind()) {
+		/*line parser.goal:1097*/ r.Results = p.parseExprList()
 	}
-	return r
+	/*line parser.goal:1099*/ return r
 }
 
 //line parser.goal:1103
 func (p *parser) parseCallStmt(tok token.Kind) ast.Stmt {
-	pos := p.expect(tok).Pos
-	x := p.parseExpr()
-	call, ok := x.(*ast.CallExpr)
-	if !ok {
-		p.errorf(pos, "expected function call after %s", tok.String())
+	/*line parser.goal:1104*/ pos := p.expect(tok).Pos
+	/*line parser.goal:1105*/ x := p.parseExpr()
+	/*line parser.goal:1106*/ call, ok := x.(*ast.CallExpr)
+	/*line parser.goal:1107*/ if !ok {
+		/*line parser.goal:1108*/ p.errorf(pos, "expected function call after %s", tok.String())
 	}
-	if tok == token.DEFER {
-		return &ast.DeferStmt{Defer: pos, Call: call}
+	/*line parser.goal:1110*/ if tok == token.DEFER {
+		/*line parser.goal:1111*/ return &ast.DeferStmt{Defer: pos, Call: call}
 	}
-	return &ast.GoStmt{Go: pos, Call: call}
+	/*line parser.goal:1113*/ return &ast.GoStmt{Go: pos, Call: call}
 }
 
 //line parser.goal:1117
 func (p *parser) parseBranchStmt() ast.Stmt {
-	t := p.advance()
-	b := &ast.BranchStmt{TokPos: t.Pos, Tok: t.Kind}
-	if t.Kind != token.FALLTHROUGH && p.at(token.IDENT) {
-		b.Label = p.ident()
+	/*line parser.goal:1118*/ t := p.advance()
+	/*line parser.goal:1119*/ b := &ast.BranchStmt{TokPos: t.Pos, Tok: t.Kind}
+	/*line parser.goal:1120*/ if t.Kind != token.FALLTHROUGH && p.at(token.IDENT) {
+		/*line parser.goal:1121*/ b.Label = p.ident()
 	}
-	return b
+	/*line parser.goal:1123*/ return b
 }
 
 //line parser.goal:1128
 func stmtExpr(s ast.Stmt) ast.Expr {
-	if es, ok := s.(*ast.ExprStmt); ok {
-		return es.X
+	/*line parser.goal:1129*/ if es, ok := s.(*ast.ExprStmt); ok {
+		/*line parser.goal:1130*/ return es.X
 	}
-	return nil
+	/*line parser.goal:1132*/ return nil
 }
 
 //line parser.goal:1140
 func (p *parser) condExpr(s ast.Stmt, kw string) ast.Expr {
-	if es, ok := s.(*ast.ExprStmt); ok {
-		return es.X
+	/*line parser.goal:1141*/ if es, ok := s.(*ast.ExprStmt); ok {
+		/*line parser.goal:1142*/ return es.X
 	}
-	p.errorf(p.cur().Pos, "expected ; after init statement (missing %s condition)", kw)
-	return nil
+	/*line parser.goal:1144*/ p.errorf(p.cur().Pos, "expected ; after init statement (missing %s condition)", kw)
+	/*line parser.goal:1145*/ return nil
 }
 
 //line parser.goal:1150
 func startsExpr(k token.Kind) bool {
-	switch k {
+	/*line parser.goal:1151*/ switch k {
 	case token.IDENT, token.INT, token.FLOAT, token.IMAG, token.CHAR, token.STRING, token.LPAREN, token.ADD, token.SUB, token.NOT, token.XOR, token.AND, token.ARROW, token.MUL, token.MATCH, token.LBRACK, token.MAP, token.STRUCT, token.CHAN, token.INTERFACE, token.FUNC:
 		return true
 	}
-	return false
+	/*line parser.goal:1161*/ return false
 }
 
 //line parser.goal:1176
@@ -1006,7 +1010,7 @@ const lowestBinaryPrec = 1
 
 //line parser.goal:1181
 func precedence(k token.Kind) int {
-	switch k {
+	/*line parser.goal:1182*/ switch k {
 	case token.LOR:
 		return 1
 	case token.LAND:
@@ -1018,34 +1022,34 @@ func precedence(k token.Kind) int {
 	case token.MUL, token.QUO, token.REM, token.SHL, token.SHR, token.AND, token.AND_NOT:
 		return 5
 	}
-	return 0
+	/*line parser.goal:1194*/ return 0
 }
 
 //line parser.goal:1199
 func (p *parser) parseExpr() ast.Expr {
-	return p.parseBinary(lowestBinaryPrec)
+	/*line parser.goal:1200*/ return p.parseBinary(lowestBinaryPrec)
 }
 
 //line parser.goal:1207
 func (p *parser) parseBinary(minPrec int) ast.Expr {
-	x := p.parseUnary()
-	for {
-		opPrec := precedence(p.kind())
-		if opPrec < minPrec {
-			return x
+	/*line parser.goal:1208*/ x := p.parseUnary()
+	/*line parser.goal:1209*/ for {
+		/*line parser.goal:1210*/ opPrec := precedence(p.kind())
+		/*line parser.goal:1211*/ if opPrec < minPrec {
+			/*line parser.goal:1212*/ return x
 		}
-		if p.armBody && p.onNewLine() {
-			return x
+		/*line parser.goal:1218*/ if p.armBody && p.onNewLine() {
+			/*line parser.goal:1219*/ return x
 		}
-		op := p.advance()
-		y := p.parseBinary(opPrec + 1)
-		x = &ast.BinaryExpr{X: x, OpPos: op.Pos, Op: op.Kind, Y: y}
+		/*line parser.goal:1221*/ op := p.advance()
+		/*line parser.goal:1222*/ y := p.parseBinary(opPrec + 1)
+		/*line parser.goal:1223*/ x = &ast.BinaryExpr{X: x, OpPos: op.Pos, Op: op.Kind, Y: y}
 	}
 }
 
 //line parser.goal:1230
 func (p *parser) parseUnary() ast.Expr {
-	switch p.kind() {
+	/*line parser.goal:1231*/ switch p.kind() {
 	case token.ADD, token.SUB, token.NOT, token.XOR, token.AND, token.ARROW:
 		op := p.advance()
 		return &ast.UnaryExpr{OpPos: op.Pos, Op: op.Kind, X: p.parseUnary()}
@@ -1059,8 +1063,8 @@ func (p *parser) parseUnary() ast.Expr {
 
 //line parser.goal:1245
 func (p *parser) parseOperand() ast.Expr {
-	t := p.cur()
-	switch t.Kind {
+	/*line parser.goal:1246*/ t := p.cur()
+	/*line parser.goal:1247*/ switch t.Kind {
 	case token.MATCH:
 		return p.parseMatchExpr()
 	case token.IDENT:
@@ -1090,42 +1094,42 @@ func (p *parser) parseOperand() ast.Expr {
 
 //line parser.goal:1288
 func (p *parser) parseFuncOperand() ast.Expr {
-	kw := p.expect(token.FUNC)
-	ft := p.parseSignature()
-	ft.Func = kw.Pos
-	if !p.at(token.LBRACE) {
-		return ft
+	/*line parser.goal:1289*/ kw := p.expect(token.FUNC)
+	/*line parser.goal:1290*/ ft := p.parseSignature()
+	/*line parser.goal:1291*/ ft.Func = kw.Pos
+	/*line parser.goal:1292*/ if !p.at(token.LBRACE) {
+		/*line parser.goal:1293*/ return ft
 	}
-	prev := p.exprLev
-	p.exprLev = 0
-	body := p.parseBlock()
-	p.exprLev = prev
-	return &ast.FuncLit{Type: ft, Body: body}
+	/*line parser.goal:1295*/ prev := p.exprLev
+	/*line parser.goal:1296*/ p.exprLev = 0
+	/*line parser.goal:1297*/ body := p.parseBlock()
+	/*line parser.goal:1298*/ p.exprLev = prev
+	/*line parser.goal:1299*/ return &ast.FuncLit{Type: ft, Body: body}
 }
 
 //line parser.goal:1305
 func (p *parser) parseTypeAssert(x ast.Expr) ast.Expr {
-	lp := p.expect(token.LPAREN)
-	ta := &ast.TypeAssertExpr{X: x, Lparen: lp.Pos}
-	if p.at(token.TYPE) {
-		p.advance()
+	/*line parser.goal:1306*/ lp := p.expect(token.LPAREN)
+	/*line parser.goal:1307*/ ta := &ast.TypeAssertExpr{X: x, Lparen: lp.Pos}
+	/*line parser.goal:1308*/ if p.at(token.TYPE) {
+		/*line parser.goal:1309*/ p.advance()
 	} else {
-		ta.Type = p.parseType()
+		/*line parser.goal:1311*/ ta.Type = p.parseType()
 	}
-	ta.Rparen = p.expect(token.RPAREN).Pos
-	return ta
+	/*line parser.goal:1313*/ ta.Rparen = p.expect(token.RPAREN).Pos
+	/*line parser.goal:1314*/ return ta
 }
 
 //line parser.goal:1319
 func (p *parser) parsePostfix(x ast.Expr) ast.Expr {
-	for {
-		switch p.kind() {
+	/*line parser.goal:1320*/ for {
+		/*line parser.goal:1321*/ switch p.kind() {
 		case token.PERIOD:
 			p.advance()
 			if p.at(token.LPAREN) {
-				x = p.parseTypeAssert(x)
+				/*line parser.goal:1325*/ x = p.parseTypeAssert(x)
 			} else {
-				x = &ast.SelectorExpr{X: x, Sel: p.ident()}
+				/*line parser.goal:1327*/ x = &ast.SelectorExpr{X: x, Sel: p.ident()}
 			}
 		case token.LPAREN:
 			x = p.parseCallSuffix(x)
@@ -1136,7 +1140,7 @@ func (p *parser) parsePostfix(x ast.Expr) ast.Expr {
 			x = &ast.UnwrapExpr{X: x, Question: q.Pos}
 		case token.LBRACE:
 			if p.exprLev < 0 || !compositeOK(x) {
-				return x
+				/*line parser.goal:1340*/ return x
 			}
 			x = p.parseCompositeLit(x)
 		default:
@@ -1147,163 +1151,165 @@ func (p *parser) parsePostfix(x ast.Expr) ast.Expr {
 
 //line parser.goal:1351
 func compositeOK(x ast.Expr) bool {
-	switch x.(type) {
+	/*line parser.goal:1354*/ switch x.(type) {
 	case *ast.Ident:
 		{
-			return true
+			/*line parser.goal:1355*/ return true
 		}
 	case *ast.SelectorExpr:
 		{
-			return true
+			/*line parser.goal:1356*/ return true
 		}
 	case *ast.IndexExpr:
 		{
-			return true
+			/*line parser.goal:1357*/ return true
 		}
 	case *ast.IndexListExpr:
 		{
-			return true
+			/*line parser.goal:1358*/ return true
 		}
 	case *ast.ArrayType:
 		{
-			return true
+			/*line parser.goal:1359*/ return true
 		}
 	case *ast.MapType:
 		{
-			return true
+			/*line parser.goal:1360*/ return true
 		}
 	case *ast.StructType:
 		{
-			return true
+			/*line parser.goal:1361*/ return true
 		}
 	default:
 		{
-			return false
+			/*line parser.goal:1362*/ return false
 		}
 	}
 }
 
 //line parser.goal:1370
 func (p *parser) parseCallSuffix(fun ast.Expr) ast.Expr {
-	lp := p.expect(token.LPAREN)
-	prev := p.exprLev
-	p.exprLev++
-	var args []ast.Expr
+	/*line parser.goal:1371*/ lp := p.expect(token.LPAREN)
+	/*line parser.goal:1372*/ prev := p.exprLev
+	/*line parser.goal:1373*/ p.exprLev++
+	/*line parser.goal:1374*/ var args []ast.Expr
 
+	/*line parser.goal:1375*/
 	var ellipsis token.Pos
 
+	/*line parser.goal:1376*/
 	labeled := false
-	for !p.at(token.RPAREN) && !p.at(token.EOF) {
-		arg := p.parseCallArg()
-		if _, ok := arg.(*ast.LabeledArg); ok {
-			labeled = true
+	/*line parser.goal:1377*/ for !p.at(token.RPAREN) && !p.at(token.EOF) {
+		/*line parser.goal:1378*/ arg := p.parseCallArg()
+		/*line parser.goal:1379*/ if _, ok := arg.(*ast.LabeledArg); ok {
+			/*line parser.goal:1380*/ labeled = true
 		}
-		args = append(args, arg)
-		if p.at(token.ELLIPSIS) {
-			ellipsis = p.advance().Pos
-			if p.at(token.COMMA) {
-				p.advance()
+		/*line parser.goal:1382*/ args = append(args, arg)
+		/*line parser.goal:1383*/ if p.at(token.ELLIPSIS) {
+			/*line parser.goal:1384*/ ellipsis = p.advance().Pos
+			/*line parser.goal:1385*/ if p.at(token.COMMA) {
+				/*line parser.goal:1386*/ p.advance()
 			}
-			break
+			/*line parser.goal:1388*/ break
 		}
-		if p.at(token.COMMA) {
-			p.advance()
+		/*line parser.goal:1390*/ if p.at(token.COMMA) {
+			/*line parser.goal:1391*/ p.advance()
 		} else {
-			break
+			/*line parser.goal:1393*/ break
 		}
 	}
-	p.exprLev = prev
-	rp := p.expect(token.RPAREN)
-	if labeled {
-		return p.makeVariantLit(fun, lp.Pos, args, rp.Pos)
+	/*line parser.goal:1396*/ p.exprLev = prev
+	/*line parser.goal:1397*/ rp := p.expect(token.RPAREN)
+	/*line parser.goal:1398*/ if labeled {
+		/*line parser.goal:1399*/ return p.makeVariantLit(fun, lp.Pos, args, rp.Pos)
 	}
-	return &ast.CallExpr{Fun: fun, Lparen: lp.Pos, Args: args, Ellipsis: ellipsis, Rparen: rp.Pos}
+	/*line parser.goal:1401*/ return &ast.CallExpr{Fun: fun, Lparen: lp.Pos, Args: args, Ellipsis: ellipsis, Rparen: rp.Pos}
 }
 
 //line parser.goal:1412
 func (p *parser) parseIndexSuffix(x ast.Expr) ast.Expr {
-	lb := p.expect(token.LBRACK)
-	prev := p.exprLev
-	p.exprLev++
-	if p.at(token.COLON) {
-		return p.finishSlice(x, lb.Pos, prev, nil)
+	/*line parser.goal:1413*/ lb := p.expect(token.LBRACK)
+	/*line parser.goal:1414*/ prev := p.exprLev
+	/*line parser.goal:1415*/ p.exprLev++
+	/*line parser.goal:1418*/ if p.at(token.COLON) {
+		/*line parser.goal:1419*/ return p.finishSlice(x, lb.Pos, prev, nil)
 	}
-	first := p.parseExpr()
-	if p.at(token.COLON) {
-		return p.finishSlice(x, lb.Pos, prev, first)
+	/*line parser.goal:1421*/ first := p.parseExpr()
+	/*line parser.goal:1422*/ if p.at(token.COLON) {
+		/*line parser.goal:1423*/ return p.finishSlice(x, lb.Pos, prev, first)
 	}
-	indices := []ast.Expr{first}
-	for p.at(token.COMMA) {
-		p.advance()
-		if p.at(token.RBRACK) {
-			break
+	/*line parser.goal:1426*/ indices := []ast.Expr{first}
+	/*line parser.goal:1427*/ for p.at(token.COMMA) {
+		/*line parser.goal:1428*/ p.advance()
+		/*line parser.goal:1429*/ if p.at(token.RBRACK) {
+			/*line parser.goal:1430*/ break
 		}
-		indices = append(indices, p.parseExpr())
+		/*line parser.goal:1432*/ indices = append(indices, p.parseExpr())
 	}
-	p.exprLev = prev
-	rb := p.expect(token.RBRACK)
-	if len(indices) == 1 {
-		return &ast.IndexExpr{X: x, Lbrack: lb.Pos, Index: indices[0], Rbrack: rb.Pos}
+	/*line parser.goal:1434*/ p.exprLev = prev
+	/*line parser.goal:1435*/ rb := p.expect(token.RBRACK)
+	/*line parser.goal:1436*/ if len(indices) == 1 {
+		/*line parser.goal:1437*/ return &ast.IndexExpr{X: x, Lbrack: lb.Pos, Index: indices[0], Rbrack: rb.Pos}
 	}
-	return &ast.IndexListExpr{X: x, Lbrack: lb.Pos, Indices: indices, Rbrack: rb.Pos}
+	/*line parser.goal:1439*/ return &ast.IndexListExpr{X: x, Lbrack: lb.Pos, Indices: indices, Rbrack: rb.Pos}
 }
 
 //line parser.goal:1447
 func (p *parser) finishSlice(x ast.Expr, lbrack token.Pos, prevLev int, low ast.Expr) ast.Expr {
-	s := &ast.SliceExpr{X: x, Lbrack: lbrack, Low: low}
-	p.expect(token.COLON)
-	if !p.at(token.RBRACK) && !p.at(token.COLON) {
-		s.High = p.parseExpr()
+	/*line parser.goal:1448*/ s := &ast.SliceExpr{X: x, Lbrack: lbrack, Low: low}
+	/*line parser.goal:1449*/ p.expect(token.COLON)
+	/*line parser.goal:1450*/ if !p.at(token.RBRACK) && !p.at(token.COLON) {
+		/*line parser.goal:1451*/ s.High = p.parseExpr()
 	}
-	if p.at(token.COLON) {
-		p.advance()
-		if !p.at(token.RBRACK) {
-			s.Max = p.parseExpr()
+	/*line parser.goal:1453*/ if p.at(token.COLON) {
+		/*line parser.goal:1454*/ p.advance()
+		/*line parser.goal:1455*/ if !p.at(token.RBRACK) {
+			/*line parser.goal:1456*/ s.Max = p.parseExpr()
 		}
 	}
-	p.exprLev = prevLev
-	rb := p.expect(token.RBRACK)
-	s.Rbrack = rb.Pos
-	return s
+	/*line parser.goal:1459*/ p.exprLev = prevLev
+	/*line parser.goal:1460*/ rb := p.expect(token.RBRACK)
+	/*line parser.goal:1461*/ s.Rbrack = rb.Pos
+	/*line parser.goal:1462*/ return s
 }
 
 //line parser.goal:1467
 func (p *parser) parseCompositeLit(typ ast.Expr) ast.Expr {
-	lb := p.expect(token.LBRACE)
-	cl := &ast.CompositeLit{Type: typ, Lbrace: lb.Pos}
-	prev := p.exprLev
-	p.exprLev++
-	for !p.at(token.RBRACE) && !p.at(token.EOF) {
-		cl.Elts = append(cl.Elts, p.parseElement())
-		if p.at(token.COMMA) {
-			p.advance()
+	/*line parser.goal:1468*/ lb := p.expect(token.LBRACE)
+	/*line parser.goal:1469*/ cl := &ast.CompositeLit{Type: typ, Lbrace: lb.Pos}
+	/*line parser.goal:1470*/ prev := p.exprLev
+	/*line parser.goal:1471*/ p.exprLev++
+	/*line parser.goal:1472*/ for !p.at(token.RBRACE) && !p.at(token.EOF) {
+		/*line parser.goal:1473*/ cl.Elts = append(cl.Elts, p.parseElement())
+		/*line parser.goal:1474*/ if p.at(token.COMMA) {
+			/*line parser.goal:1475*/ p.advance()
 		} else {
-			break
+			/*line parser.goal:1477*/ break
 		}
 	}
-	p.exprLev = prev
-	rb := p.expect(token.RBRACE)
-	cl.Rbrace = rb.Pos
-	return cl
+	/*line parser.goal:1480*/ p.exprLev = prev
+	/*line parser.goal:1481*/ rb := p.expect(token.RBRACE)
+	/*line parser.goal:1482*/ cl.Rbrace = rb.Pos
+	/*line parser.goal:1483*/ return cl
 }
 
 //line parser.goal:1488
 func (p *parser) parseElement() ast.Expr {
-	if p.at(token.ELLIPSIS) {
-		return p.parseSpreadElement()
+	/*line parser.goal:1489*/ if p.at(token.ELLIPSIS) {
+		/*line parser.goal:1490*/ return p.parseSpreadElement()
 	}
-	x := p.parseElementValue()
-	if p.at(token.COLON) {
-		colon := p.advance()
-		return &ast.KeyValueExpr{Key: x, Colon: colon.Pos, Value: p.parseElementValue()}
+	/*line parser.goal:1492*/ x := p.parseElementValue()
+	/*line parser.goal:1493*/ if p.at(token.COLON) {
+		/*line parser.goal:1494*/ colon := p.advance()
+		/*line parser.goal:1495*/ return &ast.KeyValueExpr{Key: x, Colon: colon.Pos, Value: p.parseElementValue()}
 	}
-	return x
+	/*line parser.goal:1497*/ return x
 }
 
 //line parser.goal:1502
 func (p *parser) parseElementValue() ast.Expr {
-	if p.at(token.LBRACE) {
-		return p.parseCompositeLit(nil)
+	/*line parser.goal:1503*/ if p.at(token.LBRACE) {
+		/*line parser.goal:1504*/ return p.parseCompositeLit(nil)
 	}
-	return p.parseExpr()
+	/*line parser.goal:1506*/ return p.parseExpr()
 }

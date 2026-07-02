@@ -47,49 +47,50 @@ type rpcNotification struct {
 
 //line jsonrpc.goal:48
 func readMessage(r *bufio.Reader) (*rpcMessage, error) {
-	length := -1
-	for {
-		line, err := r.ReadString('\n')
-		if err != nil {
-			return nil, err
+	/*line jsonrpc.goal:49*/ length := -1
+	/*line jsonrpc.goal:50*/ for {
+		/*line jsonrpc.goal:51*/ line, err := r.ReadString('\n')
+		/*line jsonrpc.goal:52*/ if err != nil {
+			/*line jsonrpc.goal:53*/ return nil, err
 		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			break
+		/*line jsonrpc.goal:55*/ line = strings.TrimRight(line, "\r\n")
+		/*line jsonrpc.goal:56*/ if line == "" {
+			/*line jsonrpc.goal:57*/ break
 		}
-		if name, value, ok := strings.Cut(line, ":"); ok && strings.EqualFold(strings.TrimSpace(name), "Content-Length") {
-			length, err = strconv.Atoi(strings.TrimSpace(value))
-			if err != nil {
-				return nil, fmt.Errorf("invalid Content-Length: %w", err)
+		/*line jsonrpc.goal:59*/ if name, value, ok := strings.Cut(line, ":"); ok && strings.EqualFold(strings.TrimSpace(name), "Content-Length") {
+			/*line jsonrpc.goal:60*/ length, err = strconv.Atoi(strings.TrimSpace(value))
+			/*line jsonrpc.goal:61*/ if err != nil {
+				/*line jsonrpc.goal:62*/ return nil, fmt.Errorf("invalid Content-Length: %w", err)
 			}
 		}
 	}
-	if length < 0 {
-		return nil, fmt.Errorf("message had no Content-Length header")
+	/*line jsonrpc.goal:66*/ if length < 0 {
+		/*line jsonrpc.goal:67*/ return nil, fmt.Errorf("message had no Content-Length header")
 	}
-	body := make([]byte, length)
-	if _, err := io.ReadFull(r, body); err != nil {
-		return nil, err
+	/*line jsonrpc.goal:69*/ body := make([]byte, length)
+	/*line jsonrpc.goal:70*/ if _, err := io.ReadFull(r, body); err != nil {
+		/*line jsonrpc.goal:71*/ return nil, err
 	}
-	var m rpcMessage
+	/*line jsonrpc.goal:73*/ var m rpcMessage
 
+	/*line jsonrpc.goal:74*/
 	if err := json.Unmarshal(body, &m); err != nil {
-		return nil, fmt.Errorf("invalid message body: %w", err)
+		/*line jsonrpc.goal:75*/ return nil, fmt.Errorf("invalid message body: %w", err)
 	}
-	return &m, nil
+	/*line jsonrpc.goal:77*/ return &m, nil
 }
 
 //line jsonrpc.goal:82
 func writeMessage(w io.Writer, mu *sync.Mutex, v any) error {
-	body, err := json.Marshal(v)
-	if err != nil {
-		return err
+	/*line jsonrpc.goal:83*/ body, err := json.Marshal(v)
+	/*line jsonrpc.goal:84*/ if err != nil {
+		/*line jsonrpc.goal:85*/ return err
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	if _, err := fmt.Fprintf(w, "Content-Length: %d\r\n\r\n", len(body)); err != nil {
-		return err
+	/*line jsonrpc.goal:87*/ mu.Lock()
+	/*line jsonrpc.goal:88*/ defer mu.Unlock()
+	/*line jsonrpc.goal:89*/ if _, err := fmt.Fprintf(w, "Content-Length: %d\r\n\r\n", len(body)); err != nil {
+		/*line jsonrpc.goal:90*/ return err
 	}
-	_, err = w.Write(body)
-	return err
+	/*line jsonrpc.goal:92*/ _, err = w.Write(body)
+	/*line jsonrpc.goal:93*/ return err
 }

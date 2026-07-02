@@ -21,40 +21,41 @@ func catalogByFeature() []struct {
 	Feature string
 	Codes   []diagDoc
 } {
-	order := []string{}
-	seen := map[string]bool{}
-	byFeat := map[string][]diagDoc{}
-	for _, d := range diagnosticCatalog {
-		if !seen[d.Feature] {
-			seen[d.Feature] = true
-			order = append(order, d.Feature)
+	/*line catalog.goal:80*/ order := []string{}
+	/*line catalog.goal:81*/ seen := map[string]bool{}
+	/*line catalog.goal:82*/ byFeat := map[string][]diagDoc{}
+	/*line catalog.goal:83*/ for _, d := range diagnosticCatalog {
+		/*line catalog.goal:84*/ if !seen[d.Feature] {
+			/*line catalog.goal:85*/ seen[d.Feature] = true
+			/*line catalog.goal:86*/ order = append(order, d.Feature)
 		}
-		byFeat[d.Feature] = append(byFeat[d.Feature], d)
+		/*line catalog.goal:88*/ byFeat[d.Feature] = append(byFeat[d.Feature], d)
 	}
-	sort.Strings(order)
-	var out []struct {
+	/*line catalog.goal:90*/ sort.Strings(order)
+	/*line catalog.goal:91*/ var out []struct {
 		Feature string
 		Codes   []diagDoc
 	}
 
+	/*line catalog.goal:95*/
 	for _, f := range order {
-		codes := byFeat[f]
-		sort.Slice(codes, func(i, j int) bool {
-			return codes[i].Code < codes[j].Code
+		/*line catalog.goal:96*/ codes := byFeat[f]
+		/*line catalog.goal:97*/ sort.Slice(codes, func(i, j int) bool {
+			/*line catalog.goal:97*/ return codes[i].Code < codes[j].Code
 		})
-		out = append(out, struct {
+		/*line catalog.goal:98*/ out = append(out, struct {
 			Feature string
 			Codes   []diagDoc
 		}{f, codes})
 	}
-	return out
+	/*line catalog.goal:103*/ return out
 }
 
 //line catalog.goal:107
 func catalogCodes() map[string]bool {
-	out := make(map[string]bool, len(diagnosticCatalog))
-	for _, d := range diagnosticCatalog {
-		out[d.Code] = true
+	/*line catalog.goal:108*/ out := make(map[string]bool, len(diagnosticCatalog))
+	/*line catalog.goal:109*/ for _, d := range diagnosticCatalog {
+		/*line catalog.goal:110*/ out[d.Code] = true
 	}
-	return out
+	/*line catalog.goal:112*/ return out
 }

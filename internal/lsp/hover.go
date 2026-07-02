@@ -13,20 +13,21 @@ import (
 
 //line hover.goal:17
 func (s *Server) hover(raw json.RawMessage) *Hover {
-	var p HoverParams
+	/*line hover.goal:18*/ var p HoverParams
 
+	/*line hover.goal:19*/
 	if !s.decode(raw, &p, "hover") {
-		return nil
+		/*line hover.goal:20*/ return nil
 	}
-	text, _, ok := s.buffer(p.TextDocument.URI)
-	if !ok {
-		return nil
+	/*line hover.goal:22*/ text, _, ok := s.buffer(p.TextDocument.URI)
+	/*line hover.goal:23*/ if !ok {
+		/*line hover.goal:24*/ return nil
 	}
-	info, ok := resolveHover(text, p.Position.Line, p.Position.Character)
-	if !ok {
-		return nil
+	/*line hover.goal:26*/ info, ok := resolveHover(text, p.Position.Line, p.Position.Character)
+	/*line hover.goal:27*/ if !ok {
+		/*line hover.goal:28*/ return nil
 	}
-	return &Hover{Contents: MarkupContent{Kind: "markdown", Value: info.render()}}
+	/*line hover.goal:30*/ return &Hover{Contents: MarkupContent{Kind: "markdown", Value: info.render()}}
 }
 
 //line hover.goal:35
@@ -37,39 +38,40 @@ type hoverInfo struct {
 
 //line hover.goal:42
 func (h hoverInfo) render() string {
-	var b strings.Builder
+	/*line hover.goal:43*/ var b strings.Builder
 
+	/*line hover.goal:44*/
 	if h.signature != "" {
-		b.WriteString("```goal\n")
-		b.WriteString(h.signature)
-		b.WriteString("\n```")
+		/*line hover.goal:45*/ b.WriteString("```goal\n")
+		/*line hover.goal:46*/ b.WriteString(h.signature)
+		/*line hover.goal:47*/ b.WriteString("\n```")
 	}
-	if h.doc != "" {
-		if b.Len() > 0 {
-			b.WriteString("\n\n")
+	/*line hover.goal:49*/ if h.doc != "" {
+		/*line hover.goal:50*/ if b.Len() > 0 {
+			/*line hover.goal:51*/ b.WriteString("\n\n")
 		}
-		b.WriteString(h.doc)
+		/*line hover.goal:53*/ b.WriteString(h.doc)
 	}
-	return b.String()
+	/*line hover.goal:55*/ return b.String()
 }
 
 //line hover.goal:61
 func resolveHover(src string, line, char int) (hoverInfo, bool) {
-	off, ok := offsetForPosition(src, line, char)
-	if !ok {
-		return hoverInfo{}, false
+	/*line hover.goal:62*/ off, ok := offsetForPosition(src, line, char)
+	/*line hover.goal:63*/ if !ok {
+		/*line hover.goal:64*/ return hoverInfo{}, false
 	}
-	file, err := parser.ParseFile(src)
-	if err != nil || file == nil {
-		return hoverInfo{}, false
+	/*line hover.goal:66*/ file, err := parser.ParseFile(src)
+	/*line hover.goal:67*/ if err != nil || file == nil {
+		/*line hover.goal:68*/ return hoverInfo{}, false
 	}
-	idx := buildHoverIndex(src, file)
-	for _, sp := range collectHoverSpans(src, file, idx) {
-		if off >= sp.start && off < sp.end {
-			return sp.info, true
+	/*line hover.goal:70*/ idx := buildHoverIndex(src, file)
+	/*line hover.goal:71*/ for _, sp := range collectHoverSpans(src, file, idx) {
+		/*line hover.goal:72*/ if off >= sp.start && off < sp.end {
+			/*line hover.goal:73*/ return sp.info, true
 		}
 	}
-	return hoverInfo{}, false
+	/*line hover.goal:76*/ return hoverInfo{}, false
 }
 
 //line hover.goal:82
@@ -87,65 +89,65 @@ type hoverSpan struct {
 
 //line hover.goal:99
 func buildHoverIndex(src string, file *ast.File) hoverIndex {
-	idx := hoverIndex{funcs: map[string]hoverInfo{}, types: map[string]hoverInfo{}, variants: map[string]map[string]hoverInfo{}}
-	for _, d := range file.Decls {
-		switch decl := d.(type) {
+	/*line hover.goal:100*/ idx := hoverIndex{funcs: map[string]hoverInfo{}, types: map[string]hoverInfo{}, variants: map[string]map[string]hoverInfo{}}
+	/*line hover.goal:105*/ for _, d := range file.Decls {
+		/*line hover.goal:106*/ switch decl := d.(type) {
 		case *ast.FuncDecl:
 			if named(decl.Name) {
-				idx.funcs[decl.Name.Name] = hoverInfo{signature: funcSignature(src, decl), doc: docText(decl.Doc)}
+				/*line hover.goal:109*/ idx.funcs[decl.Name.Name] = hoverInfo{signature: funcSignature(src, decl), doc: docText(decl.Doc)}
 			}
 		case *ast.EnumDecl:
 			if named(decl.Name) {
-				idx.types[decl.Name.Name] = hoverInfo{signature: "enum " + decl.Name.Name}
-				vm := map[string]hoverInfo{}
-				for _, vr := range decl.Variants {
-					if named(vr.Name) {
-						vm[vr.Name.Name] = hoverInfo{signature: decl.Name.Name + "." + vr.Name.Name}
+				/*line hover.goal:116*/ idx.types[decl.Name.Name] = hoverInfo{signature: "enum " + decl.Name.Name}
+				/*line hover.goal:117*/ vm := map[string]hoverInfo{}
+				/*line hover.goal:118*/ for _, vr := range decl.Variants {
+					/*line hover.goal:119*/ if named(vr.Name) {
+						/*line hover.goal:120*/ vm[vr.Name.Name] = hoverInfo{signature: decl.Name.Name + "." + vr.Name.Name}
 					}
 				}
-				idx.variants[decl.Name.Name] = vm
+				/*line hover.goal:125*/ idx.variants[decl.Name.Name] = vm
 			}
 		case *ast.SealedInterfaceDecl:
 			if named(decl.Name) {
-				idx.types[decl.Name.Name] = hoverInfo{signature: "sealed interface " + decl.Name.Name}
+				/*line hover.goal:129*/ idx.types[decl.Name.Name] = hoverInfo{signature: "sealed interface " + decl.Name.Name}
 			}
 		case *ast.GenDecl:
 			for _, sp := range decl.Specs {
-				if ts, ok := sp.(*ast.TypeSpec); ok && named(ts.Name) {
-					idx.types[ts.Name.Name] = hoverInfo{signature: typeSpecHeader(ts)}
+				/*line hover.goal:135*/ if ts, ok := sp.(*ast.TypeSpec); ok && named(ts.Name) {
+					/*line hover.goal:136*/ idx.types[ts.Name.Name] = hoverInfo{signature: typeSpecHeader(ts)}
 				}
 			}
 		}
 	}
-	return idx
+	/*line hover.goal:141*/ return idx
 }
 
 //line hover.goal:149
 func collectHoverSpans(src string, file *ast.File, idx hoverIndex) []hoverSpan {
-	v := &hoverVisitor{idx: idx}
-	for _, d := range file.Decls {
-		switch decl := d.(type) {
+	/*line hover.goal:150*/ v := &hoverVisitor{idx: idx}
+	/*line hover.goal:152*/ for _, d := range file.Decls {
+		/*line hover.goal:153*/ switch decl := d.(type) {
 		case *ast.FuncDecl:
 			v.put(decl.Name, idx.funcs[name(decl.Name)])
 		case *ast.EnumDecl:
 			v.put(decl.Name, idx.types[name(decl.Name)])
 			for _, vr := range decl.Variants {
-				if vm, ok := idx.variants[name(decl.Name)]; ok {
-					v.put(vr.Name, vm[name(vr.Name)])
+				/*line hover.goal:159*/ if vm, ok := idx.variants[name(decl.Name)]; ok {
+					/*line hover.goal:160*/ v.put(vr.Name, vm[name(vr.Name)])
 				}
 			}
 		case *ast.SealedInterfaceDecl:
 			v.put(decl.Name, idx.types[name(decl.Name)])
 		case *ast.GenDecl:
 			for _, sp := range decl.Specs {
-				if ts, ok := sp.(*ast.TypeSpec); ok {
-					v.put(ts.Name, idx.types[name(ts.Name)])
+				/*line hover.goal:167*/ if ts, ok := sp.(*ast.TypeSpec); ok {
+					/*line hover.goal:168*/ v.put(ts.Name, idx.types[name(ts.Name)])
 				}
 			}
 		}
 	}
-	ast.Walk(v, file)
-	return v.spans
+	/*line hover.goal:173*/ ast.Walk(v, file)
+	/*line hover.goal:174*/ return v.spans
 }
 
 //line hover.goal:177
@@ -156,7 +158,7 @@ type hoverVisitor struct {
 
 //line hover.goal:182
 func (v *hoverVisitor) Visit(n ast.Node) ast.Visitor {
-	switch d := n.(type) {
+	/*line hover.goal:183*/ switch d := n.(type) {
 	case *ast.CallExpr:
 		switch fun := d.Fun.(type) {
 		case *ast.Ident:
@@ -181,115 +183,115 @@ func (v *hoverVisitor) Visit(n ast.Node) ast.Visitor {
 	case *ast.ImplementsClause:
 		v.refType(d.Type)
 	}
-	return v
+	/*line hover.goal:208*/ return v
 }
 
 //line hover.goal:212
 func (v *hoverVisitor) refFunc(ident *ast.Ident) {
-	if ident == nil {
-		return
+	/*line hover.goal:213*/ if ident == nil {
+		/*line hover.goal:214*/ return
 	}
-	if info, ok := v.idx.funcs[ident.Name]; ok {
-		v.put(ident, info)
+	/*line hover.goal:216*/ if info, ok := v.idx.funcs[ident.Name]; ok {
+		/*line hover.goal:217*/ v.put(ident, info)
 	}
 }
 
 //line hover.goal:222
 func (v *hoverVisitor) refType(e ast.Expr) {
-	id, ok := e.(*ast.Ident)
-	if !ok {
-		return
+	/*line hover.goal:223*/ id, ok := e.(*ast.Ident)
+	/*line hover.goal:224*/ if !ok {
+		/*line hover.goal:225*/ return
 	}
-	if info, ok := v.idx.types[id.Name]; ok {
-		v.put(id, info)
+	/*line hover.goal:227*/ if info, ok := v.idx.types[id.Name]; ok {
+		/*line hover.goal:228*/ v.put(id, info)
 	}
 }
 
 //line hover.goal:234
 func (v *hoverVisitor) refEnumSelector(x ast.Expr, sel *ast.Ident) {
-	id, ok := x.(*ast.Ident)
-	if !ok {
-		return
+	/*line hover.goal:235*/ id, ok := x.(*ast.Ident)
+	/*line hover.goal:236*/ if !ok {
+		/*line hover.goal:237*/ return
 	}
-	if info, ok := v.idx.types[id.Name]; ok {
-		v.put(id, info)
+	/*line hover.goal:239*/ if info, ok := v.idx.types[id.Name]; ok {
+		/*line hover.goal:240*/ v.put(id, info)
 	}
-	if vm, ok := v.idx.variants[id.Name]; ok && sel != nil {
-		if info, ok := vm[sel.Name]; ok {
-			v.put(sel, info)
+	/*line hover.goal:242*/ if vm, ok := v.idx.variants[id.Name]; ok && sel != nil {
+		/*line hover.goal:243*/ if info, ok := vm[sel.Name]; ok {
+			/*line hover.goal:244*/ v.put(sel, info)
 		}
 	}
 }
 
 //line hover.goal:251
 func (v *hoverVisitor) refVariant(enumExpr ast.Expr, variant *ast.Ident) {
-	id, ok := enumExpr.(*ast.Ident)
-	if !ok {
-		return
+	/*line hover.goal:252*/ id, ok := enumExpr.(*ast.Ident)
+	/*line hover.goal:253*/ if !ok {
+		/*line hover.goal:254*/ return
 	}
-	if info, ok := v.idx.types[id.Name]; ok {
-		v.put(id, info)
+	/*line hover.goal:256*/ if info, ok := v.idx.types[id.Name]; ok {
+		/*line hover.goal:257*/ v.put(id, info)
 	}
-	if vm, ok := v.idx.variants[id.Name]; ok && variant != nil {
-		if info, ok := vm[variant.Name]; ok {
-			v.put(variant, info)
+	/*line hover.goal:259*/ if vm, ok := v.idx.variants[id.Name]; ok && variant != nil {
+		/*line hover.goal:260*/ if info, ok := vm[variant.Name]; ok {
+			/*line hover.goal:261*/ v.put(variant, info)
 		}
 	}
 }
 
 //line hover.goal:268
 func (v *hoverVisitor) put(ident *ast.Ident, info hoverInfo) {
-	if !named(ident) || (info.signature == "" && info.doc == "") {
-		return
+	/*line hover.goal:269*/ if !named(ident) || (info.signature == "" && info.doc == "") {
+		/*line hover.goal:270*/ return
 	}
-	v.spans = append(v.spans, hoverSpan{start: ident.Pos().Offset, end: ident.End().Offset, info: info})
+	/*line hover.goal:272*/ v.spans = append(v.spans, hoverSpan{start: ident.Pos().Offset, end: ident.End().Offset, info: info})
 }
 
 //line hover.goal:283
 func funcSignature(src string, d *ast.FuncDecl) string {
-	if d == nil || d.Type == nil {
-		return ""
+	/*line hover.goal:284*/ if d == nil || d.Type == nil {
+		/*line hover.goal:285*/ return ""
 	}
-	start := d.Pos().Offset
-	end := d.Type.End().Offset
-	if start < 0 || end > len(src) || start >= end {
-		return ""
+	/*line hover.goal:287*/ start := d.Pos().Offset
+	/*line hover.goal:288*/ end := d.Type.End().Offset
+	/*line hover.goal:289*/ if start < 0 || end > len(src) || start >= end {
+		/*line hover.goal:290*/ return ""
 	}
-	return strings.Join(strings.Fields(src[start:end]), " ")
+	/*line hover.goal:292*/ return strings.Join(strings.Fields(src[start:end]), " ")
 }
 
 //line hover.goal:297
 func typeSpecHeader(ts *ast.TypeSpec) string {
-	head := "type " + name(ts.Name)
-	if ts.Assign != (token.Pos{}) {
-		head += " ="
+	/*line hover.goal:298*/ head := "type " + name(ts.Name)
+	/*line hover.goal:299*/ if ts.Assign != (token.Pos{}) {
+		/*line hover.goal:300*/ head += " ="
 	}
-	switch ts.Type.(type) {
+	/*line hover.goal:302*/ switch ts.Type.(type) {
 	case *ast.StructType:
 		head += " struct"
 	case *ast.InterfaceType:
 		head += " interface"
 	}
-	return head
+	/*line hover.goal:308*/ return head
 }
 
 //line hover.goal:314
 func docText(d *ast.DocComment) string {
-	if d == nil || len(d.Lines) == 0 {
-		return ""
+	/*line hover.goal:315*/ if d == nil || len(d.Lines) == 0 {
+		/*line hover.goal:316*/ return ""
 	}
-	return strings.TrimRight(strings.Join(d.Lines, "\n"), "\n ")
+	/*line hover.goal:318*/ return strings.TrimRight(strings.Join(d.Lines, "\n"), "\n ")
 }
 
 //line hover.goal:322
 func named(ident *ast.Ident) bool {
-	return ident != nil && ident.Name != ""
+	/*line hover.goal:323*/ return ident != nil && ident.Name != ""
 }
 
 //line hover.goal:327
 func name(ident *ast.Ident) string {
-	if ident == nil {
-		return ""
+	/*line hover.goal:328*/ if ident == nil {
+		/*line hover.goal:329*/ return ""
 	}
-	return ident.Name
+	/*line hover.goal:331*/ return ident.Name
 }

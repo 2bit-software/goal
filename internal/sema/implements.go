@@ -12,117 +12,119 @@ import (
 
 //line implements.goal:31
 func CheckImplements(file *ast.File, info *Info) []Diagnostic {
-	var diags []Diagnostic
+	/*line implements.goal:32*/ var diags []Diagnostic
 
+	/*line implements.goal:33*/
 	if file == nil {
-		return diags
+		/*line implements.goal:34*/ return diags
 	}
-	for _, d := range file.Decls {
-		gd, ok := d.(*ast.GenDecl)
-		if !ok || gd.Tok != token.TYPE {
-			continue
+	/*line implements.goal:36*/ for _, d := range file.Decls {
+		/*line implements.goal:37*/ gd, ok := d.(*ast.GenDecl)
+		/*line implements.goal:38*/ if !ok || gd.Tok != token.TYPE {
+			/*line implements.goal:39*/ continue
 		}
-		for _, s := range gd.Specs {
-			ts, ok := s.(*ast.TypeSpec)
-			if !ok || ts.Name == nil {
-				continue
+		/*line implements.goal:41*/ for _, s := range gd.Specs {
+			/*line implements.goal:42*/ ts, ok := s.(*ast.TypeSpec)
+			/*line implements.goal:43*/ if !ok || ts.Name == nil {
+				/*line implements.goal:44*/ continue
 			}
-			st, ok := ts.Type.(*ast.StructType)
-			if !ok || st.Implements == nil {
-				continue
+			/*line implements.goal:46*/ st, ok := ts.Type.(*ast.StructType)
+			/*line implements.goal:47*/ if !ok || st.Implements == nil {
+				/*line implements.goal:48*/ continue
 			}
-			iface := exprName(st.Implements.Type)
-			if iface == "" {
-				continue
+			/*line implements.goal:50*/ iface := exprName(st.Implements.Type)
+			/*line implements.goal:51*/ if iface == "" {
+				/*line implements.goal:52*/ continue
 			}
-			diags = append(diags, checkOneImplements(info, ts.Name.Name, iface, st.Implements.Implements)...)
+			/*line implements.goal:54*/ diags = append(diags, checkOneImplements(info, ts.Name.Name, iface, st.Implements.Implements)...)
 		}
 	}
-	return diags
+	/*line implements.goal:57*/ return diags
 }
 
 //line implements.goal:64
 func checkOneImplements(info *Info, typeName, iface string, impPos token.Pos) []Diagnostic {
-	if info.Sealed[iface] {
-		return nil
+	/*line implements.goal:67*/ if info.Sealed[iface] {
+		/*line implements.goal:68*/ return nil
 	}
-	if strings.Contains(iface, ".") {
-		return deferImplements(typeName, iface, impPos, fmt.Sprintf("interface `%s` is from another package", iface))
+	/*line implements.goal:72*/ if strings.Contains(iface, ".") {
+		/*line implements.goal:73*/ return deferImplements(typeName, iface, impPos, fmt.Sprintf("interface `%s` is from another package", iface))
 	}
-	required, resolved := requiredMethods(info, iface, map[string]bool{})
-	if !resolved {
-		return deferImplements(typeName, iface, impPos, fmt.Sprintf("interface `%s` is not declared in this file (or embeds an interface that isn't)", iface))
+	/*line implements.goal:77*/ required, resolved := requiredMethods(info, iface, map[string]bool{})
+	/*line implements.goal:78*/ if !resolved {
+		/*line implements.goal:79*/ return deferImplements(typeName, iface, impPos, fmt.Sprintf("interface `%s` is not declared in this file (or embeds an interface that isn't)", iface))
 	}
-	have := map[string]Method{}
-	for _, m := range info.Methods[typeName] {
-		have[m.Name] = m
+	/*line implements.goal:83*/ have := map[string]Method{}
+	/*line implements.goal:84*/ for _, m := range info.Methods[typeName] {
+		/*line implements.goal:85*/ have[m.Name] = m
 	}
-	var diags []Diagnostic
+	/*line implements.goal:88*/ var diags []Diagnostic
 
+	/*line implements.goal:89*/
 	for _, want := range required {
-		got, ok := have[want.Name]
-		switch {
+		/*line implements.goal:90*/ got, ok := have[want.Name]
+		/*line implements.goal:91*/ switch {
 		case !ok:
 			diags = append(diags, Diagnostic{Pos: impPos, Severity: Severity(Severity_Error{}), Feature: "07-implements", Code: "unimplemented-method", Message: fmt.Sprintf("type `%s` does not implement `%s`: missing method `%s%s` — declare `func (%s) %s%s`", typeName, iface, want.Name, sigForMsg(want), recvHint(typeName), want.Name, sigForMsg(want))})
 		case got.Sig != want.Sig:
 			diags = append(diags, Diagnostic{Pos: impPos, Severity: Severity(Severity_Error{}), Feature: "07-implements", Code: "method-signature-mismatch", Message: fmt.Sprintf("type `%s` does not implement `%s`: method `%s` has signature `%s` but `%s` requires `%s`", typeName, iface, want.Name, sigText(got), iface, sigText(want))})
 		}
 	}
-	return diags
+	/*line implements.goal:112*/ return diags
 }
 
 //line implements.goal:120
 func requiredMethods(info *Info, iface string, seen map[string]bool) (methods []Method, resolved bool) {
-	if seen[iface] {
-		return nil, true
+	/*line implements.goal:121*/ if seen[iface] {
+		/*line implements.goal:122*/ return nil, true
 	}
-	seen[iface] = true
-	own, ok := info.Interfaces[iface]
-	if !ok {
-		return nil, false
+	/*line implements.goal:124*/ seen[iface] = true
+	/*line implements.goal:125*/ own, ok := info.Interfaces[iface]
+	/*line implements.goal:126*/ if !ok {
+		/*line implements.goal:127*/ return nil, false
 	}
-	methods = append(methods, own...)
-	for _, emb := range info.EmbeddedIfaces[iface] {
-		if strings.Contains(emb, ".") {
-			return nil, false
+	/*line implements.goal:129*/ methods = append(methods, own...)
+	/*line implements.goal:130*/ for _, emb := range info.EmbeddedIfaces[iface] {
+		/*line implements.goal:131*/ if strings.Contains(emb, ".") {
+			/*line implements.goal:132*/ return nil, false
 		}
-		sub, subOK := requiredMethods(info, emb, seen)
-		if !subOK {
-			return nil, false
+		/*line implements.goal:134*/ sub, subOK := requiredMethods(info, emb, seen)
+		/*line implements.goal:135*/ if !subOK {
+			/*line implements.goal:136*/ return nil, false
 		}
-		methods = append(methods, sub...)
+		/*line implements.goal:138*/ methods = append(methods, sub...)
 	}
-	return methods, true
+	/*line implements.goal:140*/ return methods, true
 }
 
 //line implements.goal:146
 func deferImplements(typeName, iface string, impPos token.Pos, reason string) []Diagnostic {
-	return []Diagnostic{{Pos: impPos, Severity: Severity(Severity_Warning{}), Feature: "07-implements", Code: "unresolved-interface", Message: fmt.Sprintf("cannot verify `%s implements %s`: %s — interface-satisfaction deferred", typeName, iface, reason)}}
+	/*line implements.goal:147*/ return []Diagnostic{{Pos: impPos, Severity: Severity(Severity_Warning{}), Feature: "07-implements", Code: "unresolved-interface", Message: fmt.Sprintf("cannot verify `%s implements %s`: %s — interface-satisfaction deferred", typeName, iface, reason)}}
 }
 
 //line implements.goal:159
 func recvHint(typeName string) string {
-	r := "r"
-	if typeName != "" {
-		r = strings.ToLower(typeName[:1])
+	/*line implements.goal:160*/ r := "r"
+	/*line implements.goal:161*/ if typeName != "" {
+		/*line implements.goal:162*/ r = strings.ToLower(typeName[:1])
 	}
-	return r + " " + typeName
+	/*line implements.goal:164*/ return r + " " + typeName
 }
 
 //line implements.goal:170
 func sigForMsg(m Method) string {
-	if m.Raw != "" {
-		return m.Raw
+	/*line implements.goal:171*/ if m.Raw != "" {
+		/*line implements.goal:172*/ return m.Raw
 	}
-	return sigText(m)
+	/*line implements.goal:174*/ return sigText(m)
 }
 
 //line implements.goal:179
 func sigText(m Method) string {
-	params, results, _ := strings.Cut(m.Sig, "|")
-	out := "(" + params + ")"
-	if results != "" {
-		out += " " + results
+	/*line implements.goal:180*/ params, results, _ := strings.Cut(m.Sig, "|")
+	/*line implements.goal:181*/ out := "(" + params + ")"
+	/*line implements.goal:182*/ if results != "" {
+		/*line implements.goal:183*/ out += " " + results
 	}
-	return out
+	/*line implements.goal:185*/ return out
 }

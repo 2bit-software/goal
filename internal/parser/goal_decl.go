@@ -10,68 +10,68 @@ import (
 
 //line goal_decl.goal:25
 func (p *parser) isContextual(word string) bool {
-	return p.at(token.IDENT) && p.cur().Lit == word
+	/*line goal_decl.goal:26*/ return p.at(token.IDENT) && p.cur().Lit == word
 }
 
 //line goal_decl.goal:31
 func (p *parser) parseEnumDecl() *ast.EnumDecl {
-	kw := p.expect(token.ENUM)
-	d := &ast.EnumDecl{Enum: kw.Pos, Name: p.ident()}
-	lb := p.expect(token.LBRACE)
-	d.Lbrace = lb.Pos
-	for !p.at(token.RBRACE) && !p.at(token.EOF) {
-		d.Variants = append(d.Variants, p.parseVariant())
+	/*line goal_decl.goal:32*/ kw := p.expect(token.ENUM)
+	/*line goal_decl.goal:33*/ d := &ast.EnumDecl{Enum: kw.Pos, Name: p.ident()}
+	/*line goal_decl.goal:34*/ lb := p.expect(token.LBRACE)
+	/*line goal_decl.goal:35*/ d.Lbrace = lb.Pos
+	/*line goal_decl.goal:36*/ for !p.at(token.RBRACE) && !p.at(token.EOF) {
+		/*line goal_decl.goal:37*/ d.Variants = append(d.Variants, p.parseVariant())
 	}
-	rb := p.expect(token.RBRACE)
-	d.Rbrace = rb.Pos
-	return d
+	/*line goal_decl.goal:39*/ rb := p.expect(token.RBRACE)
+	/*line goal_decl.goal:40*/ d.Rbrace = rb.Pos
+	/*line goal_decl.goal:41*/ return d
 }
 
 //line goal_decl.goal:47
 func (p *parser) parseVariant() *ast.Variant {
-	v := &ast.Variant{Name: p.ident()}
-	if p.at(token.LBRACE) {
-		lb := p.advance()
-		v.Lbrace = lb.Pos
-		for !p.at(token.RBRACE) && !p.at(token.EOF) {
-			v.Payload = append(v.Payload, p.parsePayloadField())
-			if p.at(token.COMMA) {
-				p.advance()
+	/*line goal_decl.goal:48*/ v := &ast.Variant{Name: p.ident()}
+	/*line goal_decl.goal:49*/ if p.at(token.LBRACE) {
+		/*line goal_decl.goal:50*/ lb := p.advance()
+		/*line goal_decl.goal:51*/ v.Lbrace = lb.Pos
+		/*line goal_decl.goal:52*/ for !p.at(token.RBRACE) && !p.at(token.EOF) {
+			/*line goal_decl.goal:53*/ v.Payload = append(v.Payload, p.parsePayloadField())
+			/*line goal_decl.goal:54*/ if p.at(token.COMMA) {
+				/*line goal_decl.goal:55*/ p.advance()
 			} else {
-				break
+				/*line goal_decl.goal:57*/ break
 			}
 		}
-		rb := p.expect(token.RBRACE)
-		v.Rbrace = rb.Pos
+		/*line goal_decl.goal:60*/ rb := p.expect(token.RBRACE)
+		/*line goal_decl.goal:61*/ v.Rbrace = rb.Pos
 	}
-	return v
+	/*line goal_decl.goal:63*/ return v
 }
 
 //line goal_decl.goal:69
 func (p *parser) parsePayloadField() *ast.PayloadField {
-	f := &ast.PayloadField{Name: p.ident()}
-	if p.at(token.COLON) {
-		p.advance()
+	/*line goal_decl.goal:70*/ f := &ast.PayloadField{Name: p.ident()}
+	/*line goal_decl.goal:71*/ if p.at(token.COLON) {
+		/*line goal_decl.goal:72*/ p.advance()
 	}
-	f.Type = p.parseType()
-	return f
+	/*line goal_decl.goal:74*/ f.Type = p.parseType()
+	/*line goal_decl.goal:75*/ return f
 }
 
 //line goal_decl.goal:82
 func (p *parser) parseSealedInterfaceDecl() *ast.SealedInterfaceDecl {
-	sealed := p.advance()
-	d := &ast.SealedInterfaceDecl{Sealed: sealed.Pos}
-	d.Interface = p.expect(token.INTERFACE).Pos
-	d.Name = p.ident()
-	d.Methods = p.parseInterfaceBody()
-	return d
+	/*line goal_decl.goal:83*/ sealed := p.advance()
+	/*line goal_decl.goal:84*/ d := &ast.SealedInterfaceDecl{Sealed: sealed.Pos}
+	/*line goal_decl.goal:85*/ d.Interface = p.expect(token.INTERFACE).Pos
+	/*line goal_decl.goal:86*/ d.Name = p.ident()
+	/*line goal_decl.goal:87*/ d.Methods = p.parseInterfaceBody()
+	/*line goal_decl.goal:88*/ return d
 }
 
 //line goal_decl.goal:95
 func (p *parser) parseImplementsClause() *ast.ImplementsClause {
-	if !p.isContextual("implements") {
-		return nil
+	/*line goal_decl.goal:96*/ if !p.isContextual("implements") {
+		/*line goal_decl.goal:97*/ return nil
 	}
-	kw := p.advance()
-	return &ast.ImplementsClause{Implements: kw.Pos, Type: p.parseTypeName()}
+	/*line goal_decl.goal:99*/ kw := p.advance()
+	/*line goal_decl.goal:100*/ return &ast.ImplementsClause{Implements: kw.Pos, Type: p.parseTypeName()}
 }

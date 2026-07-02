@@ -53,56 +53,57 @@ type Server struct {
 
 //line server.goal:64
 func NewServer(out io.Writer) *Server {
-	return NewServerWithIO(out, osDirReader, sema.DefaultResolver)
+	/*line server.goal:65*/ return NewServerWithIO(out, osDirReader, sema.DefaultResolver)
 }
 
 //line server.goal:71
 func NewServerWithIO(out io.Writer, files dirReader, resolve sema.DirResolver) *Server {
-	return &Server{out: out, docs: map[string]*doc{}, timers: map[string]*time.Timer{}, debounce: 200 * time.Millisecond, files: files, resolve: resolve}
+	/*line server.goal:72*/ return &Server{out: out, docs: map[string]*doc{}, timers: map[string]*time.Timer{}, debounce: 200 * time.Millisecond, files: files, resolve: resolve}
 }
 
 //line server.goal:83
 func osDirReader(dir string) ([]fileSrc, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
+	/*line server.goal:84*/ entries, err := os.ReadDir(dir)
+	/*line server.goal:85*/ if err != nil {
+		/*line server.goal:86*/ return nil, err
 	}
-	var out []fileSrc
+	/*line server.goal:88*/ var out []fileSrc
 
+	/*line server.goal:89*/
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), project.Ext) {
-			continue
+		/*line server.goal:90*/ if e.IsDir() || !strings.HasSuffix(e.Name(), project.Ext) {
+			/*line server.goal:91*/ continue
 		}
-		p := filepath.Join(dir, e.Name())
-		b, err := os.ReadFile(p)
-		if err != nil {
-			return nil, err
+		/*line server.goal:93*/ p := filepath.Join(dir, e.Name())
+		/*line server.goal:94*/ b, err := os.ReadFile(p)
+		/*line server.goal:95*/ if err != nil {
+			/*line server.goal:96*/ return nil, err
 		}
-		out = append(out, fileSrc{path: filepath.Clean(p), src: string(b)})
+		/*line server.goal:98*/ out = append(out, fileSrc{path: filepath.Clean(p), src: string(b)})
 	}
-	return out, nil
+	/*line server.goal:100*/ return out, nil
 }
 
 //line server.goal:104
 func (s *Server) Run(in io.Reader) error {
-	r := bufio.NewReader(in)
-	for {
-		msg, err := readMessage(r)
-		if err != nil {
-			if err == io.EOF {
-				return nil
+	/*line server.goal:105*/ r := bufio.NewReader(in)
+	/*line server.goal:106*/ for {
+		/*line server.goal:107*/ msg, err := readMessage(r)
+		/*line server.goal:108*/ if err != nil {
+			/*line server.goal:109*/ if err == io.EOF {
+				/*line server.goal:110*/ return nil
 			}
-			return err
+			/*line server.goal:112*/ return err
 		}
-		if s.handle(msg) {
-			return nil
+		/*line server.goal:114*/ if s.handle(msg) {
+			/*line server.goal:115*/ return nil
 		}
 	}
 }
 
 //line server.goal:121
 func (s *Server) handle(m *rpcMessage) (stop bool) {
-	switch m.Method {
+	/*line server.goal:122*/ switch m.Method {
 	case "initialize":
 		s.reply(m.ID, InitializeResult{Capabilities: ServerCapabilities{TextDocumentSync: fullSync, CodeActionProvider: &CodeActionOptions{CodeActionKinds: []string{"source.fixAll", "source.fixAll.goal"}}, DocumentSymbolProvider: true, SemanticTokensProvider: &SemanticTokensOptions{Legend: defaultSemanticLegend(), Full: true}, DefinitionProvider: true, HoverProvider: true, ReferencesProvider: true, RenameProvider: true}, ServerInfo: ServerInfo{Name: "goal-lsp", Version: serverVersion}})
 	case "shutdown":
@@ -132,148 +133,151 @@ func (s *Server) handle(m *rpcMessage) (stop bool) {
 	case "initialized", "$/setTrace", "textDocument/didSave":
 	default:
 		if m.ID != nil {
-			s.replyError(m.ID, codeMethodNotFound, "method not found: "+m.Method)
+			/*line server.goal:165*/ s.replyError(m.ID, codeMethodNotFound, "method not found: "+m.Method)
 		}
 	}
-	return false
+	/*line server.goal:168*/ return false
 }
 
 //line server.goal:172
 func (s *Server) didOpen(raw json.RawMessage) {
-	var p didOpenParams
+	/*line server.goal:173*/ var p didOpenParams
 
+	/*line server.goal:174*/
 	if !s.decode(raw, &p, "didOpen") {
-		return
+		/*line server.goal:175*/ return
 	}
-	s.upsert(p.TextDocument.URI, p.TextDocument.Text, p.TextDocument.Version)
-	s.schedule(p.TextDocument.URI)
+	/*line server.goal:177*/ s.upsert(p.TextDocument.URI, p.TextDocument.Text, p.TextDocument.Version)
+	/*line server.goal:178*/ s.schedule(p.TextDocument.URI)
 }
 
 //line server.goal:182
 func (s *Server) didChange(raw json.RawMessage) {
-	var p didChangeParams
+	/*line server.goal:183*/ var p didChangeParams
 
+	/*line server.goal:184*/
 	if !s.decode(raw, &p, "didChange") {
-		return
+		/*line server.goal:185*/ return
 	}
-	if len(p.ContentChanges) == 0 {
-		return
+	/*line server.goal:187*/ if len(p.ContentChanges) == 0 {
+		/*line server.goal:188*/ return
 	}
-	text := p.ContentChanges[len(p.ContentChanges)-1].Text
-	s.upsert(p.TextDocument.URI, text, p.TextDocument.Version)
-	s.schedule(p.TextDocument.URI)
+	/*line server.goal:191*/ text := p.ContentChanges[len(p.ContentChanges)-1].Text
+	/*line server.goal:192*/ s.upsert(p.TextDocument.URI, text, p.TextDocument.Version)
+	/*line server.goal:193*/ s.schedule(p.TextDocument.URI)
 }
 
 //line server.goal:197
 func (s *Server) didClose(raw json.RawMessage) {
-	var p didCloseParams
+	/*line server.goal:198*/ var p didCloseParams
 
+	/*line server.goal:199*/
 	if !s.decode(raw, &p, "didClose") {
-		return
+		/*line server.goal:200*/ return
 	}
-	uri := p.TextDocument.URI
-	s.mu.Lock()
-	delete(s.docs, uri)
-	if t := s.timers[uri]; t != nil {
-		t.Stop()
-		delete(s.timers, uri)
+	/*line server.goal:202*/ uri := p.TextDocument.URI
+	/*line server.goal:203*/ s.mu.Lock()
+	/*line server.goal:204*/ delete(s.docs, uri)
+	/*line server.goal:205*/ if t := s.timers[uri]; t != nil {
+		/*line server.goal:206*/ t.Stop()
+		/*line server.goal:207*/ delete(s.timers, uri)
 	}
-	s.mu.Unlock()
-	s.publish(uri, 0, []Diagnostic{})
-	if path, ok := uriToPath(uri); ok {
-		for sibURI := range s.openFilesInDir(filepath.Dir(path)) {
-			s.schedule(sibURI)
+	/*line server.goal:209*/ s.mu.Unlock()
+	/*line server.goal:210*/ s.publish(uri, 0, []Diagnostic{})
+	/*line server.goal:213*/ if path, ok := uriToPath(uri); ok {
+		/*line server.goal:214*/ for sibURI := range s.openFilesInDir(filepath.Dir(path)) {
+			/*line server.goal:215*/ s.schedule(sibURI)
 		}
 	}
 }
 
 //line server.goal:222
 func (s *Server) buffer(uri string) (text string, version int, ok bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	d := s.docs[uri]
-	if d == nil {
-		return "", 0, false
+	/*line server.goal:223*/ s.mu.Lock()
+	/*line server.goal:224*/ defer s.mu.Unlock()
+	/*line server.goal:225*/ d := s.docs[uri]
+	/*line server.goal:226*/ if d == nil {
+		/*line server.goal:227*/ return "", 0, false
 	}
-	return d.text, d.version, true
+	/*line server.goal:229*/ return d.text, d.version, true
 }
 
 //line server.goal:232
 func (s *Server) upsert(uri, text string, version int) {
-	s.mu.Lock()
-	s.docs[uri] = &doc{text: text, version: version}
-	s.mu.Unlock()
+	/*line server.goal:233*/ s.mu.Lock()
+	/*line server.goal:234*/ s.docs[uri] = &doc{text: text, version: version}
+	/*line server.goal:235*/ s.mu.Unlock()
 }
 
 //line server.goal:241
 func (s *Server) schedule(uri string) {
-	if s.debounce <= 0 {
-		s.compileLatest(uri)
-		return
+	/*line server.goal:242*/ if s.debounce <= 0 {
+		/*line server.goal:243*/ s.compileLatest(uri)
+		/*line server.goal:244*/ return
 	}
-	s.mu.Lock()
-	if t := s.timers[uri]; t != nil {
-		t.Stop()
+	/*line server.goal:246*/ s.mu.Lock()
+	/*line server.goal:247*/ if t := s.timers[uri]; t != nil {
+		/*line server.goal:248*/ t.Stop()
 	}
-	s.timers[uri] = time.AfterFunc(s.debounce, func() {
-		s.compileLatest(uri)
+	/*line server.goal:250*/ s.timers[uri] = time.AfterFunc(s.debounce, func() {
+		/*line server.goal:250*/ s.compileLatest(uri)
 	})
-	s.mu.Unlock()
+	/*line server.goal:251*/ s.mu.Unlock()
 }
 
 //line server.goal:255
 func (s *Server) compileLatest(uri string) {
-	s.mu.Lock()
-	d := s.docs[uri]
-	s.mu.Unlock()
-	if d == nil {
-		return
+	/*line server.goal:256*/ s.mu.Lock()
+	/*line server.goal:257*/ d := s.docs[uri]
+	/*line server.goal:258*/ s.mu.Unlock()
+	/*line server.goal:259*/ if d == nil {
+		/*line server.goal:260*/ return
 	}
-	s.compile(uri, d.text, d.version)
+	/*line server.goal:262*/ s.compile(uri, d.text, d.version)
 }
 
 //line server.goal:265
 func (s *Server) decode(raw json.RawMessage, v any, what string) bool {
-	if err := json.Unmarshal(raw, v); err != nil {
-		fmt.Fprintf(os.Stderr, "goal-lsp: %s params: %v\n", what, err)
-		return false
+	/*line server.goal:266*/ if err := json.Unmarshal(raw, v); err != nil {
+		/*line server.goal:267*/ fmt.Fprintf(os.Stderr, "goal-lsp: %s params: %v\n", what, err)
+		/*line server.goal:268*/ return false
 	}
-	return true
+	/*line server.goal:270*/ return true
 }
 
 //line server.goal:273
 func (s *Server) reply(id *json.RawMessage, result any) {
-	body, err := json.Marshal(result)
-	if err != nil {
-		s.logf("marshal result: %v", err)
-		return
+	/*line server.goal:274*/ body, err := json.Marshal(result)
+	/*line server.goal:275*/ if err != nil {
+		/*line server.goal:276*/ s.logf("marshal result: %v", err)
+		/*line server.goal:277*/ return
 	}
-	s.write(rpcResponse{JSONRPC: "2.0", ID: id, Result: body})
+	/*line server.goal:279*/ s.write(rpcResponse{JSONRPC: "2.0", ID: id, Result: body})
 }
 
 //line server.goal:282
 func (s *Server) replyNull(id *json.RawMessage) {
-	s.write(rpcResponse{JSONRPC: "2.0", ID: id, Result: json.RawMessage("null")})
+	/*line server.goal:283*/ s.write(rpcResponse{JSONRPC: "2.0", ID: id, Result: json.RawMessage("null")})
 }
 
 //line server.goal:286
 func (s *Server) replyError(id *json.RawMessage, code int, msg string) {
-	s.write(rpcResponse{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: msg}})
+	/*line server.goal:287*/ s.write(rpcResponse{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: msg}})
 }
 
 //line server.goal:290
 func (s *Server) notify(method string, params any) {
-	s.write(rpcNotification{JSONRPC: "2.0", Method: method, Params: params})
+	/*line server.goal:291*/ s.write(rpcNotification{JSONRPC: "2.0", Method: method, Params: params})
 }
 
 //line server.goal:294
 func (s *Server) write(v any) {
-	if err := writeMessage(s.out, &s.outMu, v); err != nil {
-		s.logf("write: %v", err)
+	/*line server.goal:295*/ if err := writeMessage(s.out, &s.outMu, v); err != nil {
+		/*line server.goal:296*/ s.logf("write: %v", err)
 	}
 }
 
 //line server.goal:300
 func (s *Server) logf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "goal-lsp: "+format+"\n", args...)
+	/*line server.goal:301*/ fmt.Fprintf(os.Stderr, "goal-lsp: "+format+"\n", args...)
 }

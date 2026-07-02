@@ -49,7 +49,7 @@ func TranspilePackage(pkg *project.Package) (pipeline.PackageOutput, error) {
 	var out pipeline.PackageOutput
 	var usedOption bool
 	for i, f := range pkg.Files {
-		goSrc, fileUsedOption, err := emitFileWith(files[i], info, true)
+		goSrc, fileUsedOption, err := emitFileWith(files[i], info, true, f.Name)
 		if err != nil {
 			return pipeline.PackageOutput{}, fmt.Errorf("%s: %w", f.Name, err)
 		}

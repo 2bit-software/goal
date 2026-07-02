@@ -214,7 +214,7 @@ var semanticTokenModifiers = []string{"declaration"}
 
 //line protocol.goal:263
 func defaultSemanticLegend() SemanticTokensLegend {
-	return SemanticTokensLegend{TokenTypes: semanticTokenTypes, TokenModifiers: semanticTokenModifiers}
+	/*line protocol.goal:264*/ return SemanticTokensLegend{TokenTypes: semanticTokenTypes, TokenModifiers: semanticTokenModifiers}
 }
 
 //line protocol.goal:271

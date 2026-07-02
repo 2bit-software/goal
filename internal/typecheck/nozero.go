@@ -13,34 +13,35 @@ import (
 
 //line nozero.goal:32
 func CheckNoZeroValue(p *Package) []Diagnostic {
-	if p.Types == nil {
-		return nil
+	/*line nozero.goal:33*/ if p.Types == nil {
+		/*line nozero.goal:34*/ return nil
 	}
-	var diags []Diagnostic
+	/*line nozero.goal:36*/ var diags []Diagnostic
 
+	/*line nozero.goal:37*/
 	for _, f := range p.Files {
-		ast.Inspect(f, func(n ast.Node) bool {
-			cl, ok := n.(*ast.CompositeLit)
-			if !ok {
-				return true
+		/*line nozero.goal:38*/ ast.Inspect(f, func(n ast.Node) bool {
+			/*line nozero.goal:39*/ cl, ok := n.(*ast.CompositeLit)
+			/*line nozero.goal:40*/ if !ok {
+				/*line nozero.goal:41*/ return true
 			}
-			kind, consider := litClassOf(cl)
-			if !consider {
-				return true
+			/*line nozero.goal:43*/ kind, consider := litClassOf(cl)
+			/*line nozero.goal:44*/ if !consider {
+				/*line nozero.goal:45*/ return true
 			}
-			if d := litDiag(p, cl, kind); d != nil {
-				diags = append(diags, *d)
+			/*line nozero.goal:47*/ if d := litDiag(p, cl, kind); d != nil {
+				/*line nozero.goal:48*/ diags = append(diags, *d)
 			}
-			return true
+			/*line nozero.goal:50*/ return true
 		})
 	}
-	return diags
+	/*line nozero.goal:53*/ return diags
 }
 
 //line nozero.goal:57
 type litClass int
 
-//line nozero.go:42
+//line nozero.go:43
 const (
 	classElided litClass = iota
 	classGeneric
@@ -48,7 +49,7 @@ const (
 
 //line nozero.goal:68
 func litClassOf(cl *ast.CompositeLit) (kind litClass, consider bool) {
-	switch cl.Type.(type) {
+	/*line nozero.goal:69*/ switch cl.Type.(type) {
 	case nil:
 		return classElided, true
 	case *ast.IndexExpr, *ast.IndexListExpr:
@@ -60,102 +61,103 @@ func litClassOf(cl *ast.CompositeLit) (kind litClass, consider bool) {
 
 //line nozero.goal:84
 func litDiag(p *Package, cl *ast.CompositeLit, kind litClass) *Diagnostic {
-	st, named := goalStructLit(p, cl)
-	if st == nil {
-		return nil
+	/*line nozero.goal:85*/ st, named := goalStructLit(p, cl)
+	/*line nozero.goal:86*/ if st == nil {
+		/*line nozero.goal:87*/ return nil
 	}
-	present, keyed := litFieldKeys(cl)
-	if !keyed {
-		return nil
+	/*line nozero.goal:89*/ present, keyed := litFieldKeys(cl)
+	/*line nozero.goal:90*/ if !keyed {
+		/*line nozero.goal:91*/ return nil
 	}
-	missing := missingStructFields(st, present)
-	if len(missing) == 0 {
-		return nil
+	/*line nozero.goal:93*/ missing := missingStructFields(st, present)
+	/*line nozero.goal:94*/ if len(missing) == 0 {
+		/*line nozero.goal:95*/ return nil
 	}
-	code, message := litMessage(kind, named, p.Info.Types[cl].Type, missing)
-	return &Diagnostic{Pos: p.Fset.Position(cl.Pos()), Severity: sema.Severity(sema.Severity_Error{}), Feature: "08-no-zero-value", Code: code, Message: message}
+	/*line nozero.goal:97*/ code, message := litMessage(kind, named, p.Info.Types[cl].Type, missing)
+	/*line nozero.goal:98*/ return &Diagnostic{Pos: p.Fset.Position(cl.Pos()), Severity: sema.Severity(sema.Severity_Error{}), Feature: "08-no-zero-value", Code: code, Message: message}
 }
 
 //line nozero.goal:109
 func litMessage(kind litClass, named *types.Named, inst types.Type, missing []string) (code, message string) {
-	name := named.Obj().Name()
-	if kind == classGeneric {
-		spelled := types.TypeString(inst, func(*types.Package) string {
-			return ""
+	/*line nozero.goal:110*/ name := named.Obj().Name()
+	/*line nozero.goal:111*/ if kind == classGeneric {
+		/*line nozero.goal:112*/ spelled := types.TypeString(inst, func(*types.Package) string {
+			/*line nozero.goal:112*/ return ""
 		})
-		return "generic-missing-field", fmt.Sprintf("generic literal `%s` omits required field%s %s — name every field (or write `%s{…, ...defaults}`)", spelled, plural(len(missing)), quoteJoin(missing), spelled)
+		/*line nozero.goal:113*/ return "generic-missing-field", fmt.Sprintf("generic literal `%s` omits required field%s %s — name every field (or write `%s{…, ...defaults}`)", spelled, plural(len(missing)), quoteJoin(missing), spelled)
 	}
-	return "elided-missing-field", fmt.Sprintf("elided literal of `%s` omits required field%s %s — its type is inferred from the surrounding collection, so name every field (or write `%s{…, ...defaults}`)", name, plural(len(missing)), quoteJoin(missing), name)
+	/*line nozero.goal:117*/ return "elided-missing-field", fmt.Sprintf("elided literal of `%s` omits required field%s %s — its type is inferred from the surrounding collection, so name every field (or write `%s{…, ...defaults}`)", name, plural(len(missing)), quoteJoin(missing), name)
 }
 
 //line nozero.goal:124
 func goalStructLit(p *Package, cl *ast.CompositeLit) (*types.Struct, *types.Named) {
-	tv, ok := p.Info.Types[cl]
-	if !ok || tv.Type == nil {
-		return nil, nil
+	/*line nozero.goal:125*/ tv, ok := p.Info.Types[cl]
+	/*line nozero.goal:126*/ if !ok || tv.Type == nil {
+		/*line nozero.goal:127*/ return nil, nil
 	}
-	named, ok := tv.Type.(*types.Named)
-	if !ok || !isGoalDeclared(p, named) {
-		return nil, nil
+	/*line nozero.goal:129*/ named, ok := tv.Type.(*types.Named)
+	/*line nozero.goal:130*/ if !ok || !isGoalDeclared(p, named) {
+		/*line nozero.goal:131*/ return nil, nil
 	}
-	st, ok := named.Underlying().(*types.Struct)
-	if !ok {
-		return nil, nil
+	/*line nozero.goal:133*/ st, ok := named.Underlying().(*types.Struct)
+	/*line nozero.goal:134*/ if !ok {
+		/*line nozero.goal:135*/ return nil, nil
 	}
-	return st, named
+	/*line nozero.goal:137*/ return st, named
 }
 
 //line nozero.goal:146
 func isGoalDeclared(p *Package, named *types.Named) bool {
-	obj := named.Obj()
-	if obj.Pkg() != p.Types {
-		return false
+	/*line nozero.goal:147*/ obj := named.Obj()
+	/*line nozero.goal:148*/ if obj.Pkg() != p.Types {
+		/*line nozero.goal:149*/ return false
 	}
-	return strings.HasSuffix(p.Fset.Position(obj.Pos()).Filename, ".goal")
+	/*line nozero.goal:151*/ return strings.HasSuffix(p.Fset.Position(obj.Pos()).Filename, ".goal")
 }
 
 //line nozero.goal:159
 func litFieldKeys(cl *ast.CompositeLit) (present map[string]bool, keyed bool) {
-	present = map[string]bool{}
-	for _, e := range cl.Elts {
-		kv, ok := e.(*ast.KeyValueExpr)
-		if !ok {
-			return nil, false
+	/*line nozero.goal:160*/ present = map[string]bool{}
+	/*line nozero.goal:161*/ for _, e := range cl.Elts {
+		/*line nozero.goal:162*/ kv, ok := e.(*ast.KeyValueExpr)
+		/*line nozero.goal:163*/ if !ok {
+			/*line nozero.goal:164*/ return nil, false
 		}
-		id, ok := kv.Key.(*ast.Ident)
-		if !ok {
-			return nil, false
+		/*line nozero.goal:166*/ id, ok := kv.Key.(*ast.Ident)
+		/*line nozero.goal:167*/ if !ok {
+			/*line nozero.goal:168*/ return nil, false
 		}
-		present[id.Name] = true
+		/*line nozero.goal:170*/ present[id.Name] = true
 	}
-	return present, true
+	/*line nozero.goal:172*/ return present, true
 }
 
 //line nozero.goal:177
 func missingStructFields(st *types.Struct, present map[string]bool) []string {
-	var missing []string
+	/*line nozero.goal:178*/ var missing []string
 
+	/*line nozero.goal:179*/
 	for i := 0; i < st.NumFields(); i++ {
-		if name := st.Field(i).Name(); !present[name] {
-			missing = append(missing, name)
+		/*line nozero.goal:180*/ if name := st.Field(i).Name(); !present[name] {
+			/*line nozero.goal:181*/ missing = append(missing, name)
 		}
 	}
-	return missing
+	/*line nozero.goal:184*/ return missing
 }
 
 //line nozero.goal:188
 func plural(n int) string {
-	if n == 1 {
-		return ""
+	/*line nozero.goal:189*/ if n == 1 {
+		/*line nozero.goal:190*/ return ""
 	}
-	return "s"
+	/*line nozero.goal:192*/ return "s"
 }
 
 //line nozero.goal:197
 func quoteJoin(names []string) string {
-	quoted := make([]string, len(names))
-	for i, n := range names {
-		quoted[i] = "`" + n + "`"
+	/*line nozero.goal:198*/ quoted := make([]string, len(names))
+	/*line nozero.goal:199*/ for i, n := range names {
+		/*line nozero.goal:200*/ quoted[i] = "`" + n + "`"
 	}
-	return strings.Join(quoted, ", ")
+	/*line nozero.goal:202*/ return strings.Join(quoted, ", ")
 }

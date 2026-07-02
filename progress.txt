@@ -7900,3 +7900,62 @@
   - history/ is gitignored here (morse-code runtime), so morse-code initiative
     artifacts are never part of the feature commit.
 ---
+
+## 2026-07-01 - US-013
+- Emit statement-level `/*line file:N*/` directives from the backend emitter so a
+  reflowed function body (a `?`/match/unwrap lowering that expands one source
+  statement into several Go lines) reports a runtime panic or `go build` error at
+  the statement's TRUE .goal line, not the off-by-N line the decl-header //line
+  alone produced.
+- Files changed:
+  - internal/backend/emit.goal — added `srcFile string` to the emitter struct;
+    `emitFileWith` gained a trailing `srcFile string` param; in `block()`, before
+    each stmt with a valid Pos and non-empty srcFile, emit
+    `/*line <srcFile>:<Pos.Line>*/`. `emitFile` passes "".
+  - internal/backend/package.goal — `TranspilePackage` passes `f.Name` as srcFile
+    (package mode is what `goal build`/`goal run`/`task generate` use).
+  - internal/backend/doctest.goal — the doctest sidecar caller passes "" (doctest
+    line mapping is US-014).
+  - The whole committed internal/*.go tree regenerated (task generate) to carry
+    the new statement directives — expected self-host churn.
+  - cmd/goal/main_test.go — TestPanicMapsToStatementLine (a `?` on line 13 reflows;
+    panic on line 14 reports crash.goal:14) and TestBuildErrorMapsToStatementLine
+    (type error on line 14 after a `?` lowering reports compute.goal:14).
+- Learnings for future iterations:
+  - Inline `/*line file:N*/` (the mid-line form, NOT the standalone `//line` form)
+    is the right tool for per-STATEMENT anchoring: gofmt keeps it on the
+    statement's own line (adds one space, no extra newline), the Go runtime AND
+    `go build` both honor it for the following token, and the goal parser strips it
+    as COMMENT trivia so pipeline.AddLineDirectives' declSites re-parse is
+    unaffected. It composes cleanly with the existing per-DECL `//line` — decl
+    header sets the func position, each statement re-anchors within the body.
+  - Because it adds no newlines, it does NOT perturb AddLineDirectives' `physical+1`
+    identity numbering for synthesized decls.
+  - Directives only in package mode (srcFile set from f.Name). Single-file
+    Transpile passes "" so the 55 transpile `.go.expected` goldens stay
+    byte-identical — no golden churn there; package corpus cases are behavioral
+    (no golden text). This keeps the change surgical despite the big internal/*.go
+    regen.
+  - Self-regenerating-emitter fixpoint + deadlock escape: an emitter change that
+    alters OUTPUT (like adding directives) is a moving target — the committed .go
+    must be a fixed point (regenerating from it yields itself). If you leave the
+    .goal INCONSISTENT mid-edit (I changed callers before the emitFileWith
+    signature + missed the doctest.goal caller), the first `task generate` bakes a
+    non-compiling committed .go and `task build` can no longer rebuild bin/goal —
+    the deadlock. ESCAPE without hand-editing generated .go: the PRIOR `task
+    generate`/build already left a WORKING `bin/goal` binary on disk (compiled from
+    the last-consistent tree). Once the .goal is consistent again, regenerate with
+    that surviving binary directly — `./bin/goal build --emit=_bootstrap/gen
+    ./internal` + the header-prepend copy loop — to get a compiling committed .go,
+    THEN run `task generate` normally so the rebuilt (new-logic) bin/goal re-emits
+    with directives. Here verify-generated reached the fixed point in ONE clean
+    `task generate` after recovery (the recovered committed .go already had the
+    new emitter logic, so its bin/goal emits directives, and re-emitting is
+    idempotent).
+  - Grep EVERY caller of a function before changing its signature: emitFileWith
+    has THREE callers (emitFile, TranspilePackage, emitDoctests) — the doctest one
+    is easy to miss and its omission is what triggered the deadlock above.
+  - A Result-returning goal function tuple-lowers to `(T, error)`, so in a
+    cmd/goal `goal run`/`goal build` test fixture you must consume it as two values
+    (`v, e := f()`), never `_ = f()` (that's "1 variable but f returns 2 values").
+---

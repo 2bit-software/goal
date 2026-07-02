@@ -11,45 +11,45 @@ import (
 
 //line assert.goal:32
 func (ip *Interp) execAssert(s *ast.AssertStmt, scope *Env) error {
-	if s.Cond == nil {
-		return fmt.Errorf("interp: assert statement has no condition")
+	/*line assert.goal:33*/ if s.Cond == nil {
+		/*line assert.goal:34*/ return fmt.Errorf("interp: assert statement has no condition")
 	}
-	cond, err := ip.evalExpr(s.Cond, scope)
-	if err != nil {
-		return err
+	/*line assert.goal:36*/ cond, err := ip.evalExpr(s.Cond, scope)
+	/*line assert.goal:37*/ if err != nil {
+		/*line assert.goal:38*/ return err
 	}
-	if cond.Kind != KindBool {
-		return fmt.Errorf("interp: assert condition must be bool, got %s", cond.Kind)
+	/*line assert.goal:40*/ if cond.Kind != KindBool {
+		/*line assert.goal:41*/ return fmt.Errorf("interp: assert condition must be bool, got %s", cond.Kind)
 	}
-	if cond.Bool {
-		return nil
+	/*line assert.goal:43*/ if cond.Bool {
+		/*line assert.goal:44*/ return nil
 	}
-	msg := "assertion failed: " + exprText(s.Cond)
-	if s.Msg != nil {
-		format, err := ip.evalExpr(s.Msg, scope)
-		if err != nil {
-			return err
+	/*line assert.goal:47*/ msg := "assertion failed: " + exprText(s.Cond)
+	/*line assert.goal:48*/ if s.Msg != nil {
+		/*line assert.goal:49*/ format, err := ip.evalExpr(s.Msg, scope)
+		/*line assert.goal:50*/ if err != nil {
+			/*line assert.goal:51*/ return err
 		}
-		if format.Kind != KindString {
-			return fmt.Errorf("interp: assert message must be a string, got %s", format.Kind)
+		/*line assert.goal:53*/ if format.Kind != KindString {
+			/*line assert.goal:54*/ return fmt.Errorf("interp: assert message must be a string, got %s", format.Kind)
 		}
-		args := make([]Value, len(s.Args))
-		for i, a := range s.Args {
-			v, err := ip.evalExpr(a, scope)
-			if err != nil {
-				return err
+		/*line assert.goal:56*/ args := make([]Value, len(s.Args))
+		/*line assert.goal:57*/ for i, a := range s.Args {
+			/*line assert.goal:58*/ v, err := ip.evalExpr(a, scope)
+			/*line assert.goal:59*/ if err != nil {
+				/*line assert.goal:60*/ return err
 			}
-			args[i] = v
+			/*line assert.goal:62*/ args[i] = v
 		}
-		msg += ": " + fmt.Sprintf(format.Str, goArgs(args)...)
+		/*line assert.goal:64*/ msg += ": " + fmt.Sprintf(format.Str, goArgs(args)...)
 	}
-	located := s.Assert.String() + ": " + msg
-	return panicSignal{value: StrVal(located)}
+	/*line assert.goal:67*/ located := s.Assert.String() + ": " + msg
+	/*line assert.goal:68*/ return panicSignal{value: StrVal(located)}
 }
 
 //line assert.goal:78
 func exprText(e ast.Expr) string {
-	switch x := e.(type) {
+	/*line assert.goal:79*/ switch x := e.(type) {
 	case nil:
 		return "<expr>"
 	case *ast.Ident:
@@ -67,7 +67,7 @@ func exprText(e ast.Expr) string {
 	case *ast.SelectorExpr:
 		sel := ""
 		if x.Sel != nil {
-			sel = x.Sel.Name
+			/*line assert.goal:97*/ sel = x.Sel.Name
 		}
 		return exprText(x.X) + "." + sel
 	case *ast.IndexExpr:
@@ -75,7 +75,7 @@ func exprText(e ast.Expr) string {
 	case *ast.CallExpr:
 		parts := make([]string, len(x.Args))
 		for i, a := range x.Args {
-			parts[i] = exprText(a)
+			/*line assert.goal:105*/ parts[i] = exprText(a)
 		}
 		return exprText(x.Fun) + "(" + strings.Join(parts, ", ") + ")"
 	default:

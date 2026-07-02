@@ -13,49 +13,50 @@ import (
 
 //line semantictokens.goal:16
 func (s *Server) semanticTokens(raw json.RawMessage) SemanticTokens {
-	empty := SemanticTokens{Data: []uint{}}
-	var p SemanticTokensParams
+	/*line semantictokens.goal:17*/ empty := SemanticTokens{Data: []uint{}}
+	/*line semantictokens.goal:18*/ var p SemanticTokensParams
 
+	/*line semantictokens.goal:19*/
 	if !s.decode(raw, &p, "semanticTokens") {
-		return empty
+		/*line semantictokens.goal:20*/ return empty
 	}
-	text, _, ok := s.buffer(p.TextDocument.URI)
-	if !ok {
-		return empty
+	/*line semantictokens.goal:22*/ text, _, ok := s.buffer(p.TextDocument.URI)
+	/*line semantictokens.goal:23*/ if !ok {
+		/*line semantictokens.goal:24*/ return empty
 	}
-	return SemanticTokens{Data: computeSemanticTokens(text)}
+	/*line semantictokens.goal:26*/ return SemanticTokens{Data: computeSemanticTokens(text)}
 }
 
 //line semantictokens.goal:35
 func computeSemanticTokens(src string) []uint {
-	roles := astRoles(src)
-	data := []uint{}
-	prevLine, prevChar := 0, 0
-	for _, t := range lexer.Tokens(src) {
-		if t.Kind == token.EOF {
-			break
+	/*line semantictokens.goal:36*/ roles := astRoles(src)
+	/*line semantictokens.goal:37*/ data := []uint{}
+	/*line semantictokens.goal:38*/ prevLine, prevChar := 0, 0
+	/*line semantictokens.goal:39*/ for _, t := range lexer.Tokens(src) {
+		/*line semantictokens.goal:40*/ if t.Kind == token.EOF {
+			/*line semantictokens.goal:41*/ break
 		}
-		sem, ok := classifyToken(t, roles)
-		if !ok {
-			continue
+		/*line semantictokens.goal:43*/ sem, ok := classifyToken(t, roles)
+		/*line semantictokens.goal:44*/ if !ok {
+			/*line semantictokens.goal:45*/ continue
 		}
-		pos := token.OffsetToPosition(src, t.Pos.Offset)
-		line0 := pos.Line - 1
-		char0 := pos.Col - 1
-		dl := line0 - prevLine
-		dc := char0
-		if dl == 0 {
-			dc = char0 - prevChar
+		/*line semantictokens.goal:47*/ pos := token.OffsetToPosition(src, t.Pos.Offset)
+		/*line semantictokens.goal:48*/ line0 := pos.Line - 1
+		/*line semantictokens.goal:49*/ char0 := pos.Col - 1
+		/*line semantictokens.goal:50*/ dl := line0 - prevLine
+		/*line semantictokens.goal:51*/ dc := char0
+		/*line semantictokens.goal:52*/ if dl == 0 {
+			/*line semantictokens.goal:53*/ dc = char0 - prevChar
 		}
-		data = append(data, uint(dl), uint(dc), uint(tokenLen(t)), uint(sem), 0)
-		prevLine, prevChar = line0, char0
+		/*line semantictokens.goal:55*/ data = append(data, uint(dl), uint(dc), uint(tokenLen(t)), uint(sem), 0)
+		/*line semantictokens.goal:56*/ prevLine, prevChar = line0, char0
 	}
-	return data
+	/*line semantictokens.goal:58*/ return data
 }
 
 //line semantictokens.goal:65
 func classifyToken(t token.Token, roles map[int]int) (int, bool) {
-	switch {
+	/*line semantictokens.goal:66*/ switch {
 	case t.Kind == token.COMMENT || t.Kind == token.DOC_COMMENT:
 		return semComment, true
 	case t.Kind == token.STRING || t.Kind == token.CHAR:
@@ -68,7 +69,7 @@ func classifyToken(t token.Token, roles map[int]int) (int, bool) {
 		return semOperator, true
 	case t.Kind == token.IDENT:
 		if role, ok := roles[t.Pos.Offset]; ok {
-			return role, true
+			/*line semantictokens.goal:79*/ return role, true
 		}
 		return 0, false
 	default:
@@ -78,21 +79,21 @@ func classifyToken(t token.Token, roles map[int]int) (int, bool) {
 
 //line semantictokens.goal:90
 func tokenLen(t token.Token) int {
-	if t.Lit != "" {
-		return len(t.Lit)
+	/*line semantictokens.goal:91*/ if t.Lit != "" {
+		/*line semantictokens.goal:92*/ return len(t.Lit)
 	}
-	return len(t.Kind.String())
+	/*line semantictokens.goal:94*/ return len(t.Kind.String())
 }
 
 //line semantictokens.goal:102
 func astRoles(src string) map[int]int {
-	roles := map[int]int{}
-	file, err := parser.ParseFile(src)
-	if err != nil || file == nil {
-		return roles
+	/*line semantictokens.goal:103*/ roles := map[int]int{}
+	/*line semantictokens.goal:104*/ file, err := parser.ParseFile(src)
+	/*line semantictokens.goal:105*/ if err != nil || file == nil {
+		/*line semantictokens.goal:106*/ return roles
 	}
-	ast.Walk(roleVisitor{roles}, file)
-	return roles
+	/*line semantictokens.goal:108*/ ast.Walk(roleVisitor{roles}, file)
+	/*line semantictokens.goal:109*/ return roles
 }
 
 //line semantictokens.goal:116
@@ -102,14 +103,14 @@ type roleVisitor struct {
 
 //line semantictokens.goal:120
 func (v roleVisitor) Visit(n ast.Node) ast.Visitor {
-	switch d := n.(type) {
+	/*line semantictokens.goal:121*/ switch d := n.(type) {
 	case *ast.EnumDecl:
 		v.set(d.Name, semEnum)
 		for _, vr := range d.Variants {
-			v.set(vr.Name, semEnumMember)
-			for _, f := range vr.Payload {
-				v.set(f.Name, semProperty)
-				v.setType(f.Type)
+			/*line semantictokens.goal:125*/ v.set(vr.Name, semEnumMember)
+			/*line semantictokens.goal:126*/ for _, f := range vr.Payload {
+				/*line semantictokens.goal:127*/ v.set(f.Name, semProperty)
+				/*line semantictokens.goal:128*/ v.setType(f.Type)
 			}
 		}
 	case *ast.SealedInterfaceDecl:
@@ -117,21 +118,21 @@ func (v roleVisitor) Visit(n ast.Node) ast.Visitor {
 	case *ast.TypeSpec:
 		v.set(d.Name, typeSpecRole(d))
 		if st, ok := d.Type.(*ast.StructType); ok && st.Fields != nil {
-			v.fields(st.Fields, semProperty)
+			/*line semantictokens.goal:136*/ v.fields(st.Fields, semProperty)
 		}
 		if it, ok := d.Type.(*ast.InterfaceType); ok && it.Methods != nil {
-			v.fields(it.Methods, semMethod)
+			/*line semantictokens.goal:139*/ v.fields(it.Methods, semMethod)
 		}
 	case *ast.FuncDecl:
 		role := semFunction
 		if d.Recv != nil {
-			role = semMethod
-			v.fields(d.Recv, semParameter)
+			/*line semantictokens.goal:144*/ role = semMethod
+			/*line semantictokens.goal:145*/ v.fields(d.Recv, semParameter)
 		}
 		v.set(d.Name, role)
 		if d.Type != nil {
-			v.fields(d.Type.Params, semParameter)
-			v.fields(d.Type.Results, semParameter)
+			/*line semantictokens.goal:149*/ v.fields(d.Type.Params, semParameter)
+			/*line semantictokens.goal:150*/ v.fields(d.Type.Results, semParameter)
 		}
 	case *ast.VariantLit:
 		v.set(d.Variant, semEnumMember)
@@ -148,50 +149,50 @@ func (v roleVisitor) Visit(n ast.Node) ast.Visitor {
 			v.set(fun.Sel, semMethod)
 		}
 	}
-	return v
+	/*line semantictokens.goal:167*/ return v
 }
 
 //line semantictokens.goal:171
 func (v roleVisitor) set(ident *ast.Ident, role int) {
-	if ident == nil || ident.Name == "" {
-		return
+	/*line semantictokens.goal:172*/ if ident == nil || ident.Name == "" {
+		/*line semantictokens.goal:173*/ return
 	}
-	v.roles[ident.Pos().Offset] = role
+	/*line semantictokens.goal:175*/ v.roles[ident.Pos().Offset] = role
 }
 
 //line semantictokens.goal:180
 func (v roleVisitor) setEnum(e ast.Expr) {
-	if id, ok := e.(*ast.Ident); ok {
-		v.set(id, semEnum)
+	/*line semantictokens.goal:181*/ if id, ok := e.(*ast.Ident); ok {
+		/*line semantictokens.goal:182*/ v.set(id, semEnum)
 	}
 }
 
 //line semantictokens.goal:188
 func (v roleVisitor) setType(e ast.Expr) {
-	if id, ok := e.(*ast.Ident); ok {
-		v.set(id, semType)
+	/*line semantictokens.goal:189*/ if id, ok := e.(*ast.Ident); ok {
+		/*line semantictokens.goal:190*/ v.set(id, semType)
 	}
 }
 
 //line semantictokens.goal:195
 func (v roleVisitor) fields(fl *ast.FieldList, nameRole int) {
-	if fl == nil {
-		return
+	/*line semantictokens.goal:196*/ if fl == nil {
+		/*line semantictokens.goal:197*/ return
 	}
-	for _, f := range fl.List {
-		for _, nm := range f.Names {
-			v.set(nm, nameRole)
+	/*line semantictokens.goal:199*/ for _, f := range fl.List {
+		/*line semantictokens.goal:200*/ for _, nm := range f.Names {
+			/*line semantictokens.goal:201*/ v.set(nm, nameRole)
 		}
-		v.setType(f.Type)
+		/*line semantictokens.goal:203*/ v.setType(f.Type)
 	}
 }
 
 //line semantictokens.goal:209
 func typeSpecRole(ts *ast.TypeSpec) int {
-	if ts.Assign != (token.Pos{}) {
-		return semType
+	/*line semantictokens.goal:210*/ if ts.Assign != (token.Pos{}) {
+		/*line semantictokens.goal:211*/ return semType
 	}
-	switch ts.Type.(type) {
+	/*line semantictokens.goal:213*/ switch ts.Type.(type) {
 	case *ast.StructType:
 		return semStruct
 	case *ast.InterfaceType:

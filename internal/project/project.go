@@ -32,89 +32,90 @@ type Package struct {
 
 //line project.goal:53
 func Discover(root string) ([]*Package, error) {
-	byDir := map[string][]File{}
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	/*line project.goal:54*/ byDir := map[string][]File{}
+	/*line project.goal:55*/ err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		/*line project.goal:56*/ if err != nil {
+			/*line project.goal:57*/ return err
 		}
-		if d.IsDir() {
-			if path != root && skipDir(d.Name()) {
-				return fs.SkipDir
+		/*line project.goal:59*/ if d.IsDir() {
+			/*line project.goal:60*/ if path != root && skipDir(d.Name()) {
+				/*line project.goal:61*/ return fs.SkipDir
 			}
-			return nil
+			/*line project.goal:63*/ return nil
 		}
-		if !strings.HasSuffix(d.Name(), Ext) {
-			return nil
+		/*line project.goal:65*/ if !strings.HasSuffix(d.Name(), Ext) {
+			/*line project.goal:66*/ return nil
 		}
-		src, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", path, err)
+		/*line project.goal:68*/ src, err := os.ReadFile(path)
+		/*line project.goal:69*/ if err != nil {
+			/*line project.goal:70*/ return fmt.Errorf("read %s: %w", path, err)
 		}
-		dir := filepath.Dir(path)
-		byDir[dir] = append(byDir[dir], File{Path: path, Name: d.Name(), Src: string(src)})
-		return nil
+		/*line project.goal:72*/ dir := filepath.Dir(path)
+		/*line project.goal:73*/ byDir[dir] = append(byDir[dir], File{Path: path, Name: d.Name(), Src: string(src)})
+		/*line project.goal:74*/ return nil
 	})
-	if err != nil {
-		return nil, err
+	/*line project.goal:76*/ if err != nil {
+		/*line project.goal:77*/ return nil, err
 	}
-	pkgs := make([]*Package, 0, len(byDir))
-	for dir, files := range byDir {
-		sort.Slice(files, func(a, b int) bool {
-			return files[a].Path < files[b].Path
+	/*line project.goal:80*/ pkgs := make([]*Package, 0, len(byDir))
+	/*line project.goal:81*/ for dir, files := range byDir {
+		/*line project.goal:82*/ sort.Slice(files, func(a, b int) bool {
+			/*line project.goal:82*/ return files[a].Path < files[b].Path
 		})
-		name, err := packageName(dir, files)
-		if err != nil {
-			return nil, err
+		/*line project.goal:83*/ name, err := packageName(dir, files)
+		/*line project.goal:84*/ if err != nil {
+			/*line project.goal:85*/ return nil, err
 		}
-		pkgs = append(pkgs, &Package{Dir: dir, Name: name, Files: files})
+		/*line project.goal:87*/ pkgs = append(pkgs, &Package{Dir: dir, Name: name, Files: files})
 	}
-	sort.Slice(pkgs, func(a, b int) bool {
-		return pkgs[a].Dir < pkgs[b].Dir
+	/*line project.goal:89*/ sort.Slice(pkgs, func(a, b int) bool {
+		/*line project.goal:89*/ return pkgs[a].Dir < pkgs[b].Dir
 	})
-	return pkgs, nil
+	/*line project.goal:90*/ return pkgs, nil
 }
 
 //line project.goal:95
 func packageName(dir string, files []File) (string, error) {
-	name := ""
-	for _, f := range files {
-		got := PackageClause(f.Src)
-		if got == "" {
-			return "", fmt.Errorf("%s: missing package clause", f.Path)
+	/*line project.goal:96*/ name := ""
+	/*line project.goal:97*/ for _, f := range files {
+		/*line project.goal:98*/ got := PackageClause(f.Src)
+		/*line project.goal:99*/ if got == "" {
+			/*line project.goal:100*/ return "", fmt.Errorf("%s: missing package clause", f.Path)
 		}
-		if name == "" {
-			name = got
-			continue
+		/*line project.goal:102*/ if name == "" {
+			/*line project.goal:103*/ name = got
+			/*line project.goal:104*/ continue
 		}
-		if got != name {
-			return "", fmt.Errorf("%s: found packages %q and %q in the same directory %s", f.Path, name, got, dir)
+		/*line project.goal:106*/ if got != name {
+			/*line project.goal:107*/ return "", fmt.Errorf("%s: found packages %q and %q in the same directory %s", f.Path, name, got, dir)
 		}
 	}
-	return name, nil
+	/*line project.goal:111*/ return name, nil
 }
 
 //line project.goal:123
 func PackageClause(src string) string {
-	file, _ := parser.ParseFile(src)
-	if file == nil || file.Name == nil {
-		return ""
+	/*line project.goal:124*/ file, _ := parser.ParseFile(src)
+	/*line project.goal:125*/ if file == nil || file.Name == nil {
+		/*line project.goal:126*/ return ""
 	}
-	const kw = "package"
+	/*line project.goal:128*/ const kw = "package"
 
+	/*line project.goal:129*/
 	off := file.Package.Offset
-	if off < 0 || off+len(kw) > len(src) || src[off:off+len(kw)] != kw {
-		return ""
+	/*line project.goal:130*/ if off < 0 || off+len(kw) > len(src) || src[off:off+len(kw)] != kw {
+		/*line project.goal:131*/ return ""
 	}
-	return file.Name.Name
+	/*line project.goal:133*/ return file.Name.Name
 }
 
 //line project.goal:139
 func skipDir(name string) bool {
-	if name == "testdata" {
-		return true
+	/*line project.goal:140*/ if name == "testdata" {
+		/*line project.goal:141*/ return true
 	}
-	if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
-		return true
+	/*line project.goal:143*/ if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+		/*line project.goal:144*/ return true
 	}
-	return false
+	/*line project.goal:146*/ return false
 }

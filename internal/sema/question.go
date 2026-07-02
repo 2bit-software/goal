@@ -18,15 +18,16 @@ type qsite struct {
 
 //line question.goal:41
 func CheckQuestion(file *ast.File, info *Info) []Diagnostic {
-	var diags []Diagnostic
+	/*line question.goal:42*/ var diags []Diagnostic
 
+	/*line question.goal:43*/
 	if file == nil {
-		return diags
+		/*line question.goal:44*/ return diags
 	}
-	imports := importAliases(file)
-	for _, d := range plainResultFuncs(file) {
-		caller := funcSig(d.fn.Name.Name, d.fn.Type)
-		var callerIsOpenResult bool
+	/*line question.goal:46*/ imports := importAliases(file)
+	/*line question.goal:47*/ for _, d := range plainResultFuncs(file) {
+		/*line question.goal:48*/ caller := funcSig(d.fn.Name.Name, d.fn.Type)
+		/*line question.goal:49*/ var callerIsOpenResult bool
 		switch caller.Mode.(type) {
 		case Mode_ModeResult:
 			callerIsOpenResult = true
@@ -39,38 +40,39 @@ func CheckQuestion(file *ast.File, info *Info) []Diagnostic {
 		default:
 			panic("unreachable: non-exhaustive Mode (compiler invariant violated)")
 		}
-		if !callerIsOpenResult {
-			continue
+		/*line question.goal:55*/ if !callerIsOpenResult {
+			/*line question.goal:56*/ continue
 		}
-		for _, site := range collectQuestionSites(d.fn.Body) {
-			csig, key, known := resolveQuestionCallee(site.unwrap, info)
-			p := site.unwrap.Question
-			if known {
-				diags = appendQuestionResolved(diags, p, key, csig, site.discard)
-				continue
+		/*line question.goal:58*/ for _, site := range collectQuestionSites(d.fn.Body) {
+			/*line question.goal:59*/ csig, key, known := resolveQuestionCallee(site.unwrap, info)
+			/*line question.goal:60*/ p := site.unwrap.Question
+			/*line question.goal:61*/ if known {
+				/*line question.goal:62*/ diags = appendQuestionResolved(diags, p, key, csig, site.discard)
+				/*line question.goal:63*/ continue
 			}
-			if site.discard && !isImportedCall(key, imports) {
-				label := key
-				if label == "" {
-					label = "the `?` callee"
+			/*line question.goal:65*/ if site.discard && !isImportedCall(key, imports) {
+				/*line question.goal:66*/ label := key
+				/*line question.goal:67*/ if label == "" {
+					/*line question.goal:68*/ label = "the `?` callee"
 				}
-				diags = append(diags, Diagnostic{Pos: p, Severity: Severity(Severity_Warning{}), Feature: "05-question-prop", Code: "question-callee-unresolved", Message: fmt.Sprintf("cannot confirm the arity of `?` callee `%s` (its receiver type isn't inferred); `?` assumes a two-value `(T, error)` callee — if it returns only `error`, the generated Go will not compile until its arity is resolved", label)})
+				/*line question.goal:70*/ diags = append(diags, Diagnostic{Pos: p, Severity: Severity(Severity_Warning{}), Feature: "05-question-prop", Code: "question-callee-unresolved", Message: fmt.Sprintf("cannot confirm the arity of `?` callee `%s` (its receiver type isn't inferred); `?` assumes a two-value `(T, error)` callee — if it returns only `error`, the generated Go will not compile until its arity is resolved", label)})
 			}
 		}
 	}
-	return diags
+	/*line question.goal:76*/ return diags
 }
 
 //line question.goal:86
 func CheckQuestionOutsideResult(file *ast.File, info *Info) []Diagnostic {
-	var diags []Diagnostic
+	/*line question.goal:87*/ var diags []Diagnostic
 
+	/*line question.goal:88*/
 	if file == nil {
-		return diags
+		/*line question.goal:89*/ return diags
 	}
-	for _, d := range plainResultFuncs(file) {
-		caller := funcSig(d.fn.Name.Name, d.fn.Type)
-		var carriesFailure bool
+	/*line question.goal:91*/ for _, d := range plainResultFuncs(file) {
+		/*line question.goal:92*/ caller := funcSig(d.fn.Name.Name, d.fn.Type)
+		/*line question.goal:93*/ var carriesFailure bool
 		switch caller.Mode.(type) {
 		case Mode_ModeResult:
 			carriesFailure = true
@@ -83,52 +85,54 @@ func CheckQuestionOutsideResult(file *ast.File, info *Info) []Diagnostic {
 		default:
 			panic("unreachable: non-exhaustive Mode (compiler invariant violated)")
 		}
-		if carriesFailure {
-			continue
+		/*line question.goal:99*/ if carriesFailure {
+			/*line question.goal:100*/ continue
 		}
-		ret := funcReturnText(d.fn.Type)
-		for _, site := range collectQuestionSites(d.fn.Body) {
-			diags = append(diags, Diagnostic{Pos: site.unwrap.Question, Severity: Severity(Severity_Error{}), Feature: "05-question-prop", Code: "question-outside-result", Message: fmt.Sprintf("`?` propagates a failure, but function `%s` returns %s, which is neither a `Result` nor an `Option`; change its return type to `Result[T, error]` or `Option[T]` so it can carry the failure", d.fn.Name.Name, ret)})
+		/*line question.goal:102*/ ret := funcReturnText(d.fn.Type)
+		/*line question.goal:103*/ for _, site := range collectQuestionSites(d.fn.Body) {
+			/*line question.goal:104*/ diags = append(diags, Diagnostic{Pos: site.unwrap.Question, Severity: Severity(Severity_Error{}), Feature: "05-question-prop", Code: "question-outside-result", Message: fmt.Sprintf("`?` propagates a failure, but function `%s` returns %s, which is neither a `Result` nor an `Option`; change its return type to `Result[T, error]` or `Option[T]` so it can carry the failure", d.fn.Name.Name, ret)})
 		}
 	}
-	return diags
+	/*line question.goal:109*/ return diags
 }
 
 //line question.goal:119
 func CheckQuestionAssignForm(file *ast.File, info *Info) []Diagnostic {
-	var diags []Diagnostic
+	/*line question.goal:120*/ var diags []Diagnostic
 
+	/*line question.goal:121*/
 	if file == nil {
-		return diags
+		/*line question.goal:122*/ return diags
 	}
-	for _, d := range plainResultFuncs(file) {
-		diags = append(diags, questionAssignFormDiags(d.fn.Body)...)
+	/*line question.goal:124*/ for _, d := range plainResultFuncs(file) {
+		/*line question.goal:125*/ diags = append(diags, questionAssignFormDiags(d.fn.Body)...)
 	}
-	return diags
+	/*line question.goal:127*/ return diags
 }
 
 //line question.goal:132
 func questionAssignFormDiags(body *ast.BlockStmt) []Diagnostic {
-	var diags []Diagnostic
+	/*line question.goal:133*/ var diags []Diagnostic
 
+	/*line question.goal:134*/
 	if body == nil {
-		return diags
+		/*line question.goal:135*/ return diags
 	}
-	ast.Walk(visitorFunc(func(n ast.Node) bool {
-		switch v1 := n.(type) {
+	/*line question.goal:137*/ ast.Walk(visitorFunc(func(n ast.Node) bool {
+		/*line question.goal:138*/ switch v1 := n.(type) {
 		case *ast.AssignStmt:
 			{
-				for i, rhs := range v1.Rhs {
-					u, ok := rhs.(*ast.UnwrapExpr)
-					if !ok {
-						continue
+				/*line question.goal:140*/ for i, rhs := range v1.Rhs {
+					/*line question.goal:141*/ u, ok := rhs.(*ast.UnwrapExpr)
+					/*line question.goal:142*/ if !ok {
+						/*line question.goal:143*/ continue
 					}
-					if len(v1.Lhs) != len(v1.Rhs) {
-						diags = append(diags, questionAssignUnsupported(u.Question, "the left-hand side has a different number of variables than the `?` results on the right"))
-						continue
+					/*line question.goal:145*/ if len(v1.Lhs) != len(v1.Rhs) {
+						/*line question.goal:146*/ diags = append(diags, questionAssignUnsupported(u.Question, "the left-hand side has a different number of variables than the `?` results on the right"))
+						/*line question.goal:148*/ continue
 					}
-					if !isSimpleAssignTarget(v1.Lhs[i]) {
-						diags = append(diags, questionAssignUnsupported(u.Question, "`?` can only assign to a simple variable or `_`, not through a field, index, or other expression"))
+					/*line question.goal:150*/ if !isSimpleAssignTarget(v1.Lhs[i]) {
+						/*line question.goal:151*/ diags = append(diags, questionAssignUnsupported(u.Question, "`?` can only assign to a simple variable or `_`, not through a field, index, or other expression"))
 					}
 				}
 			}
@@ -136,45 +140,46 @@ func questionAssignFormDiags(body *ast.BlockStmt) []Diagnostic {
 			{
 			}
 		}
-		return true
+		/*line question.goal:158*/ return true
 	}), body)
-	return diags
+	/*line question.goal:160*/ return diags
 }
 
 //line question.goal:165
 func isSimpleAssignTarget(e ast.Expr) bool {
-	_, ok := e.(*ast.Ident)
-	return ok
+	/*line question.goal:166*/ _, ok := e.(*ast.Ident)
+	/*line question.goal:167*/ return ok
 }
 
 //line question.goal:172
 func questionAssignUnsupported(p token.Pos, detail string) Diagnostic {
-	return Diagnostic{Pos: p, Severity: Severity(Severity_Error{}), Feature: "05-question-prop", Code: "question-assign-unsupported", Message: fmt.Sprintf("`?` assignment is unsupported here: %s; bind with `x := f()?` or `x = f()?` where `x` is a single variable", detail)}
+	/*line question.goal:173*/ return Diagnostic{Pos: p, Severity: Severity(Severity_Error{}), Feature: "05-question-prop", Code: "question-assign-unsupported", Message: fmt.Sprintf("`?` assignment is unsupported here: %s; bind with `x := f()?` or `x = f()?` where `x` is a single variable", detail)}
 }
 
 //line question.goal:181
 func funcReturnText(t *ast.FuncType) string {
-	if t == nil || t.Results == nil || len(t.Results.List) == 0 {
-		return "no value"
+	/*line question.goal:182*/ if t == nil || t.Results == nil || len(t.Results.List) == 0 {
+		/*line question.goal:183*/ return "no value"
 	}
-	var parts []string
+	/*line question.goal:185*/ var parts []string
 
+	/*line question.goal:186*/
 	for _, f := range t.Results.List {
-		ts := typeString(f.Type)
-		n := 1
-		if len(f.Names) > 0 {
-			n = len(f.Names)
+		/*line question.goal:187*/ ts := typeString(f.Type)
+		/*line question.goal:188*/ n := 1
+		/*line question.goal:189*/ if len(f.Names) > 0 {
+			/*line question.goal:190*/ n = len(f.Names)
 		}
-		for i := 0; i < n; i++ {
-			parts = append(parts, ts)
+		/*line question.goal:192*/ for i := 0; i < n; i++ {
+			/*line question.goal:193*/ parts = append(parts, ts)
 		}
 	}
-	return "`(" + strings.Join(parts, ", ") + ")`"
+	/*line question.goal:196*/ return "`(" + strings.Join(parts, ", ") + ")`"
 }
 
 //line question.goal:200
 func appendQuestionResolved(diags []Diagnostic, p token.Pos, key string, csig FuncSig, discard bool) []Diagnostic {
-	var isOpenResult bool
+	/*line question.goal:201*/ var isOpenResult bool
 	switch csig.Mode.(type) {
 	case Mode_ModeResult:
 		isOpenResult = true
@@ -187,7 +192,7 @@ func appendQuestionResolved(diags []Diagnostic, p token.Pos, key string, csig Fu
 	default:
 		panic("unreachable: non-exhaustive Mode (compiler invariant violated)")
 	}
-	var isOption bool
+	/*line question.goal:207*/ var isOption bool
 	switch csig.Mode.(type) {
 	case Mode_ModeOption:
 		isOption = true
@@ -200,7 +205,7 @@ func appendQuestionResolved(diags []Diagnostic, p token.Pos, key string, csig Fu
 	default:
 		panic("unreachable: non-exhaustive Mode (compiler invariant violated)")
 	}
-	var isClosed bool
+	/*line question.goal:213*/ var isClosed bool
 	switch csig.Mode.(type) {
 	case Mode_ModeResultClosed:
 		isClosed = true
@@ -213,7 +218,7 @@ func appendQuestionResolved(diags []Diagnostic, p token.Pos, key string, csig Fu
 	default:
 		panic("unreachable: non-exhaustive Mode (compiler invariant violated)")
 	}
-	switch {
+	/*line question.goal:219*/ switch {
 	case isOpenResult:
 	case isOption:
 		diags = append(diags, Diagnostic{Pos: p, Severity: Severity(Severity_Error{}), Feature: "05-question-prop", Code: "question-callee-no-error", Message: fmt.Sprintf("`?` in a `Result[_, error]` function propagates an `error`, but `%s` returns an `Option`; map its `None` to an error first", key)})
@@ -226,19 +231,20 @@ func appendQuestionResolved(diags []Diagnostic, p token.Pos, key string, csig Fu
 	case !discard && csig.Arity != 2:
 		diags = append(diags, Diagnostic{Pos: p, Severity: Severity(Severity_Error{}), Feature: "05-question-prop", Code: "question-binds-nonvalue", Message: fmt.Sprintf("`?` binds a value but `%s` returns %d value(s); write a bare `…?` to propagate only the error", key, csig.Arity)})
 	}
-	return diags
+	/*line question.goal:243*/ return diags
 }
 
 //line question.goal:250
 func CheckClosed(file *ast.File, info *Info) []Diagnostic {
-	var diags []Diagnostic
+	/*line question.goal:251*/ var diags []Diagnostic
 
+	/*line question.goal:252*/
 	if file == nil {
-		return diags
+		/*line question.goal:253*/ return diags
 	}
-	for _, d := range plainResultFuncs(file) {
-		caller := funcSig(d.fn.Name.Name, d.fn.Type)
-		var callerIsClosed bool
+	/*line question.goal:255*/ for _, d := range plainResultFuncs(file) {
+		/*line question.goal:256*/ caller := funcSig(d.fn.Name.Name, d.fn.Type)
+		/*line question.goal:257*/ var callerIsClosed bool
 		switch caller.Mode.(type) {
 		case Mode_ModeResultClosed:
 			callerIsClosed = true
@@ -251,67 +257,69 @@ func CheckClosed(file *ast.File, info *Info) []Diagnostic {
 		default:
 			panic("unreachable: non-exhaustive Mode (compiler invariant violated)")
 		}
-		if !callerIsClosed {
-			continue
+		/*line question.goal:263*/ if !callerIsClosed {
+			/*line question.goal:264*/ continue
 		}
-		diags = append(diags, closedQuestionDiags(d.fn.Body, caller, info)...)
-		diags = append(diags, closedErrDiags(d.fn.Body, caller, info)...)
+		/*line question.goal:266*/ diags = append(diags, closedQuestionDiags(d.fn.Body, caller, info)...)
+		/*line question.goal:267*/ diags = append(diags, closedErrDiags(d.fn.Body, caller, info)...)
 	}
-	return diags
+	/*line question.goal:269*/ return diags
 }
 
 //line question.goal:275
 func closedQuestionDiags(body *ast.BlockStmt, caller FuncSig, info *Info) []Diagnostic {
-	var diags []Diagnostic
+	/*line question.goal:276*/ var diags []Diagnostic
 
+	/*line question.goal:277*/
 	for _, site := range collectQuestionSites(body) {
-		csig, key, known := resolveQuestionCallee(site.unwrap, info)
-		p := site.unwrap.Question
-		var calleeIsClosed bool
+		/*line question.goal:278*/ csig, key, known := resolveQuestionCallee(site.unwrap, info)
+		/*line question.goal:279*/ p := site.unwrap.Question
+		/*line question.goal:281*/ var calleeIsClosed bool
 		switch csig.Mode.(type) {
 		case Mode_ModeResultClosed:
 			calleeIsClosed = true
 		default:
 			calleeIsClosed = false
 		}
-		if !known || !calleeIsClosed {
-			label := key
-			if label == "" {
-				label = "the `?` callee"
+		/*line question.goal:285*/ if !known || !calleeIsClosed {
+			/*line question.goal:286*/ label := key
+			/*line question.goal:287*/ if label == "" {
+				/*line question.goal:288*/ label = "the `?` callee"
 			}
-			diags = append(diags, Diagnostic{Pos: p, Severity: Severity(Severity_Warning{}), Feature: "06-error-e", Code: "unresolved-question-error", Message: fmt.Sprintf("cannot verify the `?` error conversion: callee `%s` is not an in-file closed-E `Result`-returning function (its error type is unresolvable here) — From-totality deferred", label)})
-			continue
+			/*line question.goal:290*/ diags = append(diags, Diagnostic{Pos: p, Severity: Severity(Severity_Warning{}), Feature: "06-error-e", Code: "unresolved-question-error", Message: fmt.Sprintf("cannot verify the `?` error conversion: callee `%s` is not an in-file closed-E `Result`-returning function (its error type is unresolvable here) — From-totality deferred", label)})
+			/*line question.goal:293*/ continue
 		}
-		if csig.E == caller.E {
-			continue
+		/*line question.goal:295*/ if csig.E == caller.E {
+			/*line question.goal:296*/ continue
 		}
-		if _, found := info.FromRegistry[[2]string{csig.E, caller.E}]; !found {
-			diags = append(diags, Diagnostic{Pos: p, Severity: Severity(Severity_Error{}), Feature: "06-error-e", Code: "missing-from-conversion", Message: fmt.Sprintf("`?` propagates `%s` into a `Result[_, %s]` function but no `from func` converts `%s` to `%s` — declare `from func name(e %s) %s { … }`", csig.E, caller.E, csig.E, caller.E, csig.E, caller.E)})
+		/*line question.goal:298*/ if _, found := info.FromRegistry[[2]string{csig.E, caller.E}]; !found {
+			/*line question.goal:299*/ diags = append(diags, Diagnostic{Pos: p, Severity: Severity(Severity_Error{}), Feature: "06-error-e", Code: "missing-from-conversion", Message: fmt.Sprintf("`?` propagates `%s` into a `Result[_, %s]` function but no `from func` converts `%s` to `%s` — declare `from func name(e %s) %s { … }`", csig.E, caller.E, csig.E, caller.E, csig.E, caller.E)})
 		}
 	}
-	return diags
+	/*line question.goal:305*/ return diags
 }
 
 //line question.goal:313
 func closedErrDiags(body *ast.BlockStmt, caller FuncSig, info *Info) []Diagnostic {
-	var diags []Diagnostic
+	/*line question.goal:314*/ var diags []Diagnostic
 
+	/*line question.goal:315*/
 	if body == nil {
-		return diags
+		/*line question.goal:316*/ return diags
 	}
-	ast.Walk(visitorFunc(func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok || !isResultErr(call.Fun) || len(call.Args) != 1 {
-			return true
+	/*line question.goal:318*/ ast.Walk(visitorFunc(func(n ast.Node) bool {
+		/*line question.goal:319*/ call, ok := n.(*ast.CallExpr)
+		/*line question.goal:320*/ if !ok || !isResultErr(call.Fun) || len(call.Args) != 1 {
+			/*line question.goal:321*/ return true
 		}
-		pos := call.Pos()
-		enumDecl := info.Enums[caller.E]
-		if enumDecl == nil {
-			diags = append(diags, Diagnostic{Pos: pos, Severity: Severity(Severity_Warning{}), Feature: "06-error-e", Code: "unresolved-error-enum", Message: fmt.Sprintf("cannot verify closedness of `Result.Err` in a `Result[_, %s]` function: enum `%s` is not declared in this file — closedness deferred", caller.E, caller.E)})
-			return true
+		/*line question.goal:323*/ pos := call.Pos()
+		/*line question.goal:324*/ enumDecl := info.Enums[caller.E]
+		/*line question.goal:325*/ if enumDecl == nil {
+			/*line question.goal:326*/ diags = append(diags, Diagnostic{Pos: pos, Severity: Severity(Severity_Warning{}), Feature: "06-error-e", Code: "unresolved-error-enum", Message: fmt.Sprintf("cannot verify closedness of `Result.Err` in a `Result[_, %s]` function: enum `%s` is not declared in this file — closedness deferred", caller.E, caller.E)})
+			/*line question.goal:330*/ return true
 		}
-		qual, variant, isVariant := errVariantArg(call.Args[0])
-		switch {
+		/*line question.goal:332*/ qual, variant, isVariant := errVariantArg(call.Args[0])
+		/*line question.goal:333*/ switch {
 		case !isVariant:
 			diags = append(diags, Diagnostic{Pos: pos, Severity: Severity(Severity_Warning{}), Feature: "06-error-e", Code: "unresolved-err-value", Message: fmt.Sprintf("cannot verify the `Result.Err` value is a variant of `%s`: its argument is not a lexically-resolvable `%s.Variant` construction — closedness deferred", caller.E, caller.E)})
 		case qual != caller.E:
@@ -319,9 +327,9 @@ func closedErrDiags(body *ast.BlockStmt, caller FuncSig, info *Info) []Diagnosti
 		case !enumDecl.VSet[variant]:
 			diags = append(diags, Diagnostic{Pos: pos, Severity: Severity(Severity_Error{}), Feature: "06-error-e", Code: "unknown-error-variant", Message: fmt.Sprintf("`Result.Err(%s.%s)` names `%s`, which is not a variant of enum `%s` — its variants are %s", qual, variant, variant, caller.E, semaVariantList(enumDecl))})
 		}
-		return true
+		/*line question.goal:350*/ return true
 	}), body)
-	return diags
+	/*line question.goal:352*/ return diags
 }
 
 //line question.goal:357
@@ -331,14 +339,15 @@ type plainFunc struct {
 
 //line question.goal:361
 func plainResultFuncs(file *ast.File) []plainFunc {
-	var out []plainFunc
+	/*line question.goal:362*/ var out []plainFunc
 
+	/*line question.goal:363*/
 	for _, d := range file.Decls {
-		fn, ok := d.(*ast.FuncDecl)
-		if !ok {
-			continue
+		/*line question.goal:364*/ fn, ok := d.(*ast.FuncDecl)
+		/*line question.goal:365*/ if !ok {
+			/*line question.goal:366*/ continue
 		}
-		var plain bool
+		/*line question.goal:368*/ var plain bool
 		switch fn.Mod.(type) {
 		case ast.FuncMod_FuncPlain:
 			plain = true
@@ -349,141 +358,142 @@ func plainResultFuncs(file *ast.File) []plainFunc {
 		default:
 			panic("unreachable: non-exhaustive ast.FuncMod (compiler invariant violated)")
 		}
-		if !plain || fn.Recv != nil || fn.Name == nil || fn.Type == nil || fn.Body == nil {
-			continue
+		/*line question.goal:373*/ if !plain || fn.Recv != nil || fn.Name == nil || fn.Type == nil || fn.Body == nil {
+			/*line question.goal:374*/ continue
 		}
-		out = append(out, plainFunc{fn})
+		/*line question.goal:376*/ out = append(out, plainFunc{fn})
 	}
-	return out
+	/*line question.goal:378*/ return out
 }
 
 //line question.goal:385
 func collectQuestionSites(body *ast.BlockStmt) []qsite {
-	var sites []qsite
+	/*line question.goal:386*/ var sites []qsite
 
+	/*line question.goal:387*/
 	if body == nil {
-		return sites
+		/*line question.goal:388*/ return sites
 	}
-	ast.Walk(visitorFunc(func(n ast.Node) bool {
-		switch v1 := n.(type) {
+	/*line question.goal:390*/ ast.Walk(visitorFunc(func(n ast.Node) bool {
+		/*line question.goal:391*/ switch v1 := n.(type) {
 		case *ast.AssignStmt:
 			{
-				for i, rhs := range v1.Rhs {
-					if u, ok := rhs.(*ast.UnwrapExpr); ok {
-						discard := i < len(v1.Lhs) && isBlank(v1.Lhs[i])
-						sites = append(sites, qsite{unwrap: u, discard: discard})
+				/*line question.goal:393*/ for i, rhs := range v1.Rhs {
+					/*line question.goal:394*/ if u, ok := rhs.(*ast.UnwrapExpr); ok {
+						/*line question.goal:395*/ discard := i < len(v1.Lhs) && isBlank(v1.Lhs[i])
+						/*line question.goal:396*/ sites = append(sites, qsite{unwrap: u, discard: discard})
 					}
 				}
 			}
 		case *ast.ExprStmt:
 			{
-				if u, ok := v1.X.(*ast.UnwrapExpr); ok {
-					sites = append(sites, qsite{unwrap: u, discard: true})
+				/*line question.goal:401*/ if u, ok := v1.X.(*ast.UnwrapExpr); ok {
+					/*line question.goal:402*/ sites = append(sites, qsite{unwrap: u, discard: true})
 				}
 			}
 		default:
 			{
 			}
 		}
-		return true
+		/*line question.goal:407*/ return true
 	}), body)
-	return sites
+	/*line question.goal:409*/ return sites
 }
 
 //line question.goal:416
 func resolveQuestionCallee(u *ast.UnwrapExpr, info *Info) (sig FuncSig, key string, known bool) {
-	call, ok := u.X.(*ast.CallExpr)
-	if !ok {
-		return FuncSig{}, "", false
+	/*line question.goal:417*/ call, ok := u.X.(*ast.CallExpr)
+	/*line question.goal:418*/ if !ok {
+		/*line question.goal:419*/ return FuncSig{}, "", false
 	}
-	switch v1 := call.Fun.(type) {
+	/*line question.goal:421*/ switch v1 := call.Fun.(type) {
 	case *ast.Ident:
 		{
-			s, ok := info.FuncSignatures[v1.Name]
-			return s, v1.Name, ok
+			/*line question.goal:423*/ s, ok := info.FuncSignatures[v1.Name]
+			/*line question.goal:424*/ return s, v1.Name, ok
 		}
 	case *ast.SelectorExpr:
 		{
-			return FuncSig{}, exprName(v1), false
+			/*line question.goal:427*/ return FuncSig{}, exprName(v1), false
 		}
 	default:
 		{
-			return FuncSig{}, "", false
+			/*line question.goal:430*/ return FuncSig{}, "", false
 		}
 	}
 }
 
 //line question.goal:436
 func isResultErr(fun ast.Expr) bool {
-	sel, ok := fun.(*ast.SelectorExpr)
-	if !ok || sel.Sel == nil || sel.Sel.Name != "Err" {
-		return false
+	/*line question.goal:437*/ sel, ok := fun.(*ast.SelectorExpr)
+	/*line question.goal:438*/ if !ok || sel.Sel == nil || sel.Sel.Name != "Err" {
+		/*line question.goal:439*/ return false
 	}
-	id, ok := sel.X.(*ast.Ident)
-	return ok && id.Name == "Result"
+	/*line question.goal:441*/ id, ok := sel.X.(*ast.Ident)
+	/*line question.goal:442*/ return ok && id.Name == "Result"
 }
 
 //line question.goal:449
 func errVariantArg(arg ast.Expr) (qual, variant string, ok bool) {
-	switch v1 := arg.(type) {
+	/*line question.goal:450*/ switch v1 := arg.(type) {
 	case *ast.SelectorExpr:
 		{
-			base := exprName(v1.X)
-			if base == "" || v1.Sel == nil {
-				return "", "", false
+			/*line question.goal:452*/ base := exprName(v1.X)
+			/*line question.goal:453*/ if base == "" || v1.Sel == nil {
+				/*line question.goal:454*/ return "", "", false
 			}
-			return base, v1.Sel.Name, true
+			/*line question.goal:456*/ return base, v1.Sel.Name, true
 		}
 	case *ast.VariantLit:
 		{
-			base := exprName(v1.Enum)
-			if base == "" || v1.Variant == nil {
-				return "", "", false
+			/*line question.goal:459*/ base := exprName(v1.Enum)
+			/*line question.goal:460*/ if base == "" || v1.Variant == nil {
+				/*line question.goal:461*/ return "", "", false
 			}
-			return base, v1.Variant.Name, true
+			/*line question.goal:463*/ return base, v1.Variant.Name, true
 		}
 	default:
 		{
-			return "", "", false
+			/*line question.goal:466*/ return "", "", false
 		}
 	}
 }
 
 //line question.goal:473
 func semaVariantList(enumDecl *Enum) string {
-	names := make([]string, len(enumDecl.Variants))
-	for i, v := range enumDecl.Variants {
-		names[i] = "`" + enumDecl.Name + "." + v.Name + "`"
+	/*line question.goal:474*/ names := make([]string, len(enumDecl.Variants))
+	/*line question.goal:475*/ for i, v := range enumDecl.Variants {
+		/*line question.goal:476*/ names[i] = "`" + enumDecl.Name + "." + v.Name + "`"
 	}
-	return strings.Join(names, ", ")
+	/*line question.goal:478*/ return strings.Join(names, ", ")
 }
 
 //line question.goal:483
 func importAliases(file *ast.File) map[string]bool {
-	out := map[string]bool{}
-	for _, imp := range file.Imports {
-		if imp == nil || imp.Path == nil {
-			continue
+	/*line question.goal:484*/ out := map[string]bool{}
+	/*line question.goal:485*/ for _, imp := range file.Imports {
+		/*line question.goal:486*/ if imp == nil || imp.Path == nil {
+			/*line question.goal:487*/ continue
 		}
-		alias := ""
-		if imp.Name != nil {
-			alias = imp.Name.Name
+		/*line question.goal:489*/ alias := ""
+		/*line question.goal:490*/ if imp.Name != nil {
+			/*line question.goal:491*/ alias = imp.Name.Name
 		} else {
-			path := strings.Trim(imp.Path.Value, "\"`")
-			if i := strings.LastIndexByte(path, '/'); i >= 0 {
-				path = path[i+1:]
+			/*line question.goal:493*/ path := strings.Trim(imp.Path.Value, "\"`")
+			/*line question.goal:494*/ if i := strings.LastIndexByte(path, '/'); i >= 0 {
+				/*line question.goal:495*/ path = path[i+1:]
 			}
-			alias = path
+			/*line question.goal:497*/ alias = path
 		}
-		if alias != "" && alias != "_" && alias != "." {
-			out[alias] = true
+		/*line question.goal:499*/ if alias != "" && alias != "_" && alias != "." {
+			/*line question.goal:500*/ out[alias] = true
 		}
 	}
-	return out
+	/*line question.goal:503*/ return out
 }
 
 //line question.goal:508
 func isImportedCall(key string, imports map[string]bool) bool {
-	pkg, _, ok := strings.Cut(key, ".")
-	return ok && imports[pkg]
+	/*line question.goal:509*/ pkg, _, ok := strings.Cut(key, ".")
+	/*line question.goal:510*/ return ok && imports[pkg]
 }

@@ -11,34 +11,34 @@ import (
 
 //line callsite.goal:16
 func reportCallSites(src string, file *ast.File, info *sema.Info, reports *[]Report) {
-	for _, d := range file.Decls {
-		fn, ok := d.(*ast.FuncDecl)
-		if !ok || fn.Name == nil || fn.Body == nil {
-			continue
+	/*line callsite.goal:17*/ for _, d := range file.Decls {
+		/*line callsite.goal:18*/ fn, ok := d.(*ast.FuncDecl)
+		/*line callsite.goal:19*/ if !ok || fn.Name == nil || fn.Body == nil {
+			/*line callsite.goal:20*/ continue
 		}
-		if !isModeNone(info.FuncSignatures[fn.Name.Name].Mode) {
-			continue
+		/*line callsite.goal:22*/ if !isModeNone(info.FuncSignatures[fn.Name.Name].Mode) {
+			/*line callsite.goal:23*/ continue
 		}
-		name := fn.Name.Name
-		forEachBlock(fn.Body, func(list []ast.Stmt) {
-			for i := 1; i < len(list); i++ {
-				ifs, ok := list[i].(*ast.IfStmt)
-				if !ok || ifs.Init != nil {
-					continue
+		/*line callsite.goal:25*/ name := fn.Name.Name
+		/*line callsite.goal:26*/ forEachBlock(fn.Body, func(list []ast.Stmt) {
+			/*line callsite.goal:27*/ for i := 1; i < len(list); i++ {
+				/*line callsite.goal:28*/ ifs, ok := list[i].(*ast.IfStmt)
+				/*line callsite.goal:29*/ if !ok || ifs.Init != nil {
+					/*line callsite.goal:30*/ continue
 				}
-				condVar, ok := nilGuardVar(ifs.Cond, true)
-				if !ok {
-					continue
+				/*line callsite.goal:33*/ condVar, ok := nilGuardVar(ifs.Cond, true)
+				/*line callsite.goal:34*/ if !ok {
+					/*line callsite.goal:35*/ continue
 				}
-				as, ok := list[i-1].(*ast.AssignStmt)
-				if !ok || as.Tok != token.DEFINE {
-					continue
+				/*line callsite.goal:38*/ as, ok := list[i-1].(*ast.AssignStmt)
+				/*line callsite.goal:39*/ if !ok || as.Tok != token.DEFINE {
+					/*line callsite.goal:40*/ continue
 				}
-				names := identNames(as.Lhs)
-				if len(names) == 0 || names[len(names)-1] != condVar {
-					continue
+				/*line callsite.goal:42*/ names := identNames(as.Lhs)
+				/*line callsite.goal:43*/ if len(names) == 0 || names[len(names)-1] != condVar {
+					/*line callsite.goal:44*/ continue
 				}
-				addReport(reports, Report{lineOf(src, ifs.If.Offset), Suggest, "call-site", "manual error handling in `" + name + "`, which is not Result-returning; convert its signature to use `?`"})
+				/*line callsite.goal:46*/ addReport(reports, Report{lineOf(src, ifs.If.Offset), Suggest, "call-site", "manual error handling in `" + name + "`, which is not Result-returning; convert its signature to use `?`"})
 			}
 		})
 	}

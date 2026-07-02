@@ -15,70 +15,72 @@ import (
 
 //line implements.goal:24
 func CheckImplements(p *Package) []Diagnostic {
-	if p.Types == nil {
-		return nil
+	/*line implements.goal:25*/ if p.Types == nil {
+		/*line implements.goal:26*/ return nil
 	}
-	var diags []Diagnostic
+	/*line implements.goal:28*/ var diags []Diagnostic
 
+	/*line implements.goal:29*/
 	for i, gf := range p.goalFiles {
-		path := p.Src.Files[i].Path
-		for _, c := range implementsClauses(gf) {
-			tObj := p.Lookup(c.typeName)
-			if tObj == nil {
-				continue
+		/*line implements.goal:30*/ path := p.Src.Files[i].Path
+		/*line implements.goal:31*/ for _, c := range implementsClauses(gf) {
+			/*line implements.goal:32*/ tObj := p.Lookup(c.typeName)
+			/*line implements.goal:33*/ if tObj == nil {
+				/*line implements.goal:34*/ continue
 			}
-			if p.Sema.Sealed[c.iface] {
-				continue
+			/*line implements.goal:36*/ if p.Sema.Sealed[c.iface] {
+				/*line implements.goal:37*/ continue
 			}
-			pos := token.Position{Filename: path, Line: c.pos.Line, Column: c.pos.Col}
-			if d := verifyImplements(p, tObj.Type(), c.typeName, c.iface, pos); d != nil {
-				diags = append(diags, *d)
+			/*line implements.goal:39*/ pos := token.Position{Filename: path, Line: c.pos.Line, Column: c.pos.Col}
+			/*line implements.goal:40*/ if d := verifyImplements(p, tObj.Type(), c.typeName, c.iface, pos); d != nil {
+				/*line implements.goal:41*/ diags = append(diags, *d)
 			}
 		}
 	}
-	return diags
+	/*line implements.goal:45*/ return diags
 }
 
 //line implements.goal:51
 func verifyImplements(p *Package, T types.Type, typeName, iface string, pos token.Position) *Diagnostic {
-	it := resolveInterface(p, iface)
-	if it == nil {
-		return nil
+	/*line implements.goal:52*/ it := resolveInterface(p, iface)
+	/*line implements.goal:53*/ if it == nil {
+		/*line implements.goal:54*/ return nil
 	}
-	method, wrongType := types.MissingMethod(types.NewPointer(T), it, true)
-	if method == nil {
-		return nil
+	/*line implements.goal:56*/ method, wrongType := types.MissingMethod(types.NewPointer(T), it, true)
+	/*line implements.goal:57*/ if method == nil {
+		/*line implements.goal:58*/ return nil
 	}
-	code, what := "unimplemented-method", "missing method"
-	if wrongType {
-		code, what = "method-signature-mismatch", "wrong signature for method"
+	/*line implements.goal:60*/ code, what := "unimplemented-method", "missing method"
+	/*line implements.goal:61*/ if wrongType {
+		/*line implements.goal:62*/ code, what = "method-signature-mismatch", "wrong signature for method"
 	}
-	return &Diagnostic{Pos: pos, Severity: sema.Severity(sema.Severity_Error{}), Feature: "07-implements", Code: code, Message: fmt.Sprintf("type `%s` does not implement `%s`: %s `%s`", typeName, iface, what, method.Name())}
+	/*line implements.goal:64*/ return &Diagnostic{Pos: pos, Severity: sema.Severity(sema.Severity_Error{}), Feature: "07-implements", Code: code, Message: fmt.Sprintf("type `%s` does not implement `%s`: %s `%s`", typeName, iface, what, method.Name())}
 }
 
 //line implements.goal:77
 func resolveInterface(p *Package, iface string) *types.Interface {
-	var obj types.Object
+	/*line implements.goal:78*/ var obj types.Object
 
+	/*line implements.goal:79*/
 	if dot := strings.LastIndex(iface, "."); dot >= 0 {
-		qual, name := iface[:dot], iface[dot+1:]
-		for _, imp := range p.Types.Imports() {
-			if imp.Name() == qual {
-				obj = imp.Scope().Lookup(name)
-				break
+		/*line implements.goal:80*/ qual, name := iface[:dot], iface[dot+1:]
+		/*line implements.goal:81*/ for _, imp := range p.Types.Imports() {
+			/*line implements.goal:82*/ if imp.Name() == qual {
+				/*line implements.goal:83*/ obj = imp.Scope().Lookup(name)
+				/*line implements.goal:84*/ break
 			}
 		}
 	} else {
-		obj = p.Lookup(iface)
+		/*line implements.goal:88*/ obj = p.Lookup(iface)
 	}
-	if obj == nil {
-		return nil
+	/*line implements.goal:90*/ if obj == nil {
+		/*line implements.goal:91*/ return nil
 	}
-	it, ok := obj.Type().Underlying().(*types.Interface)
-	if !ok {
-		return nil
+	/*line implements.goal:93*/ it, ok := obj.Type().Underlying().(*types.Interface)
+	/*line implements.goal:94*/ if !ok {
+		/*line implements.goal:95*/ return nil
 	}
-	return it
+	/*line implements.goal:97*/ return it
 }
 
 //line implements.goal:104
@@ -90,41 +92,42 @@ type implClause struct {
 
 //line implements.goal:114
 func implementsClauses(f *goalast.File) []implClause {
-	var out []implClause
+	/*line implements.goal:115*/ var out []implClause
 
+	/*line implements.goal:116*/
 	for _, d := range f.Decls {
-		gd, ok := d.(*goalast.GenDecl)
-		if !ok || gd.Tok != goaltoken.TYPE {
-			continue
+		/*line implements.goal:117*/ gd, ok := d.(*goalast.GenDecl)
+		/*line implements.goal:118*/ if !ok || gd.Tok != goaltoken.TYPE {
+			/*line implements.goal:119*/ continue
 		}
-		for _, s := range gd.Specs {
-			ts, ok := s.(*goalast.TypeSpec)
-			if !ok || ts.Name == nil {
-				continue
+		/*line implements.goal:121*/ for _, s := range gd.Specs {
+			/*line implements.goal:122*/ ts, ok := s.(*goalast.TypeSpec)
+			/*line implements.goal:123*/ if !ok || ts.Name == nil {
+				/*line implements.goal:124*/ continue
 			}
-			st, ok := ts.Type.(*goalast.StructType)
-			if !ok || st.Implements == nil {
-				continue
+			/*line implements.goal:126*/ st, ok := ts.Type.(*goalast.StructType)
+			/*line implements.goal:127*/ if !ok || st.Implements == nil {
+				/*line implements.goal:128*/ continue
 			}
-			iface := ifaceName(st.Implements.Type)
-			if iface == "" {
-				continue
+			/*line implements.goal:130*/ iface := ifaceName(st.Implements.Type)
+			/*line implements.goal:131*/ if iface == "" {
+				/*line implements.goal:132*/ continue
 			}
-			out = append(out, implClause{typeName: ts.Name.Name, iface: iface, pos: st.Implements.Implements})
+			/*line implements.goal:134*/ out = append(out, implClause{typeName: ts.Name.Name, iface: iface, pos: st.Implements.Implements})
 		}
 	}
-	return out
+	/*line implements.goal:141*/ return out
 }
 
 //line implements.goal:146
 func ifaceName(e goalast.Expr) string {
-	switch x := e.(type) {
+	/*line implements.goal:147*/ switch x := e.(type) {
 	case *goalast.Ident:
 		return x.Name
 	case *goalast.SelectorExpr:
 		base := ifaceName(x.X)
 		if base == "" || x.Sel == nil {
-			return ""
+			/*line implements.goal:153*/ return ""
 		}
 		return base + "." + x.Sel.Name
 	default:

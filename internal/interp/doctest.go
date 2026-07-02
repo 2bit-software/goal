@@ -21,66 +21,66 @@ type DoctestFailure struct {
 
 //line doctest.goal:35
 func (f DoctestFailure) String() string {
-	return fmt.Sprintf("doctest %s: %s => got %s, want %s", f.Func, f.Input, f.Got, f.Expected)
+	/*line doctest.goal:36*/ return fmt.Sprintf("doctest %s: %s => got %s, want %s", f.Func, f.Input, f.Got, f.Expected)
 }
 
 //line doctest.goal:51
 func RunDoctests(src string) (failures []DoctestFailure, ran int, err error) {
-	file, err := parser.ParseFile(src)
-	if err != nil {
-		return nil, 0, fmt.Errorf("interp: doctest source parse: %w", err)
+	/*line doctest.goal:52*/ file, err := parser.ParseFile(src)
+	/*line doctest.goal:53*/ if err != nil {
+		/*line doctest.goal:54*/ return nil, 0, fmt.Errorf("interp: doctest source parse: %w", err)
 	}
-	info := sema.Resolve(file)
-	ip := New(file, info)
-	pkg := "main"
-	if file.Name != nil && file.Name.Name != "" {
-		pkg = file.Name.Name
+	/*line doctest.goal:56*/ info := sema.Resolve(file)
+	/*line doctest.goal:57*/ ip := New(file, info)
+	/*line doctest.goal:59*/ pkg := "main"
+	/*line doctest.goal:60*/ if file.Name != nil && file.Name.Name != "" {
+		/*line doctest.goal:61*/ pkg = file.Name.Name
 	}
-	for _, d := range file.Decls {
-		fd, ok := d.(*ast.FuncDecl)
-		if !ok || fd.Name == nil || fd.Doc == nil {
-			continue
+	/*line doctest.goal:64*/ for _, d := range file.Decls {
+		/*line doctest.goal:65*/ fd, ok := d.(*ast.FuncDecl)
+		/*line doctest.goal:66*/ if !ok || fd.Name == nil || fd.Doc == nil {
+			/*line doctest.goal:67*/ continue
 		}
-		for _, dt := range fd.Doc.Doctests {
-			input := strings.TrimSpace(dt.Input)
-			want := strings.TrimSpace(strings.Join(dt.Expected, "\n"))
-			if input == "" || want == "" {
-				continue
+		/*line doctest.goal:69*/ for _, dt := range fd.Doc.Doctests {
+			/*line doctest.goal:70*/ input := strings.TrimSpace(dt.Input)
+			/*line doctest.goal:71*/ want := strings.TrimSpace(strings.Join(dt.Expected, "\n"))
+			/*line doctest.goal:72*/ if input == "" || want == "" {
+				/*line doctest.goal:73*/ continue
 			}
-			ran++
-			expr, perr := parseDoctestExpr(pkg, input)
-			if perr != nil {
-				return nil, ran, fmt.Errorf("interp: doctest %s %q: %w", fd.Name.Name, input, perr)
+			/*line doctest.goal:75*/ ran++
+			/*line doctest.goal:76*/ expr, perr := parseDoctestExpr(pkg, input)
+			/*line doctest.goal:77*/ if perr != nil {
+				/*line doctest.goal:78*/ return nil, ran, fmt.Errorf("interp: doctest %s %q: %w", fd.Name.Name, input, perr)
 			}
-			val, eerr := ip.evalExpr(expr, ip.root)
-			if eerr != nil {
-				return nil, ran, fmt.Errorf("interp: doctest %s %q: eval: %w", fd.Name.Name, input, eerr)
+			/*line doctest.goal:80*/ val, eerr := ip.evalExpr(expr, ip.root)
+			/*line doctest.goal:81*/ if eerr != nil {
+				/*line doctest.goal:82*/ return nil, ran, fmt.Errorf("interp: doctest %s %q: eval: %w", fd.Name.Name, input, eerr)
 			}
-			if got := val.String(); got != want {
-				failures = append(failures, DoctestFailure{Func: fd.Name.Name, Input: input, Expected: want, Got: got})
+			/*line doctest.goal:84*/ if got := val.String(); got != want {
+				/*line doctest.goal:85*/ failures = append(failures, DoctestFailure{Func: fd.Name.Name, Input: input, Expected: want, Got: got})
 			}
 		}
 	}
-	return failures, ran, nil
+	/*line doctest.goal:94*/ return failures, ran, nil
 }
 
 //line doctest.goal:102
 func parseDoctestExpr(pkg, input string) (ast.Expr, error) {
-	wrap := "package " + pkg + "\nfunc __doctest__() {\n\t__dt := " + input + "\n}\n"
-	wf, err := parser.ParseFile(wrap)
-	if err != nil {
-		return nil, fmt.Errorf("parse expression: %w", err)
+	/*line doctest.goal:103*/ wrap := "package " + pkg + "\nfunc __doctest__() {\n\t__dt := " + input + "\n}\n"
+	/*line doctest.goal:104*/ wf, err := parser.ParseFile(wrap)
+	/*line doctest.goal:105*/ if err != nil {
+		/*line doctest.goal:106*/ return nil, fmt.Errorf("parse expression: %w", err)
 	}
-	if len(wf.Decls) == 0 {
-		return nil, fmt.Errorf("parse expression: no declaration produced")
+	/*line doctest.goal:108*/ if len(wf.Decls) == 0 {
+		/*line doctest.goal:109*/ return nil, fmt.Errorf("parse expression: no declaration produced")
 	}
-	fd, ok := wf.Decls[0].(*ast.FuncDecl)
-	if !ok || fd.Body == nil || len(fd.Body.List) == 0 {
-		return nil, fmt.Errorf("parse expression: unexpected wrapper shape")
+	/*line doctest.goal:111*/ fd, ok := wf.Decls[0].(*ast.FuncDecl)
+	/*line doctest.goal:112*/ if !ok || fd.Body == nil || len(fd.Body.List) == 0 {
+		/*line doctest.goal:113*/ return nil, fmt.Errorf("parse expression: unexpected wrapper shape")
 	}
-	as, ok := fd.Body.List[0].(*ast.AssignStmt)
-	if !ok || len(as.Rhs) != 1 {
-		return nil, fmt.Errorf("parse expression: expected a single assigned expression")
+	/*line doctest.goal:115*/ as, ok := fd.Body.List[0].(*ast.AssignStmt)
+	/*line doctest.goal:116*/ if !ok || len(as.Rhs) != 1 {
+		/*line doctest.goal:117*/ return nil, fmt.Errorf("parse expression: expected a single assigned expression")
 	}
-	return as.Rhs[0], nil
+	/*line doctest.goal:119*/ return as.Rhs[0], nil
 }

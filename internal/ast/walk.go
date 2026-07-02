@@ -9,124 +9,124 @@ type Visitor interface {
 
 //line walk.goal:28
 func Walk(v Visitor, node Node) {
-	if node == nil {
-		return
+	/*line walk.goal:29*/ if node == nil {
+		/*line walk.goal:30*/ return
 	}
-	if v = v.Visit(node); v == nil {
-		return
+	/*line walk.goal:32*/ if v = v.Visit(node); v == nil {
+		/*line walk.goal:33*/ return
 	}
-	switch n := node.(type) {
+	/*line walk.goal:36*/ switch n := node.(type) {
 	case *Field:
 		walkIdentList(v, n.Names)
 		walkExpr(v, n.Type)
 		if n.Tag != nil {
-			Walk(v, n.Tag)
+			/*line walk.goal:42*/ Walk(v, n.Tag)
 		}
 	case *FieldList:
 		for _, f := range n.List {
-			Walk(v, f)
+			/*line walk.goal:46*/ Walk(v, f)
 		}
 	case *File:
 		if n.Name != nil {
-			Walk(v, n.Name)
+			/*line walk.goal:52*/ Walk(v, n.Name)
 		}
 		for _, d := range n.Decls {
-			Walk(v, d)
+			/*line walk.goal:55*/ Walk(v, d)
 		}
 	case *GenDecl:
 		for _, s := range n.Specs {
-			Walk(v, s)
+			/*line walk.goal:61*/ Walk(v, s)
 		}
 	case *FuncDecl:
 		if n.Doc != nil {
-			Walk(v, n.Doc)
+			/*line walk.goal:65*/ Walk(v, n.Doc)
 		}
 		if n.Recv != nil {
-			Walk(v, n.Recv)
+			/*line walk.goal:68*/ Walk(v, n.Recv)
 		}
 		if n.Name != nil {
-			Walk(v, n.Name)
+			/*line walk.goal:71*/ Walk(v, n.Name)
 		}
 		if n.Type != nil {
-			Walk(v, n.Type)
+			/*line walk.goal:74*/ Walk(v, n.Type)
 		}
 		if n.Body != nil {
-			Walk(v, n.Body)
+			/*line walk.goal:77*/ Walk(v, n.Body)
 		}
 	case *DocComment:
 	case *EnumDecl:
 		if n.Name != nil {
-			Walk(v, n.Name)
+			/*line walk.goal:85*/ Walk(v, n.Name)
 		}
 		for _, vr := range n.Variants {
-			Walk(v, vr)
+			/*line walk.goal:88*/ Walk(v, vr)
 		}
 	case *Variant:
 		if n.Name != nil {
-			Walk(v, n.Name)
+			/*line walk.goal:92*/ Walk(v, n.Name)
 		}
 		for _, f := range n.Payload {
-			Walk(v, f)
+			/*line walk.goal:95*/ Walk(v, f)
 		}
 	case *PayloadField:
 		if n.Name != nil {
-			Walk(v, n.Name)
+			/*line walk.goal:99*/ Walk(v, n.Name)
 		}
 		walkExpr(v, n.Type)
 	case *SealedInterfaceDecl:
 		if n.Name != nil {
-			Walk(v, n.Name)
+			/*line walk.goal:104*/ Walk(v, n.Name)
 		}
 		if n.Methods != nil {
-			Walk(v, n.Methods)
+			/*line walk.goal:107*/ Walk(v, n.Methods)
 		}
 	case *ImplementsClause:
 		walkExpr(v, n.Type)
 	case *MatchExpr:
 		walkExpr(v, n.Subject)
 		for _, arm := range n.Arms {
-			Walk(v, arm)
+			/*line walk.goal:116*/ Walk(v, arm)
 		}
 	case *MatchArm:
 		walkExpr(v, n.Pattern)
 		if n.Body != nil {
-			Walk(v, n.Body)
+			/*line walk.goal:121*/ Walk(v, n.Body)
 		}
 	case *VariantPattern:
 		walkExpr(v, n.Enum)
 		if n.Variant != nil {
-			Walk(v, n.Variant)
+			/*line walk.goal:126*/ Walk(v, n.Variant)
 		}
 		if n.Binding != nil {
-			Walk(v, n.Binding)
+			/*line walk.goal:129*/ Walk(v, n.Binding)
 		}
 	case *RestPattern:
 	case *TypePattern:
 		walkExpr(v, n.Type)
 		if n.Binding != nil {
-			Walk(v, n.Binding)
+			/*line walk.goal:136*/ Walk(v, n.Binding)
 		}
 	case *UnwrapExpr:
 		walkExpr(v, n.X)
 	case *VariantLit:
 		walkExpr(v, n.Enum)
 		if n.Variant != nil {
-			Walk(v, n.Variant)
+			/*line walk.goal:143*/ Walk(v, n.Variant)
 		}
 		walkExprList(v, n.Args)
 	case *LabeledArg:
 		if n.Label != nil {
-			Walk(v, n.Label)
+			/*line walk.goal:148*/ Walk(v, n.Label)
 		}
 		walkExpr(v, n.Value)
 	case *SpreadElement:
 		walkExpr(v, n.X)
 	case *ImportSpec:
 		if n.Name != nil {
-			Walk(v, n.Name)
+			/*line walk.goal:157*/ Walk(v, n.Name)
 		}
 		if n.Path != nil {
-			Walk(v, n.Path)
+			/*line walk.goal:160*/ Walk(v, n.Path)
 		}
 	case *ValueSpec:
 		walkIdentList(v, n.Names)
@@ -134,10 +134,10 @@ func Walk(v Visitor, node Node) {
 		walkExprList(v, n.Values)
 	case *TypeSpec:
 		if n.Name != nil {
-			Walk(v, n.Name)
+			/*line walk.goal:168*/ Walk(v, n.Name)
 		}
 		if n.TypeParams != nil {
-			Walk(v, n.TypeParams)
+			/*line walk.goal:171*/ Walk(v, n.TypeParams)
 		}
 		walkExpr(v, n.Type)
 	case *Ident, *BasicLit:
@@ -151,7 +151,7 @@ func Walk(v Visitor, node Node) {
 	case *SelectorExpr:
 		walkExpr(v, n.X)
 		if n.Sel != nil {
-			Walk(v, n.Sel)
+			/*line walk.goal:189*/ Walk(v, n.Sel)
 		}
 	case *IndexExpr:
 		walkExpr(v, n.X)
@@ -180,10 +180,10 @@ func Walk(v Visitor, node Node) {
 		walkExprList(v, n.Elts)
 	case *FuncLit:
 		if n.Type != nil {
-			Walk(v, n.Type)
+			/*line walk.goal:218*/ Walk(v, n.Type)
 		}
 		if n.Body != nil {
-			Walk(v, n.Body)
+			/*line walk.goal:221*/ Walk(v, n.Body)
 		}
 	case *ArrayType:
 		walkExpr(v, n.Len)
@@ -193,24 +193,24 @@ func Walk(v Visitor, node Node) {
 		walkExpr(v, n.Value)
 	case *StructType:
 		if n.Implements != nil {
-			Walk(v, n.Implements)
+			/*line walk.goal:233*/ Walk(v, n.Implements)
 		}
 		if n.Fields != nil {
-			Walk(v, n.Fields)
+			/*line walk.goal:236*/ Walk(v, n.Fields)
 		}
 	case *InterfaceType:
 		if n.Methods != nil {
-			Walk(v, n.Methods)
+			/*line walk.goal:240*/ Walk(v, n.Methods)
 		}
 	case *FuncType:
 		if n.TypeParams != nil {
-			Walk(v, n.TypeParams)
+			/*line walk.goal:244*/ Walk(v, n.TypeParams)
 		}
 		if n.Params != nil {
-			Walk(v, n.Params)
+			/*line walk.goal:247*/ Walk(v, n.Params)
 		}
 		if n.Results != nil {
-			Walk(v, n.Results)
+			/*line walk.goal:250*/ Walk(v, n.Results)
 		}
 	case *ChanType:
 		walkExpr(v, n.Value)
@@ -229,61 +229,61 @@ func Walk(v Visitor, node Node) {
 		walkExprList(v, n.Results)
 	case *IfStmt:
 		if n.Init != nil {
-			Walk(v, n.Init)
+			/*line walk.goal:271*/ Walk(v, n.Init)
 		}
 		walkExpr(v, n.Cond)
 		if n.Body != nil {
-			Walk(v, n.Body)
+			/*line walk.goal:275*/ Walk(v, n.Body)
 		}
 		if n.Else != nil {
-			Walk(v, n.Else)
+			/*line walk.goal:278*/ Walk(v, n.Else)
 		}
 	case *ForStmt:
 		if n.Init != nil {
-			Walk(v, n.Init)
+			/*line walk.goal:282*/ Walk(v, n.Init)
 		}
 		walkExpr(v, n.Cond)
 		if n.Post != nil {
-			Walk(v, n.Post)
+			/*line walk.goal:286*/ Walk(v, n.Post)
 		}
 		if n.Body != nil {
-			Walk(v, n.Body)
+			/*line walk.goal:289*/ Walk(v, n.Body)
 		}
 	case *RangeStmt:
 		walkExpr(v, n.Key)
 		walkExpr(v, n.Value)
 		walkExpr(v, n.X)
 		if n.Body != nil {
-			Walk(v, n.Body)
+			/*line walk.goal:296*/ Walk(v, n.Body)
 		}
 	case *SwitchStmt:
 		if n.Init != nil {
-			Walk(v, n.Init)
+			/*line walk.goal:300*/ Walk(v, n.Init)
 		}
 		walkExpr(v, n.Tag)
 		if n.Body != nil {
-			Walk(v, n.Body)
+			/*line walk.goal:304*/ Walk(v, n.Body)
 		}
 	case *CaseClause:
 		walkExprList(v, n.List)
 		walkStmtList(v, n.Body)
 	case *TypeSwitchStmt:
 		if n.Init != nil {
-			Walk(v, n.Init)
+			/*line walk.goal:311*/ Walk(v, n.Init)
 		}
 		if n.Assign != nil {
-			Walk(v, n.Assign)
+			/*line walk.goal:314*/ Walk(v, n.Assign)
 		}
 		if n.Body != nil {
-			Walk(v, n.Body)
+			/*line walk.goal:317*/ Walk(v, n.Body)
 		}
 	case *SelectStmt:
 		if n.Body != nil {
-			Walk(v, n.Body)
+			/*line walk.goal:321*/ Walk(v, n.Body)
 		}
 	case *CommClause:
 		if n.Comm != nil {
-			Walk(v, n.Comm)
+			/*line walk.goal:325*/ Walk(v, n.Comm)
 		}
 		walkStmtList(v, n.Body)
 	case *SendStmt:
@@ -291,26 +291,26 @@ func Walk(v Visitor, node Node) {
 		walkExpr(v, n.Value)
 	case *LabeledStmt:
 		if n.Label != nil {
-			Walk(v, n.Label)
+			/*line walk.goal:333*/ Walk(v, n.Label)
 		}
 		if n.Stmt != nil {
-			Walk(v, n.Stmt)
+			/*line walk.goal:336*/ Walk(v, n.Stmt)
 		}
 	case *DeferStmt:
 		if n.Call != nil {
-			Walk(v, n.Call)
+			/*line walk.goal:340*/ Walk(v, n.Call)
 		}
 	case *GoStmt:
 		if n.Call != nil {
-			Walk(v, n.Call)
+			/*line walk.goal:344*/ Walk(v, n.Call)
 		}
 	case *BranchStmt:
 		if n.Label != nil {
-			Walk(v, n.Label)
+			/*line walk.goal:348*/ Walk(v, n.Label)
 		}
 	case *DeclStmt:
 		if n.Decl != nil {
-			Walk(v, n.Decl)
+			/*line walk.goal:352*/ Walk(v, n.Decl)
 		}
 	case *EmptyStmt:
 	case *AssertStmt:
@@ -318,39 +318,39 @@ func Walk(v Visitor, node Node) {
 		walkExpr(v, n.Msg)
 		walkExprList(v, n.Args)
 	}
-	v.Visit(nil)
+	/*line walk.goal:362*/ v.Visit(nil)
 }
 
 //line walk.goal:366
 func walkExpr(v Visitor, x Expr) {
-	if x != nil {
-		Walk(v, x)
+	/*line walk.goal:367*/ if x != nil {
+		/*line walk.goal:368*/ Walk(v, x)
 	}
 }
 
 //line walk.goal:373
 func walkExprList(v Visitor, list []Expr) {
-	for _, x := range list {
-		if x != nil {
-			Walk(v, x)
+	/*line walk.goal:374*/ for _, x := range list {
+		/*line walk.goal:375*/ if x != nil {
+			/*line walk.goal:376*/ Walk(v, x)
 		}
 	}
 }
 
 //line walk.goal:382
 func walkIdentList(v Visitor, list []*Ident) {
-	for _, id := range list {
-		if id != nil {
-			Walk(v, id)
+	/*line walk.goal:383*/ for _, id := range list {
+		/*line walk.goal:384*/ if id != nil {
+			/*line walk.goal:385*/ Walk(v, id)
 		}
 	}
 }
 
 //line walk.goal:391
 func walkStmtList(v Visitor, list []Stmt) {
-	for _, s := range list {
-		if s != nil {
-			Walk(v, s)
+	/*line walk.goal:392*/ for _, s := range list {
+		/*line walk.goal:393*/ if s != nil {
+			/*line walk.goal:394*/ Walk(v, s)
 		}
 	}
 }

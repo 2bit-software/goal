@@ -16,15 +16,16 @@ type GoTypesChecker struct {
 
 //line checker.goal:31
 func (GoTypesChecker) Check(pkg *project.Package) (ok []Diagnostic, err error) {
-	p, err := Load(pkg)
+	/*line checker.goal:32*/ p, err := Load(pkg)
 	if err != nil {
 		return ok, err
 	}
-	var diags []Diagnostic
+	/*line checker.goal:33*/ var diags []Diagnostic
 
+	/*line checker.goal:34*/
 	diags = append(diags, CheckImplements(p)...)
-	diags = append(diags, CheckMustUse(p)...)
-	diags = append(diags, CheckNoZeroValue(p)...)
-	diags = append(diags, goTypeDiags(p)...)
-	return diags, nil
+	/*line checker.goal:35*/ diags = append(diags, CheckMustUse(p)...)
+	/*line checker.goal:36*/ diags = append(diags, CheckNoZeroValue(p)...)
+	/*line checker.goal:37*/ diags = append(diags, goTypeDiags(p)...)
+	/*line checker.goal:38*/ return diags, nil
 }

@@ -10,28 +10,28 @@ import (
 
 //line goal_match.goal:25
 func (p *parser) parseMatchExpr() *ast.MatchExpr {
-	matchTok := p.expect(token.MATCH)
-	m := &ast.MatchExpr{Match: matchTok.Pos}
-	prev := p.exprLev
-	p.exprLev = -1
-	m.Subject = p.parseExpr()
-	p.exprLev = prev
-	lb := p.expect(token.LBRACE)
-	m.Lbrace = lb.Pos
-	for !p.at(token.RBRACE) && !p.at(token.EOF) {
-		m.Arms = append(m.Arms, p.parseMatchArm())
+	/*line goal_match.goal:26*/ matchTok := p.expect(token.MATCH)
+	/*line goal_match.goal:27*/ m := &ast.MatchExpr{Match: matchTok.Pos}
+	/*line goal_match.goal:29*/ prev := p.exprLev
+	/*line goal_match.goal:30*/ p.exprLev = -1
+	/*line goal_match.goal:31*/ m.Subject = p.parseExpr()
+	/*line goal_match.goal:32*/ p.exprLev = prev
+	/*line goal_match.goal:34*/ lb := p.expect(token.LBRACE)
+	/*line goal_match.goal:35*/ m.Lbrace = lb.Pos
+	/*line goal_match.goal:36*/ for !p.at(token.RBRACE) && !p.at(token.EOF) {
+		/*line goal_match.goal:37*/ m.Arms = append(m.Arms, p.parseMatchArm())
 	}
-	rb := p.expect(token.RBRACE)
-	m.Rbrace = rb.Pos
-	return m
+	/*line goal_match.goal:39*/ rb := p.expect(token.RBRACE)
+	/*line goal_match.goal:40*/ m.Rbrace = rb.Pos
+	/*line goal_match.goal:41*/ return m
 }
 
 //line goal_match.goal:49
 func (p *parser) parseMatchArm() *ast.MatchArm {
-	arm := &ast.MatchArm{Pattern: p.parsePattern()}
-	arrow := p.expect(token.FAT_ARROW)
-	arm.Arrow = arrow.Pos
-	switch {
+	/*line goal_match.goal:50*/ arm := &ast.MatchArm{Pattern: p.parsePattern()}
+	/*line goal_match.goal:51*/ arrow := p.expect(token.FAT_ARROW)
+	/*line goal_match.goal:52*/ arm.Arrow = arrow.Pos
+	/*line goal_match.goal:53*/ switch {
 	case p.at(token.LBRACE):
 		arm.Body = p.parseBlock()
 	case startsArmStmt(p.kind()):
@@ -42,66 +42,66 @@ func (p *parser) parseMatchArm() *ast.MatchArm {
 		arm.Body = p.parseExpr()
 		p.armBody = prev
 	}
-	return arm
+	/*line goal_match.goal:66*/ return arm
 }
 
 //line goal_match.goal:73
 func startsArmStmt(k token.Kind) bool {
-	switch k {
+	/*line goal_match.goal:74*/ switch k {
 	case token.RETURN, token.IF, token.FOR, token.SWITCH, token.DEFER, token.GO, token.BREAK, token.CONTINUE, token.GOTO, token.FALLTHROUGH, token.CONST, token.VAR, token.TYPE, token.ASSERT:
 		return true
 	}
-	return false
+	/*line goal_match.goal:80*/ return false
 }
 
 //line goal_match.goal:88
 func (p *parser) parsePattern() ast.Expr {
-	if p.at(token.IDENT) && p.cur().Lit == "_" {
-		t := p.advance()
-		return &ast.RestPattern{Underscore: t.Pos}
+	/*line goal_match.goal:89*/ if p.at(token.IDENT) && p.cur().Lit == "_" {
+		/*line goal_match.goal:90*/ t := p.advance()
+		/*line goal_match.goal:91*/ return &ast.RestPattern{Underscore: t.Pos}
 	}
-	if p.at(token.MUL) {
-		return p.parseTypePattern()
+	/*line goal_match.goal:93*/ if p.at(token.MUL) {
+		/*line goal_match.goal:94*/ return p.parseTypePattern()
 	}
-	return p.parseVariantPattern()
+	/*line goal_match.goal:96*/ return p.parseVariantPattern()
 }
 
 //line goal_match.goal:102
 func (p *parser) parseTypePattern() ast.Expr {
-	tp := &ast.TypePattern{Type: p.parseType()}
-	if p.at(token.LPAREN) {
-		lp := p.advance()
-		tp.Lparen = lp.Pos
-		if p.at(token.IDENT) {
-			tp.Binding = p.ident()
+	/*line goal_match.goal:103*/ tp := &ast.TypePattern{Type: p.parseType()}
+	/*line goal_match.goal:104*/ if p.at(token.LPAREN) {
+		/*line goal_match.goal:105*/ lp := p.advance()
+		/*line goal_match.goal:106*/ tp.Lparen = lp.Pos
+		/*line goal_match.goal:107*/ if p.at(token.IDENT) {
+			/*line goal_match.goal:108*/ tp.Binding = p.ident()
 		}
-		rp := p.expect(token.RPAREN)
-		tp.Rparen = rp.Pos
+		/*line goal_match.goal:110*/ rp := p.expect(token.RPAREN)
+		/*line goal_match.goal:111*/ tp.Rparen = rp.Pos
 	}
-	return tp
+	/*line goal_match.goal:113*/ return tp
 }
 
 //line goal_match.goal:120
 func (p *parser) parseVariantPattern() ast.Expr {
-	vp := &ast.VariantPattern{Variant: p.ident()}
-	for p.at(token.PERIOD) {
-		p.advance()
-		next := p.ident()
-		if vp.Enum == nil {
-			vp.Enum = vp.Variant
+	/*line goal_match.goal:121*/ vp := &ast.VariantPattern{Variant: p.ident()}
+	/*line goal_match.goal:122*/ for p.at(token.PERIOD) {
+		/*line goal_match.goal:123*/ p.advance()
+		/*line goal_match.goal:124*/ next := p.ident()
+		/*line goal_match.goal:126*/ if vp.Enum == nil {
+			/*line goal_match.goal:127*/ vp.Enum = vp.Variant
 		} else {
-			vp.Enum = &ast.SelectorExpr{X: vp.Enum, Sel: vp.Variant}
+			/*line goal_match.goal:129*/ vp.Enum = &ast.SelectorExpr{X: vp.Enum, Sel: vp.Variant}
 		}
-		vp.Variant = next
+		/*line goal_match.goal:131*/ vp.Variant = next
 	}
-	if p.at(token.LPAREN) {
-		lp := p.advance()
-		vp.Lparen = lp.Pos
-		if p.at(token.IDENT) {
-			vp.Binding = p.ident()
+	/*line goal_match.goal:133*/ if p.at(token.LPAREN) {
+		/*line goal_match.goal:134*/ lp := p.advance()
+		/*line goal_match.goal:135*/ vp.Lparen = lp.Pos
+		/*line goal_match.goal:136*/ if p.at(token.IDENT) {
+			/*line goal_match.goal:137*/ vp.Binding = p.ident()
 		}
-		rp := p.expect(token.RPAREN)
-		vp.Rparen = rp.Pos
+		/*line goal_match.goal:139*/ rp := p.expect(token.RPAREN)
+		/*line goal_match.goal:140*/ vp.Rparen = rp.Pos
 	}
-	return vp
+	/*line goal_match.goal:142*/ return vp
 }

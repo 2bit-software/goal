@@ -28,7 +28,7 @@ type GoFormatter struct {
 
 //line backend.goal:46
 func (GoFormatter) Format(src []byte) ([]byte, error) {
-	return format.Source(src)
+	/*line backend.goal:47*/ return format.Source(src)
 }
 
 //line backend.goal:53
@@ -37,38 +37,38 @@ type goBackend struct {
 
 //line backend.goal:57
 func (goBackend) Emit(file *ast.File, info *sema.Info) (pipeline.Output, error) {
-	src, err := emitFile(file, info)
-	if err != nil {
-		return pipeline.Output{}, err
+	/*line backend.goal:58*/ src, err := emitFile(file, info)
+	/*line backend.goal:59*/ if err != nil {
+		/*line backend.goal:60*/ return pipeline.Output{}, err
 	}
-	test, _, err := emitDoctests(file, info, true)
-	if err != nil {
-		return pipeline.Output{}, fmt.Errorf("doctests: %w", err)
+	/*line backend.goal:64*/ test, _, err := emitDoctests(file, info, true)
+	/*line backend.goal:65*/ if err != nil {
+		/*line backend.goal:66*/ return pipeline.Output{}, fmt.Errorf("doctests: %w", err)
 	}
-	return pipeline.Output{Go: src, Test: test}, nil
+	/*line backend.goal:68*/ return pipeline.Output{Go: src, Test: test}, nil
 }
 
 //line backend.goal:80
 func Transpile(src string) (pipeline.Output, error) {
-	file, err := parser.ParseFile(src)
-	if err != nil {
-		return pipeline.Output{}, fmt.Errorf("parse: %w", err)
+	/*line backend.goal:81*/ file, err := parser.ParseFile(src)
+	/*line backend.goal:82*/ if err != nil {
+		/*line backend.goal:83*/ return pipeline.Output{}, fmt.Errorf("parse: %w", err)
 	}
-	out, err := goBackend{}.Emit(file, sema.Resolve(file))
-	if err != nil {
-		return pipeline.Output{}, err
+	/*line backend.goal:85*/ out, err := goBackend{}.Emit(file, sema.Resolve(file))
+	/*line backend.goal:86*/ if err != nil {
+		/*line backend.goal:87*/ return pipeline.Output{}, err
 	}
-	formatted, err := GoFormatter{}.Format([]byte(out.Go))
-	if err != nil {
-		return pipeline.Output{}, fmt.Errorf("generated Go did not parse: %w\n--- generated ---\n%s", err, out.Go)
+	/*line backend.goal:89*/ formatted, err := GoFormatter{}.Format([]byte(out.Go))
+	/*line backend.goal:90*/ if err != nil {
+		/*line backend.goal:91*/ return pipeline.Output{}, fmt.Errorf("generated Go did not parse: %w\n--- generated ---\n%s", err, out.Go)
 	}
-	out.Go = string(formatted)
-	if out.Test != "" {
-		formattedTest, err := GoFormatter{}.Format([]byte(out.Test))
-		if err != nil {
-			return pipeline.Output{}, fmt.Errorf("generated test did not parse: %w\n--- generated ---\n%s", err, out.Test)
+	/*line backend.goal:93*/ out.Go = string(formatted)
+	/*line backend.goal:94*/ if out.Test != "" {
+		/*line backend.goal:95*/ formattedTest, err := GoFormatter{}.Format([]byte(out.Test))
+		/*line backend.goal:96*/ if err != nil {
+			/*line backend.goal:97*/ return pipeline.Output{}, fmt.Errorf("generated test did not parse: %w\n--- generated ---\n%s", err, out.Test)
 		}
-		out.Test = string(formattedTest)
+		/*line backend.goal:99*/ out.Test = string(formattedTest)
 	}
-	return out, nil
+	/*line backend.goal:101*/ return out, nil
 }

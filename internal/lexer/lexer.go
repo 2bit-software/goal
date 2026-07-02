@@ -32,94 +32,96 @@ type Error struct {
 
 //line lexer.goal:51
 func (l *Lexer) errorf(pos token.Pos, code, msg string) {
-	l.errs = append(l.errs, Error{Pos: pos, Code: code, Msg: msg})
+	/*line lexer.goal:52*/ l.errs = append(l.errs, Error{Pos: pos, Code: code, Msg: msg})
 }
 
 //line lexer.goal:56
 func New(src string) *Lexer {
-	l := &Lexer{src: src, line: 1}
-	l.next()
-	return l
+	/*line lexer.goal:57*/ l := &Lexer{src: src, line: 1}
+	/*line lexer.goal:58*/ l.next()
+	/*line lexer.goal:59*/ return l
 }
 
 //line lexer.goal:66
 func (l *Lexer) next() {
-	if l.ch == '\n' {
-		l.line++
-		l.lineStart = l.rdOffset
+	/*line lexer.goal:67*/ if l.ch == '\n' {
+		/*line lexer.goal:68*/ l.line++
+		/*line lexer.goal:69*/ l.lineStart = l.rdOffset
 	}
-	if l.rdOffset >= len(l.src) {
-		l.offset = len(l.src)
-		l.ch = eof
-		return
+	/*line lexer.goal:71*/ if l.rdOffset >= len(l.src) {
+		/*line lexer.goal:72*/ l.offset = len(l.src)
+		/*line lexer.goal:73*/ l.ch = eof
+		/*line lexer.goal:74*/ return
 	}
-	l.offset = l.rdOffset
-	r, w := utf8.DecodeRuneInString(l.src[l.rdOffset:])
-	l.rdOffset += w
-	l.ch = r
+	/*line lexer.goal:76*/ l.offset = l.rdOffset
+	/*line lexer.goal:77*/ r, w := utf8.DecodeRuneInString(l.src[l.rdOffset:])
+	/*line lexer.goal:78*/ l.rdOffset += w
+	/*line lexer.goal:79*/ l.ch = r
 }
 
 //line lexer.goal:83
 func (l *Lexer) peek() rune {
-	if l.rdOffset >= len(l.src) {
-		return eof
+	/*line lexer.goal:84*/ if l.rdOffset >= len(l.src) {
+		/*line lexer.goal:85*/ return eof
 	}
-	r, _ := utf8.DecodeRuneInString(l.src[l.rdOffset:])
-	return r
+	/*line lexer.goal:87*/ r, _ := utf8.DecodeRuneInString(l.src[l.rdOffset:])
+	/*line lexer.goal:88*/ return r
 }
 
 //line lexer.goal:94
 func (l *Lexer) peek2() rune {
-	if l.rdOffset >= len(l.src) {
-		return eof
+	/*line lexer.goal:95*/ if l.rdOffset >= len(l.src) {
+		/*line lexer.goal:96*/ return eof
 	}
-	_, w := utf8.DecodeRuneInString(l.src[l.rdOffset:])
-	next := l.rdOffset + w
-	if next >= len(l.src) {
-		return eof
+	/*line lexer.goal:98*/ _, w := utf8.DecodeRuneInString(l.src[l.rdOffset:])
+	/*line lexer.goal:99*/ next := l.rdOffset + w
+	/*line lexer.goal:100*/ if next >= len(l.src) {
+		/*line lexer.goal:101*/ return eof
 	}
-	r, _ := utf8.DecodeRuneInString(l.src[next:])
-	return r
+	/*line lexer.goal:103*/ r, _ := utf8.DecodeRuneInString(l.src[next:])
+	/*line lexer.goal:104*/ return r
 }
 
 //line lexer.goal:108
 func (l *Lexer) pos() token.Pos {
-	return token.Pos{Offset: l.offset, Line: l.line, Col: l.offset - l.lineStart + 1}
+	/*line lexer.goal:109*/ return token.Pos{Offset: l.offset, Line: l.line, Col: l.offset - l.lineStart + 1}
 }
 
 //line lexer.goal:114
 func Tokens(src string) []token.Token {
-	l := New(src)
-	var toks []token.Token
+	/*line lexer.goal:115*/ l := New(src)
+	/*line lexer.goal:116*/ var toks []token.Token
 
+	/*line lexer.goal:117*/
 	for {
-		t := l.Next()
-		toks = append(toks, t)
-		if t.Kind == token.EOF {
-			return toks
+		/*line lexer.goal:118*/ t := l.Next()
+		/*line lexer.goal:119*/ toks = append(toks, t)
+		/*line lexer.goal:120*/ if t.Kind == token.EOF {
+			/*line lexer.goal:121*/ return toks
 		}
 	}
 }
 
 //line lexer.goal:131
 func Scan(src string) ([]token.Token, []Error) {
-	l := New(src)
-	var toks []token.Token
+	/*line lexer.goal:132*/ l := New(src)
+	/*line lexer.goal:133*/ var toks []token.Token
 
+	/*line lexer.goal:134*/
 	for {
-		t := l.Next()
-		toks = append(toks, t)
-		if t.Kind == token.EOF {
-			return toks, l.errs
+		/*line lexer.goal:135*/ t := l.Next()
+		/*line lexer.goal:136*/ toks = append(toks, t)
+		/*line lexer.goal:137*/ if t.Kind == token.EOF {
+			/*line lexer.goal:138*/ return toks, l.errs
 		}
 	}
 }
 
 //line lexer.goal:145
 func (l *Lexer) Next() token.Token {
-	l.skipWhitespace()
-	pos := l.pos()
-	switch ch := l.ch; {
+	/*line lexer.goal:146*/ l.skipWhitespace()
+	/*line lexer.goal:148*/ pos := l.pos()
+	/*line lexer.goal:149*/ switch ch := l.ch; {
 	case ch == eof:
 		return token.Token{Kind: token.EOF, Pos: pos}
 	case isLetter(ch):
@@ -139,184 +141,184 @@ func (l *Lexer) Next() token.Token {
 
 //line lexer.goal:169
 func (l *Lexer) skipWhitespace() {
-	for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' || l.ch == '\n' {
-		l.next()
+	/*line lexer.goal:170*/ for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' || l.ch == '\n' {
+		/*line lexer.goal:171*/ l.next()
 	}
 }
 
 //line lexer.goal:178
 func (l *Lexer) scanIdentifier(pos token.Pos) token.Token {
-	start := l.offset
-	for isLetter(l.ch) || isDigit(l.ch) {
-		l.next()
+	/*line lexer.goal:179*/ start := l.offset
+	/*line lexer.goal:180*/ for isLetter(l.ch) || isDigit(l.ch) {
+		/*line lexer.goal:181*/ l.next()
 	}
-	lit := l.src[start:l.offset]
-	if k, ok := token.Lookup(lit); ok && k.IsKeyword() {
-		return token.Token{Kind: k, Lit: lit, Pos: pos}
+	/*line lexer.goal:183*/ lit := l.src[start:l.offset]
+	/*line lexer.goal:184*/ if k, ok := token.Lookup(lit); ok && k.IsKeyword() {
+		/*line lexer.goal:185*/ return token.Token{Kind: k, Lit: lit, Pos: pos}
 	}
-	return token.Token{Kind: token.IDENT, Lit: lit, Pos: pos}
+	/*line lexer.goal:187*/ return token.Token{Kind: token.IDENT, Lit: lit, Pos: pos}
 }
 
 //line lexer.goal:194
 func (l *Lexer) scanNumber(pos token.Pos) token.Token {
-	start := l.offset
-	kind := token.INT
-	if l.ch == '0' && (l.peek() == 'x' || l.peek() == 'X') {
-		l.next()
-		l.next()
-		digitStart := l.offset
-		l.scanDigits(isHexDigit)
-		if l.ch == '.' {
-			kind = token.FLOAT
-			l.next()
-			l.scanDigits(isHexDigit)
+	/*line lexer.goal:195*/ start := l.offset
+	/*line lexer.goal:196*/ kind := token.INT
+	/*line lexer.goal:198*/ if l.ch == '0' && (l.peek() == 'x' || l.peek() == 'X') {
+		/*line lexer.goal:199*/ l.next()
+		/*line lexer.goal:200*/ l.next()
+		/*line lexer.goal:201*/ digitStart := l.offset
+		/*line lexer.goal:202*/ l.scanDigits(isHexDigit)
+		/*line lexer.goal:204*/ if l.ch == '.' {
+			/*line lexer.goal:205*/ kind = token.FLOAT
+			/*line lexer.goal:206*/ l.next()
+			/*line lexer.goal:207*/ l.scanDigits(isHexDigit)
 		}
-		if l.ch == 'p' || l.ch == 'P' {
-			kind = token.FLOAT
-			l.scanExponent()
+		/*line lexer.goal:209*/ if l.ch == 'p' || l.ch == 'P' {
+			/*line lexer.goal:210*/ kind = token.FLOAT
+			/*line lexer.goal:211*/ l.scanExponent()
 		}
-		if kind == token.INT && l.offset == digitStart {
-			l.errorf(pos, "invalid-number-literal", "hexadecimal literal has no digits")
+		/*line lexer.goal:213*/ if kind == token.INT && l.offset == digitStart {
+			/*line lexer.goal:214*/ l.errorf(pos, "invalid-number-literal", "hexadecimal literal has no digits")
 		}
 	} else if l.ch == '0' && (l.peek() == 'o' || l.peek() == 'O' || l.peek() == 'b' || l.peek() == 'B') {
-		isBin := l.peek() == 'b' || l.peek() == 'B'
-		l.next()
-		l.next()
-		digitStart := l.offset
-		if isBin {
-			l.scanDigits(isBinaryDigit)
+		/*line lexer.goal:217*/ isBin := l.peek() == 'b' || l.peek() == 'B'
+		/*line lexer.goal:218*/ l.next()
+		/*line lexer.goal:219*/ l.next()
+		/*line lexer.goal:220*/ digitStart := l.offset
+		/*line lexer.goal:221*/ if isBin {
+			/*line lexer.goal:222*/ l.scanDigits(isBinaryDigit)
 		} else {
-			l.scanDigits(isOctalDigit)
+			/*line lexer.goal:224*/ l.scanDigits(isOctalDigit)
 		}
-		if l.offset == digitStart || isDigit(l.ch) {
-			if isBin {
-				l.errorf(pos, "invalid-number-literal", "invalid digit in binary literal")
+		/*line lexer.goal:229*/ if l.offset == digitStart || isDigit(l.ch) {
+			/*line lexer.goal:230*/ if isBin {
+				/*line lexer.goal:231*/ l.errorf(pos, "invalid-number-literal", "invalid digit in binary literal")
 			} else {
-				l.errorf(pos, "invalid-number-literal", "invalid digit in octal literal")
+				/*line lexer.goal:233*/ l.errorf(pos, "invalid-number-literal", "invalid digit in octal literal")
 			}
-			l.scanDigits(isDigit)
+			/*line lexer.goal:235*/ l.scanDigits(isDigit)
 		}
 	} else {
-		l.scanDigits(isDigit)
-		if l.ch == '.' {
-			kind = token.FLOAT
-			l.next()
-			l.scanDigits(isDigit)
+		/*line lexer.goal:238*/ l.scanDigits(isDigit)
+		/*line lexer.goal:239*/ if l.ch == '.' {
+			/*line lexer.goal:240*/ kind = token.FLOAT
+			/*line lexer.goal:241*/ l.next()
+			/*line lexer.goal:242*/ l.scanDigits(isDigit)
 		}
-		if l.ch == 'e' || l.ch == 'E' {
-			kind = token.FLOAT
-			l.scanExponent()
+		/*line lexer.goal:244*/ if l.ch == 'e' || l.ch == 'E' {
+			/*line lexer.goal:245*/ kind = token.FLOAT
+			/*line lexer.goal:246*/ l.scanExponent()
 		}
 	}
-	if l.ch == 'i' {
-		kind = token.IMAG
-		l.next()
+	/*line lexer.goal:250*/ if l.ch == 'i' {
+		/*line lexer.goal:251*/ kind = token.IMAG
+		/*line lexer.goal:252*/ l.next()
 	}
-	return token.Token{Kind: kind, Lit: l.src[start:l.offset], Pos: pos}
+	/*line lexer.goal:255*/ return token.Token{Kind: kind, Lit: l.src[start:l.offset], Pos: pos}
 }
 
 //line lexer.goal:259
 func (l *Lexer) scanDigits(pred func(rune) bool) {
-	for pred(l.ch) || l.ch == '_' {
-		l.next()
+	/*line lexer.goal:260*/ for pred(l.ch) || l.ch == '_' {
+		/*line lexer.goal:261*/ l.next()
 	}
 }
 
 //line lexer.goal:267
 func (l *Lexer) scanExponent() {
-	l.next()
-	if l.ch == '+' || l.ch == '-' {
-		l.next()
+	/*line lexer.goal:268*/ l.next()
+	/*line lexer.goal:269*/ if l.ch == '+' || l.ch == '-' {
+		/*line lexer.goal:270*/ l.next()
 	}
-	l.scanDigits(isDigit)
+	/*line lexer.goal:272*/ l.scanDigits(isDigit)
 }
 
 //line lexer.goal:280
 func (l *Lexer) scanString(pos token.Pos) token.Token {
-	start := l.offset
-	l.next()
-	terminated := false
-	for l.ch != eof && l.ch != '\n' {
-		if l.ch == '\\' {
-			l.next()
-			if l.ch == eof || l.ch == '\n' {
-				break
+	/*line lexer.goal:281*/ start := l.offset
+	/*line lexer.goal:282*/ l.next()
+	/*line lexer.goal:283*/ terminated := false
+	/*line lexer.goal:284*/ for l.ch != eof && l.ch != '\n' {
+		/*line lexer.goal:285*/ if l.ch == '\\' {
+			/*line lexer.goal:286*/ l.next()
+			/*line lexer.goal:289*/ if l.ch == eof || l.ch == '\n' {
+				/*line lexer.goal:290*/ break
 			}
-			l.next()
-			continue
+			/*line lexer.goal:292*/ l.next()
+			/*line lexer.goal:293*/ continue
 		}
-		if l.ch == '"' {
-			l.next()
-			terminated = true
-			break
+		/*line lexer.goal:295*/ if l.ch == '"' {
+			/*line lexer.goal:296*/ l.next()
+			/*line lexer.goal:297*/ terminated = true
+			/*line lexer.goal:298*/ break
 		}
-		l.next()
+		/*line lexer.goal:300*/ l.next()
 	}
-	if !terminated {
-		l.errorf(pos, "unterminated-string", "unterminated string literal")
+	/*line lexer.goal:302*/ if !terminated {
+		/*line lexer.goal:303*/ l.errorf(pos, "unterminated-string", "unterminated string literal")
 	}
-	return token.Token{Kind: token.STRING, Lit: l.src[start:l.offset], Pos: pos}
+	/*line lexer.goal:305*/ return token.Token{Kind: token.STRING, Lit: l.src[start:l.offset], Pos: pos}
 }
 
 //line lexer.goal:311
 func (l *Lexer) scanRawString(pos token.Pos) token.Token {
-	start := l.offset
-	l.next()
-	terminated := false
-	for l.ch != eof {
-		if l.ch == '`' {
-			l.next()
-			terminated = true
-			break
+	/*line lexer.goal:312*/ start := l.offset
+	/*line lexer.goal:313*/ l.next()
+	/*line lexer.goal:314*/ terminated := false
+	/*line lexer.goal:315*/ for l.ch != eof {
+		/*line lexer.goal:316*/ if l.ch == '`' {
+			/*line lexer.goal:317*/ l.next()
+			/*line lexer.goal:318*/ terminated = true
+			/*line lexer.goal:319*/ break
 		}
-		l.next()
+		/*line lexer.goal:321*/ l.next()
 	}
-	if !terminated {
-		l.errorf(pos, "unterminated-raw-string", "unterminated raw string literal")
+	/*line lexer.goal:323*/ if !terminated {
+		/*line lexer.goal:324*/ l.errorf(pos, "unterminated-raw-string", "unterminated raw string literal")
 	}
-	return token.Token{Kind: token.STRING, Lit: l.src[start:l.offset], Pos: pos}
+	/*line lexer.goal:326*/ return token.Token{Kind: token.STRING, Lit: l.src[start:l.offset], Pos: pos}
 }
 
 //line lexer.goal:333
 func (l *Lexer) scanRune(pos token.Pos) token.Token {
-	start := l.offset
-	l.next()
-	terminated := false
-	for l.ch != eof && l.ch != '\n' {
-		if l.ch == '\\' {
-			l.next()
-			if l.ch == eof || l.ch == '\n' {
-				break
+	/*line lexer.goal:334*/ start := l.offset
+	/*line lexer.goal:335*/ l.next()
+	/*line lexer.goal:336*/ terminated := false
+	/*line lexer.goal:337*/ for l.ch != eof && l.ch != '\n' {
+		/*line lexer.goal:338*/ if l.ch == '\\' {
+			/*line lexer.goal:339*/ l.next()
+			/*line lexer.goal:340*/ if l.ch == eof || l.ch == '\n' {
+				/*line lexer.goal:341*/ break
 			}
-			l.next()
-			continue
+			/*line lexer.goal:343*/ l.next()
+			/*line lexer.goal:344*/ continue
 		}
-		if l.ch == '\'' {
-			l.next()
-			terminated = true
-			break
+		/*line lexer.goal:346*/ if l.ch == '\'' {
+			/*line lexer.goal:347*/ l.next()
+			/*line lexer.goal:348*/ terminated = true
+			/*line lexer.goal:349*/ break
 		}
-		l.next()
+		/*line lexer.goal:351*/ l.next()
 	}
-	if !terminated {
-		l.errorf(pos, "unterminated-rune", "unterminated rune literal")
+	/*line lexer.goal:353*/ if !terminated {
+		/*line lexer.goal:354*/ l.errorf(pos, "unterminated-rune", "unterminated rune literal")
 	}
-	return token.Token{Kind: token.CHAR, Lit: l.src[start:l.offset], Pos: pos}
+	/*line lexer.goal:356*/ return token.Token{Kind: token.CHAR, Lit: l.src[start:l.offset], Pos: pos}
 }
 
 //line lexer.goal:364
 func (l *Lexer) scanOperator(pos token.Pos) token.Token {
-	ch := l.ch
-	switch ch {
+	/*line lexer.goal:365*/ ch := l.ch
+	/*line lexer.goal:366*/ switch ch {
 	case '/':
 		if l.peek() == '/' {
-			if l.peek2() == '/' {
-				return l.scanDocComment(pos)
+			/*line lexer.goal:372*/ if l.peek2() == '/' {
+				/*line lexer.goal:373*/ return l.scanDocComment(pos)
 			}
-			return l.scanLineComment(pos)
+			/*line lexer.goal:375*/ return l.scanLineComment(pos)
 		}
 		if l.peek() == '*' {
-			return l.scanBlockComment(pos)
+			/*line lexer.goal:378*/ return l.scanBlockComment(pos)
 		}
 		return l.op2(pos, token.QUO, '=', token.QUO_ASSIGN)
 	case '+':
@@ -359,8 +361,8 @@ func (l *Lexer) scanOperator(pos token.Pos) token.Token {
 		case '^':
 			l.next()
 			if l.ch == '=' {
-				l.next()
-				return tok(token.AND_NOT_ASSIGN, pos)
+				/*line lexer.goal:421*/ l.next()
+				/*line lexer.goal:422*/ return tok(token.AND_NOT_ASSIGN, pos)
 			}
 			return tok(token.AND_NOT, pos)
 		}
@@ -388,8 +390,8 @@ func (l *Lexer) scanOperator(pos token.Pos) token.Token {
 		case '<':
 			l.next()
 			if l.ch == '=' {
-				l.next()
-				return tok(token.SHL_ASSIGN, pos)
+				/*line lexer.goal:450*/ l.next()
+				/*line lexer.goal:451*/ return tok(token.SHL_ASSIGN, pos)
 			}
 			return tok(token.SHL, pos)
 		}
@@ -403,8 +405,8 @@ func (l *Lexer) scanOperator(pos token.Pos) token.Token {
 		case '>':
 			l.next()
 			if l.ch == '=' {
-				l.next()
-				return tok(token.SHR_ASSIGN, pos)
+				/*line lexer.goal:465*/ l.next()
+				/*line lexer.goal:466*/ return tok(token.SHR_ASSIGN, pos)
 			}
 			return tok(token.SHR, pos)
 		}
@@ -453,89 +455,89 @@ func (l *Lexer) scanOperator(pos token.Pos) token.Token {
 		return tok(token.SEMICOLON, pos)
 	case '.':
 		if l.peek() == '.' && l.peek2() == '.' {
-			l.next()
-			l.next()
-			l.next()
-			return tok(token.ELLIPSIS, pos)
+			/*line lexer.goal:521*/ l.next()
+			/*line lexer.goal:522*/ l.next()
+			/*line lexer.goal:523*/ l.next()
+			/*line lexer.goal:524*/ return tok(token.ELLIPSIS, pos)
 		}
 		l.next()
 		return tok(token.PERIOD, pos)
 	}
-	lit := string(l.ch)
-	l.next()
-	return token.Token{Kind: token.ILLEGAL, Lit: lit, Pos: pos}
+	/*line lexer.goal:531*/ lit := string(l.ch)
+	/*line lexer.goal:532*/ l.next()
+	/*line lexer.goal:533*/ return token.Token{Kind: token.ILLEGAL, Lit: lit, Pos: pos}
 }
 
 //line lexer.goal:538
 func (l *Lexer) op2(pos token.Pos, single token.Kind, next2 rune, double token.Kind) token.Token {
-	l.next()
-	if l.ch == next2 {
-		l.next()
-		return tok(double, pos)
+	/*line lexer.goal:539*/ l.next()
+	/*line lexer.goal:540*/ if l.ch == next2 {
+		/*line lexer.goal:541*/ l.next()
+		/*line lexer.goal:542*/ return tok(double, pos)
 	}
-	return tok(single, pos)
+	/*line lexer.goal:544*/ return tok(single, pos)
 }
 
 //line lexer.goal:548
 func (l *Lexer) scanLineComment(pos token.Pos) token.Token {
-	start := l.offset
-	for l.ch != eof && l.ch != '\n' {
-		l.next()
+	/*line lexer.goal:549*/ start := l.offset
+	/*line lexer.goal:550*/ for l.ch != eof && l.ch != '\n' {
+		/*line lexer.goal:551*/ l.next()
 	}
-	return token.Token{Kind: token.COMMENT, Lit: l.src[start:l.offset], Pos: pos}
+	/*line lexer.goal:553*/ return token.Token{Kind: token.COMMENT, Lit: l.src[start:l.offset], Pos: pos}
 }
 
 //line lexer.goal:559
 func (l *Lexer) scanDocComment(pos token.Pos) token.Token {
-	start := l.offset
-	for l.ch != eof && l.ch != '\n' {
-		l.next()
+	/*line lexer.goal:560*/ start := l.offset
+	/*line lexer.goal:561*/ for l.ch != eof && l.ch != '\n' {
+		/*line lexer.goal:562*/ l.next()
 	}
-	return token.Token{Kind: token.DOC_COMMENT, Lit: l.src[start:l.offset], Pos: pos}
+	/*line lexer.goal:564*/ return token.Token{Kind: token.DOC_COMMENT, Lit: l.src[start:l.offset], Pos: pos}
 }
 
 //line lexer.goal:568
 func (l *Lexer) scanBlockComment(pos token.Pos) token.Token {
-	start := l.offset
-	l.next()
-	l.next()
-	for l.ch != eof {
-		if l.ch == '*' && l.peek() == '/' {
-			l.next()
-			l.next()
-			break
+	/*line lexer.goal:569*/ start := l.offset
+	/*line lexer.goal:570*/ l.next()
+	/*line lexer.goal:571*/ l.next()
+	/*line lexer.goal:572*/ for l.ch != eof {
+		/*line lexer.goal:573*/ if l.ch == '*' && l.peek() == '/' {
+			/*line lexer.goal:574*/ l.next()
+			/*line lexer.goal:575*/ l.next()
+			/*line lexer.goal:576*/ break
 		}
-		l.next()
+		/*line lexer.goal:578*/ l.next()
 	}
-	return token.Token{Kind: token.COMMENT, Lit: l.src[start:l.offset], Pos: pos}
+	/*line lexer.goal:580*/ return token.Token{Kind: token.COMMENT, Lit: l.src[start:l.offset], Pos: pos}
 }
 
 //line lexer.goal:584
 func tok(k token.Kind, pos token.Pos) token.Token {
-	return token.Token{Kind: k, Pos: pos}
+	/*line lexer.goal:585*/ return token.Token{Kind: k, Pos: pos}
 }
 
 //line lexer.goal:588
 func isLetter(ch rune) bool {
-	return ch == '_' || unicode.IsLetter(ch)
+	/*line lexer.goal:589*/ return ch == '_' || unicode.IsLetter(ch)
 }
 
 //line lexer.goal:592
 func isDigit(ch rune) bool {
-	return '0' <= ch && ch <= '9'
+	/*line lexer.goal:593*/ return '0' <= ch && ch <= '9'
 }
 
 //line lexer.goal:596
 func isHexDigit(ch rune) bool {
-	return isDigit(ch) || ('a' <= ch && ch <= 'f') || ('A' <= ch && ch <= 'F')
+	/*line lexer.goal:597*/ return isDigit(ch) || ('a' <= ch && ch <= 'f') || ('A' <= ch && ch <= 'F')
 }
 
 //line lexer.goal:600
 func isOctalDigit(ch rune) bool {
-	return '0' <= ch && ch <= '7'
+	/*line lexer.goal:601*/ return '0' <= ch && ch <= '7'
 }
 
 //line lexer.goal:604
 func isBinaryDigit(ch rune) bool {
-	return ch == '0' || ch == '1'
+	/*line lexer.goal:605*/ return ch == '0' || ch == '1'
 }

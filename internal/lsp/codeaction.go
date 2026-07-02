@@ -15,36 +15,37 @@ const fixAllKind = "source.fixAll.goal"
 
 //line codeaction.goal:19
 func (s *Server) codeActions(raw json.RawMessage) []CodeAction {
-	none := []CodeAction{}
-	var p CodeActionParams
+	/*line codeaction.goal:20*/ none := []CodeAction{}
+	/*line codeaction.goal:21*/ var p CodeActionParams
 
+	/*line codeaction.goal:22*/
 	if !s.decode(raw, &p, "codeAction") {
-		return none
+		/*line codeaction.goal:23*/ return none
 	}
-	if !wantsKind(p.Context.Only, fixAllKind) {
-		return none
+	/*line codeaction.goal:25*/ if !wantsKind(p.Context.Only, fixAllKind) {
+		/*line codeaction.goal:26*/ return none
 	}
-	text, version, ok := s.buffer(p.TextDocument.URI)
-	if !ok {
-		return none
+	/*line codeaction.goal:28*/ text, version, ok := s.buffer(p.TextDocument.URI)
+	/*line codeaction.goal:29*/ if !ok {
+		/*line codeaction.goal:30*/ return none
 	}
-	out, _, _ := fix.File(text)
-	if out == text {
-		return none
+	/*line codeaction.goal:34*/ out, _, _ := fix.File(text)
+	/*line codeaction.goal:35*/ if out == text {
+		/*line codeaction.goal:36*/ return none
 	}
-	end := token.OffsetToPosition(text, len(text))
-	return []CodeAction{{Title: "Idiomatize file (goal fix)", Kind: fixAllKind, Edit: &WorkspaceEdit{DocumentChanges: []TextDocumentEdit{{TextDocument: versionedTextDocumentIdentifier{URI: p.TextDocument.URI, Version: version}, Edits: []TextEdit{{Range: Range{Start: Position{Line: 0, Character: 0}, End: Position{Line: end.Line - 1, Character: end.Col - 1}}, NewText: out}}}}}}}
+	/*line codeaction.goal:38*/ end := token.OffsetToPosition(text, len(text))
+	/*line codeaction.goal:39*/ return []CodeAction{{Title: "Idiomatize file (goal fix)", Kind: fixAllKind, Edit: &WorkspaceEdit{DocumentChanges: []TextDocumentEdit{{TextDocument: versionedTextDocumentIdentifier{URI: p.TextDocument.URI, Version: version}, Edits: []TextEdit{{Range: Range{Start: Position{Line: 0, Character: 0}, End: Position{Line: end.Line - 1, Character: end.Col - 1}}, NewText: out}}}}}}}
 }
 
 //line codeaction.goal:58
 func wantsKind(only []string, kind string) bool {
-	if len(only) == 0 {
-		return true
+	/*line codeaction.goal:59*/ if len(only) == 0 {
+		/*line codeaction.goal:60*/ return true
 	}
-	for _, o := range only {
-		if o == kind || strings.HasPrefix(kind, o+".") {
-			return true
+	/*line codeaction.goal:62*/ for _, o := range only {
+		/*line codeaction.goal:63*/ if o == kind || strings.HasPrefix(kind, o+".") {
+			/*line codeaction.goal:64*/ return true
 		}
 	}
-	return false
+	/*line codeaction.goal:67*/ return false
 }

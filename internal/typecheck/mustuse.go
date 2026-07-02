@@ -14,162 +14,165 @@ import (
 
 //line mustuse.goal:35
 func CheckMustUse(p *Package) []Diagnostic {
-	if p.Types == nil {
-		return nil
+	/*line mustuse.goal:36*/ if p.Types == nil {
+		/*line mustuse.goal:37*/ return nil
 	}
-	var diags []Diagnostic
+	/*line mustuse.goal:39*/ var diags []Diagnostic
 
+	/*line mustuse.goal:40*/
 	diags = append(diags, checkDiscardedError(p)...)
-	diags = append(diags, checkDroppedField(p)...)
-	return diags
+	/*line mustuse.goal:41*/ diags = append(diags, checkDroppedField(p)...)
+	/*line mustuse.goal:42*/ return diags
 }
 
 //line mustuse.goal:47
 func checkDiscardedError(p *Package) []Diagnostic {
-	var diags []Diagnostic
+	/*line mustuse.goal:48*/ var diags []Diagnostic
 
+	/*line mustuse.goal:49*/
 	for _, f := range p.Files {
-		ast.Inspect(f, func(n ast.Node) bool {
-			if as, ok := n.(*ast.AssignStmt); ok {
-				if d := discardedResultError(p, as); d != nil {
-					diags = append(diags, *d)
+		/*line mustuse.goal:50*/ ast.Inspect(f, func(n ast.Node) bool {
+			/*line mustuse.goal:51*/ if as, ok := n.(*ast.AssignStmt); ok {
+				/*line mustuse.goal:52*/ if d := discardedResultError(p, as); d != nil {
+					/*line mustuse.goal:53*/ diags = append(diags, *d)
 				}
 			}
-			return true
+			/*line mustuse.goal:56*/ return true
 		})
 	}
-	return diags
+	/*line mustuse.goal:59*/ return diags
 }
 
 //line mustuse.goal:64
 func discardedResultError(p *Package, as *ast.AssignStmt) *Diagnostic {
-	if len(as.Lhs) != 2 || len(as.Rhs) != 1 {
-		return nil
+	/*line mustuse.goal:67*/ if len(as.Lhs) != 2 || len(as.Rhs) != 1 {
+		/*line mustuse.goal:68*/ return nil
 	}
-	call, ok := as.Rhs[0].(*ast.CallExpr)
-	if !ok {
-		return nil
+	/*line mustuse.goal:70*/ call, ok := as.Rhs[0].(*ast.CallExpr)
+	/*line mustuse.goal:71*/ if !ok {
+		/*line mustuse.goal:72*/ return nil
 	}
-	callee, ok := call.Fun.(*ast.Ident)
-	if !ok {
-		return nil
+	/*line mustuse.goal:76*/ callee, ok := call.Fun.(*ast.Ident)
+	/*line mustuse.goal:77*/ if !ok {
+		/*line mustuse.goal:78*/ return nil
 	}
-	sig, ok := p.Sema.FuncSignatures[callee.Name]
-	var isOpenResult bool
+	/*line mustuse.goal:80*/ sig, ok := p.Sema.FuncSignatures[callee.Name]
+	/*line mustuse.goal:82*/ var isOpenResult bool
 	switch sig.Mode.(type) {
 	case sema.Mode_ModeResult:
 		isOpenResult = true
 	default:
 		isOpenResult = false
 	}
-	if !ok || !isOpenResult {
-		return nil
+	/*line mustuse.goal:86*/ if !ok || !isOpenResult {
+		/*line mustuse.goal:87*/ return nil
 	}
-	if !isBlank(as.Lhs[1]) {
-		return nil
+	/*line mustuse.goal:89*/ if !isBlank(as.Lhs[1]) {
+		/*line mustuse.goal:90*/ return nil
 	}
-	return &Diagnostic{Pos: p.Fset.Position(as.Lhs[1].Pos()), Severity: sema.Severity(sema.Severity_Error{}), Feature: "03-result", Code: "discarded-result-error", Message: fmt.Sprintf("the error from `%s` is discarded with `_`; consume the Result with `match`, `?`, or bind and inspect the error", callee.Name)}
+	/*line mustuse.goal:92*/ return &Diagnostic{Pos: p.Fset.Position(as.Lhs[1].Pos()), Severity: sema.Severity(sema.Severity_Error{}), Feature: "03-result", Code: "discarded-result-error", Message: fmt.Sprintf("the error from `%s` is discarded with `_`; consume the Result with `match`, `?`, or bind and inspect the error", callee.Name)}
 }
 
 //line mustuse.goal:112
 func checkDroppedField(p *Package) []Diagnostic {
-	consulted := consultedFields(p)
-	names := make([]string, 0, len(p.Sema.Structs))
-	for name := range p.Sema.Structs {
-		names = append(names, name)
+	/*line mustuse.goal:113*/ consulted := consultedFields(p)
+	/*line mustuse.goal:115*/ names := make([]string, 0, len(p.Sema.Structs))
+	/*line mustuse.goal:116*/ for name := range p.Sema.Structs {
+		/*line mustuse.goal:117*/ names = append(names, name)
 	}
-	sort.Strings(names)
-	var diags []Diagnostic
+	/*line mustuse.goal:119*/ sort.Strings(names)
+	/*line mustuse.goal:121*/ var diags []Diagnostic
 
+	/*line mustuse.goal:122*/
 	for _, sname := range names {
-		st := structType(p, sname)
-		if st == nil {
-			continue
+		/*line mustuse.goal:123*/ st := structType(p, sname)
+		/*line mustuse.goal:124*/ if st == nil {
+			/*line mustuse.goal:125*/ continue
 		}
-		for i := 0; i < st.NumFields(); i++ {
-			v := st.Field(i)
-			kind, ok := mustUseFieldKind(p, sname, v)
-			if !ok || consulted[v] {
-				continue
+		/*line mustuse.goal:127*/ for i := 0; i < st.NumFields(); i++ {
+			/*line mustuse.goal:128*/ v := st.Field(i)
+			/*line mustuse.goal:129*/ kind, ok := mustUseFieldKind(p, sname, v)
+			/*line mustuse.goal:130*/ if !ok || consulted[v] {
+				/*line mustuse.goal:131*/ continue
 			}
-			if !isValid(v.Type()) {
-				continue
+			/*line mustuse.goal:135*/ if !isValid(v.Type()) {
+				/*line mustuse.goal:136*/ continue
 			}
-			diags = append(diags, droppedFieldDiag(p, sname, v.Name(), kind, v))
+			/*line mustuse.goal:138*/ diags = append(diags, droppedFieldDiag(p, sname, v.Name(), kind, v))
 		}
 	}
-	return diags
+	/*line mustuse.goal:141*/ return diags
 }
 
 //line mustuse.goal:148
 func mustUseFieldKind(p *Package, sname string, v *types.Var) (kind string, ok bool) {
-	if isResultNamed(p, v.Type()) {
-		return "Result", true
+	/*line mustuse.goal:149*/ if isResultNamed(p, v.Type()) {
+		/*line mustuse.goal:150*/ return "Result", true
 	}
-	if optionDeclared(p, sname, v.Name()) {
-		return "Option", true
+	/*line mustuse.goal:152*/ if optionDeclared(p, sname, v.Name()) {
+		/*line mustuse.goal:153*/ return "Option", true
 	}
-	return "", false
+	/*line mustuse.goal:155*/ return "", false
 }
 
 //line mustuse.goal:160
 func isResultNamed(p *Package, t types.Type) bool {
-	named, ok := t.(*types.Named)
-	if !ok {
-		return false
+	/*line mustuse.goal:161*/ named, ok := t.(*types.Named)
+	/*line mustuse.goal:162*/ if !ok {
+		/*line mustuse.goal:163*/ return false
 	}
-	obj := named.Obj()
-	return obj.Name() == "Result" && obj.Pkg() == p.Types
+	/*line mustuse.goal:165*/ obj := named.Obj()
+	/*line mustuse.goal:166*/ return obj.Name() == "Result" && obj.Pkg() == p.Types
 }
 
 //line mustuse.goal:173
 func optionDeclared(p *Package, sname, fname string) bool {
-	for _, f := range p.Sema.Structs[sname] {
-		if f.Name == fname && strings.HasPrefix(strings.TrimSpace(f.Type), "Option[") {
-			return true
+	/*line mustuse.goal:174*/ for _, f := range p.Sema.Structs[sname] {
+		/*line mustuse.goal:175*/ if f.Name == fname && strings.HasPrefix(strings.TrimSpace(f.Type), "Option[") {
+			/*line mustuse.goal:176*/ return true
 		}
 	}
-	return false
+	/*line mustuse.goal:179*/ return false
 }
 
 //line mustuse.goal:184
 func droppedFieldDiag(p *Package, sname, fname, kind string, v *types.Var) Diagnostic {
-	pos := p.Fset.Position(v.Pos())
-	if v.Exported() {
-		return Diagnostic{Pos: pos, Severity: sema.Severity(sema.Severity_Warning{}), Feature: "03-result", Code: "unresolved-dropped-field", Message: fmt.Sprintf("exported field `%s.%s` holds a %s but is never read in this package; cannot prove it is consulted elsewhere", sname, fname, kind)}
+	/*line mustuse.goal:185*/ pos := p.Fset.Position(v.Pos())
+	/*line mustuse.goal:186*/ if v.Exported() {
+		/*line mustuse.goal:187*/ return Diagnostic{Pos: pos, Severity: sema.Severity(sema.Severity_Warning{}), Feature: "03-result", Code: "unresolved-dropped-field", Message: fmt.Sprintf("exported field `%s.%s` holds a %s but is never read in this package; cannot prove it is consulted elsewhere", sname, fname, kind)}
 	}
-	return Diagnostic{Pos: pos, Severity: sema.Severity(sema.Severity_Error{}), Feature: "03-result", Code: "dropped-stored-result", Message: fmt.Sprintf("field `%s.%s` stores a %s that is never consulted; match it, propagate it, or read it", sname, fname, kind)}
+	/*line mustuse.goal:195*/ return Diagnostic{Pos: pos, Severity: sema.Severity(sema.Severity_Error{}), Feature: "03-result", Code: "dropped-stored-result", Message: fmt.Sprintf("field `%s.%s` stores a %s that is never consulted; match it, propagate it, or read it", sname, fname, kind)}
 }
 
 //line mustuse.goal:207
 func consultedFields(p *Package) map[*types.Var]bool {
-	consulted := map[*types.Var]bool{}
-	for _, sel := range p.Info.Selections {
-		if v, ok := sel.Obj().(*types.Var); ok && v.IsField() {
-			consulted[v] = true
+	/*line mustuse.goal:208*/ consulted := map[*types.Var]bool{}
+	/*line mustuse.goal:209*/ for _, sel := range p.Info.Selections {
+		/*line mustuse.goal:210*/ if v, ok := sel.Obj().(*types.Var); ok && v.IsField() {
+			/*line mustuse.goal:211*/ consulted[v] = true
 		}
 	}
-	return consulted
+	/*line mustuse.goal:214*/ return consulted
 }
 
 //line mustuse.goal:219
 func structType(p *Package, name string) *types.Struct {
-	obj := p.Lookup(name)
-	if obj == nil {
-		return nil
+	/*line mustuse.goal:220*/ obj := p.Lookup(name)
+	/*line mustuse.goal:221*/ if obj == nil {
+		/*line mustuse.goal:222*/ return nil
 	}
-	st, _ := obj.Type().Underlying().(*types.Struct)
-	return st
+	/*line mustuse.goal:224*/ st, _ := obj.Type().Underlying().(*types.Struct)
+	/*line mustuse.goal:225*/ return st
 }
 
 //line mustuse.goal:229
 func isBlank(e ast.Expr) bool {
-	id, ok := e.(*ast.Ident)
-	return ok && id.Name == "_"
+	/*line mustuse.goal:230*/ id, ok := e.(*ast.Ident)
+	/*line mustuse.goal:231*/ return ok && id.Name == "_"
 }
 
 //line mustuse.goal:235
 func isValid(t types.Type) bool {
-	b, ok := t.(*types.Basic)
-	return !ok || b.Kind() != types.Invalid
+	/*line mustuse.goal:236*/ b, ok := t.(*types.Basic)
+	/*line mustuse.goal:237*/ return !ok || b.Kind() != types.Invalid
 }

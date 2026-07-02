@@ -7,8 +7,8 @@ import "strings"
 
 //line zerosafety.goal:20
 func ZeroSafety(typ string, decls map[string]string, info *Info, depth int) string {
-	typ = strings.TrimSpace(typ)
-	switch {
+	/*line zerosafety.goal:21*/ typ = strings.TrimSpace(typ)
+	/*line zerosafety.goal:22*/ switch {
 	case strings.HasPrefix(typ, "*"):
 		return "a nil pointer has no safe zero — set it explicitly, or use Option[T] for an optional value"
 	case strings.HasPrefix(typ, "map["):
@@ -19,7 +19,7 @@ func ZeroSafety(typ string, decls map[string]string, info *Info, depth int) stri
 		return "a nil func panics when called — set it explicitly"
 	case strings.HasPrefix(typ, "interface"):
 		if strings.TrimSpace(typ[len("interface"):]) == "{}" {
-			return ""
+			/*line zerosafety.goal:35*/ return ""
 		}
 		return "a nil interface has no safe zero — set it explicitly"
 	case typ == "any", typ == "error":
@@ -29,17 +29,17 @@ func ZeroSafety(typ string, decls map[string]string, info *Info, depth int) stri
 	case strings.HasPrefix(typ, "["):
 		return ""
 	}
-	switch typ {
+	/*line zerosafety.goal:45*/ switch typ {
 	case "string", "bool", "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr", "byte", "rune", "float32", "float64", "complex64", "complex128":
 		return ""
 	}
-	base := zeroBaseType(typ)
-	if info != nil && (info.Enums[base] != nil || info.Sealed[base]) {
-		return "a sum type has no valid zero variant — set it explicitly"
+	/*line zerosafety.goal:52*/ base := zeroBaseType(typ)
+	/*line zerosafety.goal:53*/ if info != nil && (info.Enums[base] != nil || info.Sealed[base]) {
+		/*line zerosafety.goal:54*/ return "a sum type has no valid zero variant — set it explicitly"
 	}
-	if depth < 8 {
-		if under, ok := decls[base]; ok {
-			switch under {
+	/*line zerosafety.goal:56*/ if depth < 8 {
+		/*line zerosafety.goal:57*/ if under, ok := decls[base]; ok {
+			/*line zerosafety.goal:58*/ switch under {
 			case "struct":
 				return ""
 			case "interface":
@@ -49,14 +49,14 @@ func ZeroSafety(typ string, decls map[string]string, info *Info, depth int) stri
 			}
 		}
 	}
-	return ""
+	/*line zerosafety.goal:69*/ return ""
 }
 
 //line zerosafety.goal:74
 func zeroBaseType(t string) string {
-	t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
-	if i := strings.LastIndexByte(t, '.'); i >= 0 {
-		t = t[i+1:]
+	/*line zerosafety.goal:75*/ t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
+	/*line zerosafety.goal:76*/ if i := strings.LastIndexByte(t, '.'); i >= 0 {
+		/*line zerosafety.goal:77*/ t = t[i+1:]
 	}
-	return t
+	/*line zerosafety.goal:79*/ return t
 }

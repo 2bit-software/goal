@@ -15,79 +15,82 @@ import (
 
 //line package.goal:36
 func TranspilePackage(pkg *project.Package) (pipeline.PackageOutput, error) {
-	files := make([]*ast.File, len(pkg.Files))
-	for i, f := range pkg.Files {
-		parsed, err := parser.ParseFile(f.Src)
-		if err != nil {
-			return pipeline.PackageOutput{}, fmt.Errorf("%s: parse: %w", f.Name, err)
+	/*line package.goal:37*/ files := make([]*ast.File, len(pkg.Files))
+	/*line package.goal:38*/ for i, f := range pkg.Files {
+		/*line package.goal:39*/ parsed, err := parser.ParseFile(f.Src)
+		/*line package.goal:40*/ if err != nil {
+			/*line package.goal:41*/ return pipeline.PackageOutput{}, fmt.Errorf("%s: parse: %w", f.Name, err)
 		}
-		files[i] = parsed
+		/*line package.goal:43*/ files[i] = parsed
 	}
-	info := sema.ResolvePackage(files)
-	enrichForeign(info, files, pkg.Dir)
-	var out pipeline.PackageOutput
+	/*line package.goal:46*/ info := sema.ResolvePackage(files)
+	/*line package.goal:47*/ enrichForeign(info, files, pkg.Dir)
+	/*line package.goal:49*/ var out pipeline.PackageOutput
 
+	/*line package.goal:50*/
 	var usedOption bool
 
+	/*line package.goal:51*/
 	for i, f := range pkg.Files {
-		goSrc, fileUsedOption, err := emitFileWith(files[i], info, true)
-		if err != nil {
-			return pipeline.PackageOutput{}, fmt.Errorf("%s: %w", f.Name, err)
+		/*line package.goal:52*/ goSrc, fileUsedOption, err := emitFileWith(files[i], info, true, f.Name)
+		/*line package.goal:53*/ if err != nil {
+			/*line package.goal:54*/ return pipeline.PackageOutput{}, fmt.Errorf("%s: %w", f.Name, err)
 		}
-		usedOption = usedOption || fileUsedOption
-		formatted, err := GoFormatter{}.Format([]byte(goSrc))
-		if err != nil {
-			return pipeline.PackageOutput{}, fmt.Errorf("%s: generated Go did not parse: %w\n--- generated ---\n%s", f.Name, err, goSrc)
+		/*line package.goal:56*/ usedOption = usedOption || fileUsedOption
+		/*line package.goal:57*/ formatted, err := GoFormatter{}.Format([]byte(goSrc))
+		/*line package.goal:58*/ if err != nil {
+			/*line package.goal:59*/ return pipeline.PackageOutput{}, fmt.Errorf("%s: generated Go did not parse: %w\n--- generated ---\n%s", f.Name, err, goSrc)
 		}
-		gen := goName(f.Name)
-		mapped := pipeline.AddLineDirectives(f.Src, string(formatted), f.Name, gen)
-		out.Files = append(out.Files, pipeline.GoFile{Name: gen, Go: mapped})
-		testSrc, testUsedOption, err := emitDoctests(files[i], info, true)
-		if err != nil {
-			return pipeline.PackageOutput{}, fmt.Errorf("%s: doctests: %w", f.Name, err)
+		/*line package.goal:64*/ gen := goName(f.Name)
+		/*line package.goal:65*/ mapped := pipeline.AddLineDirectives(f.Src, string(formatted), f.Name, gen)
+		/*line package.goal:66*/ out.Files = append(out.Files, pipeline.GoFile{Name: gen, Go: mapped})
+		/*line package.goal:68*/ testSrc, testUsedOption, err := emitDoctests(files[i], info, true)
+		/*line package.goal:69*/ if err != nil {
+			/*line package.goal:70*/ return pipeline.PackageOutput{}, fmt.Errorf("%s: doctests: %w", f.Name, err)
 		}
-		usedOption = usedOption || testUsedOption
-		if testSrc != "" {
-			ft, err := GoFormatter{}.Format([]byte(testSrc))
-			if err != nil {
-				return pipeline.PackageOutput{}, fmt.Errorf("%s: generated test did not parse: %w\n--- generated ---\n%s", f.Name, err, testSrc)
+		/*line package.goal:72*/ usedOption = usedOption || testUsedOption
+		/*line package.goal:73*/ if testSrc != "" {
+			/*line package.goal:74*/ ft, err := GoFormatter{}.Format([]byte(testSrc))
+			/*line package.goal:75*/ if err != nil {
+				/*line package.goal:76*/ return pipeline.PackageOutput{}, fmt.Errorf("%s: generated test did not parse: %w\n--- generated ---\n%s", f.Name, err, testSrc)
 			}
-			out.Tests = append(out.Tests, pipeline.GoFile{Name: testName(f.Name), Go: string(ft)})
+			/*line package.goal:78*/ out.Tests = append(out.Tests, pipeline.GoFile{Name: testName(f.Name), Go: string(ft)})
 		}
 	}
-	if needsResultPrelude(info) {
-		preludeGo, err := GoFormatter{}.Format([]byte("package " + pkg.Name + "\n\n" + resultPrelude + "\n"))
-		if err != nil {
-			return pipeline.PackageOutput{}, fmt.Errorf("prelude: %w", err)
+	/*line package.goal:82*/ if needsResultPrelude(info) {
+		/*line package.goal:83*/ preludeGo, err := GoFormatter{}.Format([]byte("package " + pkg.Name + "\n\n" + resultPrelude + "\n"))
+		/*line package.goal:84*/ if err != nil {
+			/*line package.goal:85*/ return pipeline.PackageOutput{}, fmt.Errorf("prelude: %w", err)
 		}
-		out.Files = append(out.Files, pipeline.GoFile{Name: "goal_prelude.go", Go: string(preludeGo)})
+		/*line package.goal:87*/ out.Files = append(out.Files, pipeline.GoFile{Name: "goal_prelude.go", Go: string(preludeGo)})
 	}
-	if usedOption {
-		optionGo, err := GoFormatter{}.Format([]byte("package " + pkg.Name + "\n\n" + optionPrelude + "\n"))
-		if err != nil {
-			return pipeline.PackageOutput{}, fmt.Errorf("option prelude: %w", err)
+	/*line package.goal:91*/ if usedOption {
+		/*line package.goal:92*/ optionGo, err := GoFormatter{}.Format([]byte("package " + pkg.Name + "\n\n" + optionPrelude + "\n"))
+		/*line package.goal:93*/ if err != nil {
+			/*line package.goal:94*/ return pipeline.PackageOutput{}, fmt.Errorf("option prelude: %w", err)
 		}
-		out.Files = append(out.Files, pipeline.GoFile{Name: "goal_options.go", Go: string(optionGo)})
+		/*line package.goal:96*/ out.Files = append(out.Files, pipeline.GoFile{Name: "goal_options.go", Go: string(optionGo)})
 	}
-	return out, nil
+	/*line package.goal:98*/ return out, nil
 }
 
 //line package.goal:111
 func enrichForeign(info *sema.Info, files []*ast.File, dir string) {
-	var imports []*ast.ImportSpec
+	/*line package.goal:112*/ var imports []*ast.ImportSpec
 
+	/*line package.goal:113*/
 	for _, f := range files {
-		imports = append(imports, f.Imports...)
+		/*line package.goal:114*/ imports = append(imports, f.Imports...)
 	}
-	sema.EnrichForeign(info, imports, dir, nil)
+	/*line package.goal:116*/ sema.EnrichForeign(info, imports, dir, nil)
 }
 
 //line package.goal:120
 func goName(goalName string) string {
-	return strings.TrimSuffix(goalName, project.Ext) + ".go"
+	/*line package.goal:121*/ return strings.TrimSuffix(goalName, project.Ext) + ".go"
 }
 
 //line package.goal:125
 func testName(goalName string) string {
-	return strings.TrimSuffix(goalName, project.Ext) + "_test.go"
+	/*line package.goal:126*/ return strings.TrimSuffix(goalName, project.Ext) + "_test.go"
 }

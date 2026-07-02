@@ -14,44 +14,44 @@ import (
 
 //line lower.goal:30
 func fileIdentSet(f *ast.File) map[string]bool {
-	set := map[string]bool{}
-	if f == nil {
-		return set
+	/*line lower.goal:31*/ set := map[string]bool{}
+	/*line lower.goal:32*/ if f == nil {
+		/*line lower.goal:33*/ return set
 	}
-	ast.Walk(identFinder(func(n ast.Node) bool {
-		if id, ok := n.(*ast.Ident); ok {
-			set[id.Name] = true
+	/*line lower.goal:35*/ ast.Walk(identFinder(func(n ast.Node) bool {
+		/*line lower.goal:36*/ if id, ok := n.(*ast.Ident); ok {
+			/*line lower.goal:37*/ set[id.Name] = true
 		}
-		return true
+		/*line lower.goal:39*/ return true
 	}), f)
-	return set
+	/*line lower.goal:41*/ return set
 }
 
 //line lower.goal:53
 func optionConstruction(x ast.Expr) (kind string, arg ast.Expr, ok bool) {
-	if sel, isSel := x.(*ast.SelectorExpr); isSel {
-		if base, isID := sel.X.(*ast.Ident); isID && base.Name == "Option" && sel.Sel != nil && sel.Sel.Name == "None" {
-			return "none", nil, true
+	/*line lower.goal:54*/ if sel, isSel := x.(*ast.SelectorExpr); isSel {
+		/*line lower.goal:55*/ if base, isID := sel.X.(*ast.Ident); isID && base.Name == "Option" && sel.Sel != nil && sel.Sel.Name == "None" {
+			/*line lower.goal:57*/ return "none", nil, true
 		}
 	}
-	call, isCall := x.(*ast.CallExpr)
-	if !isCall {
-		return "", nil, false
+	/*line lower.goal:60*/ call, isCall := x.(*ast.CallExpr)
+	/*line lower.goal:61*/ if !isCall {
+		/*line lower.goal:62*/ return "", nil, false
 	}
-	sel, isSel := call.Fun.(*ast.SelectorExpr)
-	if !isSel || sel.Sel == nil || sel.Sel.Name != "Some" {
-		return "", nil, false
+	/*line lower.goal:64*/ sel, isSel := call.Fun.(*ast.SelectorExpr)
+	/*line lower.goal:65*/ if !isSel || sel.Sel == nil || sel.Sel.Name != "Some" {
+		/*line lower.goal:66*/ return "", nil, false
 	}
-	if base, isID := sel.X.(*ast.Ident); !isID || base.Name != "Option" {
-		return "", nil, false
+	/*line lower.goal:68*/ if base, isID := sel.X.(*ast.Ident); !isID || base.Name != "Option" {
+		/*line lower.goal:69*/ return "", nil, false
 	}
-	if len(call.Args) != 1 {
-		return "", nil, false
+	/*line lower.goal:71*/ if len(call.Args) != 1 {
+		/*line lower.goal:72*/ return "", nil, false
 	}
-	if _, isID := call.Args[0].(*ast.Ident); isID {
-		return "some-addr", call.Args[0], true
+	/*line lower.goal:74*/ if _, isID := call.Args[0].(*ast.Ident); isID {
+		/*line lower.goal:75*/ return "some-addr", call.Args[0], true
 	}
-	return "some-box", call.Args[0], true
+	/*line lower.goal:77*/ return "some-box", call.Args[0], true
 }
 
 //line lower.goal:88
@@ -79,11 +79,11 @@ func (Err[T, E]) isResult() {}`
 
 //line lower.goal:116
 func needsResultPrelude(info *sema.Info) bool {
-	if info == nil {
-		return false
+	/*line lower.goal:117*/ if info == nil {
+		/*line lower.goal:118*/ return false
 	}
-	for _, sig := range info.FuncSignatures {
-		var isClosed bool
+	/*line lower.goal:120*/ for _, sig := range info.FuncSignatures {
+		/*line lower.goal:121*/ var isClosed bool
 		switch sig.Mode.(type) {
 		case sema.Mode_ModeResultClosed:
 			isClosed = true
@@ -96,84 +96,84 @@ func needsResultPrelude(info *sema.Info) bool {
 		default:
 			panic("unreachable: non-exhaustive sema.Mode (compiler invariant violated)")
 		}
-		if isClosed {
-			return true
+		/*line lower.goal:127*/ if isClosed {
+			/*line lower.goal:128*/ return true
 		}
 	}
-	return false
+	/*line lower.goal:131*/ return false
 }
 
 //line lower.goal:139
 func resultOptionKind(t *ast.FuncType) (roKind, ast.Expr) {
-	if t == nil || t.Results == nil || len(t.Results.List) != 1 {
-		return roNone, nil
+	/*line lower.goal:140*/ if t == nil || t.Results == nil || len(t.Results.List) != 1 {
+		/*line lower.goal:141*/ return roNone, nil
 	}
-	f := t.Results.List[0]
-	if len(f.Names) != 0 {
-		return roNone, nil
+	/*line lower.goal:143*/ f := t.Results.List[0]
+	/*line lower.goal:144*/ if len(f.Names) != 0 {
+		/*line lower.goal:145*/ return roNone, nil
 	}
-	switch v1 := f.Type.(type) {
+	/*line lower.goal:147*/ switch v1 := f.Type.(type) {
 	case *ast.IndexListExpr:
 		{
-			if id, ok := v1.X.(*ast.Ident); ok && id.Name == "Result" && len(v1.Indices) == 2 && isErrorIdent(v1.Indices[1]) {
-				return roResultOpen, v1.Indices[0]
+			/*line lower.goal:149*/ if id, ok := v1.X.(*ast.Ident); ok && id.Name == "Result" && len(v1.Indices) == 2 && isErrorIdent(v1.Indices[1]) {
+				/*line lower.goal:151*/ return roResultOpen, v1.Indices[0]
 			}
 		}
 	case *ast.IndexExpr:
 		{
-			if id, ok := v1.X.(*ast.Ident); ok && id.Name == "Option" {
-				return roOption, v1.Index
+			/*line lower.goal:155*/ if id, ok := v1.X.(*ast.Ident); ok && id.Name == "Option" {
+				/*line lower.goal:156*/ return roOption, v1.Index
 			}
 		}
 	default:
 		{
 		}
 	}
-	return roNone, nil
+	/*line lower.goal:161*/ return roNone, nil
 }
 
 //line lower.goal:165
 func isErrorIdent(x ast.Expr) bool {
-	id, ok := x.(*ast.Ident)
-	return ok && id.Name == "error"
+	/*line lower.goal:166*/ id, ok := x.(*ast.Ident)
+	/*line lower.goal:167*/ return ok && id.Name == "error"
 }
 
 //line lower.goal:174
 func closedResultType(t *ast.FuncType) (*ast.IndexListExpr, bool) {
-	if t == nil || t.Results == nil || len(t.Results.List) != 1 {
-		return nil, false
+	/*line lower.goal:175*/ if t == nil || t.Results == nil || len(t.Results.List) != 1 {
+		/*line lower.goal:176*/ return nil, false
 	}
-	f := t.Results.List[0]
-	if len(f.Names) != 0 {
-		return nil, false
+	/*line lower.goal:178*/ f := t.Results.List[0]
+	/*line lower.goal:179*/ if len(f.Names) != 0 {
+		/*line lower.goal:180*/ return nil, false
 	}
-	il, ok := f.Type.(*ast.IndexListExpr)
-	if !ok {
-		return nil, false
+	/*line lower.goal:182*/ il, ok := f.Type.(*ast.IndexListExpr)
+	/*line lower.goal:183*/ if !ok {
+		/*line lower.goal:184*/ return nil, false
 	}
-	id, ok := il.X.(*ast.Ident)
-	if !ok || id.Name != "Result" || len(il.Indices) != 2 || isErrorIdent(il.Indices[1]) {
-		return nil, false
+	/*line lower.goal:186*/ id, ok := il.X.(*ast.Ident)
+	/*line lower.goal:187*/ if !ok || id.Name != "Result" || len(il.Indices) != 2 || isErrorIdent(il.Indices[1]) {
+		/*line lower.goal:188*/ return nil, false
 	}
-	return il, true
+	/*line lower.goal:190*/ return il, true
 }
 
 //line lower.goal:198
 func matchQualifier(m *ast.MatchExpr) string {
-	for _, arm := range m.Arms {
-		vp, ok := arm.Pattern.(*ast.VariantPattern)
-		if !ok {
-			continue
+	/*line lower.goal:199*/ for _, arm := range m.Arms {
+		/*line lower.goal:200*/ vp, ok := arm.Pattern.(*ast.VariantPattern)
+		/*line lower.goal:201*/ if !ok {
+			/*line lower.goal:202*/ continue
 		}
-		switch v1 := vp.Enum.(type) {
+		/*line lower.goal:204*/ switch v1 := vp.Enum.(type) {
 		case *ast.Ident:
 			{
-				return v1.Name
+				/*line lower.goal:207*/ return v1.Name
 			}
 		case *ast.SelectorExpr:
 			{
-				if pkg, ok := v1.X.(*ast.Ident); ok && v1.Sel != nil {
-					return pkg.Name + "." + v1.Sel.Name
+				/*line lower.goal:215*/ if pkg, ok := v1.X.(*ast.Ident); ok && v1.Sel != nil {
+					/*line lower.goal:216*/ return pkg.Name + "." + v1.Sel.Name
 				}
 			}
 		default:
@@ -181,29 +181,29 @@ func matchQualifier(m *ast.MatchExpr) string {
 			}
 		}
 	}
-	return ""
+	/*line lower.goal:222*/ return ""
 }
 
 //line lower.goal:230
 func isSealedMatch(m *ast.MatchExpr) bool {
-	for _, arm := range m.Arms {
-		if _, ok := arm.Pattern.(*ast.TypePattern); ok {
-			return true
+	/*line lower.goal:231*/ for _, arm := range m.Arms {
+		/*line lower.goal:232*/ if _, ok := arm.Pattern.(*ast.TypePattern); ok {
+			/*line lower.goal:233*/ return true
 		}
 	}
-	return false
+	/*line lower.goal:236*/ return false
 }
 
 //line lower.goal:243
 func usesIdent(n ast.Node, name string) bool {
-	found := false
-	ast.Walk(identFinder(func(node ast.Node) bool {
-		if id, ok := node.(*ast.Ident); ok && id.Name == name {
-			found = true
+	/*line lower.goal:244*/ found := false
+	/*line lower.goal:245*/ ast.Walk(identFinder(func(node ast.Node) bool {
+		/*line lower.goal:246*/ if id, ok := node.(*ast.Ident); ok && id.Name == name {
+			/*line lower.goal:247*/ found = true
 		}
-		return !found
+		/*line lower.goal:249*/ return !found
 	}), n)
-	return found
+	/*line lower.goal:251*/ return found
 }
 
 //line lower.goal:256
@@ -211,131 +211,132 @@ type identFinder func(ast.Node) bool
 
 //line lower.goal:258
 func (f identFinder) Visit(n ast.Node) ast.Visitor {
-	if n == nil || !f(n) {
-		return nil
+	/*line lower.goal:259*/ if n == nil || !f(n) {
+		/*line lower.goal:260*/ return nil
 	}
-	return f
+	/*line lower.goal:262*/ return f
 }
 
 //line lower.goal:271
 func enumRef(x ast.Expr) (string, bool) {
-	switch v1 := x.(type) {
+	/*line lower.goal:272*/ switch v1 := x.(type) {
 	case *ast.Ident:
 		{
-			return v1.Name, true
+			/*line lower.goal:274*/ return v1.Name, true
 		}
 	case *ast.SelectorExpr:
 		{
-			if pkg, ok := v1.X.(*ast.Ident); ok && v1.Sel != nil {
-				return pkg.Name + "." + v1.Sel.Name, true
+			/*line lower.goal:277*/ if pkg, ok := v1.X.(*ast.Ident); ok && v1.Sel != nil {
+				/*line lower.goal:278*/ return pkg.Name + "." + v1.Sel.Name, true
 			}
 		}
 	default:
 		{
 		}
 	}
-	return "", false
+	/*line lower.goal:283*/ return "", false
 }
 
 //line lower.goal:288
 func enumOf(info *sema.Info, name string) *sema.Enum {
-	if info == nil || info.Enums == nil {
-		return nil
+	/*line lower.goal:289*/ if info == nil || info.Enums == nil {
+		/*line lower.goal:290*/ return nil
 	}
-	return info.Enums[name]
+	/*line lower.goal:292*/ return info.Enums[name]
 }
 
 //line lower.goal:296
 func isSealed(info *sema.Info, name string) bool {
-	return info != nil && info.Sealed != nil && info.Sealed[name]
+	/*line lower.goal:297*/ return info != nil && info.Sealed != nil && info.Sealed[name]
 }
 
 //line lower.goal:307
 func sealedEmbeds(info *sema.Info, iface string) []string {
-	if info == nil {
-		return nil
+	/*line lower.goal:308*/ if info == nil {
+		/*line lower.goal:309*/ return nil
 	}
-	return collectSealedEmbeds(info, iface, map[string]bool{}, nil)
+	/*line lower.goal:311*/ return collectSealedEmbeds(info, iface, map[string]bool{}, nil)
 }
 
 //line lower.goal:317
 func collectSealedEmbeds(info *sema.Info, name string, seen map[string]bool, out []string) []string {
-	for _, emb := range info.EmbeddedIfaces[name] {
-		if seen[emb] {
-			continue
+	/*line lower.goal:318*/ for _, emb := range info.EmbeddedIfaces[name] {
+		/*line lower.goal:319*/ if seen[emb] {
+			/*line lower.goal:320*/ continue
 		}
-		seen[emb] = true
-		if isSealed(info, emb) {
-			out = append(out, emb)
+		/*line lower.goal:322*/ seen[emb] = true
+		/*line lower.goal:323*/ if isSealed(info, emb) {
+			/*line lower.goal:324*/ out = append(out, emb)
 		}
-		out = collectSealedEmbeds(info, emb, seen, out)
+		/*line lower.goal:326*/ out = collectSealedEmbeds(info, emb, seen, out)
 	}
-	return out
+	/*line lower.goal:328*/ return out
 }
 
 //line lower.goal:334
 func genEnum(e *sema.Enum) string {
-	marker := "is" + e.Name
-	var b strings.Builder
+	/*line lower.goal:335*/ marker := "is" + e.Name
+	/*line lower.goal:336*/ var b strings.Builder
 
+	/*line lower.goal:337*/
 	fmt.Fprintf(&b, "type %s interface{ %s() }\n\n", e.Name, marker)
-	for _, v := range e.Variants {
-		if len(v.Fields) == 0 {
-			fmt.Fprintf(&b, "type %s_%s struct{}\n", e.Name, v.Name)
-			continue
+	/*line lower.goal:338*/ for _, v := range e.Variants {
+		/*line lower.goal:339*/ if len(v.Fields) == 0 {
+			/*line lower.goal:340*/ fmt.Fprintf(&b, "type %s_%s struct{}\n", e.Name, v.Name)
+			/*line lower.goal:341*/ continue
 		}
-		fmt.Fprintf(&b, "type %s_%s struct {\n", e.Name, v.Name)
-		for _, f := range v.Fields {
-			fmt.Fprintf(&b, "\t%s %s\n", exported(f.Name), f.Type)
+		/*line lower.goal:343*/ fmt.Fprintf(&b, "type %s_%s struct {\n", e.Name, v.Name)
+		/*line lower.goal:344*/ for _, f := range v.Fields {
+			/*line lower.goal:345*/ fmt.Fprintf(&b, "\t%s %s\n", exported(f.Name), f.Type)
 		}
-		b.WriteString("}\n")
+		/*line lower.goal:347*/ b.WriteString("}\n")
 	}
-	b.WriteString("\n")
-	for _, v := range e.Variants {
-		fmt.Fprintf(&b, "func (%s_%s) %s() {}\n", e.Name, v.Name, marker)
+	/*line lower.goal:349*/ b.WriteString("\n")
+	/*line lower.goal:350*/ for _, v := range e.Variants {
+		/*line lower.goal:351*/ fmt.Fprintf(&b, "func (%s_%s) %s() {}\n", e.Name, v.Name, marker)
 	}
-	return b.String()
+	/*line lower.goal:353*/ return b.String()
 }
 
 //line lower.goal:358
 func genSealedInterface(name string) string {
-	return fmt.Sprintf("type %s interface{ is%s() }", name, name)
+	/*line lower.goal:359*/ return fmt.Sprintf("type %s interface{ is%s() }", name, name)
 }
 
 //line lower.goal:364
 func genMarkerMethod(typ, iface string) string {
-	return fmt.Sprintf("func (%s) is%s() {}", typ, iface)
+	/*line lower.goal:365*/ return fmt.Sprintf("func (%s) is%s() {}", typ, iface)
 }
 
 //line lower.goal:370
 func exported(name string) string {
-	if name == "" {
-		return name
+	/*line lower.goal:371*/ if name == "" {
+		/*line lower.goal:372*/ return name
 	}
-	r := []rune(name)
-	r[0] = unicode.ToUpper(r[0])
-	return string(r)
+	/*line lower.goal:374*/ r := []rune(name)
+	/*line lower.goal:375*/ r[0] = unicode.ToUpper(r[0])
+	/*line lower.goal:376*/ return string(r)
 }
 
 //line lower.goal:382
 func baseType(t string) string {
-	t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
-	if i := strings.LastIndexByte(t, '.'); i >= 0 {
-		t = t[i+1:]
+	/*line lower.goal:383*/ t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
+	/*line lower.goal:384*/ if i := strings.LastIndexByte(t, '.'); i >= 0 {
+		/*line lower.goal:385*/ t = t[i+1:]
 	}
-	return t
+	/*line lower.goal:387*/ return t
 }
 
 //line lower.goal:395
 func zeroLit(typ string, decls map[string]string, depth int) string {
-	typ = strings.TrimSpace(typ)
-	switch {
+	/*line lower.goal:396*/ typ = strings.TrimSpace(typ)
+	/*line lower.goal:397*/ switch {
 	case strings.HasPrefix(typ, "*"), strings.HasPrefix(typ, "[]"), strings.HasPrefix(typ, "map["), strings.HasPrefix(typ, "chan"), strings.HasPrefix(typ, "func"), strings.HasPrefix(typ, "interface"), typ == "any", typ == "error":
 		return "nil"
 	case strings.HasPrefix(typ, "["):
 		return typ + "{}"
 	}
-	switch typ {
+	/*line lower.goal:406*/ switch typ {
 	case "string":
 		return `""`
 	case "bool":
@@ -343,9 +344,9 @@ func zeroLit(typ string, decls map[string]string, depth int) string {
 	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr", "byte", "rune", "float32", "float64", "complex64", "complex128":
 		return "0"
 	}
-	if depth < 8 {
-		if under, ok := decls[baseType(typ)]; ok {
-			switch under {
+	/*line lower.goal:416*/ if depth < 8 {
+		/*line lower.goal:417*/ if under, ok := decls[baseType(typ)]; ok {
+			/*line lower.goal:418*/ switch under {
 			case "struct":
 				return typ + "{}"
 			case "interface":
@@ -355,242 +356,242 @@ func zeroLit(typ string, decls map[string]string, depth int) string {
 			}
 		}
 	}
-	return typ + "{}"
+	/*line lower.goal:429*/ return typ + "{}"
 }
 
 //line lower.goal:434
 func needsFmtImport(f *ast.File) bool {
-	need := false
-	ast.Walk(identFinder(func(n ast.Node) bool {
-		if a, ok := n.(*ast.AssertStmt); ok && a.Msg != nil {
-			need = true
+	/*line lower.goal:435*/ need := false
+	/*line lower.goal:436*/ ast.Walk(identFinder(func(n ast.Node) bool {
+		/*line lower.goal:437*/ if a, ok := n.(*ast.AssertStmt); ok && a.Msg != nil {
+			/*line lower.goal:438*/ need = true
 		}
-		return !need
+		/*line lower.goal:440*/ return !need
 	}), f)
-	return need
+	/*line lower.goal:442*/ return need
 }
 
 //line lower.goal:447
 func importsPkg(f *ast.File, path string) bool {
-	if f == nil {
-		return false
+	/*line lower.goal:448*/ if f == nil {
+		/*line lower.goal:449*/ return false
 	}
-	quoted := strconv.Quote(path)
-	for _, d := range f.Decls {
-		gd, ok := d.(*ast.GenDecl)
-		if !ok || gd.Tok.String() != "import" {
-			continue
+	/*line lower.goal:451*/ quoted := strconv.Quote(path)
+	/*line lower.goal:452*/ for _, d := range f.Decls {
+		/*line lower.goal:453*/ gd, ok := d.(*ast.GenDecl)
+		/*line lower.goal:454*/ if !ok || gd.Tok.String() != "import" {
+			/*line lower.goal:455*/ continue
 		}
-		for _, s := range gd.Specs {
-			if is, ok := s.(*ast.ImportSpec); ok && is.Path != nil && is.Path.Value == quoted {
-				return true
+		/*line lower.goal:457*/ for _, s := range gd.Specs {
+			/*line lower.goal:458*/ if is, ok := s.(*ast.ImportSpec); ok && is.Path != nil && is.Path.Value == quoted {
+				/*line lower.goal:459*/ return true
 			}
 		}
 	}
-	return false
+	/*line lower.goal:463*/ return false
 }
 
 //line lower.goal:469
 func presentFieldNames(elts []ast.Expr) map[string]bool {
-	present := map[string]bool{}
-	for _, el := range elts {
-		kv, ok := el.(*ast.KeyValueExpr)
-		if !ok {
-			continue
+	/*line lower.goal:470*/ present := map[string]bool{}
+	/*line lower.goal:471*/ for _, el := range elts {
+		/*line lower.goal:472*/ kv, ok := el.(*ast.KeyValueExpr)
+		/*line lower.goal:473*/ if !ok {
+			/*line lower.goal:474*/ continue
 		}
-		if id, ok := kv.Key.(*ast.Ident); ok {
-			present[id.Name] = true
+		/*line lower.goal:476*/ if id, ok := kv.Key.(*ast.Ident); ok {
+			/*line lower.goal:477*/ present[id.Name] = true
 		}
 	}
-	return present
+	/*line lower.goal:480*/ return present
 }
 
 //line lower.goal:484
 func structFieldsOf(info *sema.Info, name string) ([]sema.Field, bool) {
-	if info == nil || info.Structs == nil {
-		return nil, false
+	/*line lower.goal:485*/ if info == nil || info.Structs == nil {
+		/*line lower.goal:486*/ return nil, false
 	}
-	fs, ok := info.Structs[name]
-	return fs, ok
+	/*line lower.goal:488*/ fs, ok := info.Structs[name]
+	/*line lower.goal:489*/ return fs, ok
 }
 
 //line lower.goal:503
 func findSemaField(fields []sema.Field, name string) (sema.Field, bool) {
-	for _, f := range fields {
-		if strings.EqualFold(f.Name, name) {
-			return f, true
+	/*line lower.goal:504*/ for _, f := range fields {
+		/*line lower.goal:505*/ if strings.EqualFold(f.Name, name) {
+			/*line lower.goal:506*/ return f, true
 		}
 	}
-	return sema.Field{}, false
+	/*line lower.goal:509*/ return sema.Field{}, false
 }
 
 //line lower.goal:515
 func derefType(s string) string {
-	s = strings.TrimSpace(s)
-	if rest, ok := strings.CutPrefix(s, "*"); ok {
-		return strings.TrimSpace(rest)
+	/*line lower.goal:516*/ s = strings.TrimSpace(s)
+	/*line lower.goal:517*/ if rest, ok := strings.CutPrefix(s, "*"); ok {
+		/*line lower.goal:518*/ return strings.TrimSpace(rest)
 	}
-	return s
+	/*line lower.goal:520*/ return s
 }
 
 //line lower.goal:526
 func ptrInner(s string) (string, bool) {
-	s = strings.TrimSpace(s)
-	if strings.HasPrefix(s, "*") {
-		return strings.TrimSpace(s[1:]), true
+	/*line lower.goal:527*/ s = strings.TrimSpace(s)
+	/*line lower.goal:528*/ if strings.HasPrefix(s, "*") {
+		/*line lower.goal:529*/ return strings.TrimSpace(s[1:]), true
 	}
-	if strings.HasPrefix(s, "Option[") && strings.HasSuffix(s, "]") {
-		return strings.TrimSpace(s[len("Option[") : len(s)-1]), true
+	/*line lower.goal:531*/ if strings.HasPrefix(s, "Option[") && strings.HasSuffix(s, "]") {
+		/*line lower.goal:532*/ return strings.TrimSpace(s[len("Option[") : len(s)-1]), true
 	}
-	return "", false
+	/*line lower.goal:534*/ return "", false
 }
 
 //line lower.goal:539
 func arrElem(s string) (n, elem string, ok bool) {
-	s = strings.TrimSpace(s)
-	if !strings.HasPrefix(s, "[") || strings.HasPrefix(s, "[]") {
-		return "", "", false
+	/*line lower.goal:540*/ s = strings.TrimSpace(s)
+	/*line lower.goal:541*/ if !strings.HasPrefix(s, "[") || strings.HasPrefix(s, "[]") {
+		/*line lower.goal:542*/ return "", "", false
 	}
-	close := strings.IndexByte(s, ']')
-	if close < 0 {
-		return "", "", false
+	/*line lower.goal:544*/ close := strings.IndexByte(s, ']')
+	/*line lower.goal:545*/ if close < 0 {
+		/*line lower.goal:546*/ return "", "", false
 	}
-	n = strings.TrimSpace(s[1:close])
-	if n == "" {
-		return "", "", false
+	/*line lower.goal:548*/ n = strings.TrimSpace(s[1:close])
+	/*line lower.goal:549*/ if n == "" {
+		/*line lower.goal:550*/ return "", "", false
 	}
-	return n, strings.TrimSpace(s[close+1:]), true
+	/*line lower.goal:552*/ return n, strings.TrimSpace(s[close+1:]), true
 }
 
 //line lower.goal:557
 func mapKV(s string) (k, v string, ok bool) {
-	s = strings.TrimSpace(s)
-	if !strings.HasPrefix(s, "map[") {
-		return "", "", false
+	/*line lower.goal:558*/ s = strings.TrimSpace(s)
+	/*line lower.goal:559*/ if !strings.HasPrefix(s, "map[") {
+		/*line lower.goal:560*/ return "", "", false
 	}
-	depth := 0
-	for i := len("map[") - 1; i < len(s); i++ {
-		switch s[i] {
+	/*line lower.goal:562*/ depth := 0
+	/*line lower.goal:563*/ for i := len("map[") - 1; i < len(s); i++ {
+		/*line lower.goal:564*/ switch s[i] {
 		case '[':
 			depth++
 		case ']':
 			depth--
 			if depth == 0 {
-				return strings.TrimSpace(s[len("map["):i]), strings.TrimSpace(s[i+1:]), true
+				/*line lower.goal:570*/ return strings.TrimSpace(s[len("map["):i]), strings.TrimSpace(s[i+1:]), true
 			}
 		}
 	}
-	return "", "", false
+	/*line lower.goal:574*/ return "", "", false
 }
 
 //line lower.goal:580
 func elemConv(a, b string, reg map[[2]string]sema.ConvEntry) (func(string) string, error) {
-	a, b = strings.TrimSpace(a), strings.TrimSpace(b)
-	if a == b {
-		return func(x string) string {
-			return x
+	/*line lower.goal:581*/ a, b = strings.TrimSpace(a), strings.TrimSpace(b)
+	/*line lower.goal:582*/ if a == b {
+		/*line lower.goal:583*/ return func(x string) string {
+			/*line lower.goal:583*/ return x
 		}, nil
 	}
-	if e, ok := reg[[2]string{a, b}]; ok && !e.Fallible {
-		return func(x string) string {
-			return e.Name + "(" + x + ")"
+	/*line lower.goal:585*/ if e, ok := reg[[2]string{a, b}]; ok && !e.Fallible {
+		/*line lower.goal:586*/ return func(x string) string {
+			/*line lower.goal:586*/ return e.Name + "(" + x + ")"
 		}, nil
 	}
-	return nil, fmt.Errorf("no total element conversion %s -> %s for container recursion", a, b)
+	/*line lower.goal:588*/ return nil, fmt.Errorf("no total element conversion %s -> %s for container recursion", a, b)
 }
 
 //line lower.goal:594
 func deriveTarget(fl *ast.FieldList) (tgt string, fallible bool, ok bool) {
-	if fl == nil || len(fl.List) == 0 {
-		return "", false, false
+	/*line lower.goal:595*/ if fl == nil || len(fl.List) == 0 {
+		/*line lower.goal:596*/ return "", false, false
 	}
-	tgt = typeExprString(fl.List[0].Type)
-	if tgt == "" {
-		return "", false, false
+	/*line lower.goal:600*/ tgt = typeExprString(fl.List[0].Type)
+	/*line lower.goal:601*/ if tgt == "" {
+		/*line lower.goal:602*/ return "", false, false
 	}
-	count := 0
-	for _, f := range fl.List {
-		if n := len(f.Names); n > 0 {
-			count += n
+	/*line lower.goal:605*/ count := 0
+	/*line lower.goal:606*/ for _, f := range fl.List {
+		/*line lower.goal:607*/ if n := len(f.Names); n > 0 {
+			/*line lower.goal:608*/ count += n
 		} else {
-			count++
+			/*line lower.goal:610*/ count++
 		}
 	}
-	return tgt, count > 1, true
+	/*line lower.goal:613*/ return tgt, count > 1, true
 }
 
 //line lower.goal:620
 func typeExprString(x ast.Expr) string {
-	if x == nil {
-		return ""
+	/*line lower.goal:623*/ if x == nil {
+		/*line lower.goal:624*/ return ""
 	}
-	switch v1 := x.(type) {
+	/*line lower.goal:626*/ switch v1 := x.(type) {
 	case *ast.Ident:
 		{
-			return v1.Name
+			/*line lower.goal:628*/ return v1.Name
 		}
 	case *ast.StarExpr:
 		{
-			return "*" + typeExprString(v1.X)
+			/*line lower.goal:631*/ return "*" + typeExprString(v1.X)
 		}
 	case *ast.SelectorExpr:
 		{
-			base := typeExprString(v1.X)
-			if base == "" || v1.Sel == nil {
-				return ""
+			/*line lower.goal:634*/ base := typeExprString(v1.X)
+			/*line lower.goal:635*/ if base == "" || v1.Sel == nil {
+				/*line lower.goal:636*/ return ""
 			}
-			return base + "." + v1.Sel.Name
+			/*line lower.goal:638*/ return base + "." + v1.Sel.Name
 		}
 	case *ast.ArrayType:
 		{
-			if v1.Len != nil {
-				return "[" + typeExprString(v1.Len) + "]" + typeExprString(v1.Elt)
+			/*line lower.goal:641*/ if v1.Len != nil {
+				/*line lower.goal:642*/ return "[" + typeExprString(v1.Len) + "]" + typeExprString(v1.Elt)
 			}
-			return "[]" + typeExprString(v1.Elt)
+			/*line lower.goal:644*/ return "[]" + typeExprString(v1.Elt)
 		}
 	case *ast.MapType:
 		{
-			return "map[" + typeExprString(v1.Key) + "]" + typeExprString(v1.Value)
+			/*line lower.goal:647*/ return "map[" + typeExprString(v1.Key) + "]" + typeExprString(v1.Value)
 		}
 	case *ast.IndexExpr:
 		{
-			return typeExprString(v1.X) + "[" + typeExprString(v1.Index) + "]"
+			/*line lower.goal:650*/ return typeExprString(v1.X) + "[" + typeExprString(v1.Index) + "]"
 		}
 	case *ast.IndexListExpr:
 		{
-			parts := make([]string, 0, len(v1.Indices))
-			for _, idx := range v1.Indices {
-				parts = append(parts, typeExprString(idx))
+			/*line lower.goal:653*/ parts := make([]string, 0, len(v1.Indices))
+			/*line lower.goal:654*/ for _, idx := range v1.Indices {
+				/*line lower.goal:655*/ parts = append(parts, typeExprString(idx))
 			}
-			return typeExprString(v1.X) + "[" + strings.Join(parts, ", ") + "]"
+			/*line lower.goal:657*/ return typeExprString(v1.X) + "[" + strings.Join(parts, ", ") + "]"
 		}
 	case *ast.BasicLit:
 		{
-			return v1.Value
+			/*line lower.goal:660*/ return v1.Value
 		}
 	default:
 		{
-			return ""
+			/*line lower.goal:663*/ return ""
 		}
 	}
 }
 
 //line lower.goal:675
 func pointerReceiverSet(f *ast.File) map[string]bool {
-	set := map[string]bool{}
-	if f == nil {
-		return set
+	/*line lower.goal:676*/ set := map[string]bool{}
+	/*line lower.goal:677*/ if f == nil {
+		/*line lower.goal:678*/ return set
 	}
-	for _, d := range f.Decls {
-		fd, ok := d.(*ast.FuncDecl)
-		if !ok || fd.Recv == nil || len(fd.Recv.List) == 0 {
-			continue
+	/*line lower.goal:680*/ for _, d := range f.Decls {
+		/*line lower.goal:681*/ fd, ok := d.(*ast.FuncDecl)
+		/*line lower.goal:682*/ if !ok || fd.Recv == nil || len(fd.Recv.List) == 0 {
+			/*line lower.goal:683*/ continue
 		}
-		if star, ok := fd.Recv.List[0].Type.(*ast.StarExpr); ok {
-			if id, ok := star.X.(*ast.Ident); ok {
-				set[id.Name] = true
+		/*line lower.goal:685*/ if star, ok := fd.Recv.List[0].Type.(*ast.StarExpr); ok {
+			/*line lower.goal:686*/ if id, ok := star.X.(*ast.Ident); ok {
+				/*line lower.goal:687*/ set[id.Name] = true
 			}
 		}
 	}
-	return set
+	/*line lower.goal:691*/ return set
 }

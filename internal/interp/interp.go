@@ -27,7 +27,7 @@ type returnSignal struct {
 
 //line interp.goal:43
 func (returnSignal) Error() string {
-	return "interp: return outside function"
+	/*line interp.goal:43*/ return "interp: return outside function"
 }
 
 //line interp.goal:49
@@ -36,7 +36,7 @@ type breakSignal struct {
 
 //line interp.goal:43
 func (breakSignal) Error() string {
-	return "interp: break outside loop or switch"
+	/*line interp.goal:52*/ return "interp: break outside loop or switch"
 }
 
 //line interp.goal:58
@@ -45,7 +45,7 @@ type continueSignal struct {
 
 //line interp.goal:43
 func (continueSignal) Error() string {
-	return "interp: continue outside loop"
+	/*line interp.goal:61*/ return "interp: continue outside loop"
 }
 
 //line interp.goal:69
@@ -55,7 +55,7 @@ type panicSignal struct {
 
 //line interp.goal:43
 func (p panicSignal) Error() string {
-	return "interp: panic: " + p.value.String()
+	/*line interp.goal:74*/ return "interp: panic: " + p.value.String()
 }
 
 //line interp.goal:79
@@ -76,32 +76,32 @@ type Option func(*Interp)
 
 //line interp.goal:135
 func WithCapabilities(s cap.CapabilitySet) Option {
-	return func(ip *Interp) {
-		ip.caps = s
+	/*line interp.goal:136*/ return func(ip *Interp) {
+		/*line interp.goal:136*/ ip.caps = s
 	}
 }
 
 //line interp.goal:141
 func WithStdout(w io.Writer) Option {
-	return func(ip *Interp) {
-		ip.stdout = w
+	/*line interp.goal:142*/ return func(ip *Interp) {
+		/*line interp.goal:142*/ ip.stdout = w
 	}
 }
 
 //line interp.goal:153
 func New(file *ast.File, info *sema.Info, opts ...Option) *Interp {
-	ip := &Interp{file: file, info: info, root: NewEnv(), methods: map[string]map[string]*ast.FuncDecl{}, imports: map[string]string{}, derives: map[string]*ast.FuncDecl{}}
-	ip.caps = cap.GrantAll()
-	ip.stdout = os.Stdout
-	for _, opt := range opts {
-		if opt != nil {
-			opt(ip)
+	/*line interp.goal:154*/ ip := &Interp{file: file, info: info, root: NewEnv(), methods: map[string]map[string]*ast.FuncDecl{}, imports: map[string]string{}, derives: map[string]*ast.FuncDecl{}}
+	/*line interp.goal:157*/ ip.caps = cap.GrantAll()
+	/*line interp.goal:158*/ ip.stdout = os.Stdout
+	/*line interp.goal:159*/ for _, opt := range opts {
+		/*line interp.goal:160*/ if opt != nil {
+			/*line interp.goal:161*/ opt(ip)
 		}
 	}
-	ip.registerImports()
-	ip.registerFuncs()
-	ip.registerMethods()
-	return ip
+	/*line interp.goal:164*/ ip.registerImports()
+	/*line interp.goal:165*/ ip.registerFuncs()
+	/*line interp.goal:166*/ ip.registerMethods()
+	/*line interp.goal:167*/ return ip
 }
 
 //line interp.goal:178
@@ -112,307 +112,312 @@ type CapabilityError struct {
 
 //line interp.goal:43
 func (e CapabilityError) Error() string {
-	return fmt.Sprintf("interp: %s: capability denied: %s not granted", e.Pos.String(), e.Cap)
+	/*line interp.goal:185*/ return fmt.Sprintf("interp: %s: capability denied: %s not granted", e.Pos.String(), e.Cap)
 }
 
 //line interp.goal:196
 func (ip *Interp) emitStdout(pos token.Pos, write func(io.Writer) error) error {
-	if !ip.caps.Has(cap.Stdout) {
-		return CapabilityError{Cap: cap.Stdout, Pos: pos}
+	/*line interp.goal:197*/ if !ip.caps.Has(cap.Stdout) {
+		/*line interp.goal:198*/ return CapabilityError{Cap: cap.Stdout, Pos: pos}
 	}
-	w := ip.stdout
-	if w == nil {
-		w = os.Stdout
+	/*line interp.goal:200*/ w := ip.stdout
+	/*line interp.goal:201*/ if w == nil {
+		/*line interp.goal:202*/ w = os.Stdout
 	}
-	return write(w)
+	/*line interp.goal:204*/ return write(w)
 }
 
 //line interp.goal:212
 func (ip *Interp) registerImports() {
-	if ip.file == nil {
-		return
+	/*line interp.goal:213*/ if ip.file == nil {
+		/*line interp.goal:214*/ return
 	}
-	for _, spec := range ip.file.Imports {
-		if spec == nil || spec.Path == nil {
-			continue
+	/*line interp.goal:216*/ for _, spec := range ip.file.Imports {
+		/*line interp.goal:217*/ if spec == nil || spec.Path == nil {
+			/*line interp.goal:218*/ continue
 		}
-		path, err := strconv.Unquote(spec.Path.Value)
-		if err != nil || path == "" {
-			continue
+		/*line interp.goal:220*/ path, err := strconv.Unquote(spec.Path.Value)
+		/*line interp.goal:221*/ if err != nil || path == "" {
+			/*line interp.goal:222*/ continue
 		}
-		name := ""
-		if spec.Name != nil {
-			name = spec.Name.Name
+		/*line interp.goal:224*/ name := ""
+		/*line interp.goal:225*/ if spec.Name != nil {
+			/*line interp.goal:226*/ name = spec.Name.Name
 		}
-		if name == "" {
-			name = path[strings.LastIndex(path, "/")+1:]
+		/*line interp.goal:228*/ if name == "" {
+			/*line interp.goal:229*/ name = path[strings.LastIndex(path, "/")+1:]
 		}
-		if name == "" || name == "_" || name == "." {
-			continue
+		/*line interp.goal:231*/ if name == "" || name == "_" || name == "." {
+			/*line interp.goal:232*/ continue
 		}
-		ip.imports[name] = path
+		/*line interp.goal:234*/ ip.imports[name] = path
 	}
 }
 
 //line interp.goal:253
 func isFuncDerive(m ast.FuncMod) bool {
-	_, ok := m.(ast.FuncMod_FuncDerive)
-
+	/*line interp.goal:253*/ _, ok := m.(ast.FuncMod_FuncDerive)
+	/*line interp.goal:253*/
+	/*line interp.goal:253*/
 	return ok
 }
 
 //line interp.goal:260
 func isSeverityError(s sema.Severity) bool {
-	_, ok := s.(sema.Severity_Error)
-
+	/*line interp.goal:260*/ _, ok := s.(sema.Severity_Error)
+	/*line interp.goal:260*/
+	/*line interp.goal:260*/
 	return ok
 }
 
 //line interp.goal:262
 func (ip *Interp) registerFuncs() {
-	if ip.file == nil {
-		return
+	/*line interp.goal:263*/ if ip.file == nil {
+		/*line interp.goal:264*/ return
 	}
-	for _, d := range ip.file.Decls {
-		fn, ok := d.(*ast.FuncDecl)
-		if !ok || fn.Recv != nil || fn.Name == nil {
-			continue
+	/*line interp.goal:266*/ for _, d := range ip.file.Decls {
+		/*line interp.goal:267*/ fn, ok := d.(*ast.FuncDecl)
+		/*line interp.goal:268*/ if !ok || fn.Recv != nil || fn.Name == nil {
+			/*line interp.goal:269*/ continue
 		}
-		if isFuncDerive(fn.Mod) {
-			ip.derives[fn.Name.Name] = fn
-			continue
+		/*line interp.goal:271*/ if isFuncDerive(fn.Mod) {
+			/*line interp.goal:272*/ ip.derives[fn.Name.Name] = fn
+			/*line interp.goal:273*/ continue
 		}
-		if fn.Body == nil {
-			continue
+		/*line interp.goal:275*/ if fn.Body == nil {
+			/*line interp.goal:276*/ continue
 		}
-		ip.root.Define(fn.Name.Name, FuncDeclVal(fn, ip.root))
+		/*line interp.goal:278*/ ip.root.Define(fn.Name.Name, FuncDeclVal(fn, ip.root))
 	}
 }
 
 //line interp.goal:287
 func (ip *Interp) registerMethods() {
-	if ip.file == nil {
-		return
+	/*line interp.goal:288*/ if ip.file == nil {
+		/*line interp.goal:289*/ return
 	}
-	for _, d := range ip.file.Decls {
-		fn, ok := d.(*ast.FuncDecl)
-		if !ok || fn.Recv == nil || fn.Name == nil || fn.Body == nil {
-			continue
+	/*line interp.goal:291*/ for _, d := range ip.file.Decls {
+		/*line interp.goal:292*/ fn, ok := d.(*ast.FuncDecl)
+		/*line interp.goal:293*/ if !ok || fn.Recv == nil || fn.Name == nil || fn.Body == nil {
+			/*line interp.goal:294*/ continue
 		}
-		typeName := recvTypeName(fn)
-		if typeName == "" {
-			continue
+		/*line interp.goal:296*/ typeName := recvTypeName(fn)
+		/*line interp.goal:297*/ if typeName == "" {
+			/*line interp.goal:298*/ continue
 		}
-		byName := ip.methods[typeName]
-		if byName == nil {
-			byName = map[string]*ast.FuncDecl{}
-			ip.methods[typeName] = byName
+		/*line interp.goal:300*/ byName := ip.methods[typeName]
+		/*line interp.goal:301*/ if byName == nil {
+			/*line interp.goal:302*/ byName = map[string]*ast.FuncDecl{}
+			/*line interp.goal:303*/ ip.methods[typeName] = byName
 		}
-		byName[fn.Name.Name] = fn
+		/*line interp.goal:305*/ byName[fn.Name.Name] = fn
 	}
 }
 
 //line interp.goal:312
 func recvTypeName(fn *ast.FuncDecl) string {
-	if fn.Recv == nil || len(fn.Recv.List) == 0 {
-		return ""
+	/*line interp.goal:313*/ if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		/*line interp.goal:314*/ return ""
 	}
-	t := fn.Recv.List[0].Type
-	if star, ok := t.(*ast.StarExpr); ok {
-		t = star.X
+	/*line interp.goal:316*/ t := fn.Recv.List[0].Type
+	/*line interp.goal:317*/ if star, ok := t.(*ast.StarExpr); ok {
+		/*line interp.goal:318*/ t = star.X
 	}
-	if id, ok := t.(*ast.Ident); ok {
-		return id.Name
+	/*line interp.goal:320*/ if id, ok := t.(*ast.Ident); ok {
+		/*line interp.goal:321*/ return id.Name
 	}
-	return ""
+	/*line interp.goal:323*/ return ""
 }
 
 //line interp.goal:328
 func recvName(fn *ast.FuncDecl) string {
-	if fn.Recv == nil || len(fn.Recv.List) == 0 || len(fn.Recv.List[0].Names) == 0 {
-		return ""
+	/*line interp.goal:329*/ if fn.Recv == nil || len(fn.Recv.List) == 0 || len(fn.Recv.List[0].Names) == 0 {
+		/*line interp.goal:330*/ return ""
 	}
-	return fn.Recv.List[0].Names[0].Name
+	/*line interp.goal:332*/ return fn.Recv.List[0].Names[0].Name
 }
 
 //line interp.goal:338
 func recvIsPointer(fn *ast.FuncDecl) bool {
-	if fn.Recv == nil || len(fn.Recv.List) == 0 {
-		return false
+	/*line interp.goal:339*/ if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		/*line interp.goal:340*/ return false
 	}
-	_, ok := fn.Recv.List[0].Type.(*ast.StarExpr)
-	return ok
+	/*line interp.goal:342*/ _, ok := fn.Recv.List[0].Type.(*ast.StarExpr)
+	/*line interp.goal:343*/ return ok
 }
 
 //line interp.goal:358
 func (ip *Interp) Run() error {
-	if err := ip.gate(); err != nil {
-		return err
+	/*line interp.goal:359*/ if err := ip.gate(); err != nil {
+		/*line interp.goal:360*/ return err
 	}
-	main := ip.findMain()
-	if main == nil {
-		return ErrNoMain
+	/*line interp.goal:362*/ main := ip.findMain()
+	/*line interp.goal:363*/ if main == nil {
+		/*line interp.goal:364*/ return ErrNoMain
 	}
-	_, err := ip.callFunc(&FuncValue{Name: "main", Decl: main, Env: ip.root}, nil)
-	return err
+	/*line interp.goal:366*/ _, err := ip.callFunc(&FuncValue{Name: "main", Decl: main, Env: ip.root}, nil)
+	/*line interp.goal:367*/ return err
 }
 
 //line interp.goal:382
 func (ip *Interp) gate() error {
-	for _, d := range sema.Check(ip.file, ip.info) {
-		if !isSeverityError(d.Severity) {
-			continue
+	/*line interp.goal:383*/ for _, d := range sema.Check(ip.file, ip.info) {
+		/*line interp.goal:384*/ if !isSeverityError(d.Severity) {
+			/*line interp.goal:385*/ continue
 		}
-		return fmt.Errorf("interp: refused before run: %s: [%s] %s", d.Pos.String(), d.Code, d.Message)
+		/*line interp.goal:387*/ return fmt.Errorf("interp: refused before run: %s: [%s] %s", d.Pos.String(), d.Code, d.Message)
 	}
-	return nil
+	/*line interp.goal:389*/ return nil
 }
 
 //line interp.goal:398
 func (ip *Interp) callFunc(fn *FuncValue, args []Value) ([]Value, error) {
-	if fn == nil || fn.Decl == nil {
-		name := ""
-		if fn != nil {
-			name = fn.Name
+	/*line interp.goal:399*/ if fn == nil || fn.Decl == nil {
+		/*line interp.goal:400*/ name := ""
+		/*line interp.goal:401*/ if fn != nil {
+			/*line interp.goal:402*/ name = fn.Name
 		}
-		return nil, fmt.Errorf("interp: call of non-callable function value %q", name)
+		/*line interp.goal:404*/ return nil, fmt.Errorf("interp: call of non-callable function value %q", name)
 	}
-	params := flattenParams(fn.Decl.Type)
-	if len(args) != len(params) {
-		return nil, fmt.Errorf("interp: %s expects %d args, got %d", fn.Name, len(params), len(args))
+	/*line interp.goal:406*/ params := flattenParams(fn.Decl.Type)
+	/*line interp.goal:407*/ if len(args) != len(params) {
+		/*line interp.goal:408*/ return nil, fmt.Errorf("interp: %s expects %d args, got %d", fn.Name, len(params), len(args))
 	}
-	defScope := fn.Env
-	if defScope == nil {
-		defScope = ip.root
+	/*line interp.goal:410*/ defScope := fn.Env
+	/*line interp.goal:411*/ if defScope == nil {
+		/*line interp.goal:412*/ defScope = ip.root
 	}
-	scope := defScope.NewChild()
-	for i, name := range params {
-		scope.Define(name, args[i])
+	/*line interp.goal:414*/ scope := defScope.NewChild()
+	/*line interp.goal:415*/ for i, name := range params {
+		/*line interp.goal:416*/ scope.Define(name, args[i])
 	}
-	ip.fnStack = append(ip.fnStack, ip.sigFor(fn.Name))
-	defer func() {
-		ip.fnStack = ip.fnStack[:len(ip.fnStack)-1]
+	/*line interp.goal:420*/ ip.fnStack = append(ip.fnStack, ip.sigFor(fn.Name))
+	/*line interp.goal:421*/ defer func() {
+		/*line interp.goal:421*/ ip.fnStack = ip.fnStack[:len(ip.fnStack)-1]
 	}()
-	if err := ip.execBlock(fn.Decl.Body, scope); err != nil {
-		var ret returnSignal
+	/*line interp.goal:422*/ if err := ip.execBlock(fn.Decl.Body, scope); err != nil {
+		/*line interp.goal:423*/ var ret returnSignal
 
+		/*line interp.goal:424*/
 		if errors.As(err, &ret) {
-			return ret.vals, nil
+			/*line interp.goal:425*/ return ret.vals, nil
 		}
-		return nil, err
+		/*line interp.goal:427*/ return nil, err
 	}
-	return nil, nil
+	/*line interp.goal:430*/ return nil, nil
 }
 
 //line interp.goal:441
 func (ip *Interp) callMethod(decl *ast.FuncDecl, recv Value, args []Value) ([]Value, error) {
-	params := flattenParams(decl.Type)
-	if len(args) != len(params) {
-		return nil, fmt.Errorf("interp: %s.%s expects %d args, got %d", recvTypeName(decl), decl.Name.Name, len(params), len(args))
+	/*line interp.goal:442*/ params := flattenParams(decl.Type)
+	/*line interp.goal:443*/ if len(args) != len(params) {
+		/*line interp.goal:444*/ return nil, fmt.Errorf("interp: %s.%s expects %d args, got %d", recvTypeName(decl), decl.Name.Name, len(params), len(args))
 	}
-	if !recvIsPointer(decl) {
-		recv = copyStructValue(recv)
+	/*line interp.goal:446*/ if !recvIsPointer(decl) {
+		/*line interp.goal:447*/ recv = copyStructValue(recv)
 	}
-	scope := ip.root.NewChild()
-	if name := recvName(decl); name != "" && name != "_" {
-		scope.Define(name, recv)
+	/*line interp.goal:449*/ scope := ip.root.NewChild()
+	/*line interp.goal:450*/ if name := recvName(decl); name != "" && name != "_" {
+		/*line interp.goal:451*/ scope.Define(name, recv)
 	}
-	for i, name := range params {
-		scope.Define(name, args[i])
+	/*line interp.goal:453*/ for i, name := range params {
+		/*line interp.goal:454*/ scope.Define(name, args[i])
 	}
-	ip.fnStack = append(ip.fnStack, sema.FuncSig{})
-	defer func() {
-		ip.fnStack = ip.fnStack[:len(ip.fnStack)-1]
+	/*line interp.goal:459*/ ip.fnStack = append(ip.fnStack, sema.FuncSig{})
+	/*line interp.goal:460*/ defer func() {
+		/*line interp.goal:460*/ ip.fnStack = ip.fnStack[:len(ip.fnStack)-1]
 	}()
-	if err := ip.execBlock(decl.Body, scope); err != nil {
-		var ret returnSignal
+	/*line interp.goal:461*/ if err := ip.execBlock(decl.Body, scope); err != nil {
+		/*line interp.goal:462*/ var ret returnSignal
 
+		/*line interp.goal:463*/
 		if errors.As(err, &ret) {
-			return ret.vals, nil
+			/*line interp.goal:464*/ return ret.vals, nil
 		}
-		return nil, err
+		/*line interp.goal:466*/ return nil, err
 	}
-	return nil, nil
+	/*line interp.goal:468*/ return nil, nil
 }
 
 //line interp.goal:475
 func flattenParams(ft *ast.FuncType) []string {
-	if ft == nil || ft.Params == nil {
-		return nil
+	/*line interp.goal:476*/ if ft == nil || ft.Params == nil {
+		/*line interp.goal:477*/ return nil
 	}
-	var names []string
+	/*line interp.goal:479*/ var names []string
 
+	/*line interp.goal:480*/
 	for _, f := range ft.Params.List {
-		if len(f.Names) == 0 {
-			names = append(names, "")
-			continue
+		/*line interp.goal:481*/ if len(f.Names) == 0 {
+			/*line interp.goal:482*/ names = append(names, "")
+			/*line interp.goal:483*/ continue
 		}
-		for _, n := range f.Names {
-			names = append(names, n.Name)
+		/*line interp.goal:485*/ for _, n := range f.Names {
+			/*line interp.goal:486*/ names = append(names, n.Name)
 		}
 	}
-	return names
+	/*line interp.goal:489*/ return names
 }
 
 //line interp.goal:494
 func (ip *Interp) findMain() *ast.FuncDecl {
-	if ip.file == nil {
-		return nil
+	/*line interp.goal:495*/ if ip.file == nil {
+		/*line interp.goal:496*/ return nil
 	}
-	for _, d := range ip.file.Decls {
-		fn, ok := d.(*ast.FuncDecl)
-		if !ok {
-			continue
+	/*line interp.goal:498*/ for _, d := range ip.file.Decls {
+		/*line interp.goal:499*/ fn, ok := d.(*ast.FuncDecl)
+		/*line interp.goal:500*/ if !ok {
+			/*line interp.goal:501*/ continue
 		}
-		if fn.Recv != nil || fn.Name == nil {
-			continue
+		/*line interp.goal:503*/ if fn.Recv != nil || fn.Name == nil {
+			/*line interp.goal:504*/ continue
 		}
-		if fn.Name.Name == "main" {
-			return fn
+		/*line interp.goal:506*/ if fn.Name.Name == "main" {
+			/*line interp.goal:507*/ return fn
 		}
 	}
-	return nil
+	/*line interp.goal:510*/ return nil
 }
 
 //line interp.goal:516
 func (ip *Interp) sigFor(name string) sema.FuncSig {
-	if ip.info == nil || ip.info.FuncSignatures == nil {
-		return sema.FuncSig{}
+	/*line interp.goal:517*/ if ip.info == nil || ip.info.FuncSignatures == nil {
+		/*line interp.goal:518*/ return sema.FuncSig{}
 	}
-	return ip.info.FuncSignatures[name]
+	/*line interp.goal:520*/ return ip.info.FuncSignatures[name]
 }
 
 //line interp.goal:526
 func (ip *Interp) curSig() (sema.FuncSig, bool) {
-	if len(ip.fnStack) == 0 {
-		return sema.FuncSig{}, false
+	/*line interp.goal:527*/ if len(ip.fnStack) == 0 {
+		/*line interp.goal:528*/ return sema.FuncSig{}, false
 	}
-	return ip.fnStack[len(ip.fnStack)-1], true
+	/*line interp.goal:530*/ return ip.fnStack[len(ip.fnStack)-1], true
 }
 
 //line interp.goal:537
 func (ip *Interp) execBlock(block *ast.BlockStmt, scope *Env) error {
-	if block == nil {
-		return nil
+	/*line interp.goal:538*/ if block == nil {
+		/*line interp.goal:539*/ return nil
 	}
-	for _, stmt := range block.List {
-		if err := ip.execStmt(stmt, scope); err != nil {
-			return err
+	/*line interp.goal:541*/ for _, stmt := range block.List {
+		/*line interp.goal:542*/ if err := ip.execStmt(stmt, scope); err != nil {
+			/*line interp.goal:543*/ return err
 		}
 	}
-	return nil
+	/*line interp.goal:546*/ return nil
 }
 
 //line interp.goal:552
 func (ip *Interp) execStmt(stmt ast.Stmt, scope *Env) error {
-	switch s := stmt.(type) {
+	/*line interp.goal:553*/ switch s := stmt.(type) {
 	case *ast.ExprStmt:
 		if m, ok := s.X.(*ast.MatchExpr); ok {
-			return ip.execMatch(m, scope)
+			/*line interp.goal:559*/ return ip.execMatch(m, scope)
 		}
 		if c, ok := s.X.(*ast.CallExpr); ok {
-			_, err := ip.evalCallMulti(c, scope)
-			return err
+			/*line interp.goal:565*/ _, err := ip.evalCallMulti(c, scope)
+			/*line interp.goal:566*/ return err
 		}
 		_, err := ip.evalExpr(s.X, scope)
 		return err
@@ -447,45 +452,45 @@ func (ip *Interp) execStmt(stmt ast.Stmt, scope *Env) error {
 
 //line interp.goal:605
 func (ip *Interp) execReturn(s *ast.ReturnStmt, scope *Env) error {
-	if len(s.Results) == 1 {
-		if call, ok := s.Results[0].(*ast.CallExpr); ok {
-			vals, err := ip.evalCallMulti(call, scope)
-			if err != nil {
-				return err
+	/*line interp.goal:606*/ if len(s.Results) == 1 {
+		/*line interp.goal:607*/ if call, ok := s.Results[0].(*ast.CallExpr); ok {
+			/*line interp.goal:608*/ vals, err := ip.evalCallMulti(call, scope)
+			/*line interp.goal:609*/ if err != nil {
+				/*line interp.goal:610*/ return err
 			}
-			return returnSignal{vals: vals}
+			/*line interp.goal:612*/ return returnSignal{vals: vals}
 		}
 	}
-	vals := make([]Value, 0, len(s.Results))
-	for _, r := range s.Results {
-		v, err := ip.evalExpr(r, scope)
-		if err != nil {
-			return err
+	/*line interp.goal:615*/ vals := make([]Value, 0, len(s.Results))
+	/*line interp.goal:616*/ for _, r := range s.Results {
+		/*line interp.goal:617*/ v, err := ip.evalExpr(r, scope)
+		/*line interp.goal:618*/ if err != nil {
+			/*line interp.goal:619*/ return err
 		}
-		vals = append(vals, v)
+		/*line interp.goal:621*/ vals = append(vals, v)
 	}
-	return returnSignal{vals: vals}
+	/*line interp.goal:623*/ return returnSignal{vals: vals}
 }
 
 //line interp.goal:630
 func (ip *Interp) execIf(s *ast.IfStmt, scope *Env) error {
-	ifScope := scope.NewChild()
-	if s.Init != nil {
-		if err := ip.execStmt(s.Init, ifScope); err != nil {
-			return err
+	/*line interp.goal:631*/ ifScope := scope.NewChild()
+	/*line interp.goal:632*/ if s.Init != nil {
+		/*line interp.goal:633*/ if err := ip.execStmt(s.Init, ifScope); err != nil {
+			/*line interp.goal:634*/ return err
 		}
 	}
-	cond, err := ip.evalExpr(s.Cond, ifScope)
-	if err != nil {
-		return err
+	/*line interp.goal:637*/ cond, err := ip.evalExpr(s.Cond, ifScope)
+	/*line interp.goal:638*/ if err != nil {
+		/*line interp.goal:639*/ return err
 	}
-	if cond.Kind != KindBool {
-		return fmt.Errorf("interp: if condition must be bool, got %s", cond.Kind)
+	/*line interp.goal:641*/ if cond.Kind != KindBool {
+		/*line interp.goal:642*/ return fmt.Errorf("interp: if condition must be bool, got %s", cond.Kind)
 	}
-	if cond.Bool {
-		return ip.execBlock(s.Body, ifScope.NewChild())
+	/*line interp.goal:644*/ if cond.Bool {
+		/*line interp.goal:645*/ return ip.execBlock(s.Body, ifScope.NewChild())
 	}
-	switch e := s.Else.(type) {
+	/*line interp.goal:647*/ switch e := s.Else.(type) {
 	case nil:
 		return nil
 	case *ast.BlockStmt:
@@ -499,65 +504,66 @@ func (ip *Interp) execIf(s *ast.IfStmt, scope *Env) error {
 
 //line interp.goal:667
 func (ip *Interp) execMatch(m *ast.MatchExpr, scope *Env) error {
-	subj, err := ip.evalExpr(m.Subject, scope)
-	if err != nil {
-		return err
+	/*line interp.goal:668*/ subj, err := ip.evalExpr(m.Subject, scope)
+	/*line interp.goal:669*/ if err != nil {
+		/*line interp.goal:670*/ return err
 	}
-	if subj.Kind != KindVariant || subj.Variant == nil {
-		return fmt.Errorf("interp: match subject must be a variant, got %s", subj.Kind)
+	/*line interp.goal:672*/ if subj.Kind != KindVariant || subj.Variant == nil {
+		/*line interp.goal:673*/ return fmt.Errorf("interp: match subject must be a variant, got %s", subj.Kind)
 	}
-	arm, vp := selectMatchArm(m, subj)
-	if arm == nil {
-		return unreachableMatch(subj)
+	/*line interp.goal:675*/ arm, vp := selectMatchArm(m, subj)
+	/*line interp.goal:676*/ if arm == nil {
+		/*line interp.goal:677*/ return unreachableMatch(subj)
 	}
-	return ip.execArm(arm, vp, subj, scope)
+	/*line interp.goal:679*/ return ip.execArm(arm, vp, subj, scope)
 }
 
 //line interp.goal:687
 func selectMatchArm(m *ast.MatchExpr, subj Value) (*ast.MatchArm, *ast.VariantPattern) {
-	var restArm *ast.MatchArm
+	/*line interp.goal:688*/ var restArm *ast.MatchArm
 
+	/*line interp.goal:689*/
 	for _, arm := range m.Arms {
-		switch p := arm.Pattern.(type) {
+		/*line interp.goal:690*/ switch p := arm.Pattern.(type) {
 		case *ast.VariantPattern:
 			if p.Variant != nil && p.Variant.Name == subj.Variant.Tag {
-				return arm, p
+				/*line interp.goal:693*/ return arm, p
 			}
 		case *ast.RestPattern:
 			restArm = arm
 		}
 	}
-	return restArm, nil
+	/*line interp.goal:699*/ return restArm, nil
 }
 
 //line interp.goal:705
 func unreachableMatch(subj Value) error {
-	return panicSignal{value: StrVal(fmt.Sprintf("unreachable: non-exhaustive match on %s (compiler invariant violated)", subj.Variant.TypeID))}
+	/*line interp.goal:706*/ return panicSignal{value: StrVal(fmt.Sprintf("unreachable: non-exhaustive match on %s (compiler invariant violated)", subj.Variant.TypeID))}
 }
 
 //line interp.goal:718
 func armScopeFor(vp *ast.VariantPattern, subj Value, scope *Env) *Env {
-	armScope := scope.NewChild()
-	if vp != nil && vp.Binding != nil {
-		bound := subj
-		if subj.Kind == KindVariant && subj.Variant != nil && (subj.Variant.TypeID == resultTypeID || subj.Variant.TypeID == optionTypeID) {
-			if pv, ok := payloadValue(subj.Variant); ok {
-				bound = pv
+	/*line interp.goal:719*/ armScope := scope.NewChild()
+	/*line interp.goal:720*/ if vp != nil && vp.Binding != nil {
+		/*line interp.goal:721*/ bound := subj
+		/*line interp.goal:722*/ if subj.Kind == KindVariant && subj.Variant != nil && (subj.Variant.TypeID == resultTypeID || subj.Variant.TypeID == optionTypeID) {
+			/*line interp.goal:724*/ if pv, ok := payloadValue(subj.Variant); ok {
+				/*line interp.goal:725*/ bound = pv
 			}
 		}
-		armScope.Define(vp.Binding.Name, bound)
+		/*line interp.goal:728*/ armScope.Define(vp.Binding.Name, bound)
 	}
-	return armScope
+	/*line interp.goal:730*/ return armScope
 }
 
 //line interp.goal:734
 func (ip *Interp) execArm(arm *ast.MatchArm, vp *ast.VariantPattern, subj Value, scope *Env) error {
-	return ip.execArmBody(arm.Body, armScopeFor(vp, subj, scope))
+	/*line interp.goal:735*/ return ip.execArmBody(arm.Body, armScopeFor(vp, subj, scope))
 }
 
 //line interp.goal:742
 func (ip *Interp) execArmBody(body ast.Node, scope *Env) error {
-	switch b := body.(type) {
+	/*line interp.goal:743*/ switch b := body.(type) {
 	case nil:
 		return nil
 	case ast.Stmt:
@@ -575,80 +581,80 @@ func (ip *Interp) execArmBody(body ast.Node, scope *Env) error {
 
 //line interp.goal:763
 func (ip *Interp) execDecl(s *ast.DeclStmt, scope *Env) error {
-	gen, ok := s.Decl.(*ast.GenDecl)
-	if !ok {
-		return fmt.Errorf("interp: unsupported declaration %T", s.Decl)
+	/*line interp.goal:764*/ gen, ok := s.Decl.(*ast.GenDecl)
+	/*line interp.goal:765*/ if !ok {
+		/*line interp.goal:766*/ return fmt.Errorf("interp: unsupported declaration %T", s.Decl)
 	}
-	if gen.Tok != token.VAR && gen.Tok != token.CONST {
-		return fmt.Errorf("interp: unsupported %s declaration in statement position", gen.Tok)
+	/*line interp.goal:768*/ if gen.Tok != token.VAR && gen.Tok != token.CONST {
+		/*line interp.goal:769*/ return fmt.Errorf("interp: unsupported %s declaration in statement position", gen.Tok)
 	}
-	for _, spec := range gen.Specs {
-		vs, ok := spec.(*ast.ValueSpec)
-		if !ok {
-			return fmt.Errorf("interp: unsupported spec %T in %s declaration", spec, gen.Tok)
+	/*line interp.goal:771*/ for _, spec := range gen.Specs {
+		/*line interp.goal:772*/ vs, ok := spec.(*ast.ValueSpec)
+		/*line interp.goal:773*/ if !ok {
+			/*line interp.goal:774*/ return fmt.Errorf("interp: unsupported spec %T in %s declaration", spec, gen.Tok)
 		}
-		switch {
+		/*line interp.goal:776*/ switch {
 		case len(vs.Values) == 0:
 			zero := zeroValue(vs.Type)
 			for _, name := range vs.Names {
-				scope.Define(name.Name, zero)
+				/*line interp.goal:781*/ scope.Define(name.Name, zero)
 			}
 		case len(vs.Values) == len(vs.Names):
 			for i, name := range vs.Names {
-				v, err := ip.evalExpr(vs.Values[i], scope)
-				if err != nil {
-					return err
+				/*line interp.goal:785*/ v, err := ip.evalExpr(vs.Values[i], scope)
+				/*line interp.goal:786*/ if err != nil {
+					/*line interp.goal:787*/ return err
 				}
-				scope.Define(name.Name, v)
+				/*line interp.goal:789*/ scope.Define(name.Name, v)
 			}
 		default:
 			return fmt.Errorf("interp: %s spec has %d names but %d values", gen.Tok, len(vs.Names), len(vs.Values))
 		}
 	}
-	return nil
+	/*line interp.goal:795*/ return nil
 }
 
 //line interp.goal:804
 func (ip *Interp) execAssign(s *ast.AssignStmt, scope *Env) error {
-	if len(s.Lhs) > 1 && len(s.Rhs) == 1 {
-		if call, ok := s.Rhs[0].(*ast.CallExpr); ok {
-			vals, err := ip.evalCallMulti(call, scope)
-			if err != nil {
-				return err
+	/*line interp.goal:807*/ if len(s.Lhs) > 1 && len(s.Rhs) == 1 {
+		/*line interp.goal:808*/ if call, ok := s.Rhs[0].(*ast.CallExpr); ok {
+			/*line interp.goal:809*/ vals, err := ip.evalCallMulti(call, scope)
+			/*line interp.goal:810*/ if err != nil {
+				/*line interp.goal:811*/ return err
 			}
-			if len(vals) != len(s.Lhs) {
-				return fmt.Errorf("interp: assignment has %d targets but call returned %d values", len(s.Lhs), len(vals))
+			/*line interp.goal:813*/ if len(vals) != len(s.Lhs) {
+				/*line interp.goal:814*/ return fmt.Errorf("interp: assignment has %d targets but call returned %d values", len(s.Lhs), len(vals))
 			}
-			return ip.bindTargets(s, vals, scope)
+			/*line interp.goal:816*/ return ip.bindTargets(s, vals, scope)
 		}
 	}
-	if len(s.Lhs) != len(s.Rhs) {
-		return fmt.Errorf("interp: assignment has %d targets but %d values", len(s.Lhs), len(s.Rhs))
+	/*line interp.goal:819*/ if len(s.Lhs) != len(s.Rhs) {
+		/*line interp.goal:820*/ return fmt.Errorf("interp: assignment has %d targets but %d values", len(s.Lhs), len(s.Rhs))
 	}
-	vals := make([]Value, len(s.Rhs))
-	for i, rhs := range s.Rhs {
-		v, err := ip.evalExpr(rhs, scope)
-		if err != nil {
-			return err
+	/*line interp.goal:823*/ vals := make([]Value, len(s.Rhs))
+	/*line interp.goal:824*/ for i, rhs := range s.Rhs {
+		/*line interp.goal:825*/ v, err := ip.evalExpr(rhs, scope)
+		/*line interp.goal:826*/ if err != nil {
+			/*line interp.goal:827*/ return err
 		}
-		vals[i] = v
+		/*line interp.goal:829*/ vals[i] = v
 	}
-	return ip.bindTargets(s, vals, scope)
+	/*line interp.goal:831*/ return ip.bindTargets(s, vals, scope)
 }
 
 //line interp.goal:839
 func (ip *Interp) bindTargets(s *ast.AssignStmt, vals []Value, scope *Env) error {
-	for i, lhs := range s.Lhs {
-		if err := ip.assignTarget(lhs, vals[i], s.Tok, scope); err != nil {
-			return err
+	/*line interp.goal:840*/ for i, lhs := range s.Lhs {
+		/*line interp.goal:841*/ if err := ip.assignTarget(lhs, vals[i], s.Tok, scope); err != nil {
+			/*line interp.goal:842*/ return err
 		}
 	}
-	return nil
+	/*line interp.goal:845*/ return nil
 }
 
 //line interp.goal:856
 func (ip *Interp) assignTarget(lhs ast.Expr, v Value, tok token.Kind, scope *Env) error {
-	switch t := lhs.(type) {
+	/*line interp.goal:857*/ switch t := lhs.(type) {
 	case *ast.Ident:
 		switch {
 		case tok == token.DEFINE:
@@ -659,11 +665,11 @@ func (ip *Interp) assignTarget(lhs ast.Expr, v Value, tok token.Kind, scope *Env
 		default:
 			cur, err := scope.Lookup(t.Name)
 			if err != nil {
-				return err
+				/*line interp.goal:868*/ return err
 			}
 			res, err := ip.compoundApply(tok, cur, v)
 			if err != nil {
-				return err
+				/*line interp.goal:872*/ return err
 			}
 			return scope.Assign(t.Name, res)
 		}
@@ -678,61 +684,61 @@ func (ip *Interp) assignTarget(lhs ast.Expr, v Value, tok token.Kind, scope *Env
 
 //line interp.goal:888
 func (ip *Interp) compoundApply(tok token.Kind, cur, rhs Value) (Value, error) {
-	op, ok := compoundBinOp(tok)
-	if !ok {
-		return Value{}, fmt.Errorf("interp: unsupported assignment operator %s", tok)
+	/*line interp.goal:889*/ op, ok := compoundBinOp(tok)
+	/*line interp.goal:890*/ if !ok {
+		/*line interp.goal:891*/ return Value{}, fmt.Errorf("interp: unsupported assignment operator %s", tok)
 	}
-	return applyBinary(op, cur, rhs)
+	/*line interp.goal:893*/ return applyBinary(op, cur, rhs)
 }
 
 //line interp.goal:900
 func (ip *Interp) assignIndex(t *ast.IndexExpr, v Value, tok token.Kind, scope *Env) error {
-	if tok == token.DEFINE {
-		return fmt.Errorf("interp: cannot use := with an index target")
+	/*line interp.goal:901*/ if tok == token.DEFINE {
+		/*line interp.goal:902*/ return fmt.Errorf("interp: cannot use := with an index target")
 	}
-	recv, err := ip.evalExpr(t.X, scope)
-	if err != nil {
-		return err
+	/*line interp.goal:904*/ recv, err := ip.evalExpr(t.X, scope)
+	/*line interp.goal:905*/ if err != nil {
+		/*line interp.goal:906*/ return err
 	}
-	idx, err := ip.evalExpr(t.Index, scope)
-	if err != nil {
-		return err
+	/*line interp.goal:908*/ idx, err := ip.evalExpr(t.Index, scope)
+	/*line interp.goal:909*/ if err != nil {
+		/*line interp.goal:910*/ return err
 	}
-	switch recv.Kind {
+	/*line interp.goal:912*/ switch recv.Kind {
 	case KindSlice:
 		if idx.Kind != KindInt {
-			return fmt.Errorf("interp: slice index must be int, got %s", idx.Kind)
+			/*line interp.goal:915*/ return fmt.Errorf("interp: slice index must be int, got %s", idx.Kind)
 		}
 		if idx.Int < 0 || idx.Int >= int64(len(recv.Slice)) {
-			return fmt.Errorf("interp: slice index %d out of range (len %d)", idx.Int, len(recv.Slice))
+			/*line interp.goal:918*/ return fmt.Errorf("interp: slice index %d out of range (len %d)", idx.Int, len(recv.Slice))
 		}
 		if tok != token.ASSIGN {
-			res, err := ip.compoundApply(tok, recv.Slice[idx.Int], v)
-			if err != nil {
-				return err
+			/*line interp.goal:921*/ res, err := ip.compoundApply(tok, recv.Slice[idx.Int], v)
+			/*line interp.goal:922*/ if err != nil {
+				/*line interp.goal:923*/ return err
 			}
-			v = res
+			/*line interp.goal:925*/ v = res
 		}
 		recv.Slice[idx.Int] = v
 		return nil
 	case KindMap:
 		if recv.Map == nil {
-			return fmt.Errorf("interp: assignment to entry in nil map")
+			/*line interp.goal:931*/ return fmt.Errorf("interp: assignment to entry in nil map")
 		}
 		key, err := mapKeyString(idx)
 		if err != nil {
-			return err
+			/*line interp.goal:935*/ return err
 		}
 		if tok != token.ASSIGN {
-			cur, ok := recv.Map.Entries[key]
-			if !ok {
-				return fmt.Errorf("interp: compound assignment to absent map key %q", key)
+			/*line interp.goal:938*/ cur, ok := recv.Map.Entries[key]
+			/*line interp.goal:939*/ if !ok {
+				/*line interp.goal:940*/ return fmt.Errorf("interp: compound assignment to absent map key %q", key)
 			}
-			res, err := ip.compoundApply(tok, cur, v)
-			if err != nil {
-				return err
+			/*line interp.goal:942*/ res, err := ip.compoundApply(tok, cur, v)
+			/*line interp.goal:943*/ if err != nil {
+				/*line interp.goal:944*/ return err
 			}
-			v = res
+			/*line interp.goal:946*/ v = res
 		}
 		recv.Map.Entries[key] = v
 		return nil
@@ -743,67 +749,69 @@ func (ip *Interp) assignIndex(t *ast.IndexExpr, v Value, tok token.Kind, scope *
 
 //line interp.goal:960
 func (ip *Interp) assignField(t *ast.SelectorExpr, v Value, tok token.Kind, scope *Env) error {
-	if tok == token.DEFINE {
-		return fmt.Errorf("interp: cannot use := with a field target")
+	/*line interp.goal:961*/ if tok == token.DEFINE {
+		/*line interp.goal:962*/ return fmt.Errorf("interp: cannot use := with a field target")
 	}
-	recv, err := ip.evalExpr(t.X, scope)
-	if err != nil {
-		return err
+	/*line interp.goal:964*/ recv, err := ip.evalExpr(t.X, scope)
+	/*line interp.goal:965*/ if err != nil {
+		/*line interp.goal:966*/ return err
 	}
-	if recv.Kind != KindStruct || recv.Struct == nil {
-		return fmt.Errorf("interp: cannot assign field %s on %s", t.Sel.Name, recv.Kind)
+	/*line interp.goal:968*/ if recv.Kind != KindStruct || recv.Struct == nil {
+		/*line interp.goal:969*/ return fmt.Errorf("interp: cannot assign field %s on %s", t.Sel.Name, recv.Kind)
 	}
-	if tok != token.ASSIGN {
-		cur, ok := recv.Struct.Fields[t.Sel.Name]
-		if !ok {
-			return fmt.Errorf("interp: %s has no field %s", recv.Struct.TypeID, t.Sel.Name)
+	/*line interp.goal:971*/ if tok != token.ASSIGN {
+		/*line interp.goal:972*/ cur, ok := recv.Struct.Fields[t.Sel.Name]
+		/*line interp.goal:973*/ if !ok {
+			/*line interp.goal:974*/ return fmt.Errorf("interp: %s has no field %s", recv.Struct.TypeID, t.Sel.Name)
 		}
-		res, err := ip.compoundApply(tok, cur, v)
-		if err != nil {
-			return err
+		/*line interp.goal:976*/ res, err := ip.compoundApply(tok, cur, v)
+		/*line interp.goal:977*/ if err != nil {
+			/*line interp.goal:978*/ return err
 		}
-		v = res
+		/*line interp.goal:980*/ v = res
 	}
-	recv.Struct.Fields[t.Sel.Name] = v
-	return nil
+	/*line interp.goal:982*/ recv.Struct.Fields[t.Sel.Name] = v
+	/*line interp.goal:983*/ return nil
 }
 
 //line interp.goal:993
 func (ip *Interp) execFor(s *ast.ForStmt, scope *Env) error {
-	loopScope := scope.NewChild()
-	if s.Init != nil {
-		if err := ip.execStmt(s.Init, loopScope); err != nil {
-			return err
+	/*line interp.goal:994*/ loopScope := scope.NewChild()
+	/*line interp.goal:995*/ if s.Init != nil {
+		/*line interp.goal:996*/ if err := ip.execStmt(s.Init, loopScope); err != nil {
+			/*line interp.goal:997*/ return err
 		}
 	}
-	for {
-		if s.Cond != nil {
-			cond, err := ip.evalExpr(s.Cond, loopScope)
-			if err != nil {
-				return err
+	/*line interp.goal:1000*/ for {
+		/*line interp.goal:1001*/ if s.Cond != nil {
+			/*line interp.goal:1002*/ cond, err := ip.evalExpr(s.Cond, loopScope)
+			/*line interp.goal:1003*/ if err != nil {
+				/*line interp.goal:1004*/ return err
 			}
-			if cond.Kind != KindBool {
-				return fmt.Errorf("interp: for condition must be bool, got %s", cond.Kind)
+			/*line interp.goal:1006*/ if cond.Kind != KindBool {
+				/*line interp.goal:1007*/ return fmt.Errorf("interp: for condition must be bool, got %s", cond.Kind)
 			}
-			if !cond.Bool {
-				return nil
+			/*line interp.goal:1009*/ if !cond.Bool {
+				/*line interp.goal:1010*/ return nil
 			}
 		}
-		if err := ip.execBlock(s.Body, loopScope.NewChild()); err != nil {
-			var brk breakSignal
+		/*line interp.goal:1013*/ if err := ip.execBlock(s.Body, loopScope.NewChild()); err != nil {
+			/*line interp.goal:1014*/ var brk breakSignal
 
+			/*line interp.goal:1015*/
 			if errors.As(err, &brk) {
-				return nil
+				/*line interp.goal:1016*/ return nil
 			}
-			var cont continueSignal
+			/*line interp.goal:1018*/ var cont continueSignal
 
+			/*line interp.goal:1019*/
 			if !errors.As(err, &cont) {
-				return err
+				/*line interp.goal:1021*/ return err
 			}
 		}
-		if s.Post != nil {
-			if err := ip.execStmt(s.Post, loopScope); err != nil {
-				return err
+		/*line interp.goal:1025*/ if s.Post != nil {
+			/*line interp.goal:1026*/ if err := ip.execStmt(s.Post, loopScope); err != nil {
+				/*line interp.goal:1027*/ return err
 			}
 		}
 	}
@@ -811,62 +819,64 @@ func (ip *Interp) execFor(s *ast.ForStmt, scope *Env) error {
 
 //line interp.goal:1041
 func (ip *Interp) execRange(s *ast.RangeStmt, scope *Env) error {
-	subject, err := ip.evalExpr(s.X, scope)
-	if err != nil {
-		return err
+	/*line interp.goal:1042*/ subject, err := ip.evalExpr(s.X, scope)
+	/*line interp.goal:1043*/ if err != nil {
+		/*line interp.goal:1044*/ return err
 	}
-	rangeScope := scope.NewChild()
-	iterate := func(key, val Value) (stop bool, err error) {
-		iterScope := rangeScope.NewChild()
-		if err := ip.rangeBind(s.Key, key, s.Tok, iterScope); err != nil {
-			return true, err
+	/*line interp.goal:1046*/ rangeScope := scope.NewChild()
+	/*line interp.goal:1048*/ iterate := func(key, val Value) (stop bool, err error) {
+		/*line interp.goal:1049*/ iterScope := rangeScope.NewChild()
+		/*line interp.goal:1050*/ if err := ip.rangeBind(s.Key, key, s.Tok, iterScope); err != nil {
+			/*line interp.goal:1051*/ return true, err
 		}
-		if err := ip.rangeBind(s.Value, val, s.Tok, iterScope); err != nil {
-			return true, err
+		/*line interp.goal:1053*/ if err := ip.rangeBind(s.Value, val, s.Tok, iterScope); err != nil {
+			/*line interp.goal:1054*/ return true, err
 		}
-		if err := ip.execBlock(s.Body, iterScope); err != nil {
-			var brk breakSignal
+		/*line interp.goal:1056*/ if err := ip.execBlock(s.Body, iterScope); err != nil {
+			/*line interp.goal:1057*/ var brk breakSignal
 
+			/*line interp.goal:1058*/
 			if errors.As(err, &brk) {
-				return true, nil
+				/*line interp.goal:1059*/ return true, nil
 			}
-			var cont continueSignal
+			/*line interp.goal:1061*/ var cont continueSignal
 
+			/*line interp.goal:1062*/
 			if errors.As(err, &cont) {
-				return false, nil
+				/*line interp.goal:1063*/ return false, nil
 			}
-			return true, err
+			/*line interp.goal:1065*/ return true, err
 		}
-		return false, nil
+		/*line interp.goal:1067*/ return false, nil
 	}
-	switch subject.Kind {
+	/*line interp.goal:1070*/ switch subject.Kind {
 	case KindSlice:
 		for i, elem := range subject.Slice {
-			stop, err := iterate(IntVal(int64(i)), elem)
-			if err != nil {
-				return err
+			/*line interp.goal:1073*/ stop, err := iterate(IntVal(int64(i)), elem)
+			/*line interp.goal:1074*/ if err != nil {
+				/*line interp.goal:1075*/ return err
 			}
-			if stop {
-				return nil
+			/*line interp.goal:1077*/ if stop {
+				/*line interp.goal:1078*/ return nil
 			}
 		}
 		return nil
 	case KindMap:
 		if subject.Map == nil {
-			return nil
+			/*line interp.goal:1084*/ return nil
 		}
 		keys := make([]string, 0, len(subject.Map.Entries))
 		for k := range subject.Map.Entries {
-			keys = append(keys, k)
+			/*line interp.goal:1088*/ keys = append(keys, k)
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			stop, err := iterate(StrVal(k), subject.Map.Entries[k])
-			if err != nil {
-				return err
+			/*line interp.goal:1092*/ stop, err := iterate(StrVal(k), subject.Map.Entries[k])
+			/*line interp.goal:1093*/ if err != nil {
+				/*line interp.goal:1094*/ return err
 			}
-			if stop {
-				return nil
+			/*line interp.goal:1096*/ if stop {
+				/*line interp.goal:1097*/ return nil
 			}
 		}
 		return nil
@@ -877,118 +887,122 @@ func (ip *Interp) execRange(s *ast.RangeStmt, scope *Env) error {
 
 //line interp.goal:1110
 func (ip *Interp) rangeBind(target ast.Expr, v Value, tok token.Kind, scope *Env) error {
-	if target == nil {
-		return nil
+	/*line interp.goal:1111*/ if target == nil {
+		/*line interp.goal:1112*/ return nil
 	}
-	ident, ok := target.(*ast.Ident)
-	if !ok {
-		return fmt.Errorf("interp: unsupported range target %T", target)
+	/*line interp.goal:1114*/ ident, ok := target.(*ast.Ident)
+	/*line interp.goal:1115*/ if !ok {
+		/*line interp.goal:1116*/ return fmt.Errorf("interp: unsupported range target %T", target)
 	}
-	if ident.Name == "_" {
-		return nil
+	/*line interp.goal:1118*/ if ident.Name == "_" {
+		/*line interp.goal:1119*/ return nil
 	}
-	if tok == token.ASSIGN {
-		return scope.Assign(ident.Name, v)
+	/*line interp.goal:1121*/ if tok == token.ASSIGN {
+		/*line interp.goal:1122*/ return scope.Assign(ident.Name, v)
 	}
-	scope.Define(ident.Name, v)
-	return nil
+	/*line interp.goal:1124*/ scope.Define(ident.Name, v)
+	/*line interp.goal:1125*/ return nil
 }
 
 //line interp.goal:1135
 func (ip *Interp) execSwitch(s *ast.SwitchStmt, scope *Env) error {
-	swScope := scope.NewChild()
-	if s.Init != nil {
-		if err := ip.execStmt(s.Init, swScope); err != nil {
-			return err
+	/*line interp.goal:1136*/ swScope := scope.NewChild()
+	/*line interp.goal:1137*/ if s.Init != nil {
+		/*line interp.goal:1138*/ if err := ip.execStmt(s.Init, swScope); err != nil {
+			/*line interp.goal:1139*/ return err
 		}
 	}
-	var tag Value
+	/*line interp.goal:1142*/ var tag Value
 
+	/*line interp.goal:1143*/
 	hasTag := s.Tag != nil
-	if hasTag {
-		v, err := ip.evalExpr(s.Tag, swScope)
-		if err != nil {
-			return err
+	/*line interp.goal:1144*/ if hasTag {
+		/*line interp.goal:1145*/ v, err := ip.evalExpr(s.Tag, swScope)
+		/*line interp.goal:1146*/ if err != nil {
+			/*line interp.goal:1147*/ return err
 		}
-		tag = v
+		/*line interp.goal:1149*/ tag = v
 	}
-	var def *ast.CaseClause
+	/*line interp.goal:1152*/ var def *ast.CaseClause
 
+	/*line interp.goal:1153*/
 	var selected *ast.CaseClause
 
+	/*line interp.goal:1154*/
 	if s.Body != nil {
-		for _, stmt := range s.Body.List {
-			cc, ok := stmt.(*ast.CaseClause)
-			if !ok {
-				return fmt.Errorf("interp: unsupported switch clause %T", stmt)
+		/*line interp.goal:1155*/ for _, stmt := range s.Body.List {
+			/*line interp.goal:1156*/ cc, ok := stmt.(*ast.CaseClause)
+			/*line interp.goal:1157*/ if !ok {
+				/*line interp.goal:1158*/ return fmt.Errorf("interp: unsupported switch clause %T", stmt)
 			}
-			if cc.List == nil {
-				def = cc
-				continue
+			/*line interp.goal:1160*/ if cc.List == nil {
+				/*line interp.goal:1161*/ def = cc
+				/*line interp.goal:1162*/ continue
 			}
-			matched, err := ip.caseMatches(cc, hasTag, tag, swScope)
-			if err != nil {
-				return err
+			/*line interp.goal:1164*/ matched, err := ip.caseMatches(cc, hasTag, tag, swScope)
+			/*line interp.goal:1165*/ if err != nil {
+				/*line interp.goal:1166*/ return err
 			}
-			if matched {
-				selected = cc
-				break
+			/*line interp.goal:1168*/ if matched {
+				/*line interp.goal:1169*/ selected = cc
+				/*line interp.goal:1170*/ break
 			}
 		}
 	}
-	if selected == nil {
-		selected = def
+	/*line interp.goal:1174*/ if selected == nil {
+		/*line interp.goal:1175*/ selected = def
 	}
-	if selected == nil {
-		return nil
+	/*line interp.goal:1177*/ if selected == nil {
+		/*line interp.goal:1178*/ return nil
 	}
-	if err := ip.execClauseBody(selected.Body, swScope.NewChild()); err != nil {
-		var brk breakSignal
+	/*line interp.goal:1180*/ if err := ip.execClauseBody(selected.Body, swScope.NewChild()); err != nil {
+		/*line interp.goal:1181*/ var brk breakSignal
 
+		/*line interp.goal:1182*/
 		if errors.As(err, &brk) {
-			return nil
+			/*line interp.goal:1183*/ return nil
 		}
-		return err
+		/*line interp.goal:1185*/ return err
 	}
-	return nil
+	/*line interp.goal:1187*/ return nil
 }
 
 //line interp.goal:1193
 func (ip *Interp) caseMatches(cc *ast.CaseClause, hasTag bool, tag Value, scope *Env) (bool, error) {
-	for _, expr := range cc.List {
-		v, err := ip.evalExpr(expr, scope)
-		if err != nil {
-			return false, err
+	/*line interp.goal:1194*/ for _, expr := range cc.List {
+		/*line interp.goal:1195*/ v, err := ip.evalExpr(expr, scope)
+		/*line interp.goal:1196*/ if err != nil {
+			/*line interp.goal:1197*/ return false, err
 		}
-		if hasTag {
-			if v.Equal(tag) {
-				return true, nil
+		/*line interp.goal:1199*/ if hasTag {
+			/*line interp.goal:1200*/ if v.Equal(tag) {
+				/*line interp.goal:1201*/ return true, nil
 			}
-			continue
+			/*line interp.goal:1203*/ continue
 		}
-		if v.Kind != KindBool {
-			return false, fmt.Errorf("interp: tagless switch case must be bool, got %s", v.Kind)
+		/*line interp.goal:1205*/ if v.Kind != KindBool {
+			/*line interp.goal:1206*/ return false, fmt.Errorf("interp: tagless switch case must be bool, got %s", v.Kind)
 		}
-		if v.Bool {
-			return true, nil
+		/*line interp.goal:1208*/ if v.Bool {
+			/*line interp.goal:1209*/ return true, nil
 		}
 	}
-	return false, nil
+	/*line interp.goal:1212*/ return false, nil
 }
 
 //line interp.goal:1218
 func (ip *Interp) execClauseBody(body []ast.Stmt, scope *Env) error {
-	for _, stmt := range body {
-		if err := ip.execStmt(stmt, scope); err != nil {
-			return err
+	/*line interp.goal:1219*/ for _, stmt := range body {
+		/*line interp.goal:1220*/ if err := ip.execStmt(stmt, scope); err != nil {
+			/*line interp.goal:1221*/ return err
 		}
 	}
-	return nil
+	/*line interp.goal:1224*/ return nil
 }
 
 //line interp.goal:1230
 func (ip *Interp) execBranch(s *ast.BranchStmt, scope *Env) error {
-	switch s.Tok {
+	/*line interp.goal:1231*/ switch s.Tok {
 	case token.BREAK:
 		return breakSignal{}
 	case token.CONTINUE:
@@ -1000,16 +1014,17 @@ func (ip *Interp) execBranch(s *ast.BranchStmt, scope *Env) error {
 
 //line interp.goal:1245
 func (ip *Interp) execIncDec(s *ast.IncDecStmt, scope *Env) error {
-	ident, ok := s.X.(*ast.Ident)
-	if !ok {
-		return fmt.Errorf("interp: unsupported %s target %T", s.Tok, s.X)
+	/*line interp.goal:1246*/ ident, ok := s.X.(*ast.Ident)
+	/*line interp.goal:1247*/ if !ok {
+		/*line interp.goal:1248*/ return fmt.Errorf("interp: unsupported %s target %T", s.Tok, s.X)
 	}
-	cur, err := scope.Lookup(ident.Name)
-	if err != nil {
-		return err
+	/*line interp.goal:1250*/ cur, err := scope.Lookup(ident.Name)
+	/*line interp.goal:1251*/ if err != nil {
+		/*line interp.goal:1252*/ return err
 	}
-	var one Value
+	/*line interp.goal:1254*/ var one Value
 
+	/*line interp.goal:1255*/
 	switch cur.Kind {
 	case KindInt:
 		one = IntVal(1)
@@ -1018,13 +1033,13 @@ func (ip *Interp) execIncDec(s *ast.IncDecStmt, scope *Env) error {
 	default:
 		return fmt.Errorf("interp: %s requires numeric operand, got %s", s.Tok, cur.Kind)
 	}
-	op := token.ADD
-	if s.Tok == token.DEC {
-		op = token.SUB
+	/*line interp.goal:1263*/ op := token.ADD
+	/*line interp.goal:1264*/ if s.Tok == token.DEC {
+		/*line interp.goal:1265*/ op = token.SUB
 	}
-	res, err := applyBinary(op, cur, one)
-	if err != nil {
-		return err
+	/*line interp.goal:1267*/ res, err := applyBinary(op, cur, one)
+	/*line interp.goal:1268*/ if err != nil {
+		/*line interp.goal:1269*/ return err
 	}
-	return scope.Assign(ident.Name, res)
+	/*line interp.goal:1271*/ return scope.Assign(ident.Name, res)
 }

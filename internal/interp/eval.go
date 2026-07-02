@@ -14,7 +14,7 @@ import (
 
 //line eval.goal:27
 func (ip *Interp) evalExpr(expr ast.Expr, scope *Env) (Value, error) {
-	switch e := expr.(type) {
+	/*line eval.goal:28*/ switch e := expr.(type) {
 	case *ast.ParenExpr:
 		return ip.evalExpr(e.X, scope)
 	case *ast.BasicLit:
@@ -27,7 +27,7 @@ func (ip *Interp) evalExpr(expr ast.Expr, scope *Env) (Value, error) {
 			return BoolVal(false), nil
 		case "nil":
 			if _, err := scope.Lookup("nil"); err != nil {
-				return NilVal(), nil
+				/*line eval.goal:44*/ return NilVal(), nil
 			}
 			return scope.Lookup("nil")
 		default:
@@ -58,60 +58,60 @@ func (ip *Interp) evalExpr(expr ast.Expr, scope *Env) (Value, error) {
 
 //line eval.goal:90
 func (ip *Interp) evalMatch(m *ast.MatchExpr, scope *Env) (Value, error) {
-	subj, err := ip.evalExpr(m.Subject, scope)
-	if err != nil {
-		return Value{}, err
+	/*line eval.goal:91*/ subj, err := ip.evalExpr(m.Subject, scope)
+	/*line eval.goal:92*/ if err != nil {
+		/*line eval.goal:93*/ return Value{}, err
 	}
-	if subj.Kind != KindVariant || subj.Variant == nil {
-		return Value{}, fmt.Errorf("interp: match subject must be a variant, got %s", subj.Kind)
+	/*line eval.goal:95*/ if subj.Kind != KindVariant || subj.Variant == nil {
+		/*line eval.goal:96*/ return Value{}, fmt.Errorf("interp: match subject must be a variant, got %s", subj.Kind)
 	}
-	arm, vp := selectMatchArm(m, subj)
-	if arm == nil {
-		return Value{}, unreachableMatch(subj)
+	/*line eval.goal:98*/ arm, vp := selectMatchArm(m, subj)
+	/*line eval.goal:99*/ if arm == nil {
+		/*line eval.goal:100*/ return Value{}, unreachableMatch(subj)
 	}
-	return ip.evalArmValue(arm.Body, armScopeFor(vp, subj, scope))
+	/*line eval.goal:102*/ return ip.evalArmValue(arm.Body, armScopeFor(vp, subj, scope))
 }
 
 //line eval.goal:108
 func (ip *Interp) evalArmValue(body ast.Node, scope *Env) (Value, error) {
-	if e, ok := body.(ast.Expr); ok {
-		return ip.evalExpr(e, scope)
+	/*line eval.goal:109*/ if e, ok := body.(ast.Expr); ok {
+		/*line eval.goal:110*/ return ip.evalExpr(e, scope)
 	}
-	return Value{}, fmt.Errorf("interp: value-position match arm body must be an expression, got %T", body)
+	/*line eval.goal:112*/ return Value{}, fmt.Errorf("interp: value-position match arm body must be an expression, got %T", body)
 }
 
 //line eval.goal:123
 func (ip *Interp) evalUnwrap(u *ast.UnwrapExpr, scope *Env) (Value, error) {
-	v, err := ip.evalExpr(u.X, scope)
-	if err != nil {
-		return Value{}, err
+	/*line eval.goal:124*/ v, err := ip.evalExpr(u.X, scope)
+	/*line eval.goal:125*/ if err != nil {
+		/*line eval.goal:126*/ return Value{}, err
 	}
-	if v.Kind != KindVariant || v.Variant == nil {
-		return Value{}, fmt.Errorf("interp: %s: cannot use ? on %s (operand is not a Result or Option)", u.Question, v.Kind)
+	/*line eval.goal:128*/ if v.Kind != KindVariant || v.Variant == nil {
+		/*line eval.goal:129*/ return Value{}, fmt.Errorf("interp: %s: cannot use ? on %s (operand is not a Result or Option)", u.Question, v.Kind)
 	}
-	sig, _ := ip.curSig()
-	switch v.Variant.TypeID {
+	/*line eval.goal:131*/ sig, _ := ip.curSig()
+	/*line eval.goal:132*/ switch v.Variant.TypeID {
 	case resultTypeID:
 		if !isModeResult(sig.Mode) && !isModeResultClosed(sig.Mode) {
-			return Value{}, fmt.Errorf("interp: %s: ? used on a Result outside a Result-returning function", u.Question)
+			/*line eval.goal:138*/ return Value{}, fmt.Errorf("interp: %s: ? used on a Result outside a Result-returning function", u.Question)
 		}
 		if v.Variant.Tag == resultOkTag {
-			if pv, ok := payloadValue(v.Variant); ok {
-				return pv, nil
+			/*line eval.goal:141*/ if pv, ok := payloadValue(v.Variant); ok {
+				/*line eval.goal:142*/ return pv, nil
 			}
-			return NilVal(), nil
+			/*line eval.goal:144*/ return NilVal(), nil
 		}
 		errVal, _ := payloadValue(v.Variant)
 		return Value{}, ip.propagateErr(u, errVal, sig)
 	case optionTypeID:
 		if !isModeOption(sig.Mode) {
-			return Value{}, fmt.Errorf("interp: %s: ? used on an Option outside an Option-returning function", u.Question)
+			/*line eval.goal:150*/ return Value{}, fmt.Errorf("interp: %s: ? used on an Option outside an Option-returning function", u.Question)
 		}
 		if v.Variant.Tag == optionSomeTag {
-			if pv, ok := payloadValue(v.Variant); ok {
-				return pv, nil
+			/*line eval.goal:153*/ if pv, ok := payloadValue(v.Variant); ok {
+				/*line eval.goal:154*/ return pv, nil
 			}
-			return NilVal(), nil
+			/*line eval.goal:156*/ return NilVal(), nil
 		}
 		return Value{}, ip.propagateNone()
 	default:
@@ -121,127 +121,127 @@ func (ip *Interp) evalUnwrap(u *ast.UnwrapExpr, scope *Env) (Value, error) {
 
 //line eval.goal:171
 func (ip *Interp) propagateErr(u *ast.UnwrapExpr, errVal Value, sig sema.FuncSig) error {
-	out := errVal
-	if isModeResultClosed(sig.Mode) {
-		calleeE := ip.calleeErrType(u.X)
-		if calleeE != "" && calleeE != sig.E {
-			conv, ok := ip.info.FromRegistry[[2]string{calleeE, sig.E}]
-			if !ok {
-				return fmt.Errorf("interp: %s: ? cannot propagate %s as %s (no from conversion registered)", u.Question, calleeE, sig.E)
+	/*line eval.goal:172*/ out := errVal
+	/*line eval.goal:173*/ if isModeResultClosed(sig.Mode) {
+		/*line eval.goal:174*/ calleeE := ip.calleeErrType(u.X)
+		/*line eval.goal:175*/ if calleeE != "" && calleeE != sig.E {
+			/*line eval.goal:176*/ conv, ok := ip.info.FromRegistry[[2]string{calleeE, sig.E}]
+			/*line eval.goal:177*/ if !ok {
+				/*line eval.goal:178*/ return fmt.Errorf("interp: %s: ? cannot propagate %s as %s (no from conversion registered)", u.Question, calleeE, sig.E)
 			}
-			converted, err := ip.callConversion(conv.Name, errVal, u)
-			if err != nil {
-				return err
+			/*line eval.goal:180*/ converted, err := ip.callConversion(conv.Name, errVal, u)
+			/*line eval.goal:181*/ if err != nil {
+				/*line eval.goal:182*/ return err
 			}
-			out = converted
+			/*line eval.goal:184*/ out = converted
 		}
 	}
-	return returnSignal{vals: []Value{VariantVal(resultTypeID, resultErrTag, map[string]Value{resultErrField: out})}}
+	/*line eval.goal:187*/ return returnSignal{vals: []Value{VariantVal(resultTypeID, resultErrTag, map[string]Value{resultErrField: out})}}
 }
 
 //line eval.goal:193
 func (ip *Interp) propagateNone() error {
-	return returnSignal{vals: []Value{VariantVal(optionTypeID, optionNoneTag, nil)}}
+	/*line eval.goal:194*/ return returnSignal{vals: []Value{VariantVal(optionTypeID, optionNoneTag, nil)}}
 }
 
 //line eval.goal:201
 func (ip *Interp) callConversion(name string, errVal Value, u *ast.UnwrapExpr) (Value, error) {
-	fn, err := ip.root.Lookup(name)
-	if err != nil {
-		return Value{}, fmt.Errorf("interp: %s: from conversion %s is not callable: %w", u.Question, name, err)
+	/*line eval.goal:202*/ fn, err := ip.root.Lookup(name)
+	/*line eval.goal:203*/ if err != nil {
+		/*line eval.goal:204*/ return Value{}, fmt.Errorf("interp: %s: from conversion %s is not callable: %w", u.Question, name, err)
 	}
-	if fn.Kind != KindFunc || fn.Func == nil {
-		return Value{}, fmt.Errorf("interp: %s: from conversion %s is not a function", u.Question, name)
+	/*line eval.goal:206*/ if fn.Kind != KindFunc || fn.Func == nil {
+		/*line eval.goal:207*/ return Value{}, fmt.Errorf("interp: %s: from conversion %s is not a function", u.Question, name)
 	}
-	out, err := ip.callFunc(fn.Func, []Value{errVal})
-	if err != nil {
-		return Value{}, err
+	/*line eval.goal:209*/ out, err := ip.callFunc(fn.Func, []Value{errVal})
+	/*line eval.goal:210*/ if err != nil {
+		/*line eval.goal:211*/ return Value{}, err
 	}
-	if len(out) != 1 {
-		return Value{}, fmt.Errorf("interp: %s: from conversion %s returned %d values (want 1)", u.Question, name, len(out))
+	/*line eval.goal:213*/ if len(out) != 1 {
+		/*line eval.goal:214*/ return Value{}, fmt.Errorf("interp: %s: from conversion %s returned %d values (want 1)", u.Question, name, len(out))
 	}
-	return out[0], nil
+	/*line eval.goal:216*/ return out[0], nil
 }
 
 //line eval.goal:223
 func (ip *Interp) calleeErrType(x ast.Expr) string {
-	call, ok := x.(*ast.CallExpr)
-	if !ok {
-		return ""
+	/*line eval.goal:224*/ call, ok := x.(*ast.CallExpr)
+	/*line eval.goal:225*/ if !ok {
+		/*line eval.goal:226*/ return ""
 	}
-	id, ok := call.Fun.(*ast.Ident)
-	if !ok {
-		return ""
+	/*line eval.goal:228*/ id, ok := call.Fun.(*ast.Ident)
+	/*line eval.goal:229*/ if !ok {
+		/*line eval.goal:230*/ return ""
 	}
-	return ip.sigFor(id.Name).E
+	/*line eval.goal:232*/ return ip.sigFor(id.Name).E
 }
 
 //line eval.goal:241
 func (ip *Interp) evalCompositeLit(c *ast.CompositeLit, scope *Env) (Value, error) {
-	switch t := c.Type.(type) {
+	/*line eval.goal:242*/ switch t := c.Type.(type) {
 	case *ast.ArrayType:
 		elems := make([]Value, 0, len(c.Elts))
 		for _, elt := range c.Elts {
-			if _, ok := elt.(*ast.KeyValueExpr); ok {
-				return Value{}, fmt.Errorf("interp: indexed slice element not supported")
+			/*line eval.goal:247*/ if _, ok := elt.(*ast.KeyValueExpr); ok {
+				/*line eval.goal:248*/ return Value{}, fmt.Errorf("interp: indexed slice element not supported")
 			}
-			v, err := ip.evalExpr(elt, scope)
-			if err != nil {
-				return Value{}, err
+			/*line eval.goal:250*/ v, err := ip.evalExpr(elt, scope)
+			/*line eval.goal:251*/ if err != nil {
+				/*line eval.goal:252*/ return Value{}, err
 			}
-			elems = append(elems, v)
+			/*line eval.goal:254*/ elems = append(elems, v)
 		}
 		return SliceVal(elems...), nil
 	case *ast.MapType:
 		entries := make(map[string]Value, len(c.Elts))
 		for _, elt := range c.Elts {
-			kv, ok := elt.(*ast.KeyValueExpr)
-			if !ok {
-				return Value{}, fmt.Errorf("interp: map literal element must be key: value, got %T", elt)
+			/*line eval.goal:260*/ kv, ok := elt.(*ast.KeyValueExpr)
+			/*line eval.goal:261*/ if !ok {
+				/*line eval.goal:262*/ return Value{}, fmt.Errorf("interp: map literal element must be key: value, got %T", elt)
 			}
-			keyVal, err := ip.evalExpr(kv.Key, scope)
-			if err != nil {
-				return Value{}, err
+			/*line eval.goal:264*/ keyVal, err := ip.evalExpr(kv.Key, scope)
+			/*line eval.goal:265*/ if err != nil {
+				/*line eval.goal:266*/ return Value{}, err
 			}
-			key, err := mapKeyString(keyVal)
-			if err != nil {
-				return Value{}, err
+			/*line eval.goal:268*/ key, err := mapKeyString(keyVal)
+			/*line eval.goal:269*/ if err != nil {
+				/*line eval.goal:270*/ return Value{}, err
 			}
-			val, err := ip.evalExpr(kv.Value, scope)
-			if err != nil {
-				return Value{}, err
+			/*line eval.goal:272*/ val, err := ip.evalExpr(kv.Value, scope)
+			/*line eval.goal:273*/ if err != nil {
+				/*line eval.goal:274*/ return Value{}, err
 			}
-			entries[key] = val
+			/*line eval.goal:276*/ entries[key] = val
 		}
 		return MapVal(entries), nil
 	case *ast.Ident:
 		fields := make(map[string]Value, len(c.Elts))
 		wantDefaults := false
 		for _, elt := range c.Elts {
-			if sp, ok := elt.(*ast.SpreadElement); ok {
-				if id, ok := sp.X.(*ast.Ident); ok && id.Name == "defaults" {
-					wantDefaults = true
-					continue
+			/*line eval.goal:287*/ if sp, ok := elt.(*ast.SpreadElement); ok {
+				/*line eval.goal:288*/ if id, ok := sp.X.(*ast.Ident); ok && id.Name == "defaults" {
+					/*line eval.goal:289*/ wantDefaults = true
+					/*line eval.goal:290*/ continue
 				}
-				return Value{}, fmt.Errorf("interp: %s: unsupported spread element in %s literal (only ...defaults is supported)", sp.Pos(), t.Name)
+				/*line eval.goal:292*/ return Value{}, fmt.Errorf("interp: %s: unsupported spread element in %s literal (only ...defaults is supported)", sp.Pos(), t.Name)
 			}
-			kv, ok := elt.(*ast.KeyValueExpr)
-			if !ok {
-				return Value{}, fmt.Errorf("interp: struct literal %s requires keyed field: value elements", t.Name)
+			/*line eval.goal:294*/ kv, ok := elt.(*ast.KeyValueExpr)
+			/*line eval.goal:295*/ if !ok {
+				/*line eval.goal:296*/ return Value{}, fmt.Errorf("interp: struct literal %s requires keyed field: value elements", t.Name)
 			}
-			name, ok := kv.Key.(*ast.Ident)
-			if !ok {
-				return Value{}, fmt.Errorf("interp: struct literal field name must be an identifier, got %T", kv.Key)
+			/*line eval.goal:298*/ name, ok := kv.Key.(*ast.Ident)
+			/*line eval.goal:299*/ if !ok {
+				/*line eval.goal:300*/ return Value{}, fmt.Errorf("interp: struct literal field name must be an identifier, got %T", kv.Key)
 			}
-			val, err := ip.evalExpr(kv.Value, scope)
-			if err != nil {
-				return Value{}, err
+			/*line eval.goal:302*/ val, err := ip.evalExpr(kv.Value, scope)
+			/*line eval.goal:303*/ if err != nil {
+				/*line eval.goal:304*/ return Value{}, err
 			}
-			fields[name.Name] = val
+			/*line eval.goal:306*/ fields[name.Name] = val
 		}
 		if wantDefaults {
-			if err := ip.fillDefaults(t.Name, fields, c.Pos()); err != nil {
-				return Value{}, err
+			/*line eval.goal:309*/ if err := ip.fillDefaults(t.Name, fields, c.Pos()); err != nil {
+				/*line eval.goal:310*/ return Value{}, err
 			}
 		}
 		return StructVal(t.Name, fields), nil
@@ -252,38 +252,38 @@ func (ip *Interp) evalCompositeLit(c *ast.CompositeLit, scope *Env) (Value, erro
 
 //line eval.goal:327
 func (ip *Interp) fillDefaults(typeName string, fields map[string]Value, pos token.Pos) error {
-	decl, ok := ip.structFields(typeName)
-	if !ok {
-		return fmt.Errorf("interp: %s: cannot expand ...defaults: unknown struct type %s", pos, typeName)
+	/*line eval.goal:328*/ decl, ok := ip.structFields(typeName)
+	/*line eval.goal:329*/ if !ok {
+		/*line eval.goal:330*/ return fmt.Errorf("interp: %s: cannot expand ...defaults: unknown struct type %s", pos, typeName)
 	}
-	for _, f := range decl {
-		if _, set := fields[f.Name]; set {
-			continue
+	/*line eval.goal:332*/ for _, f := range decl {
+		/*line eval.goal:333*/ if _, set := fields[f.Name]; set {
+			/*line eval.goal:334*/ continue
 		}
-		fields[f.Name] = ip.zeroValue(f.Type, 0)
+		/*line eval.goal:336*/ fields[f.Name] = ip.zeroValue(f.Type, 0)
 	}
-	return nil
+	/*line eval.goal:338*/ return nil
 }
 
 //line eval.goal:343
 func (ip *Interp) structFields(typeName string) ([]sema.Field, bool) {
-	if ip.info == nil || ip.info.Structs == nil {
-		return nil, false
+	/*line eval.goal:344*/ if ip.info == nil || ip.info.Structs == nil {
+		/*line eval.goal:345*/ return nil, false
 	}
-	f, ok := ip.info.Structs[baseTypeName(typeName)]
-	return f, ok
+	/*line eval.goal:347*/ f, ok := ip.info.Structs[baseTypeName(typeName)]
+	/*line eval.goal:348*/ return f, ok
 }
 
 //line eval.goal:360
 func (ip *Interp) zeroValue(typ string, depth int) Value {
-	typ = strings.TrimSpace(typ)
-	switch {
+	/*line eval.goal:361*/ typ = strings.TrimSpace(typ)
+	/*line eval.goal:362*/ switch {
 	case strings.HasPrefix(typ, "[]"):
 		return SliceVal()
 	case strings.HasPrefix(typ, "*"), strings.HasPrefix(typ, "map["), strings.HasPrefix(typ, "chan"), strings.HasPrefix(typ, "func"), strings.HasPrefix(typ, "interface"), typ == "any", typ == "error":
 		return NilVal()
 	}
-	switch typ {
+	/*line eval.goal:371*/ switch typ {
 	case "string":
 		return StrVal("")
 	case "bool":
@@ -293,62 +293,62 @@ func (ip *Interp) zeroValue(typ string, depth int) Value {
 	case "float32", "float64", "complex64", "complex128":
 		return FloatVal(0)
 	}
-	if depth < 8 {
-		if decl, ok := ip.structFields(typ); ok {
-			inner := make(map[string]Value, len(decl))
-			for _, f := range decl {
-				inner[f.Name] = ip.zeroValue(f.Type, depth+1)
+	/*line eval.goal:386*/ if depth < 8 {
+		/*line eval.goal:387*/ if decl, ok := ip.structFields(typ); ok {
+			/*line eval.goal:388*/ inner := make(map[string]Value, len(decl))
+			/*line eval.goal:389*/ for _, f := range decl {
+				/*line eval.goal:390*/ inner[f.Name] = ip.zeroValue(f.Type, depth+1)
 			}
-			return StructVal(baseTypeName(typ), inner)
+			/*line eval.goal:392*/ return StructVal(baseTypeName(typ), inner)
 		}
 	}
-	return NilVal()
+	/*line eval.goal:395*/ return NilVal()
 }
 
 //line eval.goal:402
 func baseTypeName(t string) string {
-	t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
-	if i := strings.LastIndexByte(t, '.'); i >= 0 {
-		t = t[i+1:]
+	/*line eval.goal:403*/ t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
+	/*line eval.goal:404*/ if i := strings.LastIndexByte(t, '.'); i >= 0 {
+		/*line eval.goal:405*/ t = t[i+1:]
 	}
-	return t
+	/*line eval.goal:407*/ return t
 }
 
 //line eval.goal:416
 func (ip *Interp) evalSelector(s *ast.SelectorExpr, scope *Env) (Value, error) {
-	if id, ok := s.X.(*ast.Ident); ok {
-		if enumDecl, ok := ip.enumByName(id.Name); ok && enumDecl.VSet[s.Sel.Name] {
-			if _, err := scope.Lookup(id.Name); err != nil {
-				return VariantVal(enumDecl.Name, s.Sel.Name, nil), nil
+	/*line eval.goal:421*/ if id, ok := s.X.(*ast.Ident); ok {
+		/*line eval.goal:422*/ if enumDecl, ok := ip.enumByName(id.Name); ok && enumDecl.VSet[s.Sel.Name] {
+			/*line eval.goal:423*/ if _, err := scope.Lookup(id.Name); err != nil {
+				/*line eval.goal:424*/ return VariantVal(enumDecl.Name, s.Sel.Name, nil), nil
 			}
 		}
-		if id.Name == optionTypeID && s.Sel.Name == optionNoneTag {
-			if _, err := scope.Lookup(id.Name); err != nil {
-				return VariantVal(optionTypeID, optionNoneTag, nil), nil
+		/*line eval.goal:431*/ if id.Name == optionTypeID && s.Sel.Name == optionNoneTag {
+			/*line eval.goal:432*/ if _, err := scope.Lookup(id.Name); err != nil {
+				/*line eval.goal:433*/ return VariantVal(optionTypeID, optionNoneTag, nil), nil
 			}
 		}
 	}
-	recv, err := ip.evalExpr(s.X, scope)
-	if err != nil {
-		return Value{}, err
+	/*line eval.goal:437*/ recv, err := ip.evalExpr(s.X, scope)
+	/*line eval.goal:438*/ if err != nil {
+		/*line eval.goal:439*/ return Value{}, err
 	}
-	switch recv.Kind {
+	/*line eval.goal:441*/ switch recv.Kind {
 	case KindStruct:
 		if recv.Struct == nil {
-			return Value{}, fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
+			/*line eval.goal:444*/ return Value{}, fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
 		}
 		v, ok := recv.Struct.Fields[s.Sel.Name]
 		if !ok {
-			return Value{}, fmt.Errorf("interp: %s has no field %s", recv.Struct.TypeID, s.Sel.Name)
+			/*line eval.goal:448*/ return Value{}, fmt.Errorf("interp: %s has no field %s", recv.Struct.TypeID, s.Sel.Name)
 		}
 		return v, nil
 	case KindVariant:
 		if recv.Variant == nil {
-			return Value{}, fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
+			/*line eval.goal:455*/ return Value{}, fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
 		}
 		v, ok := recv.Field(s.Sel.Name)
 		if !ok {
-			return Value{}, fmt.Errorf("interp: %s.%s has no payload field %s", recv.Variant.TypeID, recv.Variant.Tag, s.Sel.Name)
+			/*line eval.goal:459*/ return Value{}, fmt.Errorf("interp: %s.%s has no payload field %s", recv.Variant.TypeID, recv.Variant.Tag, s.Sel.Name)
 		}
 		return v, nil
 	default:
@@ -358,77 +358,78 @@ func (ip *Interp) evalSelector(s *ast.SelectorExpr, scope *Env) (Value, error) {
 
 //line eval.goal:474
 func (ip *Interp) evalVariantLit(vl *ast.VariantLit, scope *Env) (Value, error) {
-	id, ok := vl.Enum.(*ast.Ident)
-	if !ok {
-		if vl.Enum == nil {
-			return Value{}, fmt.Errorf("interp: variant construction requires an enum reference")
+	/*line eval.goal:475*/ id, ok := vl.Enum.(*ast.Ident)
+	/*line eval.goal:476*/ if !ok {
+		/*line eval.goal:477*/ if vl.Enum == nil {
+			/*line eval.goal:478*/ return Value{}, fmt.Errorf("interp: variant construction requires an enum reference")
 		}
-		return Value{}, fmt.Errorf("interp: unsupported enum reference %T in variant construction", vl.Enum)
+		/*line eval.goal:480*/ return Value{}, fmt.Errorf("interp: unsupported enum reference %T in variant construction", vl.Enum)
 	}
-	enumDecl, ok := ip.enumByName(id.Name)
-	if !ok {
-		return Value{}, fmt.Errorf("interp: unknown enum %s in variant construction", id.Name)
+	/*line eval.goal:482*/ enumDecl, ok := ip.enumByName(id.Name)
+	/*line eval.goal:483*/ if !ok {
+		/*line eval.goal:484*/ return Value{}, fmt.Errorf("interp: unknown enum %s in variant construction", id.Name)
 	}
-	if vl.Variant == nil {
-		return Value{}, fmt.Errorf("interp: variant construction on enum %s is missing a variant tag", enumDecl.Name)
+	/*line eval.goal:486*/ if vl.Variant == nil {
+		/*line eval.goal:487*/ return Value{}, fmt.Errorf("interp: variant construction on enum %s is missing a variant tag", enumDecl.Name)
 	}
-	tag := vl.Variant.Name
-	if !enumDecl.VSet[tag] {
-		return Value{}, fmt.Errorf("interp: enum %s has no variant %s", enumDecl.Name, tag)
+	/*line eval.goal:489*/ tag := vl.Variant.Name
+	/*line eval.goal:490*/ if !enumDecl.VSet[tag] {
+		/*line eval.goal:491*/ return Value{}, fmt.Errorf("interp: enum %s has no variant %s", enumDecl.Name, tag)
 	}
-	declared := variantFields(enumDecl, tag)
-	fields := make(map[string]Value, len(vl.Args))
-	for i, arg := range vl.Args {
-		switch a := arg.(type) {
+	/*line eval.goal:493*/ declared := variantFields(enumDecl, tag)
+	/*line eval.goal:494*/ fields := make(map[string]Value, len(vl.Args))
+	/*line eval.goal:495*/ for i, arg := range vl.Args {
+		/*line eval.goal:496*/ switch a := arg.(type) {
 		case *ast.LabeledArg:
 			if a.Label == nil {
-				return Value{}, fmt.Errorf("interp: %s.%s has an unlabeled argument", enumDecl.Name, tag)
+				/*line eval.goal:499*/ return Value{}, fmt.Errorf("interp: %s.%s has an unlabeled argument", enumDecl.Name, tag)
 			}
 			v, err := ip.evalExpr(a.Value, scope)
 			if err != nil {
-				return Value{}, err
+				/*line eval.goal:503*/ return Value{}, err
 			}
 			fields[a.Label.Name] = v
 		default:
 			if i >= len(declared) {
-				return Value{}, fmt.Errorf("interp: %s.%s has too many arguments (declares %d field(s))", enumDecl.Name, tag, len(declared))
+				/*line eval.goal:509*/ return Value{}, fmt.Errorf("interp: %s.%s has too many arguments (declares %d field(s))", enumDecl.Name, tag, len(declared))
 			}
 			v, err := ip.evalExpr(arg, scope)
 			if err != nil {
-				return Value{}, err
+				/*line eval.goal:513*/ return Value{}, err
 			}
 			fields[declared[i].Name] = v
 		}
 	}
-	return VariantVal(enumDecl.Name, tag, fields), nil
+	/*line eval.goal:518*/ return VariantVal(enumDecl.Name, tag, fields), nil
 }
 
 //line eval.goal:524
 func (ip *Interp) enumByName(name string) (*sema.Enum, bool) {
-	if ip.info == nil || ip.info.Enums == nil {
-		return nil, false
+	/*line eval.goal:525*/ if ip.info == nil || ip.info.Enums == nil {
+		/*line eval.goal:526*/ return nil, false
 	}
-	enumDecl, ok := ip.info.Enums[name]
-	if !ok || enumDecl == nil {
-		return nil, false
+	/*line eval.goal:528*/ enumDecl, ok := ip.info.Enums[name]
+	/*line eval.goal:529*/ if !ok || enumDecl == nil {
+		/*line eval.goal:530*/ return nil, false
 	}
-	return enumDecl, true
+	/*line eval.goal:532*/ return enumDecl, true
 }
 
 //line eval.goal:537
 func variantFields(enumDecl *sema.Enum, tag string) []sema.Field {
-	for _, v := range enumDecl.Variants {
-		if v.Name == tag {
-			return v.Fields
+	/*line eval.goal:538*/ for _, v := range enumDecl.Variants {
+		/*line eval.goal:539*/ if v.Name == tag {
+			/*line eval.goal:540*/ return v.Fields
 		}
 	}
-	return nil
+	/*line eval.goal:543*/ return nil
 }
 
 //line eval.goal:552
 func (ip *Interp) evalResultCtor(ctor string, call *ast.CallExpr, scope *Env) ([]Value, error) {
-	var tag, field string
+	/*line eval.goal:553*/ var tag, field string
 
+	/*line eval.goal:554*/
 	switch ctor {
 	case resultOkTag:
 		tag, field = resultOkTag, resultOkField
@@ -437,60 +438,60 @@ func (ip *Interp) evalResultCtor(ctor string, call *ast.CallExpr, scope *Env) ([
 	default:
 		return nil, fmt.Errorf("interp: %s: unknown Result constructor %s.%s (expected Ok or Err)", call.Pos(), resultTypeID, ctor)
 	}
-	if len(call.Args) != 1 {
-		return nil, fmt.Errorf("interp: %s: %s.%s expects 1 argument, got %d", call.Pos(), resultTypeID, ctor, len(call.Args))
+	/*line eval.goal:562*/ if len(call.Args) != 1 {
+		/*line eval.goal:563*/ return nil, fmt.Errorf("interp: %s: %s.%s expects 1 argument, got %d", call.Pos(), resultTypeID, ctor, len(call.Args))
 	}
-	v, err := ip.evalExpr(call.Args[0], scope)
-	if err != nil {
-		return nil, err
+	/*line eval.goal:565*/ v, err := ip.evalExpr(call.Args[0], scope)
+	/*line eval.goal:566*/ if err != nil {
+		/*line eval.goal:567*/ return nil, err
 	}
-	return []Value{VariantVal(resultTypeID, tag, map[string]Value{field: v})}, nil
+	/*line eval.goal:569*/ return []Value{VariantVal(resultTypeID, tag, map[string]Value{field: v})}, nil
 }
 
 //line eval.goal:578
 func (ip *Interp) evalOptionCtor(ctor string, call *ast.CallExpr, scope *Env) ([]Value, error) {
-	if ctor != optionSomeTag {
-		return nil, fmt.Errorf("interp: %s: unknown Option constructor %s.%s (expected Some or None)", call.Pos(), optionTypeID, ctor)
+	/*line eval.goal:579*/ if ctor != optionSomeTag {
+		/*line eval.goal:580*/ return nil, fmt.Errorf("interp: %s: unknown Option constructor %s.%s (expected Some or None)", call.Pos(), optionTypeID, ctor)
 	}
-	if len(call.Args) != 1 {
-		return nil, fmt.Errorf("interp: %s: %s.%s expects 1 argument, got %d", call.Pos(), optionTypeID, ctor, len(call.Args))
+	/*line eval.goal:582*/ if len(call.Args) != 1 {
+		/*line eval.goal:583*/ return nil, fmt.Errorf("interp: %s: %s.%s expects 1 argument, got %d", call.Pos(), optionTypeID, ctor, len(call.Args))
 	}
-	v, err := ip.evalExpr(call.Args[0], scope)
-	if err != nil {
-		return nil, err
+	/*line eval.goal:585*/ v, err := ip.evalExpr(call.Args[0], scope)
+	/*line eval.goal:586*/ if err != nil {
+		/*line eval.goal:587*/ return nil, err
 	}
-	return []Value{VariantVal(optionTypeID, optionSomeTag, map[string]Value{optionSomeField: v})}, nil
+	/*line eval.goal:589*/ return []Value{VariantVal(optionTypeID, optionSomeTag, map[string]Value{optionSomeField: v})}, nil
 }
 
 //line eval.goal:596
 func (ip *Interp) evalIndex(e *ast.IndexExpr, scope *Env) (Value, error) {
-	recv, err := ip.evalExpr(e.X, scope)
-	if err != nil {
-		return Value{}, err
+	/*line eval.goal:597*/ recv, err := ip.evalExpr(e.X, scope)
+	/*line eval.goal:598*/ if err != nil {
+		/*line eval.goal:599*/ return Value{}, err
 	}
-	idx, err := ip.evalExpr(e.Index, scope)
-	if err != nil {
-		return Value{}, err
+	/*line eval.goal:601*/ idx, err := ip.evalExpr(e.Index, scope)
+	/*line eval.goal:602*/ if err != nil {
+		/*line eval.goal:603*/ return Value{}, err
 	}
-	switch recv.Kind {
+	/*line eval.goal:605*/ switch recv.Kind {
 	case KindSlice:
 		if idx.Kind != KindInt {
-			return Value{}, fmt.Errorf("interp: slice index must be int, got %s", idx.Kind)
+			/*line eval.goal:608*/ return Value{}, fmt.Errorf("interp: slice index must be int, got %s", idx.Kind)
 		}
 		if idx.Int < 0 || idx.Int >= int64(len(recv.Slice)) {
-			return Value{}, fmt.Errorf("interp: slice index %d out of range (len %d)", idx.Int, len(recv.Slice))
+			/*line eval.goal:611*/ return Value{}, fmt.Errorf("interp: slice index %d out of range (len %d)", idx.Int, len(recv.Slice))
 		}
 		return recv.Slice[idx.Int], nil
 	case KindMap:
 		key, err := mapKeyString(idx)
 		if err != nil {
-			return Value{}, err
+			/*line eval.goal:617*/ return Value{}, err
 		}
 		if recv.Map == nil {
-			return NilVal(), nil
+			/*line eval.goal:620*/ return NilVal(), nil
 		}
 		if v, ok := recv.Map.Entries[key]; ok {
-			return v, nil
+			/*line eval.goal:623*/ return v, nil
 		}
 		return NilVal(), nil
 	default:
@@ -500,111 +501,111 @@ func (ip *Interp) evalIndex(e *ast.IndexExpr, scope *Env) (Value, error) {
 
 //line eval.goal:634
 func mapKeyString(v Value) (string, error) {
-	if v.Kind != KindString {
-		return "", fmt.Errorf("interp: map key must be string, got %s", v.Kind)
+	/*line eval.goal:635*/ if v.Kind != KindString {
+		/*line eval.goal:636*/ return "", fmt.Errorf("interp: map key must be string, got %s", v.Kind)
 	}
-	return v.Str, nil
+	/*line eval.goal:638*/ return v.Str, nil
 }
 
 //line eval.goal:645
 func (ip *Interp) evalCall(call *ast.CallExpr, scope *Env) (Value, error) {
-	vals, err := ip.evalCallMulti(call, scope)
-	if err != nil {
-		return Value{}, err
+	/*line eval.goal:646*/ vals, err := ip.evalCallMulti(call, scope)
+	/*line eval.goal:647*/ if err != nil {
+		/*line eval.goal:648*/ return Value{}, err
 	}
-	if len(vals) != 1 {
-		return Value{}, fmt.Errorf("interp: multi-value call used in single-value context (%d values)", len(vals))
+	/*line eval.goal:650*/ if len(vals) != 1 {
+		/*line eval.goal:651*/ return Value{}, fmt.Errorf("interp: multi-value call used in single-value context (%d values)", len(vals))
 	}
-	return vals[0], nil
+	/*line eval.goal:653*/ return vals[0], nil
 }
 
 //line eval.goal:661
 func (ip *Interp) evalCallMulti(call *ast.CallExpr, scope *Env) ([]Value, error) {
-	if id, ok := call.Fun.(*ast.Ident); ok && isBuiltin(id.Name) {
-		if _, err := scope.Lookup(id.Name); err != nil {
-			return ip.evalBuiltin(id.Name, call, scope)
+	/*line eval.goal:665*/ if id, ok := call.Fun.(*ast.Ident); ok && isBuiltin(id.Name) {
+		/*line eval.goal:666*/ if _, err := scope.Lookup(id.Name); err != nil {
+			/*line eval.goal:667*/ return ip.evalBuiltin(id.Name, call, scope)
 		}
 	}
-	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-		if recv, ok := sel.X.(*ast.Ident); ok && recv.Name == resultTypeID {
-			if _, err := scope.Lookup(recv.Name); err != nil {
-				return ip.evalResultCtor(sel.Sel.Name, call, scope)
+	/*line eval.goal:675*/ if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+		/*line eval.goal:676*/ if recv, ok := sel.X.(*ast.Ident); ok && recv.Name == resultTypeID {
+			/*line eval.goal:677*/ if _, err := scope.Lookup(recv.Name); err != nil {
+				/*line eval.goal:678*/ return ip.evalResultCtor(sel.Sel.Name, call, scope)
 			}
 		}
 	}
-	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-		if recv, ok := sel.X.(*ast.Ident); ok && recv.Name == optionTypeID {
-			if _, err := scope.Lookup(recv.Name); err != nil {
-				return ip.evalOptionCtor(sel.Sel.Name, call, scope)
+	/*line eval.goal:686*/ if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+		/*line eval.goal:687*/ if recv, ok := sel.X.(*ast.Ident); ok && recv.Name == optionTypeID {
+			/*line eval.goal:688*/ if _, err := scope.Lookup(recv.Name); err != nil {
+				/*line eval.goal:689*/ return ip.evalOptionCtor(sel.Sel.Name, call, scope)
 			}
 		}
 	}
-	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-		if pkg, ok := sel.X.(*ast.Ident); ok && ip.imports[pkg.Name] != "" {
-			if _, err := scope.Lookup(pkg.Name); err != nil {
-				return ip.evalHostCall(sel, call, scope)
+	/*line eval.goal:697*/ if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+		/*line eval.goal:698*/ if pkg, ok := sel.X.(*ast.Ident); ok && ip.imports[pkg.Name] != "" {
+			/*line eval.goal:699*/ if _, err := scope.Lookup(pkg.Name); err != nil {
+				/*line eval.goal:700*/ return ip.evalHostCall(sel, call, scope)
 			}
 		}
 	}
-	if id, ok := call.Fun.(*ast.Ident); ok {
-		if decl, ok := ip.derives[id.Name]; ok {
-			if _, err := scope.Lookup(id.Name); err != nil {
-				return ip.evalDerive(decl, call, scope)
+	/*line eval.goal:707*/ if id, ok := call.Fun.(*ast.Ident); ok {
+		/*line eval.goal:708*/ if decl, ok := ip.derives[id.Name]; ok {
+			/*line eval.goal:709*/ if _, err := scope.Lookup(id.Name); err != nil {
+				/*line eval.goal:710*/ return ip.evalDerive(decl, call, scope)
 			}
 		}
 	}
-	if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-		if vals, handled, err := ip.tryMethodCall(sel, call, scope); handled {
-			return vals, err
+	/*line eval.goal:718*/ if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+		/*line eval.goal:719*/ if vals, handled, err := ip.tryMethodCall(sel, call, scope); handled {
+			/*line eval.goal:720*/ return vals, err
 		}
 	}
-	callee, err := ip.evalExpr(call.Fun, scope)
-	if err != nil {
-		return nil, err
+	/*line eval.goal:724*/ callee, err := ip.evalExpr(call.Fun, scope)
+	/*line eval.goal:725*/ if err != nil {
+		/*line eval.goal:726*/ return nil, err
 	}
-	if callee.Kind != KindFunc || callee.Func == nil {
-		return nil, fmt.Errorf("interp: cannot call %s", callee.Kind)
+	/*line eval.goal:728*/ if callee.Kind != KindFunc || callee.Func == nil {
+		/*line eval.goal:729*/ return nil, fmt.Errorf("interp: cannot call %s", callee.Kind)
 	}
-	args := make([]Value, len(call.Args))
-	for i, a := range call.Args {
-		v, err := ip.evalExpr(a, scope)
-		if err != nil {
-			return nil, err
+	/*line eval.goal:731*/ args := make([]Value, len(call.Args))
+	/*line eval.goal:732*/ for i, a := range call.Args {
+		/*line eval.goal:733*/ v, err := ip.evalExpr(a, scope)
+		/*line eval.goal:734*/ if err != nil {
+			/*line eval.goal:735*/ return nil, err
 		}
-		args[i] = v
+		/*line eval.goal:737*/ args[i] = v
 	}
-	return ip.callFunc(callee.Func, args)
+	/*line eval.goal:739*/ return ip.callFunc(callee.Func, args)
 }
 
 //line eval.goal:745
 func evalBasicLit(lit *ast.BasicLit) (Value, error) {
-	switch lit.Kind {
+	/*line eval.goal:746*/ switch lit.Kind {
 	case token.INT:
 		n, err := strconv.ParseInt(lit.Value, 0, 64)
 		if err != nil {
-			return Value{}, fmt.Errorf("interp: invalid int literal %q: %w", lit.Value, err)
+			/*line eval.goal:750*/ return Value{}, fmt.Errorf("interp: invalid int literal %q: %w", lit.Value, err)
 		}
 		return IntVal(n), nil
 	case token.FLOAT:
 		f, err := strconv.ParseFloat(lit.Value, 64)
 		if err != nil {
-			return Value{}, fmt.Errorf("interp: invalid float literal %q: %w", lit.Value, err)
+			/*line eval.goal:756*/ return Value{}, fmt.Errorf("interp: invalid float literal %q: %w", lit.Value, err)
 		}
 		return FloatVal(f), nil
 	case token.STRING:
 		s, err := strconv.Unquote(lit.Value)
 		if err != nil {
-			return Value{}, fmt.Errorf("interp: invalid string literal %q: %w", lit.Value, err)
+			/*line eval.goal:762*/ return Value{}, fmt.Errorf("interp: invalid string literal %q: %w", lit.Value, err)
 		}
 		return StrVal(s), nil
 	case token.CHAR:
 		s, err := strconv.Unquote(lit.Value)
 		if err != nil {
-			return Value{}, fmt.Errorf("interp: invalid char literal %q: %w", lit.Value, err)
+			/*line eval.goal:768*/ return Value{}, fmt.Errorf("interp: invalid char literal %q: %w", lit.Value, err)
 		}
 		r := []rune(s)
 		if len(r) != 1 {
-			return Value{}, fmt.Errorf("interp: invalid char literal %q", lit.Value)
+			/*line eval.goal:772*/ return Value{}, fmt.Errorf("interp: invalid char literal %q", lit.Value)
 		}
 		return IntVal(int64(r[0])), nil
 	default:
@@ -614,52 +615,52 @@ func evalBasicLit(lit *ast.BasicLit) (Value, error) {
 
 //line eval.goal:783
 func (ip *Interp) evalBinary(b *ast.BinaryExpr, scope *Env) (Value, error) {
-	if b.Op == token.LAND || b.Op == token.LOR {
-		left, err := ip.evalExpr(b.X, scope)
-		if err != nil {
-			return Value{}, err
+	/*line eval.goal:785*/ if b.Op == token.LAND || b.Op == token.LOR {
+		/*line eval.goal:786*/ left, err := ip.evalExpr(b.X, scope)
+		/*line eval.goal:787*/ if err != nil {
+			/*line eval.goal:788*/ return Value{}, err
 		}
-		if left.Kind != KindBool {
-			return Value{}, fmt.Errorf("interp: operator %s requires bool, got %s", b.Op, left.Kind)
+		/*line eval.goal:790*/ if left.Kind != KindBool {
+			/*line eval.goal:791*/ return Value{}, fmt.Errorf("interp: operator %s requires bool, got %s", b.Op, left.Kind)
 		}
-		if b.Op == token.LAND && !left.Bool {
-			return BoolVal(false), nil
+		/*line eval.goal:794*/ if b.Op == token.LAND && !left.Bool {
+			/*line eval.goal:795*/ return BoolVal(false), nil
 		}
-		if b.Op == token.LOR && left.Bool {
-			return BoolVal(true), nil
+		/*line eval.goal:797*/ if b.Op == token.LOR && left.Bool {
+			/*line eval.goal:798*/ return BoolVal(true), nil
 		}
-		right, err := ip.evalExpr(b.Y, scope)
-		if err != nil {
-			return Value{}, err
+		/*line eval.goal:800*/ right, err := ip.evalExpr(b.Y, scope)
+		/*line eval.goal:801*/ if err != nil {
+			/*line eval.goal:802*/ return Value{}, err
 		}
-		if right.Kind != KindBool {
-			return Value{}, fmt.Errorf("interp: operator %s requires bool, got %s", b.Op, right.Kind)
+		/*line eval.goal:804*/ if right.Kind != KindBool {
+			/*line eval.goal:805*/ return Value{}, fmt.Errorf("interp: operator %s requires bool, got %s", b.Op, right.Kind)
 		}
-		return BoolVal(right.Bool), nil
+		/*line eval.goal:807*/ return BoolVal(right.Bool), nil
 	}
-	left, err := ip.evalExpr(b.X, scope)
-	if err != nil {
-		return Value{}, err
+	/*line eval.goal:810*/ left, err := ip.evalExpr(b.X, scope)
+	/*line eval.goal:811*/ if err != nil {
+		/*line eval.goal:812*/ return Value{}, err
 	}
-	right, err := ip.evalExpr(b.Y, scope)
-	if err != nil {
-		return Value{}, err
+	/*line eval.goal:814*/ right, err := ip.evalExpr(b.Y, scope)
+	/*line eval.goal:815*/ if err != nil {
+		/*line eval.goal:816*/ return Value{}, err
 	}
-	return applyBinary(b.Op, left, right)
+	/*line eval.goal:818*/ return applyBinary(b.Op, left, right)
 }
 
 //line eval.goal:823
 func applyBinary(op token.Kind, left, right Value) (Value, error) {
-	switch op {
+	/*line eval.goal:824*/ switch op {
 	case token.EQL:
 		return BoolVal(left.Equal(right)), nil
 	case token.NEQ:
 		return BoolVal(!left.Equal(right)), nil
 	}
-	if left.Kind != right.Kind {
-		return Value{}, fmt.Errorf("interp: operator %s on mismatched kinds %s and %s", op, left.Kind, right.Kind)
+	/*line eval.goal:831*/ if left.Kind != right.Kind {
+		/*line eval.goal:832*/ return Value{}, fmt.Errorf("interp: operator %s on mismatched kinds %s and %s", op, left.Kind, right.Kind)
 	}
-	switch left.Kind {
+	/*line eval.goal:835*/ switch left.Kind {
 	case KindInt:
 		return intBinary(op, left.Int, right.Int)
 	case KindFloat:
@@ -673,7 +674,7 @@ func applyBinary(op token.Kind, left, right Value) (Value, error) {
 
 //line eval.goal:847
 func intBinary(op token.Kind, a, b int64) (Value, error) {
-	switch op {
+	/*line eval.goal:848*/ switch op {
 	case token.ADD:
 		return IntVal(a + b), nil
 	case token.SUB:
@@ -682,12 +683,12 @@ func intBinary(op token.Kind, a, b int64) (Value, error) {
 		return IntVal(a * b), nil
 	case token.QUO:
 		if b == 0 {
-			return Value{}, fmt.Errorf("interp: integer divide by zero")
+			/*line eval.goal:857*/ return Value{}, fmt.Errorf("interp: integer divide by zero")
 		}
 		return IntVal(a / b), nil
 	case token.REM:
 		if b == 0 {
-			return Value{}, fmt.Errorf("interp: integer divide by zero")
+			/*line eval.goal:862*/ return Value{}, fmt.Errorf("interp: integer divide by zero")
 		}
 		return IntVal(a % b), nil
 	case token.LSS:
@@ -705,7 +706,7 @@ func intBinary(op token.Kind, a, b int64) (Value, error) {
 
 //line eval.goal:878
 func floatBinary(op token.Kind, a, b float64) (Value, error) {
-	switch op {
+	/*line eval.goal:879*/ switch op {
 	case token.ADD:
 		return FloatVal(a + b), nil
 	case token.SUB:
@@ -729,7 +730,7 @@ func floatBinary(op token.Kind, a, b float64) (Value, error) {
 
 //line eval.goal:901
 func stringBinary(op token.Kind, a, b string) (Value, error) {
-	switch op {
+	/*line eval.goal:902*/ switch op {
 	case token.ADD:
 		return StrVal(a + b), nil
 	case token.LSS:
@@ -747,11 +748,11 @@ func stringBinary(op token.Kind, a, b string) (Value, error) {
 
 //line eval.goal:920
 func (ip *Interp) evalUnary(u *ast.UnaryExpr, scope *Env) (Value, error) {
-	x, err := ip.evalExpr(u.X, scope)
-	if err != nil {
-		return Value{}, err
+	/*line eval.goal:921*/ x, err := ip.evalExpr(u.X, scope)
+	/*line eval.goal:922*/ if err != nil {
+		/*line eval.goal:923*/ return Value{}, err
 	}
-	switch u.Op {
+	/*line eval.goal:925*/ switch u.Op {
 	case token.ADD:
 		switch x.Kind {
 		case KindInt, KindFloat:
@@ -770,7 +771,7 @@ func (ip *Interp) evalUnary(u *ast.UnaryExpr, scope *Env) (Value, error) {
 		}
 	case token.NOT:
 		if x.Kind != KindBool {
-			return Value{}, fmt.Errorf("interp: unary ! requires bool, got %s", x.Kind)
+			/*line eval.goal:944*/ return Value{}, fmt.Errorf("interp: unary ! requires bool, got %s", x.Kind)
 		}
 		return BoolVal(!x.Bool), nil
 	default:
@@ -780,11 +781,11 @@ func (ip *Interp) evalUnary(u *ast.UnaryExpr, scope *Env) (Value, error) {
 
 //line eval.goal:360
 func zeroValue(typeExpr ast.Expr) Value {
-	id, ok := typeExpr.(*ast.Ident)
-	if !ok {
-		return NilVal()
+	/*line eval.goal:958*/ id, ok := typeExpr.(*ast.Ident)
+	/*line eval.goal:959*/ if !ok {
+		/*line eval.goal:960*/ return NilVal()
 	}
-	switch id.Name {
+	/*line eval.goal:962*/ switch id.Name {
 	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr", "byte", "rune":
 		return IntVal(0)
 	case "float32", "float64":
@@ -800,7 +801,7 @@ func zeroValue(typeExpr ast.Expr) Value {
 
 //line eval.goal:978
 func isBuiltin(name string) bool {
-	switch name {
+	/*line eval.goal:979*/ switch name {
 	case "len", "append", "make", "panic":
 		return true
 	default:
@@ -810,7 +811,7 @@ func isBuiltin(name string) bool {
 
 //line eval.goal:991
 func (ip *Interp) evalBuiltin(name string, call *ast.CallExpr, scope *Env) ([]Value, error) {
-	switch name {
+	/*line eval.goal:992*/ switch name {
 	case "len":
 		return ip.builtinLen(call, scope)
 	case "append":
@@ -826,21 +827,21 @@ func (ip *Interp) evalBuiltin(name string, call *ast.CallExpr, scope *Env) ([]Va
 
 //line eval.goal:1008
 func (ip *Interp) builtinLen(call *ast.CallExpr, scope *Env) ([]Value, error) {
-	if len(call.Args) != 1 {
-		return nil, fmt.Errorf("interp: len expects 1 argument, got %d", len(call.Args))
+	/*line eval.goal:1009*/ if len(call.Args) != 1 {
+		/*line eval.goal:1010*/ return nil, fmt.Errorf("interp: len expects 1 argument, got %d", len(call.Args))
 	}
-	v, err := ip.evalExpr(call.Args[0], scope)
-	if err != nil {
-		return nil, err
+	/*line eval.goal:1012*/ v, err := ip.evalExpr(call.Args[0], scope)
+	/*line eval.goal:1013*/ if err != nil {
+		/*line eval.goal:1014*/ return nil, err
 	}
-	switch v.Kind {
+	/*line eval.goal:1016*/ switch v.Kind {
 	case KindSlice:
 		return []Value{IntVal(int64(len(v.Slice)))}, nil
 	case KindString:
 		return []Value{IntVal(int64(len(v.Str)))}, nil
 	case KindMap:
 		if v.Map == nil {
-			return []Value{IntVal(0)}, nil
+			/*line eval.goal:1023*/ return []Value{IntVal(0)}, nil
 		}
 		return []Value{IntVal(int64(len(v.Map.Entries)))}, nil
 	default:
@@ -850,55 +851,55 @@ func (ip *Interp) builtinLen(call *ast.CallExpr, scope *Env) ([]Value, error) {
 
 //line eval.goal:1035
 func (ip *Interp) builtinAppend(call *ast.CallExpr, scope *Env) ([]Value, error) {
-	if len(call.Args) < 1 {
-		return nil, fmt.Errorf("interp: append expects at least 1 argument, got %d", len(call.Args))
+	/*line eval.goal:1036*/ if len(call.Args) < 1 {
+		/*line eval.goal:1037*/ return nil, fmt.Errorf("interp: append expects at least 1 argument, got %d", len(call.Args))
 	}
-	base, err := ip.evalExpr(call.Args[0], scope)
-	if err != nil {
-		return nil, err
+	/*line eval.goal:1039*/ base, err := ip.evalExpr(call.Args[0], scope)
+	/*line eval.goal:1040*/ if err != nil {
+		/*line eval.goal:1041*/ return nil, err
 	}
-	if base.Kind != KindSlice {
-		return nil, fmt.Errorf("interp: append of %s (first argument must be a slice)", base.Kind)
+	/*line eval.goal:1043*/ if base.Kind != KindSlice {
+		/*line eval.goal:1044*/ return nil, fmt.Errorf("interp: append of %s (first argument must be a slice)", base.Kind)
 	}
-	out := make([]Value, len(base.Slice), len(base.Slice)+len(call.Args)-1)
-	copy(out, base.Slice)
-	for _, a := range call.Args[1:] {
-		v, err := ip.evalExpr(a, scope)
-		if err != nil {
-			return nil, err
+	/*line eval.goal:1046*/ out := make([]Value, len(base.Slice), len(base.Slice)+len(call.Args)-1)
+	/*line eval.goal:1047*/ copy(out, base.Slice)
+	/*line eval.goal:1048*/ for _, a := range call.Args[1:] {
+		/*line eval.goal:1049*/ v, err := ip.evalExpr(a, scope)
+		/*line eval.goal:1050*/ if err != nil {
+			/*line eval.goal:1051*/ return nil, err
 		}
-		out = append(out, v)
+		/*line eval.goal:1053*/ out = append(out, v)
 	}
-	return []Value{SliceVal(out...)}, nil
+	/*line eval.goal:1055*/ return []Value{SliceVal(out...)}, nil
 }
 
 //line eval.goal:1062
 func (ip *Interp) builtinMake(call *ast.CallExpr, scope *Env) ([]Value, error) {
-	if len(call.Args) < 1 {
-		return nil, fmt.Errorf("interp: make expects at least 1 argument, got %d", len(call.Args))
+	/*line eval.goal:1063*/ if len(call.Args) < 1 {
+		/*line eval.goal:1064*/ return nil, fmt.Errorf("interp: make expects at least 1 argument, got %d", len(call.Args))
 	}
-	switch t := call.Args[0].(type) {
+	/*line eval.goal:1066*/ switch t := call.Args[0].(type) {
 	case *ast.MapType:
 		return []Value{MapVal(nil)}, nil
 	case *ast.ArrayType:
 		n := 0
 		if len(call.Args) >= 2 {
-			sz, err := ip.evalExpr(call.Args[1], scope)
-			if err != nil {
-				return nil, err
+			/*line eval.goal:1072*/ sz, err := ip.evalExpr(call.Args[1], scope)
+			/*line eval.goal:1073*/ if err != nil {
+				/*line eval.goal:1074*/ return nil, err
 			}
-			if sz.Kind != KindInt {
-				return nil, fmt.Errorf("interp: make length must be int, got %s", sz.Kind)
+			/*line eval.goal:1076*/ if sz.Kind != KindInt {
+				/*line eval.goal:1077*/ return nil, fmt.Errorf("interp: make length must be int, got %s", sz.Kind)
 			}
-			if sz.Int < 0 {
-				return nil, fmt.Errorf("interp: make length %d is negative", sz.Int)
+			/*line eval.goal:1079*/ if sz.Int < 0 {
+				/*line eval.goal:1080*/ return nil, fmt.Errorf("interp: make length %d is negative", sz.Int)
 			}
-			n = int(sz.Int)
+			/*line eval.goal:1082*/ n = int(sz.Int)
 		}
 		zero := zeroValue(t.Elt)
 		elems := make([]Value, n)
 		for i := range elems {
-			elems[i] = zero
+			/*line eval.goal:1087*/ elems[i] = zero
 		}
 		return []Value{SliceVal(elems...)}, nil
 	default:
@@ -908,60 +909,60 @@ func (ip *Interp) builtinMake(call *ast.CallExpr, scope *Env) ([]Value, error) {
 
 //line eval.goal:1098
 func (ip *Interp) builtinPanic(call *ast.CallExpr, scope *Env) ([]Value, error) {
-	if len(call.Args) != 1 {
-		return nil, fmt.Errorf("interp: panic expects 1 argument, got %d", len(call.Args))
+	/*line eval.goal:1099*/ if len(call.Args) != 1 {
+		/*line eval.goal:1100*/ return nil, fmt.Errorf("interp: panic expects 1 argument, got %d", len(call.Args))
 	}
-	v, err := ip.evalExpr(call.Args[0], scope)
-	if err != nil {
-		return nil, err
+	/*line eval.goal:1102*/ v, err := ip.evalExpr(call.Args[0], scope)
+	/*line eval.goal:1103*/ if err != nil {
+		/*line eval.goal:1104*/ return nil, err
 	}
-	return nil, panicSignal{value: v}
+	/*line eval.goal:1106*/ return nil, panicSignal{value: v}
 }
 
 //line eval.goal:1115
 func (ip *Interp) tryMethodCall(sel *ast.SelectorExpr, call *ast.CallExpr, scope *Env) (vals []Value, handled bool, err error) {
-	recv, rerr := ip.evalExpr(sel.X, scope)
-	if rerr != nil {
-		return nil, false, nil
+	/*line eval.goal:1116*/ recv, rerr := ip.evalExpr(sel.X, scope)
+	/*line eval.goal:1117*/ if rerr != nil {
+		/*line eval.goal:1118*/ return nil, false, nil
 	}
-	if recv.Kind != KindStruct || recv.Struct == nil {
-		return nil, false, nil
+	/*line eval.goal:1120*/ if recv.Kind != KindStruct || recv.Struct == nil {
+		/*line eval.goal:1121*/ return nil, false, nil
 	}
-	byName := ip.methods[recv.Struct.TypeID]
-	if byName == nil {
-		return nil, false, nil
+	/*line eval.goal:1123*/ byName := ip.methods[recv.Struct.TypeID]
+	/*line eval.goal:1124*/ if byName == nil {
+		/*line eval.goal:1125*/ return nil, false, nil
 	}
-	decl, ok := byName[sel.Sel.Name]
-	if !ok {
-		return nil, false, nil
+	/*line eval.goal:1127*/ decl, ok := byName[sel.Sel.Name]
+	/*line eval.goal:1128*/ if !ok {
+		/*line eval.goal:1129*/ return nil, false, nil
 	}
-	args := make([]Value, len(call.Args))
-	for i, a := range call.Args {
-		v, aerr := ip.evalExpr(a, scope)
-		if aerr != nil {
-			return nil, true, aerr
+	/*line eval.goal:1131*/ args := make([]Value, len(call.Args))
+	/*line eval.goal:1132*/ for i, a := range call.Args {
+		/*line eval.goal:1133*/ v, aerr := ip.evalExpr(a, scope)
+		/*line eval.goal:1134*/ if aerr != nil {
+			/*line eval.goal:1135*/ return nil, true, aerr
 		}
-		args[i] = v
+		/*line eval.goal:1137*/ args[i] = v
 	}
-	out, merr := ip.callMethod(decl, recv, args)
-	return out, true, merr
+	/*line eval.goal:1139*/ out, merr := ip.callMethod(decl, recv, args)
+	/*line eval.goal:1140*/ return out, true, merr
 }
 
 //line eval.goal:1147
 func copyStructValue(v Value) Value {
-	if v.Kind != KindStruct || v.Struct == nil {
-		return v
+	/*line eval.goal:1148*/ if v.Kind != KindStruct || v.Struct == nil {
+		/*line eval.goal:1149*/ return v
 	}
-	fields := make(map[string]Value, len(v.Struct.Fields))
-	for k, fv := range v.Struct.Fields {
-		fields[k] = fv
+	/*line eval.goal:1151*/ fields := make(map[string]Value, len(v.Struct.Fields))
+	/*line eval.goal:1152*/ for k, fv := range v.Struct.Fields {
+		/*line eval.goal:1153*/ fields[k] = fv
 	}
-	return StructVal(v.Struct.TypeID, fields)
+	/*line eval.goal:1155*/ return StructVal(v.Struct.TypeID, fields)
 }
 
 //line eval.goal:1162
 func compoundBinOp(tok token.Kind) (token.Kind, bool) {
-	switch tok {
+	/*line eval.goal:1163*/ switch tok {
 	case token.ADD_ASSIGN:
 		return token.ADD, true
 	case token.SUB_ASSIGN:
@@ -979,21 +980,24 @@ func compoundBinOp(tok token.Kind) (token.Kind, bool) {
 
 //line eval.goal:1186
 func isModeResult(m sema.Mode) bool {
-	_, ok := m.(sema.Mode_ModeResult)
-
+	/*line eval.goal:1186*/ _, ok := m.(sema.Mode_ModeResult)
+	/*line eval.goal:1186*/
+	/*line eval.goal:1186*/
 	return ok
 }
 
 //line eval.goal:1187
 func isModeResultClosed(m sema.Mode) bool {
-	_, ok := m.(sema.Mode_ModeResultClosed)
-
+	/*line eval.goal:1187*/ _, ok := m.(sema.Mode_ModeResultClosed)
+	/*line eval.goal:1187*/
+	/*line eval.goal:1187*/
 	return ok
 }
 
 //line eval.goal:1188
 func isModeOption(m sema.Mode) bool {
-	_, ok := m.(sema.Mode_ModeOption)
-
+	/*line eval.goal:1188*/ _, ok := m.(sema.Mode_ModeOption)
+	/*line eval.goal:1188*/
+	/*line eval.goal:1188*/
 	return ok
 }

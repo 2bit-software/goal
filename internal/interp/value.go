@@ -29,7 +29,7 @@ const (
 
 //line value.goal:40
 func (k Kind) String() string {
-	switch k {
+	/*line value.goal:41*/ switch k {
 	case KindNil:
 		return "nil"
 	case KindInt:
@@ -96,65 +96,65 @@ type Variant struct {
 
 //line value.goal:119
 func IntVal(n int64) Value {
-	return Value{Kind: KindInt, Int: n}
+	/*line value.goal:119*/ return Value{Kind: KindInt, Int: n}
 }
 
 //line value.goal:122
 func FloatVal(f float64) Value {
-	return Value{Kind: KindFloat, Float: f}
+	/*line value.goal:122*/ return Value{Kind: KindFloat, Float: f}
 }
 
 //line value.goal:125
 func StrVal(s string) Value {
-	return Value{Kind: KindString, Str: s}
+	/*line value.goal:125*/ return Value{Kind: KindString, Str: s}
 }
 
 //line value.goal:128
 func BoolVal(b bool) Value {
-	return Value{Kind: KindBool, Bool: b}
+	/*line value.goal:128*/ return Value{Kind: KindBool, Bool: b}
 }
 
 //line value.goal:131
 func NilVal() Value {
-	return Value{Kind: KindNil}
+	/*line value.goal:131*/ return Value{Kind: KindNil}
 }
 
 //line value.goal:134
 func StructVal(typeID string, fields map[string]Value) Value {
-	if fields == nil {
-		fields = map[string]Value{}
+	/*line value.goal:135*/ if fields == nil {
+		/*line value.goal:136*/ fields = map[string]Value{}
 	}
-	return Value{Kind: KindStruct, Struct: &StructValue{TypeID: typeID, Fields: fields}}
+	/*line value.goal:138*/ return Value{Kind: KindStruct, Struct: &StructValue{TypeID: typeID, Fields: fields}}
 }
 
 //line value.goal:142
 func SliceVal(elems ...Value) Value {
-	if elems == nil {
-		elems = []Value{}
+	/*line value.goal:143*/ if elems == nil {
+		/*line value.goal:144*/ elems = []Value{}
 	}
-	return Value{Kind: KindSlice, Slice: elems}
+	/*line value.goal:146*/ return Value{Kind: KindSlice, Slice: elems}
 }
 
 //line value.goal:150
 func MapVal(entries map[string]Value) Value {
-	if entries == nil {
-		entries = map[string]Value{}
+	/*line value.goal:151*/ if entries == nil {
+		/*line value.goal:152*/ entries = map[string]Value{}
 	}
-	return Value{Kind: KindMap, Map: &MapValue{Entries: entries}}
+	/*line value.goal:154*/ return Value{Kind: KindMap, Map: &MapValue{Entries: entries}}
 }
 
 //line value.goal:160
 func FuncVal(name string) Value {
-	return Value{Kind: KindFunc, Func: &FuncValue{Name: name}}
+	/*line value.goal:161*/ return Value{Kind: KindFunc, Func: &FuncValue{Name: name}}
 }
 
 //line value.goal:167
 func FuncDeclVal(decl *ast.FuncDecl, env *Env) Value {
-	name := ""
-	if decl != nil && decl.Name != nil {
-		name = decl.Name.Name
+	/*line value.goal:168*/ name := ""
+	/*line value.goal:169*/ if decl != nil && decl.Name != nil {
+		/*line value.goal:170*/ name = decl.Name.Name
 	}
-	return Value{Kind: KindFunc, Func: &FuncValue{Name: name, Decl: decl, Env: env}}
+	/*line value.goal:172*/ return Value{Kind: KindFunc, Func: &FuncValue{Name: name, Decl: decl, Env: env}}
 }
 
 //line value.go:159
@@ -176,38 +176,38 @@ const (
 
 //line value.goal:205
 func payloadValue(v *Variant) (Value, bool) {
-	if v == nil || len(v.Fields) != 1 {
-		return Value{}, false
+	/*line value.goal:206*/ if v == nil || len(v.Fields) != 1 {
+		/*line value.goal:207*/ return Value{}, false
 	}
-	for _, fv := range v.Fields {
-		return fv, true
+	/*line value.goal:209*/ for _, fv := range v.Fields {
+		/*line value.goal:210*/ return fv, true
 	}
-	return Value{}, false
+	/*line value.goal:212*/ return Value{}, false
 }
 
 //line value.goal:217
 func VariantVal(typeID, tag string, fields map[string]Value) Value {
-	if fields == nil {
-		fields = map[string]Value{}
+	/*line value.goal:218*/ if fields == nil {
+		/*line value.goal:219*/ fields = map[string]Value{}
 	}
-	return Value{Kind: KindVariant, Variant: &Variant{TypeID: typeID, Tag: tag, Fields: fields}}
+	/*line value.goal:221*/ return Value{Kind: KindVariant, Variant: &Variant{TypeID: typeID, Tag: tag, Fields: fields}}
 }
 
 //line value.goal:226
 func (v Value) Field(name string) (Value, bool) {
-	if v.Kind != KindVariant || v.Variant == nil {
-		return Value{}, false
+	/*line value.goal:227*/ if v.Kind != KindVariant || v.Variant == nil {
+		/*line value.goal:228*/ return Value{}, false
 	}
-	f, ok := v.Variant.Fields[name]
-	return f, ok
+	/*line value.goal:230*/ f, ok := v.Variant.Fields[name]
+	/*line value.goal:231*/ return f, ok
 }
 
 //line value.goal:237
 func (v Value) Equal(other Value) bool {
-	if v.Kind != other.Kind {
-		return false
+	/*line value.goal:238*/ if v.Kind != other.Kind {
+		/*line value.goal:239*/ return false
 	}
-	switch v.Kind {
+	/*line value.goal:241*/ switch v.Kind {
 	case KindNil:
 		return true
 	case KindInt:
@@ -222,11 +222,11 @@ func (v Value) Equal(other Value) bool {
 		return structEqual(v.Struct, other.Struct)
 	case KindSlice:
 		if len(v.Slice) != len(other.Slice) {
-			return false
+			/*line value.goal:256*/ return false
 		}
 		for i := range v.Slice {
-			if !v.Slice[i].Equal(other.Slice[i]) {
-				return false
+			/*line value.goal:259*/ if !v.Slice[i].Equal(other.Slice[i]) {
+				/*line value.goal:260*/ return false
 			}
 		}
 		return true
@@ -243,45 +243,45 @@ func (v Value) Equal(other Value) bool {
 
 //line value.goal:275
 func fieldsEqual(a, b map[string]Value) bool {
-	if len(a) != len(b) {
-		return false
+	/*line value.goal:276*/ if len(a) != len(b) {
+		/*line value.goal:277*/ return false
 	}
-	for k, av := range a {
-		bv, ok := b[k]
-		if !ok || !av.Equal(bv) {
-			return false
+	/*line value.goal:279*/ for k, av := range a {
+		/*line value.goal:280*/ bv, ok := b[k]
+		/*line value.goal:281*/ if !ok || !av.Equal(bv) {
+			/*line value.goal:282*/ return false
 		}
 	}
-	return true
+	/*line value.goal:285*/ return true
 }
 
 //line value.goal:288
 func structEqual(a, b *StructValue) bool {
-	if a == nil || b == nil {
-		return a == b
+	/*line value.goal:289*/ if a == nil || b == nil {
+		/*line value.goal:290*/ return a == b
 	}
-	return a.TypeID == b.TypeID && fieldsEqual(a.Fields, b.Fields)
+	/*line value.goal:292*/ return a.TypeID == b.TypeID && fieldsEqual(a.Fields, b.Fields)
 }
 
 //line value.goal:295
 func mapEqual(a, b *MapValue) bool {
-	if a == nil || b == nil {
-		return a == b
+	/*line value.goal:296*/ if a == nil || b == nil {
+		/*line value.goal:297*/ return a == b
 	}
-	return fieldsEqual(a.Entries, b.Entries)
+	/*line value.goal:299*/ return fieldsEqual(a.Entries, b.Entries)
 }
 
 //line value.goal:302
 func variantEqual(a, b *Variant) bool {
-	if a == nil || b == nil {
-		return a == b
+	/*line value.goal:303*/ if a == nil || b == nil {
+		/*line value.goal:304*/ return a == b
 	}
-	return a.TypeID == b.TypeID && a.Tag == b.Tag && fieldsEqual(a.Fields, b.Fields)
+	/*line value.goal:306*/ return a.TypeID == b.TypeID && a.Tag == b.Tag && fieldsEqual(a.Fields, b.Fields)
 }
 
 //line value.goal:40
 func (v Value) String() string {
-	switch v.Kind {
+	/*line value.goal:311*/ switch v.Kind {
 	case KindNil:
 		return "nil"
 	case KindInt:
@@ -294,33 +294,33 @@ func (v Value) String() string {
 		return strconv.FormatBool(v.Bool)
 	case KindStruct:
 		if v.Struct == nil {
-			return "struct{}"
+			/*line value.goal:324*/ return "struct{}"
 		}
 		return v.Struct.TypeID + "{" + renderFields(v.Struct.Fields) + "}"
 	case KindSlice:
 		parts := make([]string, len(v.Slice))
 		for i, e := range v.Slice {
-			parts[i] = e.String()
+			/*line value.goal:330*/ parts[i] = e.String()
 		}
 		return "[" + strings.Join(parts, " ") + "]"
 	case KindMap:
 		if v.Map == nil {
-			return "map[]"
+			/*line value.goal:335*/ return "map[]"
 		}
 		return "map[" + renderFields(v.Map.Entries) + "]"
 	case KindFunc:
 		name := ""
 		if v.Func != nil {
-			name = v.Func.Name
+			/*line value.goal:341*/ name = v.Func.Name
 		}
 		return "func " + name
 	case KindVariant:
 		if v.Variant == nil {
-			return "<variant>"
+			/*line value.goal:346*/ return "<variant>"
 		}
 		s := v.Variant.TypeID + "." + v.Variant.Tag
 		if len(v.Variant.Fields) > 0 {
-			s += "(" + renderFields(v.Variant.Fields) + ")"
+			/*line value.goal:350*/ s += "(" + renderFields(v.Variant.Fields) + ")"
 		}
 		return s
 	default:
@@ -330,14 +330,14 @@ func (v Value) String() string {
 
 //line value.goal:359
 func renderFields(m map[string]Value) string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
+	/*line value.goal:360*/ keys := make([]string, 0, len(m))
+	/*line value.goal:361*/ for k := range m {
+		/*line value.goal:362*/ keys = append(keys, k)
 	}
-	sort.Strings(keys)
-	parts := make([]string, len(keys))
-	for i, k := range keys {
-		parts[i] = k + ": " + m[k].String()
+	/*line value.goal:364*/ sort.Strings(keys)
+	/*line value.goal:365*/ parts := make([]string, len(keys))
+	/*line value.goal:366*/ for i, k := range keys {
+		/*line value.goal:367*/ parts[i] = k + ": " + m[k].String()
 	}
-	return strings.Join(parts, ", ")
+	/*line value.goal:369*/ return strings.Join(parts, ", ")
 }

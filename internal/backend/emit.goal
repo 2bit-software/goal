@@ -87,13 +87,22 @@ type emitter struct {
 	// type the way a `derive func` reads it off its declared parameter. Reset per
 	// funcDecl; nil outside a function body.
 	curParams map[string]string
+	// srcFile, when non-empty, is the .goal source file name the emitter prefixes
+	// before each source statement as an inline `/*line srcFile:N*/` directive, so a
+	// reflowed body (a `?`/match/unwrap lowering expands one statement into many Go
+	// lines) still reports a runtime panic or `go build` error at the statement's
+	// true .goal line (US-013). It composes with pipeline.AddLineDirectives, which
+	// anchors decl headers. Empty for single-file transpile — directives suppressed
+	// so the single-file transpile goldens stay byte-identical; the package driver
+	// (TranspilePackage) sets it to the file's name.
+	srcFile string
 }
 
 // emitFile renders a whole *ast.File to Go source text, lowering goal-specific
 // constructs through info, or returns the first unsupported-node error
 // encountered.
 func emitFile(f *ast.File, info *sema.Info) (string, error) {
-	src, _, err := emitFileWith(f, info, false)
+	src, _, err := emitFileWith(f, info, false, "")
 	return src, err
 }
 
@@ -102,9 +111,11 @@ func emitFile(f *ast.File, info *sema.Info) (string, error) {
 // boxing helper are NOT emitted inline (the package emits shared copies instead).
 // Single-file emit passes false. It also reports usedOption — whether the file
 // produced a goalSome(...) call — so the package driver can emit the shared boxing
-// helper exactly once when any of its files needs it.
-func emitFileWith(f *ast.File, info *sema.Info, suppressPrelude bool) (src string, usedOption bool, err error) {
-	e := emitter{info: info, pointerRecv: pointerReceiverSet(f), fileIdents: fileIdentSet(f), suppressPrelude: suppressPrelude}
+// helper exactly once when any of its files needs it. srcFile is the .goal source
+// name used for the per-statement /*line*/ directives (US-013); empty suppresses
+// them (single-file emit and the doctest sidecar pass "").
+func emitFileWith(f *ast.File, info *sema.Info, suppressPrelude bool, srcFile string) (src string, usedOption bool, err error) {
+	e := emitter{info: info, pointerRecv: pointerReceiverSet(f), fileIdents: fileIdentSet(f), suppressPrelude: suppressPrelude, srcFile: srcFile}
 	e.arity = newArityResolver(f)
 	e.typeDecls = e.buildTypeDecls(f)
 	e.file(f)
@@ -610,6 +621,17 @@ func (e *emitter) field(f *ast.Field) {
 func (e *emitter) block(b *ast.BlockStmt) {
 	e.p("{\n")
 	for _, s := range b.List {
+		// Anchor each source statement to its true .goal line with an inline
+		// `/*line file:N*/` directive (US-013). A goal-specific lowering (`?`, match,
+		// unwrap) expands one statement into several Go lines, so the per-declaration
+		// //line directive alone reports a following panic / build error off-by-N;
+		// the per-statement directive re-anchors every statement (and its lowered
+		// lines) to its own source line. Only in package mode (srcFile set); the
+		// gofmt step keeps the comment on the statement's line and the goal parser
+		// strips it as trivia, so declSites' re-parse is unaffected.
+		if e.srcFile != "" && s.Pos().IsValid() {
+			e.p(fmt.Sprintf("/*line %s:%d*/", e.srcFile, s.Pos().Line))
+		}
 		e.stmt(s)
 		e.p("\n")
 	}

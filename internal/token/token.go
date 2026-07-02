@@ -107,34 +107,35 @@ var kindNames = [...]string{ILLEGAL: "ILLEGAL", EOF: "EOF", COMMENT: "COMMENT", 
 
 //line token.goal:234
 func (k Kind) String() string {
-	if k >= 0 && int(k) < len(kindNames) && kindNames[k] != "" {
-		return kindNames[k]
+	/*line token.goal:235*/ if k >= 0 && int(k) < len(kindNames) && kindNames[k] != "" {
+		/*line token.goal:236*/ return kindNames[k]
 	}
-	return "token(" + itoa(int(k)) + ")"
+	/*line token.goal:238*/ return "token(" + itoa(int(k)) + ")"
 }
 
 //line token.goal:242
 func itoa(n int) string {
-	if n == 0 {
-		return "0"
+	/*line token.goal:243*/ if n == 0 {
+		/*line token.goal:244*/ return "0"
 	}
-	neg := n < 0
-	if neg {
-		n = -n
+	/*line token.goal:246*/ neg := n < 0
+	/*line token.goal:247*/ if neg {
+		/*line token.goal:248*/ n = -n
 	}
-	var buf [20]byte
+	/*line token.goal:250*/ var buf [20]byte
 
+	/*line token.goal:251*/
 	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
+	/*line token.goal:252*/ for n > 0 {
+		/*line token.goal:253*/ i--
+		/*line token.goal:254*/ buf[i] = byte('0' + n%10)
+		/*line token.goal:255*/ n /= 10
 	}
-	if neg {
-		i--
-		buf[i] = '-'
+	/*line token.goal:257*/ if neg {
+		/*line token.goal:258*/ i--
+		/*line token.goal:259*/ buf[i] = '-'
 	}
-	return string(buf[i:])
+	/*line token.goal:261*/ return string(buf[i:])
 }
 
 //line token.goal:267
@@ -145,46 +146,46 @@ var operators map[string]Kind
 
 //line token.goal:273
 func init() {
-	keywords = make(map[string]Kind, keywordEnd-(keywordBeg+1))
-	for k := keywordBeg + 1; k < keywordEnd; k++ {
-		keywords[kindNames[k]] = k
+	/*line token.goal:274*/ keywords = make(map[string]Kind, keywordEnd-(keywordBeg+1))
+	/*line token.goal:275*/ for k := keywordBeg + 1; k < keywordEnd; k++ {
+		/*line token.goal:276*/ keywords[kindNames[k]] = k
 	}
-	operators = make(map[string]Kind, operatorEnd-(operatorBeg+1))
-	for k := operatorBeg + 1; k < operatorEnd; k++ {
-		operators[kindNames[k]] = k
+	/*line token.goal:278*/ operators = make(map[string]Kind, operatorEnd-(operatorBeg+1))
+	/*line token.goal:279*/ for k := operatorBeg + 1; k < operatorEnd; k++ {
+		/*line token.goal:280*/ operators[kindNames[k]] = k
 	}
 }
 
 //line token.goal:288
 func Lookup(name string) (Kind, bool) {
-	if k, ok := keywords[name]; ok {
-		return k, true
+	/*line token.goal:289*/ if k, ok := keywords[name]; ok {
+		/*line token.goal:290*/ return k, true
 	}
-	if k, ok := operators[name]; ok {
-		return k, true
+	/*line token.goal:292*/ if k, ok := operators[name]; ok {
+		/*line token.goal:293*/ return k, true
 	}
-	return ILLEGAL, false
+	/*line token.goal:295*/ return ILLEGAL, false
 }
 
 //line token.goal:300
 func IsKeyword(name string) bool {
-	_, ok := keywords[name]
-	return ok
+	/*line token.goal:301*/ _, ok := keywords[name]
+	/*line token.goal:302*/ return ok
 }
 
 //line token.goal:306
 func (k Kind) IsLiteral() bool {
-	return literalBeg < k && k < literalEnd
+	/*line token.goal:306*/ return literalBeg < k && k < literalEnd
 }
 
 //line token.goal:309
 func (k Kind) IsOperator() bool {
-	return operatorBeg < k && k < operatorEnd
+	/*line token.goal:309*/ return operatorBeg < k && k < operatorEnd
 }
 
 //line token.goal:300
 func (k Kind) IsKeyword() bool {
-	return keywordBeg < k && k < keywordEnd
+	/*line token.goal:312*/ return keywordBeg < k && k < keywordEnd
 }
 
 //line token.goal:316
@@ -196,35 +197,35 @@ type Pos struct {
 
 //line token.goal:323
 func (p Pos) Less(q Pos) bool {
-	return p.Offset < q.Offset
+	/*line token.goal:323*/ return p.Offset < q.Offset
 }
 
 //line token.goal:327
 func (p Pos) IsValid() bool {
-	return p.Line > 0
+	/*line token.goal:327*/ return p.Line > 0
 }
 
 //line token.goal:234
 func (p Pos) String() string {
-	return itoa(p.Line) + ":" + itoa(p.Col)
+	/*line token.goal:330*/ return itoa(p.Line) + ":" + itoa(p.Col)
 }
 
 //line token.goal:338
 func OffsetToPosition(src string, off int) Pos {
-	if off < 0 {
-		off = 0
+	/*line token.goal:339*/ if off < 0 {
+		/*line token.goal:340*/ off = 0
 	}
-	if off > len(src) {
-		off = len(src)
+	/*line token.goal:342*/ if off > len(src) {
+		/*line token.goal:343*/ off = len(src)
 	}
-	line, lineStart := 1, 0
-	for i := 0; i < off; i++ {
-		if src[i] == '\n' {
-			line++
-			lineStart = i + 1
+	/*line token.goal:345*/ line, lineStart := 1, 0
+	/*line token.goal:346*/ for i := 0; i < off; i++ {
+		/*line token.goal:347*/ if src[i] == '\n' {
+			/*line token.goal:348*/ line++
+			/*line token.goal:349*/ lineStart = i + 1
 		}
 	}
-	return Pos{Offset: off, Line: line, Col: off - lineStart + 1}
+	/*line token.goal:352*/ return Pos{Offset: off, Line: line, Col: off - lineStart + 1}
 }
 
 //line token.goal:357

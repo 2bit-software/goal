@@ -15,73 +15,73 @@ import (
 
 //line main.goal:28
 func main() {
-	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "selfhost:", err)
-		os.Exit(1)
+	/*line main.goal:29*/ if err := run(os.Args[1:]); err != nil {
+		/*line main.goal:30*/ fmt.Fprintln(os.Stderr, "selfhost:", err)
+		/*line main.goal:31*/ os.Exit(1)
 	}
 }
 
 //line main.goal:37
 func run(args []string) error {
-	if len(args) < 1 || args[0] != "build" {
-		return fmt.Errorf("usage: selfhost build --emit=<dir> <path>")
+	/*line main.goal:38*/ if len(args) < 1 || args[0] != "build" {
+		/*line main.goal:39*/ return fmt.Errorf("usage: selfhost build --emit=<dir> <path>")
 	}
-	emitDir := ""
-	root := ""
-	gotPath := false
-	for _, a := range args[1:] {
-		switch {
+	/*line main.goal:41*/ emitDir := ""
+	/*line main.goal:42*/ root := ""
+	/*line main.goal:43*/ gotPath := false
+	/*line main.goal:44*/ for _, a := range args[1:] {
+		/*line main.goal:45*/ switch {
 		case strings.HasPrefix(a, "--emit="):
 			emitDir = strings.TrimPrefix(a, "--emit=")
 		case strings.HasPrefix(a, "-"):
 			return fmt.Errorf("unknown flag %q", a)
 		default:
 			if gotPath {
-				return fmt.Errorf("expected a single path, got extra %q", a)
+				/*line main.goal:52*/ return fmt.Errorf("expected a single path, got extra %q", a)
 			}
 			root, gotPath = a, true
 		}
 	}
-	if emitDir == "" {
-		return fmt.Errorf("selfhost requires --emit=<dir>")
+	/*line main.goal:57*/ if emitDir == "" {
+		/*line main.goal:58*/ return fmt.Errorf("selfhost requires --emit=<dir>")
 	}
-	if root == "" {
-		root = "."
+	/*line main.goal:60*/ if root == "" {
+		/*line main.goal:61*/ root = "."
 	}
-	pkgs, err := project.Discover(root)
-	if err != nil {
-		return err
+	/*line main.goal:64*/ pkgs, err := project.Discover(root)
+	/*line main.goal:65*/ if err != nil {
+		/*line main.goal:66*/ return err
 	}
-	if len(pkgs) == 0 {
-		return fmt.Errorf("no .goal packages found under %s", root)
+	/*line main.goal:68*/ if len(pkgs) == 0 {
+		/*line main.goal:69*/ return fmt.Errorf("no .goal packages found under %s", root)
 	}
-	for _, pkg := range pkgs {
-		out, err := backend.TranspilePackage(pkg)
-		if err != nil {
-			return err
+	/*line main.goal:71*/ for _, pkg := range pkgs {
+		/*line main.goal:72*/ out, err := backend.TranspilePackage(pkg)
+		/*line main.goal:73*/ if err != nil {
+			/*line main.goal:74*/ return err
 		}
-		if err := emitPackage(pkg, out, emitDir); err != nil {
-			return err
+		/*line main.goal:76*/ if err := emitPackage(pkg, out, emitDir); err != nil {
+			/*line main.goal:77*/ return err
 		}
 	}
-	return nil
+	/*line main.goal:80*/ return nil
 }
 
 //line main.goal:86
 func emitPackage(pkg *project.Package, out pipeline.PackageOutput, emitDir string) error {
-	dir := filepath.Join(emitDir, pkg.Dir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
+	/*line main.goal:87*/ dir := filepath.Join(emitDir, pkg.Dir)
+	/*line main.goal:88*/ if err := os.MkdirAll(dir, 0o755); err != nil {
+		/*line main.goal:89*/ return err
 	}
-	files := []pipeline.GoFile{}
-	files = append(files, out.Files...)
-	files = append(files, out.Tests...)
-	for _, gf := range files {
-		p := filepath.Join(dir, gf.Name)
-		if err := os.WriteFile(p, []byte(gf.Go), 0o644); err != nil {
-			return err
+	/*line main.goal:91*/ files := []pipeline.GoFile{}
+	/*line main.goal:92*/ files = append(files, out.Files...)
+	/*line main.goal:93*/ files = append(files, out.Tests...)
+	/*line main.goal:94*/ for _, gf := range files {
+		/*line main.goal:95*/ p := filepath.Join(dir, gf.Name)
+		/*line main.goal:96*/ if err := os.WriteFile(p, []byte(gf.Go), 0o644); err != nil {
+			/*line main.goal:97*/ return err
 		}
-		fmt.Println("emitted", p)
+		/*line main.goal:99*/ fmt.Println("emitted", p)
 	}
-	return nil
+	/*line main.goal:101*/ return nil
 }

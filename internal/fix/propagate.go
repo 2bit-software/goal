@@ -13,235 +13,239 @@ import (
 
 //line propagate.goal:34
 func fixPropagate(src string, file *ast.File, info *sema.Info, decls map[string]string, changes *[]Change, reports *[]Report) []textedit.Replacement {
-	var reps []textedit.Replacement
+	/*line propagate.goal:35*/ var reps []textedit.Replacement
 
+	/*line propagate.goal:36*/
 	for _, fn := range resultOptionFuncs(file, info) {
-		isResult := isModeResult(info.FuncSignatures[fn.Name.Name].Mode)
-		sigT := info.FuncSignatures[fn.Name.Name].T
-		forEachBlock(fn.Body, func(list []ast.Stmt) {
-			for i := 0; i+1 < len(list); i++ {
-				as, ok := list[i].(*ast.AssignStmt)
-				if !ok {
-					continue
+		/*line propagate.goal:37*/ isResult := isModeResult(info.FuncSignatures[fn.Name.Name].Mode)
+		/*line propagate.goal:38*/ sigT := info.FuncSignatures[fn.Name.Name].T
+		/*line propagate.goal:39*/ forEachBlock(fn.Body, func(list []ast.Stmt) {
+			/*line propagate.goal:40*/ for i := 0; i+1 < len(list); i++ {
+				/*line propagate.goal:41*/ as, ok := list[i].(*ast.AssignStmt)
+				/*line propagate.goal:42*/ if !ok {
+					/*line propagate.goal:43*/ continue
 				}
-				ifs, ok := list[i+1].(*ast.IfStmt)
-				if !ok {
-					continue
+				/*line propagate.goal:45*/ ifs, ok := list[i+1].(*ast.IfStmt)
+				/*line propagate.goal:46*/ if !ok {
+					/*line propagate.goal:47*/ continue
 				}
-				rs := tryCollapseBinding(src, fn, as, ifs, isResult, sigT, decls, changes, reports)
-				reps = append(reps, rs...)
+				/*line propagate.goal:49*/ rs := tryCollapseBinding(src, fn, as, ifs, isResult, sigT, decls, changes, reports)
+				/*line propagate.goal:50*/ reps = append(reps, rs...)
 			}
 		})
 	}
-	return reps
+	/*line propagate.goal:54*/ return reps
 }
 
 //line propagate.goal:60
 func tryCollapseBinding(src string, fn *ast.FuncDecl, as *ast.AssignStmt, ifs *ast.IfStmt, isResult bool, sigT string, decls map[string]string, changes *[]Change, reports *[]Report) []textedit.Replacement {
-	if ifs.Init != nil || ifs.Else != nil {
-		return nil
+	/*line propagate.goal:63*/ if ifs.Init != nil || ifs.Else != nil {
+		/*line propagate.goal:64*/ return nil
 	}
-	condVar, ok := nilGuardVar(ifs.Cond, isResult)
-	if !ok {
-		return nil
+	/*line propagate.goal:66*/ condVar, ok := nilGuardVar(ifs.Cond, isResult)
+	/*line propagate.goal:67*/ if !ok {
+		/*line propagate.goal:68*/ return nil
 	}
-	if ifs.Body == nil || len(ifs.Body.List) != 1 {
-		return nil
+	/*line propagate.goal:71*/ if ifs.Body == nil || len(ifs.Body.List) != 1 {
+		/*line propagate.goal:72*/ return nil
 	}
-	ret, ok := ifs.Body.List[0].(*ast.ReturnStmt)
-	if !ok || !validPropagationReturn(src, ret, isResult, condVar, sigT, decls) {
-		return nil
+	/*line propagate.goal:74*/ ret, ok := ifs.Body.List[0].(*ast.ReturnStmt)
+	/*line propagate.goal:75*/ if !ok || !validPropagationReturn(src, ret, isResult, condVar, sigT, decls) {
+		/*line propagate.goal:76*/ return nil
 	}
-	if as.Tok != token.DEFINE || len(as.Rhs) == 0 {
-		return nil
+	/*line propagate.goal:80*/ if as.Tok != token.DEFINE || len(as.Rhs) == 0 {
+		/*line propagate.goal:81*/ return nil
 	}
-	value, ok := propagationLHS(as, condVar, isResult)
-	if !ok {
-		return nil
+	/*line propagate.goal:83*/ value, ok := propagationLHS(as, condVar, isResult)
+	/*line propagate.goal:84*/ if !ok {
+		/*line propagate.goal:85*/ return nil
 	}
-	if !adjacentSingleLine(src, as, ifs) {
-		return nil
+	/*line propagate.goal:87*/ if !adjacentSingleLine(src, as, ifs) {
+		/*line propagate.goal:88*/ return nil
 	}
-	ifLineStart := lineStartBefore(src, ifs.If.Offset)
-	if ifLineStart == 0 {
-		return nil
+	/*line propagate.goal:91*/ ifLineStart := lineStartBefore(src, ifs.If.Offset)
+	/*line propagate.goal:92*/ if ifLineStart == 0 {
+		/*line propagate.goal:93*/ return nil
 	}
-	bindLineStart := lineStartBefore(src, as.Pos().Offset)
-	if spanHasComment(src, bindLineStart, ifs.End().Offset) {
-		addReport(reports, Report{lineOf(src, ifs.If.Offset), Skip, "propagate", "propagation block has a comment; left as-is to avoid dropping it"})
-		return nil
+	/*line propagate.goal:95*/ bindLineStart := lineStartBefore(src, as.Pos().Offset)
+	/*line propagate.goal:98*/ if spanHasComment(src, bindLineStart, ifs.End().Offset) {
+		/*line propagate.goal:99*/ addReport(reports, Report{lineOf(src, ifs.If.Offset), Skip, "propagate", "propagation block has a comment; left as-is to avoid dropping it"})
+		/*line propagate.goal:101*/ return nil
 	}
-	rhs := strings.TrimSpace(src[as.Rhs[0].Pos().Offset:as.Rhs[len(as.Rhs)-1].End().Offset])
-	indent := indentOf(src, bindLineStart)
-	reps := []textedit.Replacement{{Start: bindLineStart, End: ifs.End().Offset, Text: indent + value + " := " + rhs + "?"}}
-	if !isResult {
-		derefReps, derefOK := optionDerefRewrites(fn, condVar, ifs.End().Offset)
-		if !derefOK {
-			addReport(reports, Report{lineOf(src, ifs.If.Offset), Skip, "propagate", "Option value used other than `*" + condVar + "`; left as-is"})
-			return nil
+	/*line propagate.goal:104*/ rhs := strings.TrimSpace(src[as.Rhs[0].Pos().Offset:as.Rhs[len(as.Rhs)-1].End().Offset])
+	/*line propagate.goal:105*/ indent := indentOf(src, bindLineStart)
+	/*line propagate.goal:106*/ reps := []textedit.Replacement{{Start: bindLineStart, End: ifs.End().Offset, Text: indent + value + " := " + rhs + "?"}}
+	/*line propagate.goal:113*/ if !isResult {
+		/*line propagate.goal:114*/ derefReps, derefOK := optionDerefRewrites(fn, condVar, ifs.End().Offset)
+		/*line propagate.goal:115*/ if !derefOK {
+			/*line propagate.goal:117*/ addReport(reports, Report{lineOf(src, ifs.If.Offset), Skip, "propagate", "Option value used other than `*" + condVar + "`; left as-is"})
+			/*line propagate.goal:119*/ return nil
 		}
-		reps = append(reps, derefReps...)
+		/*line propagate.goal:121*/ reps = append(reps, derefReps...)
 	}
-	addChange(changes, Change{lineOf(src, ifs.If.Offset), "propagate"})
-	return reps
+	/*line propagate.goal:123*/ addChange(changes, Change{lineOf(src, ifs.If.Offset), "propagate"})
+	/*line propagate.goal:124*/ return reps
 }
 
 //line propagate.goal:139
 func fixPropagateInit(src string, file *ast.File, info *sema.Info, decls map[string]string, changes *[]Change, reports *[]Report) []textedit.Replacement {
-	var reps []textedit.Replacement
+	/*line propagate.goal:140*/ var reps []textedit.Replacement
 
+	/*line propagate.goal:141*/
 	for _, fn := range resultOptionFuncs(file, info) {
-		if !isModeResult(info.FuncSignatures[fn.Name.Name].Mode) {
-			continue
+		/*line propagate.goal:142*/ if !isModeResult(info.FuncSignatures[fn.Name.Name].Mode) {
+			/*line propagate.goal:143*/ continue
 		}
-		sigT := info.FuncSignatures[fn.Name.Name].T
-		forEachBlock(fn.Body, func(list []ast.Stmt) {
-			for _, s := range list {
-				ifs, ok := s.(*ast.IfStmt)
-				if !ok || ifs.Init == nil || ifs.Else != nil {
-					continue
+		/*line propagate.goal:145*/ sigT := info.FuncSignatures[fn.Name.Name].T
+		/*line propagate.goal:146*/ forEachBlock(fn.Body, func(list []ast.Stmt) {
+			/*line propagate.goal:147*/ for _, s := range list {
+				/*line propagate.goal:148*/ ifs, ok := s.(*ast.IfStmt)
+				/*line propagate.goal:149*/ if !ok || ifs.Init == nil || ifs.Else != nil {
+					/*line propagate.goal:150*/ continue
 				}
-				init, ok := ifs.Init.(*ast.AssignStmt)
-				if !ok || init.Tok != token.DEFINE || len(init.Rhs) == 0 {
-					continue
+				/*line propagate.goal:152*/ init, ok := ifs.Init.(*ast.AssignStmt)
+				/*line propagate.goal:153*/ if !ok || init.Tok != token.DEFINE || len(init.Rhs) == 0 {
+					/*line propagate.goal:154*/ continue
 				}
-				condVar, ok := nilGuardVar(ifs.Cond, true)
-				if !ok {
-					continue
+				/*line propagate.goal:156*/ condVar, ok := nilGuardVar(ifs.Cond, true)
+				/*line propagate.goal:157*/ if !ok {
+					/*line propagate.goal:158*/ continue
 				}
-				names := identNames(init.Lhs)
-				if len(names) != 1 || names[0] != condVar {
-					continue
+				/*line propagate.goal:162*/ names := identNames(init.Lhs)
+				/*line propagate.goal:163*/ if len(names) != 1 || names[0] != condVar {
+					/*line propagate.goal:164*/ continue
 				}
-				if ifs.Body == nil || len(ifs.Body.List) != 1 {
-					continue
+				/*line propagate.goal:166*/ if ifs.Body == nil || len(ifs.Body.List) != 1 {
+					/*line propagate.goal:167*/ continue
 				}
-				ret, ok := ifs.Body.List[0].(*ast.ReturnStmt)
-				if !ok || !validPropagationReturn(src, ret, true, condVar, sigT, decls) {
-					continue
+				/*line propagate.goal:169*/ ret, ok := ifs.Body.List[0].(*ast.ReturnStmt)
+				/*line propagate.goal:170*/ if !ok || !validPropagationReturn(src, ret, true, condVar, sigT, decls) {
+					/*line propagate.goal:171*/ continue
 				}
-				if spanHasComment(src, ifs.If.Offset, ifs.End().Offset) {
-					addReport(reports, Report{lineOf(src, ifs.If.Offset), Skip, "propagate", "propagation block has a comment; left as-is to avoid dropping it"})
-					continue
+				/*line propagate.goal:173*/ if spanHasComment(src, ifs.If.Offset, ifs.End().Offset) {
+					/*line propagate.goal:174*/ addReport(reports, Report{lineOf(src, ifs.If.Offset), Skip, "propagate", "propagation block has a comment; left as-is to avoid dropping it"})
+					/*line propagate.goal:176*/ continue
 				}
-				rhs := strings.TrimSpace(src[init.Rhs[0].Pos().Offset:init.Rhs[len(init.Rhs)-1].End().Offset])
-				lineStart := lineStartBefore(src, ifs.If.Offset)
-				reps = append(reps, textedit.Replacement{Start: lineStart, End: ifs.End().Offset, Text: indentOf(src, lineStart) + rhs + "?"})
-				addChange(changes, Change{lineOf(src, ifs.If.Offset), "propagate"})
+				/*line propagate.goal:178*/ rhs := strings.TrimSpace(src[init.Rhs[0].Pos().Offset:init.Rhs[len(init.Rhs)-1].End().Offset])
+				/*line propagate.goal:179*/ lineStart := lineStartBefore(src, ifs.If.Offset)
+				/*line propagate.goal:180*/ reps = append(reps, textedit.Replacement{Start: lineStart, End: ifs.End().Offset, Text: indentOf(src, lineStart) + rhs + "?"})
+				/*line propagate.goal:185*/ addChange(changes, Change{lineOf(src, ifs.If.Offset), "propagate"})
 			}
 		})
 	}
-	return reps
+	/*line propagate.goal:189*/ return reps
 }
 
 //line propagate.goal:194
 func resultOptionFuncs(file *ast.File, info *sema.Info) []*ast.FuncDecl {
-	var fns []*ast.FuncDecl
+	/*line propagate.goal:195*/ var fns []*ast.FuncDecl
 
+	/*line propagate.goal:196*/
 	for _, d := range file.Decls {
-		fn, ok := d.(*ast.FuncDecl)
-		if !ok || fn.Name == nil || fn.Body == nil {
-			continue
+		/*line propagate.goal:197*/ fn, ok := d.(*ast.FuncDecl)
+		/*line propagate.goal:198*/ if !ok || fn.Name == nil || fn.Body == nil {
+			/*line propagate.goal:199*/ continue
 		}
-		m := info.FuncSignatures[fn.Name.Name].Mode
-		if isModeResult(m) || isModeOption(m) {
-			fns = append(fns, fn)
+		/*line propagate.goal:201*/ m := info.FuncSignatures[fn.Name.Name].Mode
+		/*line propagate.goal:202*/ if isModeResult(m) || isModeOption(m) {
+			/*line propagate.goal:203*/ fns = append(fns, fn)
 		}
 	}
-	return fns
+	/*line propagate.goal:206*/ return fns
 }
 
 //line propagate.goal:211
 func nilGuardVar(cond ast.Expr, isResult bool) (string, bool) {
-	bin, ok := cond.(*ast.BinaryExpr)
-	if !ok {
-		return "", false
+	/*line propagate.goal:212*/ bin, ok := cond.(*ast.BinaryExpr)
+	/*line propagate.goal:213*/ if !ok {
+		/*line propagate.goal:214*/ return "", false
 	}
-	wantOp := token.EQL
-	if isResult {
-		wantOp = token.NEQ
+	/*line propagate.goal:216*/ wantOp := token.EQL
+	/*line propagate.goal:217*/ if isResult {
+		/*line propagate.goal:218*/ wantOp = token.NEQ
 	}
-	if bin.Op != wantOp || identName(bin.Y) != "nil" {
-		return "", false
+	/*line propagate.goal:220*/ if bin.Op != wantOp || identName(bin.Y) != "nil" {
+		/*line propagate.goal:221*/ return "", false
 	}
-	v := identName(bin.X)
-	if v == "" {
-		return "", false
+	/*line propagate.goal:223*/ v := identName(bin.X)
+	/*line propagate.goal:224*/ if v == "" {
+		/*line propagate.goal:225*/ return "", false
 	}
-	return v, true
+	/*line propagate.goal:227*/ return v, true
 }
 
 //line propagate.goal:233
 func adjacentSingleLine(src string, as *ast.AssignStmt, ifs *ast.IfStmt) bool {
-	lo, hi := as.Pos().Offset, as.End().Offset
-	if lo < 0 || hi > len(src) || strings.ContainsRune(src[lo:hi], '\n') {
-		return false
+	/*line propagate.goal:234*/ lo, hi := as.Pos().Offset, as.End().Offset
+	/*line propagate.goal:235*/ if lo < 0 || hi > len(src) || strings.ContainsRune(src[lo:hi], '\n') {
+		/*line propagate.goal:236*/ return false
 	}
-	gap := src[as.End().Offset:ifs.If.Offset]
-	return strings.Count(gap, "\n") == 1 && strings.Trim(gap, " \t\n") == ""
+	/*line propagate.goal:238*/ gap := src[as.End().Offset:ifs.If.Offset]
+	/*line propagate.goal:239*/ return strings.Count(gap, "\n") == 1 && strings.Trim(gap, " \t\n") == ""
 }
 
 //line propagate.goal:246
 func validPropagationReturn(src string, ret *ast.ReturnStmt, isResult bool, condVar, successT string, decls map[string]string) bool {
-	ops := ret.Results
-	if isResult {
-		if len(ops) == 1 && isResultErrOf(ops[0], condVar) {
-			return true
+	/*line propagate.goal:247*/ ops := ret.Results
+	/*line propagate.goal:248*/ if isResult {
+		/*line propagate.goal:250*/ if len(ops) == 1 && isResultErrOf(ops[0], condVar) {
+			/*line propagate.goal:251*/ return true
 		}
-		if len(ops) != 2 || identName(ops[1]) != condVar {
-			return false
+		/*line propagate.goal:254*/ if len(ops) != 2 || identName(ops[1]) != condVar {
+			/*line propagate.goal:255*/ return false
 		}
-		zeroActual := nodeText(src, ops[0])
-		return zeroActual == textedit.ZeroLit(successT, decls, 0)
+		/*line propagate.goal:257*/ zeroActual := nodeText(src, ops[0])
+		/*line propagate.goal:258*/ return zeroActual == textedit.ZeroLit(successT, decls, 0)
 	}
-	if len(ops) != 1 {
-		return false
+	/*line propagate.goal:261*/ if len(ops) != 1 {
+		/*line propagate.goal:262*/ return false
 	}
-	return isSelector(ops[0], "Option", "None") || identName(ops[0]) == "nil"
+	/*line propagate.goal:264*/ return isSelector(ops[0], "Option", "None") || identName(ops[0]) == "nil"
 }
 
 //line propagate.goal:270
 func propagationLHS(as *ast.AssignStmt, condVar string, isResult bool) (value string, ok bool) {
-	names := identNames(as.Lhs)
-	if names == nil {
-		return "", false
+	/*line propagate.goal:271*/ names := identNames(as.Lhs)
+	/*line propagate.goal:272*/ if names == nil {
+		/*line propagate.goal:273*/ return "", false
 	}
-	if isResult {
-		if len(names) != 2 || names[1] != condVar {
-			return "", false
+	/*line propagate.goal:275*/ if isResult {
+		/*line propagate.goal:276*/ if len(names) != 2 || names[1] != condVar {
+			/*line propagate.goal:277*/ return "", false
 		}
-		return names[0], true
+		/*line propagate.goal:279*/ return names[0], true
 	}
-	if len(names) != 1 || names[0] != condVar {
-		return "", false
+	/*line propagate.goal:281*/ if len(names) != 1 || names[0] != condVar {
+		/*line propagate.goal:282*/ return "", false
 	}
-	return names[0], true
+	/*line propagate.goal:284*/ return names[0], true
 }
 
 //line propagate.goal:291
 func optionDerefRewrites(fn *ast.FuncDecl, optVar string, from int) (reps []textedit.Replacement, ok bool) {
-	derefAt := map[int]*ast.StarExpr{}
-	var uses []*ast.Ident
+	/*line propagate.goal:292*/ derefAt := map[int]*ast.StarExpr{}
+	/*line propagate.goal:293*/ var uses []*ast.Ident
 
+	/*line propagate.goal:294*/
 	ast.Walk(visitFn(func(n ast.Node) bool {
-		switch x := n.(type) {
+		/*line propagate.goal:295*/ switch x := n.(type) {
 		case *ast.StarExpr:
 			if id, ok := x.X.(*ast.Ident); ok && id.Name == optVar && id.Pos().Offset >= from {
-				derefAt[id.Pos().Offset] = x
+				/*line propagate.goal:298*/ derefAt[id.Pos().Offset] = x
 			}
 		case *ast.Ident:
 			if x.Name == optVar && x.Pos().Offset >= from {
-				uses = append(uses, x)
+				/*line propagate.goal:302*/ uses = append(uses, x)
 			}
 		}
-		return true
+		/*line propagate.goal:305*/ return true
 	}), fn.Body)
-	for _, id := range uses {
-		st, isDeref := derefAt[id.Pos().Offset]
-		if !isDeref {
-			return nil, false
+	/*line propagate.goal:308*/ for _, id := range uses {
+		/*line propagate.goal:309*/ st, isDeref := derefAt[id.Pos().Offset]
+		/*line propagate.goal:310*/ if !isDeref {
+			/*line propagate.goal:311*/ return nil, false
 		}
-		reps = append(reps, textedit.Replacement{Start: st.Star.Offset, End: id.End().Offset, Text: optVar})
+		/*line propagate.goal:313*/ reps = append(reps, textedit.Replacement{Start: st.Star.Offset, End: id.End().Offset, Text: optVar})
 	}
-	return reps, true
+	/*line propagate.goal:315*/ return reps, true
 }

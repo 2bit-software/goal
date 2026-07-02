@@ -12,96 +12,96 @@ import (
 
 //line format.goal:37
 func Source(src string) (string, error) {
-	if _, err := parser.ParseFile(src); err != nil {
-		return "", err
+	/*line format.goal:38*/ if _, err := parser.ParseFile(src); err != nil {
+		/*line format.goal:39*/ return "", err
 	}
-	return reindent(src), nil
+	/*line format.goal:41*/ return reindent(src), nil
 }
 
 //line format.goal:48
 func reindent(src string) string {
-	lines := strings.Split(src, "\n")
-	n := len(lines)
-	startDepth := make([]int, n+2)
-	firstCloser := make([]bool, n+2)
-	seen := make([]bool, n+2)
-	protected := make([]bool, n+2)
-	noTrimRight := make([]bool, n+2)
-	depth := 0
-	for _, t := range lexer.Tokens(src) {
-		if t.Kind == token.EOF {
-			break
+	/*line format.goal:49*/ lines := strings.Split(src, "\n")
+	/*line format.goal:50*/ n := len(lines)
+	/*line format.goal:53*/ startDepth := make([]int, n+2)
+	/*line format.goal:54*/ firstCloser := make([]bool, n+2)
+	/*line format.goal:55*/ seen := make([]bool, n+2)
+	/*line format.goal:56*/ protected := make([]bool, n+2)
+	/*line format.goal:57*/ noTrimRight := make([]bool, n+2)
+	/*line format.goal:59*/ depth := 0
+	/*line format.goal:60*/ for _, t := range lexer.Tokens(src) {
+		/*line format.goal:61*/ if t.Kind == token.EOF {
+			/*line format.goal:62*/ break
 		}
-		line := t.Pos.Line
-		if line >= 1 && line <= n && !seen[line] {
-			seen[line] = true
-			startDepth[line] = depth
-			firstCloser[line] = isCloser(t.Kind)
+		/*line format.goal:64*/ line := t.Pos.Line
+		/*line format.goal:65*/ if line >= 1 && line <= n && !seen[line] {
+			/*line format.goal:66*/ seen[line] = true
+			/*line format.goal:67*/ startDepth[line] = depth
+			/*line format.goal:68*/ firstCloser[line] = isCloser(t.Kind)
 		}
-		if nl := strings.Count(t.Lit, "\n"); nl > 0 && line >= 1 {
-			if line <= n {
-				noTrimRight[line] = true
+		/*line format.goal:73*/ if nl := strings.Count(t.Lit, "\n"); nl > 0 && line >= 1 {
+			/*line format.goal:74*/ if line <= n {
+				/*line format.goal:75*/ noTrimRight[line] = true
 			}
-			for i := 1; i <= nl && line+i <= n; i++ {
-				protected[line+i] = true
+			/*line format.goal:77*/ for i := 1; i <= nl && line+i <= n; i++ {
+				/*line format.goal:78*/ protected[line+i] = true
 			}
 		}
-		switch {
+		/*line format.goal:81*/ switch {
 		case isOpener(t.Kind):
 			depth++
 		case isCloser(t.Kind):
 			depth--
 		}
 	}
-	out := make([]string, 0, n)
-	for i := 1; i <= n; i++ {
-		raw := lines[i-1]
-		if protected[i] {
-			out = append(out, raw)
-			continue
+	/*line format.goal:89*/ out := make([]string, 0, n)
+	/*line format.goal:90*/ for i := 1; i <= n; i++ {
+		/*line format.goal:91*/ raw := lines[i-1]
+		/*line format.goal:92*/ if protected[i] {
+			/*line format.goal:93*/ out = append(out, raw)
+			/*line format.goal:94*/ continue
 		}
-		body := strings.TrimLeft(raw, " \t")
-		if !noTrimRight[i] {
-			body = strings.TrimRight(body, " \t")
+		/*line format.goal:96*/ body := strings.TrimLeft(raw, " \t")
+		/*line format.goal:97*/ if !noTrimRight[i] {
+			/*line format.goal:98*/ body = strings.TrimRight(body, " \t")
 		}
-		if body == "" {
-			out = append(out, "")
-			continue
+		/*line format.goal:100*/ if body == "" {
+			/*line format.goal:101*/ out = append(out, "")
+			/*line format.goal:102*/ continue
 		}
-		d := startDepth[i]
-		if firstCloser[i] && d > 0 {
-			d--
+		/*line format.goal:104*/ d := startDepth[i]
+		/*line format.goal:105*/ if firstCloser[i] && d > 0 {
+			/*line format.goal:106*/ d--
 		}
-		out = append(out, strings.Repeat("\t", d)+body)
+		/*line format.goal:108*/ out = append(out, strings.Repeat("\t", d)+body)
 	}
-	out = collapseBlanks(out)
-	return strings.Join(out, "\n") + "\n"
+	/*line format.goal:111*/ out = collapseBlanks(out)
+	/*line format.goal:112*/ return strings.Join(out, "\n") + "\n"
 }
 
 //line format.goal:118
 func collapseBlanks(lines []string) []string {
-	out := make([]string, 0, len(lines))
-	prevBlank := true
-	for _, ln := range lines {
-		blank := ln == ""
-		if blank && prevBlank {
-			continue
+	/*line format.goal:119*/ out := make([]string, 0, len(lines))
+	/*line format.goal:120*/ prevBlank := true
+	/*line format.goal:121*/ for _, ln := range lines {
+		/*line format.goal:122*/ blank := ln == ""
+		/*line format.goal:123*/ if blank && prevBlank {
+			/*line format.goal:124*/ continue
 		}
-		out = append(out, ln)
-		prevBlank = blank
+		/*line format.goal:126*/ out = append(out, ln)
+		/*line format.goal:127*/ prevBlank = blank
 	}
-	for len(out) > 0 && out[len(out)-1] == "" {
-		out = out[:len(out)-1]
+	/*line format.goal:129*/ for len(out) > 0 && out[len(out)-1] == "" {
+		/*line format.goal:130*/ out = out[:len(out)-1]
 	}
-	return out
+	/*line format.goal:132*/ return out
 }
 
 //line format.goal:136
 func isOpener(k token.Kind) bool {
-	return k == token.LPAREN || k == token.LBRACK || k == token.LBRACE
+	/*line format.goal:137*/ return k == token.LPAREN || k == token.LBRACK || k == token.LBRACE
 }
 
 //line format.goal:141
 func isCloser(k token.Kind) bool {
-	return k == token.RPAREN || k == token.RBRACK || k == token.RBRACE
+	/*line format.goal:142*/ return k == token.RPAREN || k == token.RBRACK || k == token.RBRACE
 }

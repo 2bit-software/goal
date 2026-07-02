@@ -10,37 +10,37 @@ import (
 
 //line goal_construct.goal:25
 func (p *parser) parseCallArg() ast.Expr {
-	if p.at(token.IDENT) && p.peekKind() == token.COLON {
-		label := p.ident()
-		colon := p.expect(token.COLON)
-		return &ast.LabeledArg{Label: label, Colon: colon.Pos, Value: p.parseExpr()}
+	/*line goal_construct.goal:26*/ if p.at(token.IDENT) && p.peekKind() == token.COLON {
+		/*line goal_construct.goal:27*/ label := p.ident()
+		/*line goal_construct.goal:28*/ colon := p.expect(token.COLON)
+		/*line goal_construct.goal:29*/ return &ast.LabeledArg{Label: label, Colon: colon.Pos, Value: p.parseExpr()}
 	}
-	return p.parseExpr()
+	/*line goal_construct.goal:31*/ return p.parseExpr()
 }
 
 //line goal_construct.goal:38
 func (p *parser) makeVariantLit(fun ast.Expr, lparen token.Pos, args []ast.Expr, rparen token.Pos) *ast.VariantLit {
-	vl := &ast.VariantLit{Lparen: lparen, Args: args, Rparen: rparen}
-	switch v := fun.(type) {
+	/*line goal_construct.goal:39*/ vl := &ast.VariantLit{Lparen: lparen, Args: args, Rparen: rparen}
+	/*line goal_construct.goal:40*/ switch v := fun.(type) {
 	case *ast.SelectorExpr:
 		{
-			vl.Enum = v.X
-			vl.Variant = v.Sel
+			/*line goal_construct.goal:42*/ vl.Enum = v.X
+			/*line goal_construct.goal:43*/ vl.Variant = v.Sel
 		}
 	case *ast.Ident:
 		{
-			vl.Variant = v
+			/*line goal_construct.goal:46*/ vl.Variant = v
 		}
 	default:
 		{
-			p.errorf(fun.Pos(), "invalid variant construction target %T", fun)
+			/*line goal_construct.goal:49*/ p.errorf(fun.Pos(), "invalid variant construction target %T", fun)
 		}
 	}
-	return vl
+	/*line goal_construct.goal:52*/ return vl
 }
 
 //line goal_construct.goal:58
 func (p *parser) parseSpreadElement() ast.Expr {
-	e := p.expect(token.ELLIPSIS)
-	return &ast.SpreadElement{Ellipsis: e.Pos, X: p.parseExpr()}
+	/*line goal_construct.goal:59*/ e := p.expect(token.ELLIPSIS)
+	/*line goal_construct.goal:60*/ return &ast.SpreadElement{Ellipsis: e.Pos, X: p.parseExpr()}
 }

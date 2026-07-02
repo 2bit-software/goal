@@ -13,53 +13,55 @@ import (
 
 //line doctest.goal:33
 func emitDoctests(f *ast.File, info *sema.Info, suppressPrelude bool) (src string, usedOption bool, err error) {
-	goalTest := renderDoctests(f)
-	if goalTest == "" {
-		return "", false, nil
+	/*line doctest.goal:34*/ goalTest := renderDoctests(f)
+	/*line doctest.goal:35*/ if goalTest == "" {
+		/*line doctest.goal:36*/ return "", false, nil
 	}
-	testFile, err := parser.ParseFile(goalTest)
-	if err != nil {
-		return "", false, fmt.Errorf("doctest sidecar parse: %w\n--- rendered ---\n%s", err, goalTest)
+	/*line doctest.goal:38*/ testFile, err := parser.ParseFile(goalTest)
+	/*line doctest.goal:39*/ if err != nil {
+		/*line doctest.goal:40*/ return "", false, fmt.Errorf("doctest sidecar parse: %w\n--- rendered ---\n%s", err, goalTest)
 	}
-	return emitFileWith(testFile, info, suppressPrelude)
+	/*line doctest.goal:46*/ return emitFileWith(testFile, info, suppressPrelude, "")
 }
 
-//line doctest.goal:53
+//line doctest.goal:57
 func renderDoctests(f *ast.File) string {
-	pkg := "main"
-	if f != nil && f.Name != nil {
-		pkg = f.Name.Name
+	/*line doctest.goal:58*/ pkg := "main"
+	/*line doctest.goal:59*/ if f != nil && f.Name != nil {
+		/*line doctest.goal:60*/ pkg = f.Name.Name
 	}
-	var body strings.Builder
+	/*line doctest.goal:63*/ var body strings.Builder
 
+	/*line doctest.goal:64*/
 	counts := map[string]int{}
-	for _, d := range f.Decls {
-		fd, ok := d.(*ast.FuncDecl)
-		if !ok || fd.Name == nil || fd.Doc == nil || len(fd.Doc.Doctests) == 0 {
-			continue
+	/*line doctest.goal:65*/ for _, d := range f.Decls {
+		/*line doctest.goal:66*/ fd, ok := d.(*ast.FuncDecl)
+		/*line doctest.goal:67*/ if !ok || fd.Name == nil || fd.Doc == nil || len(fd.Doc.Doctests) == 0 {
+			/*line doctest.goal:68*/ continue
 		}
-		fn := fd.Name.Name
-		for _, dt := range fd.Doc.Doctests {
-			expr := strings.TrimSpace(dt.Input)
-			want := strings.TrimSpace(strings.Join(dt.Expected, "\n"))
-			if expr == "" || want == "" {
-				continue
+		/*line doctest.goal:70*/ fn := fd.Name.Name
+		/*line doctest.goal:71*/ for _, dt := range fd.Doc.Doctests {
+			/*line doctest.goal:72*/ expr := strings.TrimSpace(dt.Input)
+			/*line doctest.goal:73*/ want := strings.TrimSpace(strings.Join(dt.Expected, "\n"))
+			/*line doctest.goal:74*/ if expr == "" || want == "" {
+				/*line doctest.goal:75*/ continue
 			}
-			counts[fn]++
-			fmt.Fprintf(&body, "\nfunc TestDoctest_%s_%d(t *testing.T) {\n", fn, counts[fn])
-			fmt.Fprintf(&body, "\tgot := %s\n", expr)
-			fmt.Fprintf(&body, "\twant := %s\n", want)
-			fmt.Fprintf(&body, "\tif got != want {\n")
-			fmt.Fprintf(&body, "\t\tt.Errorf(\"doctest %s: got %%v, want %%v\", got, want)\n", fn)
-			fmt.Fprintf(&body, "\t}\n}\n")
+			/*line doctest.goal:77*/ counts[fn]++
+			/*line doctest.goal:78*/ fmt.Fprintf(&body, "\nfunc TestDoctest_%s_%d(t *testing.T) {\n", fn, counts[fn])
+			/*line doctest.goal:79*/ fmt.Fprintf(&body, "\tgot := %s\n", expr)
+			/*line doctest.goal:80*/ fmt.Fprintf(&body, "\twant := %s\n", want)
+			/*line doctest.goal:81*/ fmt.Fprintf(&body, "\tif got != want {\n")
+			/*line doctest.goal:82*/ fmt.Fprintf(&body, "\t\tt.Errorf(\"doctest %s: got %%v, want %%v\", got, want)\n", fn)
+			/*line doctest.goal:83*/ fmt.Fprintf(&body, "\t}\n}\n")
 		}
 	}
-	if body.Len() == 0 {
-		return ""
+	/*line doctest.goal:86*/ if body.Len() == 0 {
+		/*line doctest.goal:87*/ return ""
 	}
-	var b strings.Builder
+	/*line doctest.goal:90*/ var b strings.Builder
 
+	/*line doctest.goal:91*/
 	fmt.Fprintf(&b, "package %s\n\nimport \"testing\"\n", pkg)
-	b.WriteString(body.String())
-	return b.String()
+	/*line doctest.goal:92*/ b.WriteString(body.String())
+	/*line doctest.goal:93*/ return b.String()
 }
