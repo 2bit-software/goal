@@ -1,6 +1,21 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- A doctest fixture is verified by TWO oracles: the compiled Go sidecar (go test)
+  AND the goscript INTERP gate. The interp models a `Result` as a single variant
+  Value, so `v, err := resultFn()` (two-value binding) FAILS under the interp
+  ("assignment has 2 targets but call returned 1 values") even though it compiles
+  fine in the backend (which tuple-lowers `Result[T,error]` to `(T,error)`). In a
+  doctest fixture, consume a `Result` via value-position `match`
+  (`match r { Result.Ok(v) => v; Result.Err(e) => ... }`), which both oracles
+  handle. `?` works in the interp. (found US-002)
+- To make a testdata transpile pair ALSO index as a doctest case (bumping the
+  doctest count), its `.go.expected` must be a doctest sidecar — isDoctestSidecar
+  keys on the file containing `"testing"` + `func Test`. Seed it with
+  `go run ./cmd/goalc -test file.goal > file.go.expected`, then regenerate via
+  corpus-gen + `TestUpdateGoldens -update-goldens`. The corpus manifest read by
+  tests is repo-root `corpus/manifest.json` (manifestPath "../../corpus/..."),
+  where cmd/corpus-gen writes by default. (found US-002)
 - To prove a generated artifact really behaves as documented, compile+run it in a
   throwaway `module goal` temp dir (os.MkdirTemp, write `go.mod` = `module goal\n\ngo
   1.26\n`, format.Source-validate each file, exec `go test`/`go build`, defer
@@ -7487,4 +7502,43 @@
     NOT from any skill. Both run green locally; fixpoint ends with "FIXPOINT OK".
   - pyyaml is not preinstalled here; `python3 -m pip install pyyaml` then
     yaml.safe_load validates a workflow file (the AC's parse check).
+---
+
+## 2026-07-02T02:22:00Z - US-002
+- Fixed `?` propagation at assignment position. `x = f()?` now lowers to an
+  assignment to the existing variable (was `:=`, which shadowed inside nested
+  blocks); `obj.f = f()?` and `a, b = f()?` are rejected instead of silently
+  discarding the unwrapped value.
+- internal/backend/emit.goal: threaded the assignment token (`s.Tok.String()`)
+  through unwrap/unwrapResult/unwrapOption/unwrapClosed; non-discard bind lines
+  use the token (`:=` output stays byte-identical), unwrapClosed skips the
+  `var lhs T` decl when the token is `=`; the AssignStmt `?` arm now e.fails on a
+  multi-value or non-identifier LHS instead of falling through to `name="_"`.
+- internal/sema/question.goal: new CheckQuestionAssignForm (per-index walk of
+  AssignStmt Rhs UnwrapExprs; flags len(Lhs)!=len(Rhs) or a non-*ast.Ident
+  target), registered in internal/sema/check.goal; catalog row
+  `question-assign-unsupported` in internal/guide/catalog.goal + bootstrap regen.
+- testdata/qprop_assign_eq.goal (doctest, transpile 55->56 / doctest 4->5),
+  testdata/check/05-question-prop/assign_lhs_unsupported.goal (check 53->54),
+  manifest + goldens regenerated, counts bumped in generate_test.go.
+- Learnings for future iterations:
+  - The goscript INTERP doctest gate (TestInterpRunner /
+    TestInterpWholeCorpusBehavioralGate) does NOT support two-value binding of a
+    `Result`-returning goal function: `v, err := resultFn()` fails with
+    "assignment has 2 targets but call returned 1 values" because the interp
+    models a `Result` as a single variant Value (only the compiled Go backend
+    tuple-lowers it). A doctest fixture that must run under BOTH the sidecar and
+    the interp must consume a `Result` via value-position `match`
+    (`match r { Result.Ok(v) => v; Result.Err(e) => ... }`), which the interp
+    evaluates natively. `?` itself works fine in the interp.
+  - To make a testdata transpile pair ALSO index as a doctest case, its
+    `.go.expected` must be a doctest sidecar (isDoctestSidecar checks for
+    `"testing"` + `func Test`). Seed it once with `go run ./cmd/goalc -test
+    file.goal > file.go.expected`, THEN `go run ./cmd/corpus-gen` +
+    `go test ./internal/corpus -run TestUpdateGoldens -update-goldens` rewrites
+    it canonically. `goalc -test` emits the doctest sidecar; bare `goalc` emits
+    the main lowering (use it to eyeball the `= ` vs `:= ` bind).
+  - The manifest read by the corpus tests lives at repo-root `corpus/manifest.json`
+    (const manifestPath = "../../corpus/manifest.json"), NOT internal/corpus/.
+    `cmd/corpus-gen` writes there by default.
 ---
