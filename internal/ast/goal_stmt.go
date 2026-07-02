@@ -52,12 +52,12 @@ type DocComment struct {
 //line goal_stmt.go:51
 func (DocComment) isNode() {}
 
-//line goal_stmt.goal:29
+//line goal_stmt.goal:56
 func (d *DocComment) Pos() token.Pos {
 	/*line goal_stmt.goal:56*/ return d.Slash
 }
 
-//line goal_stmt.goal:30
+//line goal_stmt.goal:57
 func (d *DocComment) End() token.Pos {
 	/*line goal_stmt.goal:58*/ n := 0
 	/*line goal_stmt.goal:59*/ if len(d.Lines) > 0 {

@@ -779,7 +779,7 @@ func (ip *Interp) evalUnary(u *ast.UnaryExpr, scope *Env) (Value, error) {
 	}
 }
 
-//line eval.goal:360
+//line eval.goal:957
 func zeroValue(typeExpr ast.Expr) Value {
 	/*line eval.goal:958*/ id, ok := typeExpr.(*ast.Ident)
 	/*line eval.goal:959*/ if !ok {

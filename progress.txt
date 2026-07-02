@@ -8822,3 +8822,10 @@
     "orphan" package's importers with `grep -rln '"module/path"' --include='*.go'`
     before deleting.
 ---
+
+## US-037 - Fix sourcemap method-receiver mapping
+- declName now folds the receiver base type into the mapping key (T.M) via a new recvBase helper (strips *StarExpr and *IndexExpr/*IndexListExpr to the base *Ident), so two same-named methods on different receivers anchor to their own //line instead of colliding first-wins on the bare method name.
+- declSites now surfaces its parser.ParseFile error; AddLineDirectives and declLines grew an error return, propagated at the backend/package.goal caller.
+- Replaced the per-decl strings.Count(src[:off]) full-rescan in declLines with an incremental newline counter (O(n) not O(n^2)); AddLineDirectives likewise tracks written newlines incrementally.
+- AC test in new internal/pipelinetest sibling pkg (pipeline is emitted, no in-tree _test.go). Regen churn: //line-only in ast/interp/parser/token generated .go where same-named methods exist. task check + task fixpoint green.
+- NOTE: implemented directly in the main loop context after three sub-agent delegations committed to a phantom environment whose git objects never reached the repo.

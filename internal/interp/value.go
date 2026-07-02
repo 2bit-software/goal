@@ -279,7 +279,7 @@ func variantEqual(a, b *Variant) bool {
 	/*line value.goal:306*/ return a.TypeID == b.TypeID && a.Tag == b.Tag && fieldsEqual(a.Fields, b.Fields)
 }
 
-//line value.goal:40
+//line value.goal:310
 func (v Value) String() string {
 	/*line value.goal:311*/ switch v.Kind {
 	case KindNil:

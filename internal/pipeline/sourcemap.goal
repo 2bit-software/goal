@@ -26,28 +26,37 @@ import (
 //
 // It is name-based and therefore engine-agnostic: both the splice front-end and the
 // AST backend (backend.TranspilePackage) apply it to their formatted Go output.
-func AddLineDirectives(goalSrc, genGo, goalFile, genFile string) string {
-	goalLine := declLines(goalSrc)
-	sites := declSites(genGo)
+func AddLineDirectives(goalSrc, genGo, goalFile, genFile string) (string, error) {
+	goalLine, err := declLines(goalSrc)
+	if err != nil {
+		return "", err
+	}
+	sites, err := declSites(genGo)
+	if err != nil {
+		return "", err
+	}
 	if len(sites) == 0 {
-		return genGo
+		return genGo, nil
 	}
 
 	var b strings.Builder
 	prev := 0
+	written := 0 // newlines already emitted to b (genGo text + injected directives)
 	for _, s := range sites {
 		b.WriteString(genGo[prev:s.off]) // text up to the decl (ends at a line start)
-		physical := strings.Count(b.String(), "\n") + 1 // line the directive occupies
+		written += strings.Count(genGo[prev:s.off], "\n")
+		physical := written + 1 // line the directive occupies
 		if ln, ok := goalLine[s.name]; ok {
 			fmt.Fprintf(&b, "//line %s:%d\n", goalFile, ln)
 		} else {
 			// Identity: the decl lands on the line after this directive (physical+1).
 			fmt.Fprintf(&b, "//line %s:%d\n", genFile, physical+1)
 		}
+		written++ // the directive's own trailing newline
 		prev = s.off
 	}
 	b.WriteString(genGo[prev:])
-	return b.String()
+	return b.String(), nil
 }
 
 // declSite is one top-level declaration: the byte offset where its keyword begins and
@@ -63,40 +72,59 @@ type declSite struct {
 // the generated Go output) and reads each declaration's keyword offset from the AST.
 // In gofmt'd Go every top-level declaration starts its own line, so the keyword
 // offset is a line start — the position a `//line` directive must precede.
-func declSites(src string) []declSite {
-	file, _ := parser.ParseFile(src)
+func declSites(src string) ([]declSite, error) {
+	file, err := parser.ParseFile(src)
+	if err != nil {
+		return nil, err
+	}
 	if file == nil {
-		return nil
+		return nil, nil
 	}
 	sites := make([]declSite, 0, len(file.Decls))
 	for _, d := range file.Decls {
 		sites = append(sites, declSite{off: d.Pos().Offset, name: declName(d)})
 	}
-	return sites
+	return sites, nil
 }
 
 // declLines maps each named top-level declaration in src to its 1-based line. On a
 // duplicate name the first wins (deterministic); unnamed decls are skipped.
-func declLines(src string) map[string]int {
+func declLines(src string) (map[string]int, error) {
+	sites, err := declSites(src)
+	if err != nil {
+		return nil, err
+	}
 	lines := map[string]int{}
-	for _, s := range declSites(src) {
+	prev := 0
+	physical := 1 // 1-based line of offset prev; advanced incrementally to avoid O(n^2)
+	for _, s := range sites {
+		physical += strings.Count(src[prev:s.off], "\n")
+		prev = s.off
 		if s.name == "" || s.name == "_" {
 			continue
 		}
 		if _, dup := lines[s.name]; !dup {
-			lines[s.name] = strings.Count(src[:s.off], "\n") + 1
+			lines[s.name] = physical
 		}
 	}
-	return lines
+	return lines, nil
 }
 
 // declName returns the name a top-level declaration introduces, or "" when there is
-// none to map (an import, or a grouped/multi-name const/var). A method's receiver is
-// not its name, so a FuncDecl maps to its function/method name directly.
+// none to map (an import, or a grouped/multi-name const/var). A method folds its
+// receiver's base type into the key (`T.M`), so two same-named methods on different
+// receivers anchor to their own source lines instead of colliding on the bare method
+// name; the receiver and the generated Go pass through the same declName, so the keys
+// agree by construction.
 func declName(d ast.Decl) string {
 	switch d := d.(type) {
 	case *ast.FuncDecl:
 		if d.Name != nil {
+			if d.Recv != nil && len(d.Recv.List) > 0 {
+				if base := recvBase(d.Recv.List[0].Type); base != "" {
+					return base + "." + d.Name.Name
+				}
+			}
 			return d.Name.Name
 		}
 	case *ast.EnumDecl:
@@ -123,6 +151,26 @@ func declName(d ast.Decl) string {
 				return s.Names[0].Name
 			}
 		}
+	}
+	return ""
+}
+
+// recvBase returns a method receiver's base type name with the pointer star and any
+// type arguments stripped, so `func (t T) M`, `func (t *T) M`, and the generic
+// `func (t T[A]) M` all key to the same `T`. Pointer and value forms must normalize to
+// one key: a value receiver in the .goal source and a pointer receiver in the generated
+// Go (or vice versa) would otherwise key differently and silently regress the method to
+// identity mapping. Returns "" for any receiver shape without an *ast.Ident base.
+func recvBase(e ast.Expr) string {
+	switch e := e.(type) {
+	case *ast.StarExpr:
+		return recvBase(e.X)
+	case *ast.IndexExpr:
+		return recvBase(e.X)
+	case *ast.IndexListExpr:
+		return recvBase(e.X)
+	case *ast.Ident:
+		return e.Name
 	}
 	return ""
 }

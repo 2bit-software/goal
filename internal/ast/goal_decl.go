@@ -58,7 +58,7 @@ type Variant struct {
 //line goal_decl.go:57
 func (Variant) isNode() {}
 
-//line goal_decl.goal:40
+//line goal_decl.goal:55
 func (v *Variant) Pos() token.Pos {
 	/*line goal_decl.goal:56*/ if v.Name != nil {
 		/*line goal_decl.goal:57*/ return v.Name.Pos()
@@ -66,7 +66,7 @@ func (v *Variant) Pos() token.Pos {
 	/*line goal_decl.goal:59*/ return v.Lbrace
 }
 
-//line goal_decl.goal:41
+//line goal_decl.goal:61
 func (v *Variant) End() token.Pos {
 	/*line goal_decl.goal:62*/ if v.Rbrace != (token.Pos{}) {
 		/*line goal_decl.goal:63*/ return token.Pos{Offset: v.Rbrace.Offset + 1, Line: v.Rbrace.Line, Col: v.Rbrace.Col + 1}
@@ -86,7 +86,7 @@ type PayloadField struct {
 //line goal_decl.go:85
 func (PayloadField) isNode() {}
 
-//line goal_decl.goal:40
+//line goal_decl.goal:77
 func (f *PayloadField) Pos() token.Pos {
 	/*line goal_decl.goal:78*/ if f.Name != nil {
 		/*line goal_decl.goal:79*/ return f.Name.Pos()
@@ -97,7 +97,7 @@ func (f *PayloadField) Pos() token.Pos {
 	/*line goal_decl.goal:84*/ return token.Pos{}
 }
 
-//line goal_decl.goal:41
+//line goal_decl.goal:86
 func (f *PayloadField) End() token.Pos {
 	/*line goal_decl.goal:87*/ if f.Type != nil {
 		/*line goal_decl.goal:88*/ return f.Type.End()
@@ -122,12 +122,12 @@ func (SealedInterfaceDecl) isDecl() {}
 //line goal_decl.go:121
 func (SealedInterfaceDecl) isNode() {}
 
-//line goal_decl.goal:40
+//line goal_decl.goal:107
 func (d *SealedInterfaceDecl) Pos() token.Pos {
 	/*line goal_decl.goal:107*/ return d.Sealed
 }
 
-//line goal_decl.goal:41
+//line goal_decl.goal:108
 func (d *SealedInterfaceDecl) End() token.Pos {
 	/*line goal_decl.goal:109*/ if d.Methods != nil {
 		/*line goal_decl.goal:110*/ return d.Methods.End()
@@ -147,12 +147,12 @@ type ImplementsClause struct {
 //line goal_decl.go:146
 func (ImplementsClause) isNode() {}
 
-//line goal_decl.goal:40
+//line goal_decl.goal:127
 func (c *ImplementsClause) Pos() token.Pos {
 	/*line goal_decl.goal:127*/ return c.Implements
 }
 
-//line goal_decl.goal:41
+//line goal_decl.goal:128
 func (c *ImplementsClause) End() token.Pos {
 	/*line goal_decl.goal:129*/ if c.Type != nil {
 		/*line goal_decl.goal:130*/ return c.Type.End()

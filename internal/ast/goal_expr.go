@@ -40,7 +40,7 @@ type MatchArm struct {
 //line goal_expr.go:39
 func (MatchArm) isNode() {}
 
-//line goal_expr.goal:30
+//line goal_expr.goal:46
 func (a *MatchArm) Pos() token.Pos {
 	/*line goal_expr.goal:47*/ if a.Pattern != nil {
 		/*line goal_expr.goal:48*/ return a.Pattern.Pos()
@@ -48,7 +48,7 @@ func (a *MatchArm) Pos() token.Pos {
 	/*line goal_expr.goal:50*/ return a.Arrow
 }
 
-//line goal_expr.goal:31
+//line goal_expr.goal:52
 func (a *MatchArm) End() token.Pos {
 	/*line goal_expr.goal:53*/ if a.Body != nil {
 		/*line goal_expr.goal:54*/ return a.Body.End()
@@ -71,7 +71,7 @@ func (VariantPattern) isExpr() {}
 //line goal_expr.go:70
 func (VariantPattern) isNode() {}
 
-//line goal_expr.goal:30
+//line goal_expr.goal:73
 func (p *VariantPattern) Pos() token.Pos {
 	/*line goal_expr.goal:74*/ if p.Enum != nil {
 		/*line goal_expr.goal:75*/ return p.Enum.Pos()
@@ -82,7 +82,7 @@ func (p *VariantPattern) Pos() token.Pos {
 	/*line goal_expr.goal:80*/ return token.Pos{}
 }
 
-//line goal_expr.goal:31
+//line goal_expr.goal:82
 func (p *VariantPattern) End() token.Pos {
 	/*line goal_expr.goal:83*/ if p.Rparen != (token.Pos{}) {
 		/*line goal_expr.goal:84*/ return token.Pos{Offset: p.Rparen.Offset + 1, Line: p.Rparen.Line, Col: p.Rparen.Col + 1}
@@ -107,12 +107,12 @@ func (RestPattern) isExpr() {}
 //line goal_expr.go:106
 func (RestPattern) isNode() {}
 
-//line goal_expr.goal:30
+//line goal_expr.goal:101
 func (p *RestPattern) Pos() token.Pos {
 	/*line goal_expr.goal:101*/ return p.Underscore
 }
 
-//line goal_expr.goal:31
+//line goal_expr.goal:102
 func (p *RestPattern) End() token.Pos {
 	/*line goal_expr.goal:103*/ return token.Pos{Offset: p.Underscore.Offset + 1, Line: p.Underscore.Line, Col: p.Underscore.Col + 1}
 }
@@ -131,7 +131,7 @@ func (TypePattern) isExpr() {}
 //line goal_expr.go:130
 func (TypePattern) isNode() {}
 
-//line goal_expr.goal:30
+//line goal_expr.goal:121
 func (p *TypePattern) Pos() token.Pos {
 	/*line goal_expr.goal:122*/ if p.Type != nil {
 		/*line goal_expr.goal:123*/ return p.Type.Pos()
@@ -139,7 +139,7 @@ func (p *TypePattern) Pos() token.Pos {
 	/*line goal_expr.goal:125*/ return token.Pos{}
 }
 
-//line goal_expr.goal:31
+//line goal_expr.goal:127
 func (p *TypePattern) End() token.Pos {
 	/*line goal_expr.goal:128*/ if p.Rparen != (token.Pos{}) {
 		/*line goal_expr.goal:129*/ return token.Pos{Offset: p.Rparen.Offset + 1, Line: p.Rparen.Line, Col: p.Rparen.Col + 1}
@@ -165,7 +165,7 @@ func (UnwrapExpr) isExpr() {}
 //line goal_expr.go:164
 func (UnwrapExpr) isNode() {}
 
-//line goal_expr.goal:30
+//line goal_expr.goal:148
 func (e *UnwrapExpr) Pos() token.Pos {
 	/*line goal_expr.goal:149*/ if e.X != nil {
 		/*line goal_expr.goal:150*/ return e.X.Pos()
@@ -173,7 +173,7 @@ func (e *UnwrapExpr) Pos() token.Pos {
 	/*line goal_expr.goal:152*/ return e.Question
 }
 
-//line goal_expr.goal:31
+//line goal_expr.goal:154
 func (e *UnwrapExpr) End() token.Pos {
 	/*line goal_expr.goal:155*/ return token.Pos{Offset: e.Question.Offset + 1, Line: e.Question.Line, Col: e.Question.Col + 1}
 }
@@ -193,7 +193,7 @@ func (VariantLit) isExpr() {}
 //line goal_expr.go:192
 func (VariantLit) isNode() {}
 
-//line goal_expr.goal:30
+//line goal_expr.goal:171
 func (e *VariantLit) Pos() token.Pos {
 	/*line goal_expr.goal:172*/ if e.Enum != nil {
 		/*line goal_expr.goal:173*/ return e.Enum.Pos()
@@ -204,7 +204,7 @@ func (e *VariantLit) Pos() token.Pos {
 	/*line goal_expr.goal:178*/ return token.Pos{}
 }
 
-//line goal_expr.goal:31
+//line goal_expr.goal:180
 func (e *VariantLit) End() token.Pos {
 	/*line goal_expr.goal:181*/ if e.Rparen != (token.Pos{}) {
 		/*line goal_expr.goal:182*/ return token.Pos{Offset: e.Rparen.Offset + 1, Line: e.Rparen.Line, Col: e.Rparen.Col + 1}
@@ -228,7 +228,7 @@ func (LabeledArg) isExpr() {}
 //line goal_expr.go:227
 func (LabeledArg) isNode() {}
 
-//line goal_expr.goal:30
+//line goal_expr.goal:198
 func (e *LabeledArg) Pos() token.Pos {
 	/*line goal_expr.goal:199*/ if e.Label != nil {
 		/*line goal_expr.goal:200*/ return e.Label.Pos()
@@ -236,7 +236,7 @@ func (e *LabeledArg) Pos() token.Pos {
 	/*line goal_expr.goal:202*/ return e.Colon
 }
 
-//line goal_expr.goal:31
+//line goal_expr.goal:204
 func (e *LabeledArg) End() token.Pos {
 	/*line goal_expr.goal:205*/ if e.Value != nil {
 		/*line goal_expr.goal:206*/ return e.Value.End()
@@ -256,12 +256,12 @@ func (SpreadElement) isExpr() {}
 //line goal_expr.go:255
 func (SpreadElement) isNode() {}
 
-//line goal_expr.goal:30
+//line goal_expr.goal:218
 func (e *SpreadElement) Pos() token.Pos {
 	/*line goal_expr.goal:218*/ return e.Ellipsis
 }
 
-//line goal_expr.goal:31
+//line goal_expr.goal:219
 func (e *SpreadElement) End() token.Pos {
 	/*line goal_expr.goal:220*/ if e.X != nil {
 		/*line goal_expr.goal:221*/ return e.X.End()

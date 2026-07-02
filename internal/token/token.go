@@ -183,7 +183,7 @@ func (k Kind) IsOperator() bool {
 	/*line token.goal:309*/ return operatorBeg < k && k < operatorEnd
 }
 
-//line token.goal:300
+//line token.goal:312
 func (k Kind) IsKeyword() bool {
 	/*line token.goal:312*/ return keywordBeg < k && k < keywordEnd
 }
@@ -205,7 +205,7 @@ func (p Pos) IsValid() bool {
 	/*line token.goal:327*/ return p.Line > 0
 }
 
-//line token.goal:234
+//line token.goal:330
 func (p Pos) String() string {
 	/*line token.goal:330*/ return itoa(p.Line) + ":" + itoa(p.Col)
 }

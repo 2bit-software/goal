@@ -109,7 +109,7 @@ type Error struct {
 	Msg string
 }
 
-//line parser.goal:146
+//line parser.goal:152
 func (e *Error) Error() string {
 	/*line parser.goal:152*/ return e.Pos.String() + ": " + e.Msg
 }

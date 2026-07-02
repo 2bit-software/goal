@@ -34,7 +34,7 @@ func (returnSignal) Error() string {
 type breakSignal struct {
 }
 
-//line interp.goal:43
+//line interp.goal:52
 func (breakSignal) Error() string {
 	/*line interp.goal:52*/ return "interp: break outside loop or switch"
 }
@@ -43,7 +43,7 @@ func (breakSignal) Error() string {
 type continueSignal struct {
 }
 
-//line interp.goal:43
+//line interp.goal:61
 func (continueSignal) Error() string {
 	/*line interp.goal:61*/ return "interp: continue outside loop"
 }
@@ -53,7 +53,7 @@ type panicSignal struct {
 	value Value
 }
 
-//line interp.goal:43
+//line interp.goal:74
 func (p panicSignal) Error() string {
 	/*line interp.goal:74*/ return "interp: panic: " + p.value.String()
 }
@@ -110,7 +110,7 @@ type CapabilityError struct {
 	Pos token.Pos
 }
 
-//line interp.goal:43
+//line interp.goal:184
 func (e CapabilityError) Error() string {
 	/*line interp.goal:185*/ return fmt.Sprintf("interp: %s: capability denied: %s not granted", e.Pos.String(), e.Cap)
 }
