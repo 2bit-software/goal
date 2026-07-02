@@ -238,50 +238,18 @@ func isIdentExpr(e ast.Expr) bool {
 	/*line resultsig.goal:293*/ return ok
 }
 
-//line resultsig.goal:299
+//line resultsig.goal:301
 func walkReturns(block *ast.BlockStmt, f func(*ast.ReturnStmt)) {
-	/*line resultsig.goal:300*/ if block == nil {
-		/*line resultsig.goal:301*/ return
+	/*line resultsig.goal:302*/ if block == nil {
+		/*line resultsig.goal:303*/ return
 	}
-	/*line resultsig.goal:303*/ var visitStmt func(ast.Stmt)
-
-	/*line resultsig.goal:304*/
-	visitList := func(ss []ast.Stmt) {
-		/*line resultsig.goal:305*/ for _, s := range ss {
-			/*line resultsig.goal:306*/ visitStmt(s)
+	/*line resultsig.goal:305*/ ast.Walk(visitFn(func(n ast.Node) bool {
+		/*line resultsig.goal:306*/ if _, ok := n.(*ast.FuncLit); ok {
+			/*line resultsig.goal:307*/ return false
 		}
-	}
-	/*line resultsig.goal:309*/ visitStmt = func(s ast.Stmt) {
-		/*line resultsig.goal:310*/ switch s := s.(type) {
-		case *ast.ReturnStmt:
-			f(s)
-		case *ast.BlockStmt:
-			visitList(s.List)
-		case *ast.IfStmt:
-			if s.Init != nil {
-				/*line resultsig.goal:317*/ visitStmt(s.Init)
-			}
-			if s.Body != nil {
-				/*line resultsig.goal:320*/ visitList(s.Body.List)
-			}
-			if s.Else != nil {
-				/*line resultsig.goal:323*/ visitStmt(s.Else)
-			}
-		case *ast.ForStmt:
-			if s.Body != nil {
-				/*line resultsig.goal:327*/ visitList(s.Body.List)
-			}
-		case *ast.RangeStmt:
-			if s.Body != nil {
-				/*line resultsig.goal:331*/ visitList(s.Body.List)
-			}
-		case *ast.SwitchStmt:
-			if s.Body != nil {
-				/*line resultsig.goal:335*/ visitList(s.Body.List)
-			}
-		case *ast.CaseClause:
-			visitList(s.Body)
+		/*line resultsig.goal:309*/ if ret, ok := n.(*ast.ReturnStmt); ok {
+			/*line resultsig.goal:310*/ f(ret)
 		}
-	}
-	/*line resultsig.goal:341*/ visitList(block.List)
+		/*line resultsig.goal:312*/ return true
+	}), block)
 }

@@ -209,89 +209,113 @@ func descendStmt(s ast.Stmt, f func([]ast.Stmt)) {
 				}
 			}
 		}
+	case *ast.TypeSwitchStmt:
+		if s.Body != nil {
+			/*line fix.goal:254*/ for _, cc := range s.Body.List {
+				/*line fix.goal:255*/ if c, ok := cc.(*ast.CaseClause); ok {
+					/*line fix.goal:256*/ f(c.Body)
+					/*line fix.goal:257*/ for _, cs := range c.Body {
+						/*line fix.goal:258*/ descendStmt(cs, f)
+					}
+				}
+			}
+		}
+	case *ast.SelectStmt:
+		if s.Body != nil {
+			/*line fix.goal:265*/ for _, cc := range s.Body.List {
+				/*line fix.goal:266*/ if c, ok := cc.(*ast.CommClause); ok {
+					/*line fix.goal:267*/ f(c.Body)
+					/*line fix.goal:268*/ for _, cs := range c.Body {
+						/*line fix.goal:269*/ descendStmt(cs, f)
+					}
+				}
+			}
+		}
+	case *ast.LabeledStmt:
+		descendStmt(s.Stmt, f)
 	}
-}
-
-//line fix.goal:257
-type visitFn func(ast.Node) bool
-
-//line fix.goal:259
-func (f visitFn) Visit(n ast.Node) ast.Visitor {
-	/*line fix.goal:260*/ if n == nil {
-		/*line fix.goal:261*/ return nil
-	}
-	/*line fix.goal:263*/ if f(n) {
-		/*line fix.goal:264*/ return f
-	}
-	/*line fix.goal:266*/ return nil
-}
-
-//line fix.goal:273
-func lineOf(src string, off int) int {
-	/*line fix.goal:274*/ if off > len(src) {
-		/*line fix.goal:275*/ off = len(src)
-	}
-	/*line fix.goal:277*/ return strings.Count(src[:off], "\n") + 1
 }
 
 //line fix.goal:281
-func indentOf(src string, lineStart int) string {
-	/*line fix.goal:282*/ end := lineStart
-	/*line fix.goal:283*/ for end < len(src) && (src[end] == ' ' || src[end] == '\t') {
-		/*line fix.goal:284*/ end++
-	}
-	/*line fix.goal:286*/ return src[lineStart:end]
-}
+type visitFn func(ast.Node) bool
 
-//line fix.goal:290
-func lineStartBefore(src string, off int) int {
-	/*line fix.goal:291*/ return strings.LastIndexByte(src[:off], '\n') + 1
+//line fix.goal:283
+func (f visitFn) Visit(n ast.Node) ast.Visitor {
+	/*line fix.goal:284*/ if n == nil {
+		/*line fix.goal:285*/ return nil
+	}
+	/*line fix.goal:287*/ if f(n) {
+		/*line fix.goal:288*/ return f
+	}
+	/*line fix.goal:290*/ return nil
 }
 
 //line fix.goal:297
-func spanHasComment(src string, lo, hi int) bool {
-	/*line fix.goal:298*/ if lo < 0 || hi > len(src) || lo > hi {
-		/*line fix.goal:299*/ return false
+func lineOf(src string, off int) int {
+	/*line fix.goal:298*/ if off > len(src) {
+		/*line fix.goal:299*/ off = len(src)
 	}
-	/*line fix.goal:301*/ s := src[lo:hi]
-	/*line fix.goal:302*/ return strings.Contains(s, "//") || strings.Contains(s, "/*")
+	/*line fix.goal:301*/ return strings.Count(src[:off], "\n") + 1
 }
 
-//line fix.goal:306
-func isExported(name string) bool {
-	/*line fix.goal:307*/ return name != "" && name[0] >= 'A' && name[0] <= 'Z'
+//line fix.goal:305
+func indentOf(src string, lineStart int) string {
+	/*line fix.goal:306*/ end := lineStart
+	/*line fix.goal:307*/ for end < len(src) && (src[end] == ' ' || src[end] == '\t') {
+		/*line fix.goal:308*/ end++
+	}
+	/*line fix.goal:310*/ return src[lineStart:end]
 }
 
-//line fix.goal:317
-func addReport(reports *[]Report, r Report) {
-	/*line fix.goal:318*/ *reports = append(*reports, r)
+//line fix.goal:314
+func lineStartBefore(src string, off int) int {
+	/*line fix.goal:315*/ return strings.LastIndexByte(src[:off], '\n') + 1
 }
 
 //line fix.goal:321
+func spanHasComment(src string, lo, hi int) bool {
+	/*line fix.goal:322*/ if lo < 0 || hi > len(src) || lo > hi {
+		/*line fix.goal:323*/ return false
+	}
+	/*line fix.goal:325*/ s := src[lo:hi]
+	/*line fix.goal:326*/ return strings.Contains(s, "//") || strings.Contains(s, "/*")
+}
+
+//line fix.goal:330
+func isExported(name string) bool {
+	/*line fix.goal:331*/ return name != "" && name[0] >= 'A' && name[0] <= 'Z'
+}
+
+//line fix.goal:341
+func addReport(reports *[]Report, r Report) {
+	/*line fix.goal:342*/ *reports = append(*reports, r)
+}
+
+//line fix.goal:345
 func addChange(changes *[]Change, c Change) {
-	/*line fix.goal:322*/ *changes = append(*changes, c)
+	/*line fix.goal:346*/ *changes = append(*changes, c)
 }
 
-//line fix.goal:332
+//line fix.goal:356
 func isModeNone(m sema.Mode) bool {
-	/*line fix.goal:332*/ _, ok := m.(sema.Mode_ModeNone)
-	/*line fix.goal:332*/
-	/*line fix.goal:332*/
+	/*line fix.goal:356*/ _, ok := m.(sema.Mode_ModeNone)
+	/*line fix.goal:356*/
+	/*line fix.goal:356*/
 	return ok
 }
 
-//line fix.goal:333
+//line fix.goal:357
 func isModeResult(m sema.Mode) bool {
-	/*line fix.goal:333*/ _, ok := m.(sema.Mode_ModeResult)
-	/*line fix.goal:333*/
-	/*line fix.goal:333*/
+	/*line fix.goal:357*/ _, ok := m.(sema.Mode_ModeResult)
+	/*line fix.goal:357*/
+	/*line fix.goal:357*/
 	return ok
 }
 
-//line fix.goal:334
+//line fix.goal:358
 func isModeOption(m sema.Mode) bool {
-	/*line fix.goal:334*/ _, ok := m.(sema.Mode_ModeOption)
-	/*line fix.goal:334*/
-	/*line fix.goal:334*/
+	/*line fix.goal:358*/ _, ok := m.(sema.Mode_ModeOption)
+	/*line fix.goal:358*/
+	/*line fix.goal:358*/
 	return ok
 }

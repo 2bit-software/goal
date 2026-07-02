@@ -109,6 +109,60 @@ func Load(p string) ([]byte, error) {
 	}
 }
 
+// A non-conforming return hidden inside a type switch must be seen: the function is left
+// unconverted and reported, never rewritten to a signature whose return it cannot reach.
+func TestFixSkipsNonConformingReturnInTypeSwitch(t *testing.T) {
+	const typeSwitch = `package app
+
+func classify(v any, err error) (int, error) {
+	switch t := v.(type) {
+	case int:
+		return t, err
+	}
+	return 0, nil
+}
+`
+	dir := goalModule(t, map[string]string{"app/load.goal": typeSwitch})
+	var out, errOut bytes.Buffer
+	if err := run([]string{"fix", filepath.Join(dir, "app", "load.goal")}, &out, &errOut); err != nil {
+		t.Fatalf("fix failed: %v\n%s", err, errOut.String())
+	}
+	if strings.Contains(out.String(), "Result[") {
+		t.Fatalf("function with a non-conforming return in a type switch must NOT be converted:\n%s", out.String())
+	}
+	if !strings.Contains(errOut.String(), "non-propagating return") || !strings.Contains(errOut.String(), "classify") {
+		t.Fatalf("expected a non-propagating-return skip for classify on stderr, got:\n%s", errOut.String())
+	}
+}
+
+// Same guarantee for a non-conforming return inside a labeled statement.
+func TestFixSkipsNonConformingReturnInLabeledStmt(t *testing.T) {
+	const labeled = `package app
+
+func scan(items []int, err error) (int, error) {
+Outer:
+	for _, it := range items {
+		if it < 0 {
+			break Outer
+		}
+		return it, err
+	}
+	return 0, nil
+}
+`
+	dir := goalModule(t, map[string]string{"app/load.goal": labeled})
+	var out, errOut bytes.Buffer
+	if err := run([]string{"fix", filepath.Join(dir, "app", "load.goal")}, &out, &errOut); err != nil {
+		t.Fatalf("fix failed: %v\n%s", err, errOut.String())
+	}
+	if strings.Contains(out.String(), "Result[") {
+		t.Fatalf("function with a non-conforming return in a labeled statement must NOT be converted:\n%s", out.String())
+	}
+	if !strings.Contains(errOut.String(), "non-propagating return") || !strings.Contains(errOut.String(), "scan") {
+		t.Fatalf("expected a non-propagating-return skip for scan on stderr, got:\n%s", errOut.String())
+	}
+}
+
 // A non-existent path is an operational error.
 func TestFixBadPath(t *testing.T) {
 	var out, errOut bytes.Buffer

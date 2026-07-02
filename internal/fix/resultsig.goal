@@ -294,49 +294,21 @@ func isIdentExpr(e ast.Expr) bool {
 }
 
 // walkReturns calls f for every return statement in block that is not nested inside a
-// function literal — descent stops at expression boundaries, so a closure's returns (which
-// belong to that closure, not the enclosing function) are never visited.
+// function literal — descent stops at the closure boundary, so a closure's returns (which
+// belong to that closure, not the enclosing function) are never visited. It rides ast.Walk
+// (like unsafeRefOffset) so every statement context — if/for/range/switch, type switches,
+// selects, and labeled statements — is covered uniformly.
 func walkReturns(block *ast.BlockStmt, f func(*ast.ReturnStmt)) {
 	if block == nil {
 		return
 	}
-	var visitStmt func(ast.Stmt)
-	visitList := func(ss []ast.Stmt) {
-		for _, s := range ss {
-			visitStmt(s)
+	ast.Walk(visitFn(func(n ast.Node) bool {
+		if _, ok := n.(*ast.FuncLit); ok {
+			return false // a closure's returns belong to the closure, not this function
 		}
-	}
-	visitStmt = func(s ast.Stmt) {
-		switch s := s.(type) {
-		case *ast.ReturnStmt:
-			f(s)
-		case *ast.BlockStmt:
-			visitList(s.List)
-		case *ast.IfStmt:
-			if s.Init != nil {
-				visitStmt(s.Init)
-			}
-			if s.Body != nil {
-				visitList(s.Body.List)
-			}
-			if s.Else != nil {
-				visitStmt(s.Else)
-			}
-		case *ast.ForStmt:
-			if s.Body != nil {
-				visitList(s.Body.List)
-			}
-		case *ast.RangeStmt:
-			if s.Body != nil {
-				visitList(s.Body.List)
-			}
-		case *ast.SwitchStmt:
-			if s.Body != nil {
-				visitList(s.Body.List)
-			}
-		case *ast.CaseClause:
-			visitList(s.Body)
+		if ret, ok := n.(*ast.ReturnStmt); ok {
+			f(ret)
 		}
-	}
-	visitList(block.List)
+		return true
+	}), block)
 }

@@ -249,6 +249,30 @@ func descendStmt(s ast.Stmt, f func([]ast.Stmt)) {
 				}
 			}
 		}
+	case *ast.TypeSwitchStmt:
+		if s.Body != nil {
+			for _, cc := range s.Body.List {
+				if c, ok := cc.(*ast.CaseClause); ok {
+					f(c.Body)
+					for _, cs := range c.Body {
+						descendStmt(cs, f)
+					}
+				}
+			}
+		}
+	case *ast.SelectStmt:
+		if s.Body != nil {
+			for _, cc := range s.Body.List {
+				if c, ok := cc.(*ast.CommClause); ok {
+					f(c.Body)
+					for _, cs := range c.Body {
+						descendStmt(cs, f)
+					}
+				}
+			}
+		}
+	case *ast.LabeledStmt:
+		descendStmt(s.Stmt, f)
 	}
 }
 
