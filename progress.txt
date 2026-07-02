@@ -7998,3 +7998,33 @@
   - Put the `>>>` on a NON-first doc-run line in the fixture to lock per-line
     numbering (a run-relative offset would report the wrong line).
 ---
+
+## 2026-07-01 - US-015
+- Added the `goal test [path]` subcommand: transpiles the package(s) and runs
+  their doctests via the existing build overlay, leaving no generated
+  .go/_test.go in the source tree. Exit 0 on pass, 1 on failure; failures carry
+  the .goal source position (US-014 package-mode doctest rendering).
+- Files changed: cmd/goal/main.go (writeOverlay now also maps t.out.Tests; new
+  cmdTest; `case "test"` dispatch rejecting --emit/--json; guideCommands entry),
+  cmd/goal/main_test.go (TestTestRunsDoctestsEphemeral +
+  TestTestFailingDoctestReportsGoalPosition), README.md quick-start line,
+  AI-KNOWLEDGE-BOOTSTRAP.md (regenerated).
+- Learnings for future iterations:
+  - writeOverlay is the single choke point for what the Go toolchain sees:
+    mapping t.out.Tests there (in addition to t.out.Files) is what makes doctest
+    sidecars runnable under `go test` while staying invisible to build/run (the
+    Go tool ignores _test.go outside `go test`). No change to goToolchain needed.
+  - goToolchain only rewrites stderr for the "build" verb (the [go-build]
+    diagnostic mapping). For "test"/"run" the child stdout/stderr pass through
+    untouched — so `go test` output (including the file.goal:line: doctest-failure
+    prefix) reaches the user verbatim. Do NOT add test/run to the rewrite branch.
+  - A new guideCommands entry is the ONLY edit needed to surface a command in
+    both `run` dispatch validation and the `goal ai` toolchain docs, but it makes
+    AI-KNOWLEDGE-BOOTSTRAP.md stale — regen with
+    `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md` or TestBootstrapGoldenMatches
+    fails. This is a pure Go/docs change (cmd/goal has no .goal), so `task generate`
+    is not involved; only the bootstrap golden and README need touching.
+  - morse-code human-review gates in --automode do NOT clear via
+    `morse-code workflow next` (that just re-pauses "awaiting human review");
+    use `morse-code workflow resume` to pass a paused user-approval gate.
+---
