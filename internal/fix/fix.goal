@@ -129,7 +129,18 @@ func File(src string) (out string, changes []Change, reports []Report, err error
 			add(cs)
 			break
 		}
-		out = textedit.Splice(out, 0, len(out), reps)
+		// Splice drops any replacement overlapping an earlier one. Report each
+		// dropped edit against the PRE-splice text (the replacement offsets are
+		// pre-splice) so a conflicting rewrite is surfaced loudly instead of
+		// vanishing. Conflict reports are added directly here — a dropped edit
+		// does not re-fire on a later iteration, so it is exempt from the
+		// converged-only harvesting above.
+		pre := out
+		var dropped []textedit.Replacement
+		out, dropped = textedit.Splice(out, 0, len(out), reps)
+		for _, r := range dropped {
+			add([]Report{{lineOf(pre, r.Start), Warn, "edit-conflict", "overlapping rewrite dropped: " + r.Text}})
+		}
 	}
 	return out, changes, reports, nil
 }

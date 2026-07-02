@@ -21,14 +21,23 @@ type Replacement struct {
 }
 
 // Splice rebuilds src[lo:hi] with each replacement span swapped for its text.
-// Replacements are sorted by start; any that overlaps an earlier one is skipped
-// defensively rather than producing corrupt output.
-func Splice(src string, lo, hi int, reps []Replacement) string {
-	sort.Slice(reps, func(a, b int) bool { return reps[a].Start < reps[b].Start })
+// Replacements are sorted stably by (Start, End); any that overlaps an earlier
+// one is skipped defensively rather than producing corrupt output, and every
+// skipped replacement is returned in dropped so the caller can report the
+// conflict instead of losing an edit silently. The stable (Start, End) order
+// makes the winner of an equal-Start conflict deterministic.
+func Splice(src string, lo, hi int, reps []Replacement) (out string, dropped []Replacement) {
+	sort.SliceStable(reps, func(a, b int) bool {
+		if reps[a].Start != reps[b].Start {
+			return reps[a].Start < reps[b].Start
+		}
+		return reps[a].End < reps[b].End
+	})
 	var b strings.Builder
 	prev := lo
 	for _, r := range reps {
 		if r.Start < prev {
+			dropped = append(dropped, r)
 			continue
 		}
 		b.WriteString(src[prev:r.Start])
@@ -36,7 +45,7 @@ func Splice(src string, lo, hi int, reps []Replacement) string {
 		prev = r.End
 	}
 	b.WriteString(src[prev:hi])
-	return b.String()
+	return b.String(), dropped
 }
 
 // IsLineStart reports whether everything between the previous newline and byte

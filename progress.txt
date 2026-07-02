@@ -8460,3 +8460,32 @@
     fixtures are sema-only (RunCheck never transpiles), so this fixture passes, but
     the sema/backend divergence remains an open follow-up.
 ---
+
+## 2026-07-02T10:20:00Z - US-026
+- Implemented: `internal/textedit.Splice` now returns `(out string, dropped
+  []Replacement)`, sorts `sort.SliceStable` by `(Start, End)` (was `sort.Slice`
+  by Start alone — nondeterministic for equal Starts), and collects every
+  overlapping replacement it skips into `dropped` instead of a bare `continue`.
+  `internal/fix.File` captures the pre-splice text, calls the two-value Splice,
+  and adds a `Warn`/`edit-conflict` Report per dropped edit (first real use of
+  the `Warn` level) located by `lineOf(preSplice, r.Start)`. `goal fix` surfaces
+  these on stderr with zero cmd change (`cmdFix` already prints every Report).
+- Files changed: internal/textedit/textedit.goal (+ regenerated textedit.go),
+  internal/fix/fix.goal (+ regenerated fix.go), internal/textedittest/{doc.go,
+  splice_test.go} (new Go-only test package), prd.json, progress.txt.
+- Learnings for future iterations:
+  - `textedit.Splice` has exactly ONE caller in the tree: `internal/fix/fix.goal`
+    (line ~132). A signature change there is contained — grep
+    `textedit.Splice(` / `Splice(` (excluding history/ bootstrap copies) to
+    confirm before changing a shared textedit helper.
+  - Report offsets are PRE-splice: when reporting a dropped edit, compute its line
+    against the text as it was BEFORE the Splice call (capture a local `pre := out`
+    first), because the replacement's Start indexes the un-spliced source.
+  - Conflict/dropped reports must be added directly at splice time (via the `add`
+    closure), NOT through the converged-only harvesting US-016 introduced — a
+    dropped edit does not re-fire on a later fixed-point iteration, so it would be
+    lost if only harvested on the converged pass.
+  - Go-only tests for an emitted dir go in a sibling `<pkg>test` package
+    (`internal/textedittest`, mirroring `internal/backendtest/doc.go`); a
+    hand-written _test.go inside internal/textedit trips verify-generated.
+---
