@@ -1,6 +1,16 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- The single-file transpile path has NO source filename: the corpus `Transpiler`
+  interface is `Transpile(src string)` (runner.go), and `backend.Transpile` /
+  `goBackend.Emit` carry no file name, so any feature that wants to embed the
+  `.goal` source name (e.g. //line anchoring, doctest failure positions) can only
+  do so in PACKAGE mode (`backend.TranspilePackage`), where `pkg.Files[i].Name` is
+  the real path. Single-file must degrade gracefully (pass "" and omit the
+  name-dependent output) — otherwise the golden-VERIFYING path (corpus
+  `Transpile(src)`) and the golden-SEEDING path (`goalc -test file.goal`) would
+  emit different sidecars and drift. Found US-014: package mode gets
+  `file.goal:<line>:` doctest-failure prefixes; single-file stays byte-identical.
 - `go build ./cmd/goal` (or ./cmd/goalc) drops a `goal`/`goalc` binary in the
   repo ROOT that is NOT gitignored (found US-012) — it silently shows up as an
   untracked file at commit time. For a quick compile check prefer
@@ -7958,4 +7968,33 @@
   - A Result-returning goal function tuple-lowers to `(T, error)`, so in a
     cmd/goal `goal run`/`goal build` test fixture you must consume it as two values
     (`v, e := f()`), never `_ = f()` (that's "1 variable but f returns 2 values").
+---
+
+## 2026-07-02T06:21:00Z - US-014
+- Point failing doctests at their .goal line. Added `Line int` to `ast.Doctest`;
+  the parser (`collectDoc`/`extractDoctests`) now records each `>>>` example's
+  source line via a parallel `[]int` of per-doc-line `t.Pos.Line` values. The
+  package-mode doctest emitter (`renderDoctests`/`emitDoctests`, threaded a new
+  `goalFile string` arg) bakes a `<file.goal>:<line>: ` prefix into the sidecar's
+  `t.Errorf` failure message. Single-file emit passes `goalFile=""` and keeps the
+  bare message (no golden churn).
+- Files changed: internal/ast/goal_stmt.goal, internal/parser/goal_stmt.goal,
+  internal/backend/doctest.goal, internal/backend/package.goal,
+  internal/backend/backend.goal (+ regenerated .go), and new
+  internal/backendtest/doctest_position_test.go. Commit e3d99d3.
+- Learnings for future iterations:
+  - Chose the failure-message variant over //line directives: the rendered
+    doctest sidecar is re-parsed and comments would be discarded, so a //line
+    approach would have to be applied post-emit. The message prefix survives gofmt.
+  - No golden churn: the 7 doctest cases (testdata/*, features/11-doctests/*) all
+    run through the single-file `Transpile(src)` path, which passes `goalFile=""`.
+    The prd note predicting "4 sidecar goldens churn" did not materialize — the
+    package-only prefix keeps single-file output byte-identical.
+  - The acceptance test lives in internal/backendtest (Go-only; internal/backend
+    is a generated/drift-gated dir). It builds a `project.Package` with a named
+    file, calls `backend.TranspilePackage`, writes Files+Tests into a temp
+    `module`, runs `go test`, and asserts `example.goal:5:` appears — a failing
+    doctest exits `go test` non-zero, which is the success path.
+  - Put the `>>>` on a NON-first doc-run line in the fixture to lock per-line
+    numbering (a run-relative offset would report the wrong line).
 ---

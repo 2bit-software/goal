@@ -192,7 +192,7 @@
         "Existing passing doctest cases still pass."
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": "SPIKE. FILES: internal/ast/goal_stmt.goal (Doctest struct:71), internal/parser/goal_stmt.goal (collectDoc:59, extractDoctests:85), internal/backend/doctest.goal (emitDoctests:33, renderDoctests:53), internal/backend/package.goal:68 + backend.goal single-file test-emit caller. APPROACH — use the failure-message variant (robust to gofmt, no //line needed): (1) add Line int to ast.Doctest. (2) collectDoc records each doc line's t.Pos.Line (from p.advance()) into a parallel []int; pass to extractDoctests(lines, lineNums); set cur.Line at the >>> line (per-line nums matter — multi-token doc runs mean Slash.Line+i is wrong). (3) Thread goalFile string through emitDoctests/renderDoctests (package.goal passes f.Name). (4) renderDoctests embeds position in the failure message: t.Errorf('<file>:<line>: doctest %s: got %%v, want %%v', ...) — literal file.goal:N: prefix in the format string. (5) Optional: also prepend //line per TestDoctest_* decl via a pipeline helper keyed test-func-name -> Doctest.Line (reuse declSites) — only if cheap. PATTERN: renderDoctests' existing fmt.Fprintf shape. TESTS: doctest corpus goldens churn (4 .go.expected, counts unchanged) — regenerate; new failing-doctest test mimicking internal/corpus/doctest_behavior_runner.go:69 (go test in temp module), assert output contains x.goal:<line>. PITFALLS: Doctest doc comment says 'plain data, no source positions' — update it; rendered-goal reparse discards comments so any //line variant must be post-emit, not inside renderDoctests; 4 sidecar goldens churn."
     },
     {
