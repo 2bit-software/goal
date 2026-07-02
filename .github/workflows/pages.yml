@@ -42,6 +42,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # Register the repo's Pages site with the deploy backend before uploading.
+      # enablement flips Pages on via the API if it is off, which is what clears a
+      # deployment that otherwise sits in `queued` forever and times out.
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+        with:
+          enablement: true
+
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
