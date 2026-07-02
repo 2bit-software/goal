@@ -1,0 +1,14 @@
+package qprop
+
+// onlyErr returns just an `error` — it carries no value to bind.
+func onlyErr() error {
+	return errors.New("boom")
+}
+
+// bindsNonvalue tries to bind a value from a callee that returns only `error`.
+// `?` here should be written as a bare `…?` (propagate only the error); binding a
+// value is rejected.
+func bindsNonvalue() Result[int, error] {
+	x := onlyErr()? // want "binds a value"
+	return Result.Ok(x)
+}

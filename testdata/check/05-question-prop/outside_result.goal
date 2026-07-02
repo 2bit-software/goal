@@ -1,0 +1,14 @@
+package qprop
+
+// provide returns a `Result`, so `?` on it propagates a failure.
+func provide() Result[int, error] {
+	return Result.Ok(1)
+}
+
+// outsideResult applies `?` inside a function that returns a plain `int`. A plain
+// `int` has no failure channel to carry the propagated `Err`, so `?` is rejected
+// here rather than at lowering time.
+func outsideResult() int {
+	x := provide()? // want "neither a `Result` nor an `Option`"
+	return x
+}

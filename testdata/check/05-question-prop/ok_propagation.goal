@@ -1,0 +1,14 @@
+package qprop
+
+// supply returns a `Result`, a valid `?` callee.
+func supply() Result[int, error] {
+	return Result.Ok(1)
+}
+
+// okPropagation binds the unwrapped value of a `Result`-returning callee inside a
+// `Result`-returning function. This is the canonical valid `?` propagation and
+// produces no diagnostics.
+func okPropagation() Result[int, error] {
+	x := supply()?
+	return Result.Ok(x)
+}

@@ -7,11 +7,13 @@ import (
 
 // us031Dirs are the corpus subtrees whose check cases US-031 reimplements over the
 // AST: must-use (03-result), closed-E `?` From-totality and Err closedness
-// (06-error-e), and interface satisfaction (07-implements). The open-E `?` arity/refusal
-// check (feature 05) has no dedicated fixture dir; its clean path rides inside the
-// 03-result and 06-error-e cases.
+// (06-error-e), and interface satisfaction (07-implements). Feature 05's open-E `?`
+// error paths (outside-result, callee-no-error, binds-nonvalue, assignment-form
+// rejection) have their own dedicated fixture dir (05-question-prop), locked here
+// alongside a clean ok-propagation case (US-027).
 var us031Dirs = []string{
 	"testdata/check/03-result/",
+	"testdata/check/05-question-prop/",
 	"testdata/check/06-error-e/",
 	"testdata/check/07-implements/",
 }

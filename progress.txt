@@ -17,6 +17,15 @@
   then regenerate `corpus/manifest.json` with `go run ./cmd/corpus-gen`. A new
   testdata/check/<feature>/*.goal fixture is auto-discovered by the recursive
   walk; the only code change is the count literal + its error message.
+- Check fixtures run through TWO tiers (found US-027): TestGenerateCounts walks
+  testdata/ DIRECTLY (flips the moment a fixture lands), while the behavioral
+  gates (TestASTEngineWholeCorpusBehavioralGate and the prefix-filtered per-
+  feature runners) read corpus/manifest.json — so a new fixture needs BOTH the
+  count bump AND `go run ./cmd/corpus-gen`, or the manifest-driven gate stays
+  stale. Each check case is run PER-FILE in isolation (RunCheck -> SemaCheck),
+  so a shared `package` name and duplicate func names across a dir's fixtures
+  are safe. To lock a feature's own targeted runner, add its dir to the runner's
+  prefix list (e.g. us031Dirs in sema_question_test.go).
 - To build a DISCRIMINATING check fixture that isolates ONE checker, neutralize
   the others: the field-completeness check (`checkStructLit`, fields.goal) steps
   aside for any composite literal carrying a `...defaults`/`...derive(src)` spread
@@ -8488,4 +8497,40 @@
   - Go-only tests for an emitted dir go in a sibling `<pkg>test` package
     (`internal/textedittest`, mirroring `internal/backendtest/doc.go`); a
     hand-written _test.go inside internal/textedit trips verify-generated.
+---
+
+## 2026-07-02T10:30:00Z - US-027
+- Added golden coverage for feature-05 (`?` question-propagation) error paths:
+  four new `testdata/check/05-question-prop/` fixtures — outside_result.goal
+  (question-outside-result), callee_no_error.goal (question-callee-no-error),
+  binds_nonvalue.goal (question-binds-nonvalue), and ok_propagation.goal (clean).
+  The assignment-form rejection fixture (assign_lhs_unsupported.goal) was already
+  present from US-002, so the dir now locks all four question-* codes plus a
+  happy path. Wired the dir into the dedicated question runner and bumped counts.
+- Files changed: testdata/check/05-question-prop/{outside_result,callee_no_error,
+  binds_nonvalue,ok_propagation}.goal (new), corpus/manifest.json (regenerated,
+  137 cases), internal/corpus/generate_test.go (check count 62 -> 66),
+  internal/corpus/sema_question_test.go (added 05-question-prop to us031Dirs +
+  updated its doc comment), prd.json, progress.txt.
+- Learnings for future iterations:
+  - Check fixtures are run PER-FILE in isolation (check_runner.go RunCheck ->
+    SemaCheck(src)); files in one dir are never compiled together, so a shared
+    `package qprop` and duplicate func names across fixtures are safe.
+  - Two runners exercise check cases: TestASTEngineWholeCorpusBehavioralGate runs
+    EVERY manifest check case through SemaCheck (so a new fixture is auto-covered
+    once in the manifest), and the prefix-filtered runners (us031Dirs in
+    sema_question_test.go, fieldCompletenessDir, exhaustivenessDir, the
+    ast_gate_test dirs) add a dedicated per-feature assertion. Adding a dir to
+    us031Dirs is the wiring for a feature's own targeted runner.
+  - TestGenerateCounts counts by walking testdata/ DIRECTLY (not the manifest),
+    so it flips to the new total the moment a fixture file lands — but the
+    ASTEngine gate reads the manifest, so you must ALSO `go run ./cmd/corpus-gen`
+    or the manifest-driven gate stays stale.
+  - To capture exact `// want` substrings, build the checker and run
+    `goal check <fixture>`: the located `file:line:col: error: [code] msg` line is
+    what SemaCheck's RunCheck matches (the separate "depth stage unavailable" note
+    is irrelevant to the sema-only check harness).
+  - In-file `?` callees resolve via info.FuncSignatures[name] in
+    resolveQuestionCallee; single-file Analyze never runs EnrichForeign, so keep a
+    fixture's `?` callee defined in the same file for the callee-* codes to fire.
 ---

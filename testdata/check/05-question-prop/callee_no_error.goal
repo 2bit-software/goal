@@ -1,0 +1,15 @@
+package qprop
+
+// giveInt returns a plain `int` — no trailing `error`, so it is not a valid `?`
+// callee.
+func giveInt() int {
+	return 1
+}
+
+// calleeNoError applies `?` to a callee that does not return an `error` as its
+// last result. `?` propagates an error, so the callee must return one; this is
+// rejected.
+func calleeNoError() Result[int, error] {
+	x := giveInt()? // want "does not return an `error` as its last result"
+	return Result.Ok(x)
+}
