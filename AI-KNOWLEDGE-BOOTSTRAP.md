@@ -70,6 +70,7 @@ message:
     - `--emit[=dir]` — also write generated .go beside each .goal (or under dir)
     - `[args...]` — arguments after the path are passed through to the running program (default engine), as with `go run <pkg> [args...]`
 - `goal check [path]` — run the static checker over the package(s)
+- `goal test [path]` — transpile and `go test` the package's doctests (ephemeral, via -overlay)
 - `goal fix [-inplace] [path]` — rewrite plain-Go patterns into idiomatic goal (Result + `?`)
     - `-inplace` — write changes back to each file instead of printing to stdout
 - `goal fmt [-w] [path]` — format .goal source into the canonical, comment-preserving layout

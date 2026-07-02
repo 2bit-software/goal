@@ -67,6 +67,11 @@ var guideCommands = []guide.Command{
 		Usage:   "goal check [path]",
 	},
 	{
+		Name:    "test",
+		Summary: "transpile and `go test` the package's doctests (ephemeral, via -overlay)",
+		Usage:   "goal test [path]",
+	},
+	{
 		Name:    "fix",
 		Summary: "rewrite plain-Go patterns into idiomatic goal (Result + `?`)",
 		Usage:   "goal fix [-inplace] [path]",
@@ -187,6 +192,20 @@ func run(args []string, out, errOut io.Writer) error {
 			return cmdRunInterp(root, progArgs, out, errOut)
 		}
 		return cmdRun(root, emit, emitDir, progArgs, out, errOut)
+	case "test":
+		emit, jsonOut, _, root, err := parseFlags(rest)
+		if err != nil {
+			return usageErr(err)
+		}
+		// `goal test` is deliberately ephemeral: --emit (write files to the tree)
+		// and --json (a check-only diagnostics mode) both contradict it.
+		if emit {
+			return usageErr(fmt.Errorf("unknown flag %q", "--emit"))
+		}
+		if jsonOut {
+			return usageErr(fmt.Errorf("unknown flag %q", "--json"))
+		}
+		return cmdTest(root, out, errOut)
 	case "build", "check":
 		emit, jsonOut, emitDir, root, err := parseFlags(rest)
 		if err != nil {
@@ -568,6 +587,23 @@ func cmdBuild(root string, emit bool, emitDir string, out, errOut io.Writer) err
 		return emitFiles(ts, emitDir, out)
 	}
 	return goToolchain(root, ts, out, errOut, "build", "./...")
+}
+
+// cmdTest transpiles the package(s) under root and runs their doctests via the
+// build overlay, so no generated .go/_test.go files touch the source tree. The
+// doctest sidecars are mapped into the module by writeOverlay; `go test` picks
+// them up. A doctest failure propagates as `go test`'s non-zero exit (exit 1);
+// its message carries the .goal source position (package-mode doctest rendering,
+// US-014). `go test` output is passed through unmodified — unlike `build`,
+// goToolchain does not rewrite the test verb's stderr.
+func cmdTest(root string, out, errOut io.Writer) error {
+	ts, err := transpileAll(root)
+	if err != nil {
+		// A clean-parsing package that fails to transpile is a backend ICE, not
+		// user syntax — classify it as internal (exit 3), as cmdBuild does.
+		return internalErr(err)
+	}
+	return goToolchain(root, ts, out, errOut, "test", "./...", "-count=1")
 }
 
 func cmdRun(root string, emit bool, emitDir string, progArgs []string, out, errOut io.Writer) error {
@@ -965,7 +1001,10 @@ func writeOverlay(ts []transpiled) (path string, cleanup func(), err error) {
 			cleanup()
 			return "", nil, err
 		}
-		for _, gf := range t.out.Files {
+		// Package Go and the doctest sidecars are both overlaid. The sidecars
+		// (`<file>_test.go`) are harmless for build/run — the Go tool ignores
+		// `_test.go` outside `go test` — and are what `goal test` runs.
+		for _, gf := range append(append([]pipeline.GoFile{}, t.out.Files...), t.out.Tests...) {
 			content := filepath.Join(tmp, fmt.Sprintf("%d_%s", n, gf.Name))
 			n++
 			if err := os.WriteFile(content, []byte(gf.Go), 0o644); err != nil {

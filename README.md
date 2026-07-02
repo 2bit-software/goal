@@ -33,6 +33,7 @@ programs through the Go toolchain, and **`goalc`**, the single-file transpiler p
 go run ./cmd/goal check ./app        # run the static checker; prints "ok" or located diagnostics
 go run ./cmd/goal run   ./app        # transpile + `go run` the sole `package main`
 go run ./cmd/goal build ./app        # transpile + `go build ./...`  (ephemeral, via -overlay)
+go run ./cmd/goal test  ./app        # transpile + `go test` the doctests (ephemeral, via -overlay)
 go run ./cmd/goal build --emit ./app # ALSO write generated .go (+ _test.go) beside each .goal
 go run ./cmd/goal fix ./app          # rewrite plain-Go patterns into idiomatic goal (stdout)
 go run ./cmd/goal fix -inplace ./app # ... and write the changes back to each file

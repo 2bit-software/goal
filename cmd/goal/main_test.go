@@ -772,3 +772,69 @@ func main() {
 		t.Errorf("build error not mapped to compute.goal:14 (the type-error statement's true line):\n%s", errOut.String())
 	}
 }
+
+// docModule is a package (not `main`) carrying a single doctest. wantErr controls
+// whether the doctest's expected value is wrong (making `goal test` fail).
+const docPassGoal = `package mathx
+
+/// Squares an int.
+/// >>> square(3)
+/// 9
+func square(x int) int {
+	return x * x
+}
+`
+
+const docFailGoal = `package mathx
+
+/// Squares an int.
+/// >>> square(3)
+/// 10
+func square(x int) int {
+	return x * x
+}
+`
+
+// TestTestRunsDoctestsEphemeral proves `goal test` runs a passing doctest to a
+// zero exit and leaves no generated .go/_test.go behind in the source tree (AC-1).
+func TestTestRunsDoctestsEphemeral(t *testing.T) {
+	dir := goalModule(t, map[string]string{"mathx.goal": docPassGoal})
+
+	before, _ := filepath.Glob(filepath.Join(dir, "*.go"))
+	if len(before) != 0 {
+		t.Fatalf("fixture already has .go files: %v", before)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"test", dir}, &out, &errOut); err != nil {
+		t.Fatalf("goal test failed on a passing doctest: %v\nstdout:\n%s\nstderr:\n%s", err, out.String(), errOut.String())
+	}
+
+	// Ephemeral: no generated .go or _test.go is written into the source tree.
+	if entries, _ := filepath.Glob(filepath.Join(dir, "*.go")); len(entries) != 0 {
+		t.Errorf("goal test wrote .go files into the source tree: %v", entries)
+	}
+	if entries, _ := filepath.Glob(filepath.Join(dir, "*_test.go")); len(entries) != 0 {
+		t.Errorf("goal test wrote _test.go files into the source tree: %v", entries)
+	}
+}
+
+// TestTestFailingDoctestReportsGoalPosition proves a failing doctest makes
+// `goal test` exit non-zero (exit 1) and that its output names the .goal source
+// position (US-014 package-mode doctest rendering) (AC-2, FR-2).
+func TestTestFailingDoctestReportsGoalPosition(t *testing.T) {
+	dir := goalModule(t, map[string]string{"mathx.goal": docFailGoal})
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"test", dir}, &out, &errOut)
+	if err == nil {
+		t.Fatal("expected goal test to fail on a wrong-expected doctest")
+	}
+	combined := out.String() + errOut.String()
+	if !strings.Contains(combined, "mathx.goal:") {
+		t.Errorf("doctest failure did not name the .goal position (mathx.goal:<line>):\n%s", combined)
+	}
+	if !strings.Contains(combined, "doctest square") {
+		t.Errorf("doctest failure output missing the failing doctest name:\n%s", combined)
+	}
+}
