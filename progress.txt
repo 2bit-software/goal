@@ -1,6 +1,13 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- Editing any `internal/*/*.goal` fires the PostToolUse prek hook, which runs the
+  FULL `task check` (vet + verify-generated + whole suite). verify-generated fails
+  until the committed `.go` sibling is regenerated, so every `.goal` edit reports a
+  (large) hook failure that is EXPECTED — the edit still lands. Workflow: make the
+  `.goal` edits, then run `task generate` (a Bash call, no hook) to resync; the diff
+  in later hook outputs then shrinks to only the file you just touched. Regenerate
+  before running the real `task check`/`task fixpoint` gates.
 - Derive lowering has THREE engines that must move in lockstep on field-matching
   and output-var rules (found US-023): the backend emitter (emit.goal
   emitConversionBody/resolveField/deriveBody + lower.goal findSemaField), the sema
@@ -8598,4 +8605,39 @@
     catalog set exactly after a 3-entry skiplist {go-types, some-addr, some-box}.
   - Test name TestDiagnosticCatalogMatchesSource is the exact name catalog.goal's
     doc comment already promised.
+---
+
+## 2026-07-02T11:30:00Z - US-030
+- Added a nil-able SuggestedFix (pure text insertion: Pos + NewText) to
+  sema.Diagnostic. The exhaustive-match check (check.goal exhaustiveFix) inserts
+  `Enum.Variant => panic("TODO")` arms before the match Rbrace; the missing-field
+  check (fields.goal missingFieldFix + fieldZeroLit) inserts `name: zero,` just
+  inside the struct-literal Lbrace, deriving each zero via the shared TypeShape
+  classifier and OMITTING the whole fix when any field's zero is not a safe
+  one-token constant (named/array/foreign). Surfaced in `goal check --json`
+  (jsonDiag.SuggestedFix, omitempty) and as LSP per-diagnostic `quickfix` code
+  actions computed on demand from the live buffer (codeaction.goal quickfixActions).
+- Files: internal/sema/check.goal, internal/sema/fields.goal,
+  internal/lsp/codeaction.goal, internal/lsp/server.goal, cmd/goal/main.go,
+  cmd/goal/suggestedfix_test.go, internal/lsptest/codeaction_test.go (+ regenerated
+  .go siblings).
+- Learnings for future iterations:
+  - Adding a field to sema.Diagnostic is safe: every sema construction site uses
+    KEYED literals (`Diagnostic{Pos: ...}`). But cmd/goal's `checkDiag` is a
+    POSITIONAL struct literal built at 4 sites (sema/depth/syntax/go-build) — each
+    must gain the trailing value or `go vet` fails one-at-a-time. sema diags pass
+    `d.Fix`; the others pass `nil`.
+  - No new diagnostic CODE was added (SuggestedFix is a field on existing codes),
+    so NO catalog.goal / AI-KNOWLEDGE-BOOTSTRAP.md regen is needed — the guidetest
+    catalog-parity gate stays green.
+  - LSP code actions can be tested black-box from a NEW Go-only dir
+    (internal/lsptest) that imports only exported lsp.NewServer + srv.Run and drives
+    the Content-Length framed protocol over an in-memory reader/writer. Guard the
+    output buffer with a mutex: NewServer's 200ms debounce timer publishes
+    diagnostics asynchronously after Run returns, racing the test's read. lsptest is
+    not an emitted dir, so verify-generated (which only diffs emitted `internal/*`
+    entries) ignores it — no drift risk.
+  - Computing LSP quickfixes ON DEMAND (re-run sema.Analyze against the current
+    buffer in codeActions) is simpler and staleness-free versus stashing published
+    diagnostics per-URI + version-gating (what the PRD note suggested).
 ---
