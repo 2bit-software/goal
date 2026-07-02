@@ -838,3 +838,187 @@ func TestTestFailingDoctestReportsGoalPosition(t *testing.T) {
 		t.Errorf("doctest failure output missing the failing doctest name:\n%s", combined)
 	}
 }
+
+// The depth (go/types) stage runs three checkers whose codes the lexical stage
+// cannot produce: discarded-result-error, dropped-stored-result, and
+// generic-missing-field. The corpus check harness is sema-only, so `goal check`
+// via cmd/goal is the only seam that exercises them. Each test below asserts the
+// specific bracketed [code] string (not merely a non-zero exit), so a run that
+// silently degraded to the "depth stage unavailable" note would fail rather than
+// masquerade as a pass (US-028).
+
+// discardedResultErrorGoal binds an open-E Result call's two returns and throws
+// the error position away with `_`, which the depth stage flags.
+const discardedResultErrorGoal = `package demo
+
+import "errors"
+
+func f(ok bool) Result[int, error] {
+    if ok {
+        return Result.Ok(1)
+    }
+    return Result.Err(errors.New("no"))
+}
+
+func use() int {
+    v, _ := f(true)
+    return v
+}
+`
+
+// discardedResultErrorCleanGoal binds and inspects the error instead of
+// discarding it, so the depth stage is silent.
+const discardedResultErrorCleanGoal = `package demo
+
+import "errors"
+
+func f(ok bool) Result[int, error] {
+    if ok {
+        return Result.Ok(1)
+    }
+    return Result.Err(errors.New("no"))
+}
+
+func use() int {
+    v, e := f(true)
+    if e != nil {
+        return 0
+    }
+    return v
+}
+`
+
+func TestCheckDepthDiscardedResultError(t *testing.T) {
+	dir := goalModule(t, map[string]string{"x.goal": discardedResultErrorGoal})
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"check", dir}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected check to fail on the discarded Result error\nstdout: %s\nstderr: %s", out.String(), errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "[discarded-result-error]") {
+		t.Errorf("depth-stage [discarded-result-error] not surfaced:\n%s", errOut.String())
+	}
+}
+
+func TestCheckDepthDiscardedResultErrorClean(t *testing.T) {
+	dir := goalModule(t, map[string]string{"x.goal": discardedResultErrorCleanGoal})
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"check", dir}, &out, &errOut); err != nil {
+		t.Fatalf("clean check failed: %v\nstderr: %s", err, errOut.String())
+	}
+	if strings.TrimSpace(out.String()) != "ok" {
+		t.Errorf("want ok, got stdout=%q stderr=%q", out.String(), errOut.String())
+	}
+}
+
+// droppedStoredResultGoal declares an unexported Option-typed field that is
+// never read via a selector — a provably dropped must-use value.
+const droppedStoredResultGoal = `package demo
+
+type box struct {
+    o Option[int]
+}
+
+func make() box {
+    return box{o: Option.Some(1)}
+}
+`
+
+// droppedStoredResultCleanGoal reads the field via a selector (match b.o), so
+// the value is consulted and the depth stage is silent.
+const droppedStoredResultCleanGoal = `package demo
+
+type box struct {
+    o Option[int]
+}
+
+func make() box {
+    return box{o: Option.Some(1)}
+}
+
+func read(b box) int {
+    return match b.o {
+        Option.Some(v) => v
+        Option.None => 0
+    }
+}
+`
+
+func TestCheckDepthDroppedStoredResult(t *testing.T) {
+	dir := goalModule(t, map[string]string{"x.goal": droppedStoredResultGoal})
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"check", dir}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected check to fail on the dropped stored Option\nstdout: %s\nstderr: %s", out.String(), errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "[dropped-stored-result]") {
+		t.Errorf("depth-stage [dropped-stored-result] not surfaced:\n%s", errOut.String())
+	}
+}
+
+func TestCheckDepthDroppedStoredResultClean(t *testing.T) {
+	dir := goalModule(t, map[string]string{"x.goal": droppedStoredResultCleanGoal})
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"check", dir}, &out, &errOut); err != nil {
+		t.Fatalf("clean check failed: %v\nstderr: %s", err, errOut.String())
+	}
+	if strings.TrimSpace(out.String()) != "ok" {
+		t.Errorf("want ok, got stdout=%q stderr=%q", out.String(), errOut.String())
+	}
+}
+
+// genericMissingFieldGoal keys a generic literal `Pair[int]{...}` but omits the
+// required field y — a residual feature-08 gap only the typed stage can see.
+const genericMissingFieldGoal = `package demo
+
+type Pair[T any] struct {
+    x T
+    y T
+}
+
+func f() Pair[int] {
+    return Pair[int]{x: 1}
+}
+`
+
+// genericMissingFieldCleanGoal names every field of the generic literal.
+const genericMissingFieldCleanGoal = `package demo
+
+type Pair[T any] struct {
+    x T
+    y T
+}
+
+func f() Pair[int] {
+    return Pair[int]{x: 1, y: 2}
+}
+`
+
+func TestCheckDepthGenericMissingField(t *testing.T) {
+	dir := goalModule(t, map[string]string{"x.goal": genericMissingFieldGoal})
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"check", dir}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected check to fail on the incomplete generic literal\nstdout: %s\nstderr: %s", out.String(), errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "[generic-missing-field]") {
+		t.Errorf("depth-stage [generic-missing-field] not surfaced:\n%s", errOut.String())
+	}
+}
+
+func TestCheckDepthGenericMissingFieldClean(t *testing.T) {
+	dir := goalModule(t, map[string]string{"x.goal": genericMissingFieldCleanGoal})
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"check", dir}, &out, &errOut); err != nil {
+		t.Fatalf("clean check failed: %v\nstderr: %s", err, errOut.String())
+	}
+	if strings.TrimSpace(out.String()) != "ok" {
+		t.Errorf("want ok, got stdout=%q stderr=%q", out.String(), errOut.String())
+	}
+}
