@@ -8732,3 +8732,33 @@
   - history/ and _bootstrap/ are gitignored, so morse-code workflow artifacts
     never pollute the commit; stage named files only.
 ---
+
+## 2026-07-02T12:47:40Z - US-034
+- Documented the tooling contract in the AI bootstrap guide. Added a new guide
+  section "The tooling contract" (key `toolchain-contract`) as a static embedded
+  fragment: exit-code contract (0/1/2/3), stdout/stderr split, `goal check --json`
+  field schema, `goal test` doctest workflow, syntax-error `[syntax]` line format,
+  and a compact EBNF of goal-only syntax (enum/match/?/...defaults/implements/
+  from+derive/doctests). Tightened docs/ai/toolchain.md's //line claim to US-013
+  reality (per-statement `.goal` line, not decl-level). Regenerated the bootstrap
+  golden.
+- Files changed: docs/ai/toolchain-contract.md (new), docs/ai/toolchain.md,
+  internal/guide/guide.goal (+ regenerated internal/guide/guide.go),
+  AI-KNOWLEDGE-BOOTSTRAP.md.
+- Learnings for future iterations:
+  - A pure-fragment guide section is two lines in guide.goal: a `{key, title}`
+    entry in `var sections` (order is load-bearing — it fixes the rendered order
+    and the golden) plus a `case "<key>": writeFragment(&b, "<key>.md")` arm in
+    renderSection. `SectionKeys()`, `goal ai <key>`, and the section listing all
+    derive from `var sections` automatically — no other wiring.
+  - New docs/ai/*.md fragments need NO embed edit: root assets.go already does
+    `//go:embed docs/by-example.md docs/overview.md docs/ai` (whole dir).
+  - The bootstrap golden EMBEDS the fragments live, so editing ANY docs/ai file
+    that a section renders (here toolchain.md) staleness-fails
+    TestBootstrapGoldenMatches until you re-run
+    `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`. Regenerate the golden
+    AFTER the last content edit, not before — a later doc edit re-stales it.
+  - Do not restate the command list in a toolchain fragment: the `toolchain`
+    section renders `guideCommands` live and TestToolchainSectionListsEveryCommand
+    asserts every command appears there; `goal test` (US-015) is already listed.
+---
