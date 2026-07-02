@@ -19,30 +19,30 @@ import "strings"
 // is safe. depth guards alias chains.
 func ZeroSafety(typ string, decls map[string]string, info *Info, depth int) string {
 	typ = strings.TrimSpace(typ)
-	switch {
-	case strings.HasPrefix(typ, "*"):
+	switch TypeShape(typ) {
+	case "pointer":
 		return "a nil pointer has no safe zero — set it explicitly, or use Option[T] for an optional value"
-	case strings.HasPrefix(typ, "map["):
+	case "map":
 		return "a nil map panics on write — set it explicitly (e.g. `" + typ + "{}`)"
-	case strings.HasPrefix(typ, "chan"):
+	case "chan":
 		return "a nil channel blocks forever — set it explicitly"
-	case strings.HasPrefix(typ, "func"):
+	case "func":
 		return "a nil func panics when called — set it explicitly"
-	case strings.HasPrefix(typ, "interface"):
+	case "interface":
 		// Bare `interface{}` has no methods, so its nil is harmless; a method-bearing
 		// interface literal panics on a nil method call.
 		if strings.TrimSpace(typ[len("interface"):]) == "{}" {
 			return ""
 		}
 		return "a nil interface has no safe zero — set it explicitly"
-	case typ == "any", typ == "error":
-		return "" // bare any: no methods; nil error is the success value
-	case strings.HasPrefix(typ, "[]"):
+	case "slice":
 		return "" // a nil slice is safe: range/len/append all work on it
-	case strings.HasPrefix(typ, "["):
+	case "array":
 		return "" // array: composite zero is a usable value
 	}
 	switch typ {
+	case "any", "error":
+		return "" // bare any: no methods; nil error is the success value
 	case "string", "bool",
 		"int", "int8", "int16", "int32", "int64",
 		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
@@ -67,6 +67,37 @@ func ZeroSafety(typ string, decls map[string]string, info *Info, depth int) stri
 	}
 	// Unknown external named type: assume struct-like (as zeroLit does) — treat as safe.
 	return ""
+}
+
+// TypeShape classifies a rendered type string into a coarse syntactic shape —
+// one of "pointer", "slice", "array", "map", "chan", "func", "interface", or
+// "named" (bare identifiers, qualified names, and builtin scalars). It matches
+// WHOLE tokens, not raw prefixes, so a user type whose name merely begins with a
+// builtin keyword (funcTable, channelSet, interfaceish) is classified "named"
+// instead of being mistaken for the composite it resembles. Both ZeroSafety (the
+// panic-safety checker) and the backend's zeroLit (§8.5 zero-literal lowering)
+// dispatch on this single classifier so the two stages can never disagree.
+func TypeShape(typ string) string {
+	typ = strings.TrimSpace(typ)
+	switch {
+	case strings.HasPrefix(typ, "*"):
+		return "pointer"
+	case strings.HasPrefix(typ, "[]"):
+		return "slice"
+	case strings.HasPrefix(typ, "map["):
+		return "map"
+	case strings.HasPrefix(typ, "["):
+		return "array"
+	case typ == "chan" || strings.HasPrefix(typ, "chan ") ||
+		strings.HasPrefix(typ, "chan<-") || strings.HasPrefix(typ, "<-chan"):
+		return "chan"
+	case typ == "func" || strings.HasPrefix(typ, "func("):
+		return "func"
+	case typ == "interface{}" || strings.HasPrefix(typ, "interface{") ||
+		strings.HasPrefix(typ, "interface {"):
+		return "interface"
+	}
+	return "named"
 }
 
 // zeroBaseType strips a leading "*" and any "pkg." qualifier, yielding the bare

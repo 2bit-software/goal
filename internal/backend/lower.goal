@@ -394,16 +394,15 @@ func baseType(t string) string {
 // chains; depth guards those chains. The `...defaults` expansion uses it.
 func zeroLit(typ string, decls map[string]string, depth int) string {
 	typ = strings.TrimSpace(typ)
-	switch {
-	case strings.HasPrefix(typ, "*"), strings.HasPrefix(typ, "[]"),
-		strings.HasPrefix(typ, "map["), strings.HasPrefix(typ, "chan"),
-		strings.HasPrefix(typ, "func"), strings.HasPrefix(typ, "interface"),
-		typ == "any", typ == "error":
+	switch sema.TypeShape(typ) {
+	case "pointer", "slice", "map", "chan", "func", "interface":
 		return "nil"
-	case strings.HasPrefix(typ, "["): // array `[N]T` — composite zero
+	case "array": // array `[N]T` — composite zero
 		return typ + "{}"
 	}
 	switch typ {
+	case "any", "error":
+		return "nil" // bare any: no methods; nil error is the success value
 	case "string":
 		return `""`
 	case "bool":

@@ -737,6 +737,14 @@
       "normalize": "none"
     },
     {
+      "id": "testdata-check-08-no-zero-value-named_like_builtin",
+      "kind": "check",
+      "input": "testdata/check/08-no-zero-value/named_like_builtin.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
       "id": "testdata-check-08-no-zero-value-tagged_struct",
       "kind": "check",
       "input": "testdata/check/08-no-zero-value/tagged_struct.goal",

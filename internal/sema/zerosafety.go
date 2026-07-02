@@ -8,28 +8,28 @@ import "strings"
 //line zerosafety.goal:20
 func ZeroSafety(typ string, decls map[string]string, info *Info, depth int) string {
 	/*line zerosafety.goal:21*/ typ = strings.TrimSpace(typ)
-	/*line zerosafety.goal:22*/ switch {
-	case strings.HasPrefix(typ, "*"):
+	/*line zerosafety.goal:22*/ switch TypeShape(typ) {
+	case "pointer":
 		return "a nil pointer has no safe zero — set it explicitly, or use Option[T] for an optional value"
-	case strings.HasPrefix(typ, "map["):
+	case "map":
 		return "a nil map panics on write — set it explicitly (e.g. `" + typ + "{}`)"
-	case strings.HasPrefix(typ, "chan"):
+	case "chan":
 		return "a nil channel blocks forever — set it explicitly"
-	case strings.HasPrefix(typ, "func"):
+	case "func":
 		return "a nil func panics when called — set it explicitly"
-	case strings.HasPrefix(typ, "interface"):
+	case "interface":
 		if strings.TrimSpace(typ[len("interface"):]) == "{}" {
 			/*line zerosafety.goal:35*/ return ""
 		}
 		return "a nil interface has no safe zero — set it explicitly"
-	case typ == "any", typ == "error":
+	case "slice":
 		return ""
-	case strings.HasPrefix(typ, "[]"):
-		return ""
-	case strings.HasPrefix(typ, "["):
+	case "array":
 		return ""
 	}
-	/*line zerosafety.goal:45*/ switch typ {
+	/*line zerosafety.goal:43*/ switch typ {
+	case "any", "error":
+		return ""
 	case "string", "bool", "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr", "byte", "rune", "float32", "float64", "complex64", "complex128":
 		return ""
 	}
@@ -52,11 +52,33 @@ func ZeroSafety(typ string, decls map[string]string, info *Info, depth int) stri
 	/*line zerosafety.goal:69*/ return ""
 }
 
-//line zerosafety.goal:74
-func zeroBaseType(t string) string {
-	/*line zerosafety.goal:75*/ t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
-	/*line zerosafety.goal:76*/ if i := strings.LastIndexByte(t, '.'); i >= 0 {
-		/*line zerosafety.goal:77*/ t = t[i+1:]
+//line zerosafety.goal:80
+func TypeShape(typ string) string {
+	/*line zerosafety.goal:81*/ typ = strings.TrimSpace(typ)
+	/*line zerosafety.goal:82*/ switch {
+	case strings.HasPrefix(typ, "*"):
+		return "pointer"
+	case strings.HasPrefix(typ, "[]"):
+		return "slice"
+	case strings.HasPrefix(typ, "map["):
+		return "map"
+	case strings.HasPrefix(typ, "["):
+		return "array"
+	case typ == "chan" || strings.HasPrefix(typ, "chan ") || strings.HasPrefix(typ, "chan<-") || strings.HasPrefix(typ, "<-chan"):
+		return "chan"
+	case typ == "func" || strings.HasPrefix(typ, "func("):
+		return "func"
+	case typ == "interface{}" || strings.HasPrefix(typ, "interface{") || strings.HasPrefix(typ, "interface {"):
+		return "interface"
 	}
-	/*line zerosafety.goal:79*/ return t
+	/*line zerosafety.goal:100*/ return "named"
+}
+
+//line zerosafety.goal:105
+func zeroBaseType(t string) string {
+	/*line zerosafety.goal:106*/ t = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(t), "*"))
+	/*line zerosafety.goal:107*/ if i := strings.LastIndexByte(t, '.'); i >= 0 {
+		/*line zerosafety.goal:108*/ t = t[i+1:]
+	}
+	/*line zerosafety.goal:110*/ return t
 }

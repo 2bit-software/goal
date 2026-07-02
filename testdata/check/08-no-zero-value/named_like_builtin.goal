@@ -1,0 +1,24 @@
+package registry
+
+// Regression (US-019): a user type whose NAME merely starts with a builtin
+// keyword must not be mistaken for the composite it resembles. `funcTable`,
+// `channelSet`, `mapEntry`, and `interfaceish` are each a plain struct with a
+// safe (composite) zero, so opting these fields into `...defaults` is allowed —
+// the checker classifies them by WHOLE token (via sema.TypeShape), not by raw
+// prefix, so no [unsafe-default] fires. No markers: any Error fails this case.
+type funcTable struct{ n int }
+type channelSet struct{ n int }
+type mapEntry struct{ n int }
+type interfaceish struct{ n int }
+
+type Registry struct {
+	name  string
+	funcs funcTable
+	chans channelSet
+	pairs mapEntry
+	ifs   interfaceish
+}
+
+func newRegistry(name string) Registry {
+	return Registry{name: name, ...defaults}
+}
