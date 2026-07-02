@@ -138,9 +138,61 @@ func (p *parser) expect(k token.Kind) token.Token {
 	return p.advance()
 }
 
-// errorf records a parse error at pos.
+// Error is a located parse error: the offending token's Pos (1-based Line/Col)
+// plus the human-readable message. Its Error() renders `line:col: message`, byte
+// -identical to the pre-US-008 wrapping, so callers that only read the joined
+// string are unaffected; callers that want the structured position type-assert to
+// *Error (see CollectErrors). ParseFile returns these joined via errors.Join.
+type Error struct {
+	Pos token.Pos
+	Msg string
+}
+
+// Error renders the located parse error as `line:col: message`.
+func (e *Error) Error() string { return e.Pos.String() + ": " + e.Msg }
+
+// errorf records a located parse error at pos.
 func (p *parser) errorf(pos token.Pos, format string, args ...any) {
-	p.errs = append(p.errs, fmt.Errorf("%s: %s", pos.String(), fmt.Sprintf(format, args...)))
+	p.errs = append(p.errs, &Error{Pos: pos, Msg: fmt.Sprintf(format, args...)})
+}
+
+// multiUnwrap is the errors.Join fan-out shape; singleUnwrap is a single %w wrap.
+// CollectErrors walks both so a located *Error survives an arbitrary wrapping.
+type multiUnwrap interface{ Unwrap() []error }
+type singleUnwrap interface{ Unwrap() error }
+
+// CollectErrors walks an error tree — both the errors.Join fan-out and single
+// fmt-wrapped Unwrap — and returns every located *Error it finds, deduplicated on
+// (line, col, message) so a repeated trailing-EOF error is reported once. Tool
+// front-ends (goal check/build, goalc) use this to render syntax errors in the
+// shared `file:line:col: error: [syntax] message` diagnostic format.
+func CollectErrors(err error) []*Error {
+	return collectErrs(err, map[string]bool{})
+}
+
+// collectErrs is CollectErrors' recursion; seen carries the dedup set by reference.
+func collectErrs(err error, seen map[string]bool) []*Error {
+	if err == nil {
+		return nil
+	}
+	if pe, ok := err.(*Error); ok {
+		key := fmt.Sprintf("%d:%d:%s", pe.Pos.Line, pe.Pos.Col, pe.Msg)
+		if seen[key] {
+			return nil
+		}
+		seen[key] = true
+		return []*Error{pe}
+	}
+	var out []*Error
+	switch x := err.(type) {
+	case multiUnwrap:
+		for _, sub := range x.Unwrap() {
+			out = append(out, collectErrs(sub, seen)...)
+		}
+	case singleUnwrap:
+		out = append(out, collectErrs(x.Unwrap(), seen)...)
+	}
+	return out
 }
 
 // describe renders a token for error messages.

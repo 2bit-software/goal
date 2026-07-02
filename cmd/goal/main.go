@@ -478,6 +478,25 @@ func transpileAll(root string) ([]transpiled, error) {
 }
 
 func cmdBuild(root string, emit bool, emitDir string, out, errOut io.Writer) error {
+	// A syntax error is reported in the shared `file:line:col: error: [syntax] message`
+	// format before the Go toolchain runs, so build parse errors parse with the same
+	// regex as check diagnostics (rather than the backend's bare "parse:" wrapper).
+	pkgs, derr := project.Discover(root)
+	if derr != nil {
+		return derr
+	}
+	var syntax []checkDiag
+	for _, pkg := range pkgs {
+		syntax = append(syntax, packageSyntaxDiags(pkg)...)
+	}
+	if len(syntax) > 0 {
+		sortDiags(syntax)
+		for _, d := range syntax {
+			fmt.Fprintln(errOut, d.render())
+		}
+		return fmt.Errorf("%d syntax error(s)", len(syntax))
+	}
+
 	ts, err := transpileAll(root)
 	if err != nil {
 		return err
@@ -551,6 +570,13 @@ func cmdCheck(root string, out, errOut io.Writer) error {
 // not transpile) is reported as a note and the AST findings still stand; goal build is
 // the gate that hard-fails on non-transpiling source.
 func checkPackage(pkg *project.Package, errOut io.Writer) ([]checkDiag, error) {
+	// A file that fails to parse has no meaningful AST facts (and AnalyzePackageInDir
+	// would bail on the whole package), so a syntax error short-circuits the sema and
+	// depth stages: report it in the shared diagnostic format and stop here.
+	if syntax := packageSyntaxDiags(pkg); len(syntax) > 0 {
+		return syntax, nil
+	}
+
 	srcs := make([]string, len(pkg.Files))
 	for i, f := range pkg.Files {
 		srcs[i] = f.Src
@@ -642,6 +668,30 @@ func sortDiags(diags []checkDiag) {
 		}
 		return diags[i].col < diags[j].col
 	})
+}
+
+// parseErrorDiags renders located parse errors as [syntax] findings at path, so a
+// syntax error prints in the same `file:line:col: error: [code] message` format as
+// every checker diagnostic.
+func parseErrorDiags(path string, errs []*parser.Error) []checkDiag {
+	diags := make([]checkDiag, 0, len(errs))
+	for _, e := range errs {
+		diags = append(diags, checkDiag{path, e.Pos.Line, e.Pos.Col, sema.Severity(sema.Severity_Error{}), "syntax", e.Msg})
+	}
+	return diags
+}
+
+// packageSyntaxDiags parses each file in pkg and returns [syntax] diagnostics for
+// any that fail, keyed to the file's full source path. It returns nil when every
+// file parses cleanly. parser.CollectErrors deduplicates repeated trailing errors.
+func packageSyntaxDiags(pkg *project.Package) []checkDiag {
+	var diags []checkDiag
+	for _, f := range pkg.Files {
+		if _, perr := parser.ParseFile(f.Src); perr != nil {
+			diags = append(diags, parseErrorDiags(f.Path, parser.CollectErrors(perr))...)
+		}
+	}
+	return diags
 }
 
 // dedupKey identifies a construct across the two stages by file basename, line, and the

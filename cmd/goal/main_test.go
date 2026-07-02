@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -187,21 +188,25 @@ func TestCheckRejectsMalformedIfForInit(t *testing.T) {
 			dir := goalModule(t, map[string]string{"bad.goal": tc.src})
 
 			var out, errOut bytes.Buffer
-			// The malformed header is a parse error; cmdCheck returns it wrapped
-			// (main prints it to stderr). The unified file:line:col: error: [code]
-			// format is US-008 — here we only require a located message naming the
-			// missing condition and a non-nil (exit 1) result.
+			// The malformed header is a parse error. Since US-008 it renders on
+			// stderr in the unified `file:line:col: error: [syntax] message` format
+			// (main prints only the "N checker error(s)" tally to stderr via the
+			// returned error). Require a located [syntax] line naming the missing
+			// condition and a non-nil (exit 1) result.
 			err := run([]string{"check", dir}, &out, &errOut)
 			if err == nil {
 				t.Fatalf("expected check to fail on the malformed %s header\nstdout: %s\nstderr: %s", tc.name, out.String(), errOut.String())
 			}
-			msg := err.Error()
-			if !strings.Contains(msg, tc.want) {
-				t.Errorf("diagnostic does not name the missing condition (want %q):\n%s", tc.want, msg)
+			stderr := errOut.String()
+			if !strings.Contains(stderr, tc.want) {
+				t.Errorf("diagnostic does not name the missing condition (want %q):\n%s", tc.want, stderr)
 			}
-			// Located: the header is on line 4, so the position appears as `4:`.
-			if !strings.Contains(msg, "4:") {
-				t.Errorf("diagnostic not located to a source position:\n%s", msg)
+			// The header is on line 4; the diagnostic renders as bad.goal:4:col:.
+			if !strings.Contains(stderr, "bad.goal:4:") {
+				t.Errorf("diagnostic not located to bad.goal:4:\n%s", stderr)
+			}
+			if !strings.Contains(stderr, "error: [syntax] ") {
+				t.Errorf("diagnostic not rendered in the [syntax] format:\n%s", stderr)
 			}
 		})
 	}
@@ -218,6 +223,65 @@ func TestCheckAcceptsValidIfForInit(t *testing.T) {
 	if err := run([]string{"check", dir}, &out, &errOut); err != nil {
 		t.Fatalf("valid init+condition forms should check clean: %v\nstderr: %s", err, errOut.String())
 	}
+}
+
+// syntaxLine matches the unified one-line diagnostic format for a syntax error:
+// `<path>.goal:<line>:<col>: error: [syntax] <message>` (US-008 AC-1).
+var syntaxLine = regexp.MustCompile(`^\S+\.goal:\d+:\d+: error: \[syntax\] `)
+
+// A malformed file (unterminated function body) must be reported by BOTH
+// `goal check` and `goal build` as one located `[syntax]` line per error, using
+// the full path the user passed, with no duplicate lines and a non-zero exit —
+// so a single regex captures every error class (US-008).
+func TestSyntaxErrorsRenderInDiagnosticFormat(t *testing.T) {
+	// Unterminated body: the closing brace is missing, so the parser errors at EOF.
+	const bad = "package demo\n\nfunc f() int {\n\treturn 1\n"
+
+	assertSyntaxFormat := func(t *testing.T, verb string) {
+		t.Helper()
+		dir := goalModule(t, map[string]string{"bad.goal": bad})
+
+		var out, errOut bytes.Buffer
+		err := run([]string{verb, dir}, &out, &errOut)
+		if err == nil {
+			t.Fatalf("%s: expected failure on the malformed file\nstdout: %s\nstderr: %s", verb, out.String(), errOut.String())
+		}
+
+		lines := strings.Split(strings.TrimRight(errOut.String(), "\n"), "\n")
+		var syntaxLines []string
+		for _, ln := range lines {
+			if ln == "" {
+				continue
+			}
+			if !syntaxLine.MatchString(ln) {
+				t.Errorf("%s: stderr line not in the [syntax] format: %q", verb, ln)
+				continue
+			}
+			syntaxLines = append(syntaxLines, ln)
+			// The path must be the full path under the passed dir, not a bare basename.
+			if !strings.HasPrefix(ln, dir) {
+				t.Errorf("%s: diagnostic path is not the full user path (want prefix %q): %q", verb, dir, ln)
+			}
+		}
+		if len(syntaxLines) == 0 {
+			t.Fatalf("%s: no [syntax] diagnostic emitted:\nstderr: %s", verb, errOut.String())
+		}
+		// Duplicate trailing errors (e.g. repeated EOF) must be deduplicated.
+		seen := map[string]bool{}
+		for _, ln := range syntaxLines {
+			if seen[ln] {
+				t.Errorf("%s: duplicate diagnostic line emitted: %q", verb, ln)
+			}
+			seen[ln] = true
+		}
+		// The bare `check <dir>:` / `parse:` wrapper must not leak into output.
+		if strings.Contains(errOut.String(), "check "+dir+":") || strings.Contains(errOut.String(), ": parse:") {
+			t.Errorf("%s: legacy wrapper leaked into output:\n%s", verb, errOut.String())
+		}
+	}
+
+	t.Run("check", func(t *testing.T) { assertSyntaxFormat(t, "check") })
+	t.Run("build", func(t *testing.T) { assertSyntaxFormat(t, "build") })
 }
 
 // A depth-stage transpile failure (here: a single file checked alone, whose enum

@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"goal/internal/backend"
+	"goal/internal/parser"
 	"goal/internal/sema"
 )
 
@@ -47,7 +48,22 @@ func run(args []string, stdin io.Reader, out, errOut io.Writer) error {
 	if !noCheck {
 		diags, err := sema.Analyze(string(src))
 		if err != nil {
-			return fmt.Errorf("check: %w", err)
+			// A parse failure renders in the shared `file:line:col: error: [syntax]
+			// message` format (deduplicated), matching goal check/build, instead of
+			// the bare "check: <line:col>:" wrapper.
+			pes := parser.CollectErrors(err)
+			if len(pes) == 0 {
+				return fmt.Errorf("check: %w", err)
+			}
+			for _, e := range pes {
+				fmt.Fprintln(errOut, sema.Diagnostic{
+					Pos:      e.Pos,
+					Severity: sema.Severity(sema.Severity_Error{}),
+					Code:     "syntax",
+					Message:  e.Msg,
+				}.Render(files[0]))
+			}
+			return fmt.Errorf("%s rejected: %d syntax error(s)", files[0], len(pes))
 		}
 		for _, d := range diags {
 			fmt.Fprintln(errOut, d.Render(files[0]))
