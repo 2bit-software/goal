@@ -8028,3 +8028,40 @@
     `morse-code workflow next` (that just re-pauses "awaiting human review");
     use `morse-code workflow resume` to pass a paused user-approval gate.
 ---
+
+## 2026-07-02 - US-016
+- Made `goal fix` fail loudly instead of silently corrupting a file: the
+  fixed-point loop re-parses its own output each pass, and on a parse failure of
+  fix's OWN rewrite (out != src) it now reverts to the pristine input and returns
+  an error ("fix: rewritten source failed to reparse: ..."). A pristine input
+  that does not parse still degrades quietly (real parse errors stay goal check's
+  job). `File` gained a trailing `err` return; `cmdFix` returns before
+  `os.WriteFile` on that error so `-inplace` leaves the file byte-identical; the
+  LSP idiomatize action offers nothing on error. Also moved report harvesting to
+  the converged final pass so `Report.Line` values are positions in the final
+  text, not stale intermediates. Added an exported `ParseFileFn` seam for testing.
+- Files: internal/fix/fix.goal (+ regenerated internal/fix/fix.go),
+  internal/lsp/codeaction.goal (+ .go), cmd/goal/main.go, cmd/goal/fix_test.go
+  (two new tests: reparse-abort byte-identity, report-line-against-final-text).
+- Learnings for future iterations:
+  - Changing a *.goal library function's signature (here fix.File 3->4 returns)
+    hits the bootstrap deadlock (already in Patterns): the Go CALLER in cmd/goal
+    (main.go) is compiled into bin/goal, so editing main.go to the new arity
+    BEFORE the committed .go carries it makes `task generate`'s `task build` fail,
+    which blocks regeneration. Escape used: keep the .goal edits, TEMPORARILY
+    revert the hand-written cmd/goal caller to the old arity, `task generate` (now
+    bin/goal builds from the still-consistent old committed .go and re-emits the
+    new-arity fix.go), THEN re-apply the caller edit. Cleaner than hand-patching
+    generated .go.
+  - To exercise an internal package's hard-to-reach failure path from a cmd/goal
+    test, add an exported function-var seam in the .goal source (e.g.
+    `var ParseFileFn = parser.ParseFile`) and swap it from the test with a
+    call-counting closure; restore via defer. Its type is the wrapped func's
+    signature (`func(string) (*ast.File, error)`), so the test imports
+    goal/internal/ast for the return type.
+  - fix's Skip/Suggest reports re-fire on every pass (that's why the rule+message
+    `seen` dedup exists), so harvesting reports only on the converged pass loses
+    nothing and fixes stale line numbers. The exported-signature warning is a Skip
+    (the exported fn is never converted), so it survives converged-only harvesting
+    — TestFixExportedWarning still passes.
+---
