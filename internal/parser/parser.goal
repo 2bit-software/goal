@@ -645,7 +645,12 @@ func (p *parser) parseParamList() *ast.FieldList {
 func (p *parser) parseParam() *ast.Field {
 	f := &ast.Field{}
 	if p.nameThenType() {
-		f.Names = []*ast.Ident{p.ident()}
+		names := []*ast.Ident{p.ident()}
+		for p.at(token.COMMA) {
+			p.advance()
+			names = append(names, p.ident())
+		}
+		f.Names = names
 		f.Type = p.parseTypeOrVariadic()
 	} else {
 		f.Type = p.parseTypeOrVariadic()
@@ -653,17 +658,21 @@ func (p *parser) parseParam() *ast.Field {
 	return f
 }
 
-// nameThenType reports whether the current identifier is a parameter name
-// followed by a type (rather than itself being an unnamed parameter type).
+// nameThenType reports whether the current identifier begins a "names type"
+// group: one or more comma-separated identifiers followed by a type (as in
+// `func f(a, b int)`), rather than itself being an unnamed parameter type. It
+// looks past the whole IDENT-COMMA run so grouped names are not mistaken for a
+// list of unnamed types. A run ending in PERIOD (qualified type) or RPAREN
+// (end of an unnamed list) is not a name group.
 func (p *parser) nameThenType() bool {
 	if !p.at(token.IDENT) {
 		return false
 	}
-	switch p.peekKind() {
-	case token.COMMA, token.RPAREN, token.PERIOD:
-		return false // unnamed type, qualified type, or end of list
+	i := 0
+	for p.kindAt(i) == token.IDENT && p.kindAt(i+1) == token.COMMA {
+		i += 2
 	}
-	return startsTypeKind(p.peekKind())
+	return p.kindAt(i) == token.IDENT && startsTypeKind(p.kindAt(i+1))
 }
 
 // parseTypeOrVariadic parses a type or a variadic "...type" element.

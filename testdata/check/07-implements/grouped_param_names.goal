@@ -1,0 +1,19 @@
+package geom
+
+// Adder's method uses grouped parameters (`x, y int`). Summer implements it with
+// a method that groups its own parameters under different names (`a, b int`).
+// Because grouped parameters now record every leading identifier as a name of the
+// shared type, the two signatures compare as equal despite the different names —
+// a clean case (any Error here fails the test), guarding against a false
+// [method-signature-mismatch].
+type Adder interface {
+	Add(x, y int) int
+}
+
+type Summer struct implements Adder {
+	base int
+}
+
+func (s Summer) Add(a, b int) int {
+	return s.base + a + b
+}

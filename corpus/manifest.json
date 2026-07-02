@@ -593,6 +593,14 @@
       "normalize": "none"
     },
     {
+      "id": "testdata-check-07-implements-grouped_param_names",
+      "kind": "check",
+      "input": "testdata/check/07-implements/grouped_param_names.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
       "id": "testdata-check-07-implements-missing_method",
       "kind": "check",
       "input": "testdata/check/07-implements/missing_method.goal",

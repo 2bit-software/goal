@@ -41,8 +41,8 @@ func TestGenerateCounts(t *testing.T) {
 	if pkg != 2 {
 		t.Errorf("package-mode cases = %d, want 2", pkg)
 	}
-	if check != 54 {
-		t.Errorf("check cases = %d, want 54", check)
+	if check != 55 {
+		t.Errorf("check cases = %d, want 55", check)
 	}
 	// Doctest cases are additive: each transpile pair whose golden is an emitted
 	// _test.go sidecar (the four feature-11 examples plus the testdata
