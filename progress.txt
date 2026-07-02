@@ -7542,3 +7542,32 @@
     (const manifestPath = "../../corpus/manifest.json"), NOT internal/corpus/.
     `cmd/corpus-gen` writes there by default.
 ---
+
+## 2026-07-02T02:40:00Z - US-003
+- Fixed grouped-parameter parsing so `func f(a, b int)` records Names=[a b]
+  Type=int instead of treating the first name as an unnamed type. Grouped
+  results are fixed for free (same parseParamList path). Added a clean
+  07-implements corpus case proving differently-named grouped params on an
+  interface/implementor no longer trip a false [method-signature-mismatch].
+- Files changed: internal/parser/parser.goal (nameThenType widened to a
+  multi-token IDENT-COMMA lookahead; parseParam named branch collects the full
+  name run), internal/parser/parser.go (regenerated), corpus/manifest.json
+  (regenerated), internal/corpus/generate_test.go (check count 54->55),
+  testdata/check/07-implements/grouped_param_names.goal (new clean fixture).
+- Learnings for future iterations:
+  - The pinned corpus counts in internal/corpus/generate_test.go are NOT the
+    SHARED-FACTS baseline (55/2/53/4); prior stories already bumped them. As of
+    US-003 they are transpile=56, pkg=2, check=55, doctest=5. Always read the
+    CURRENT value in generate_test.go, and let a red TestGenerateCounts tell you
+    the exact new number rather than deriving a delta.
+  - A parser field-shape change can be fully behavior-neutral for the EMITTER:
+    the emitter prints an unnamed field as just its type and a named field as
+    `names type`, joined by ", ", so the buggy shape (`{Type:a},{Names:[b],int}`)
+    and the fixed shape (`{Names:[a,b],int}`) render `a, b int` identically.
+    That is why grouped-param parser fixes touch zero transpile goldens and pass
+    fixpoint untouched — verify the invariant instead of regenerating goldens.
+  - `nameThenType`/`parseParam` use kindAt(n) (n=0 is the current token); the
+    name-run loop `for p.at(COMMA){advance; ident}` is safe because the widened
+    lookahead already proved the run ends on an IDENT + type-start, so
+    parseParamList's own inter-param comma handling is never stolen.
+---
