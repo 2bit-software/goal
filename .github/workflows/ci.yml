@@ -1,0 +1,44 @@
+name: CI
+
+# Runs the project's correctness gates on every push to main and every pull
+# request so regressions cannot land silently. `task check` runs go vet, the
+# full test suite, and the verify-generated gates; `task fixpoint` runs the
+# self-host gate that rebuilds the compiler through its bootstrap stages.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The gates only read the repo; they need no write or deploy scopes.
+permissions:
+  contents: read
+
+# push + pull_request double-runs a PR branch; collapse to one live run per ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+          # No go.sum (stdlib-only module), so there is nothing to cache — and
+          # leaving the cache on warns about the missing dependencies file.
+          cache: false
+
+      - name: Install Task
+        # $HOME/go/bin is on the runner PATH; pin to v3 to avoid surprise breaks.
+        run: go install github.com/go-task/task/v3/cmd/task@v3
+
+      - name: Run correctness gates (test suite + verify-generated)
+        run: task check
+
+      - name: Run self-host gate (compiler bootstrap fixpoint)
+        run: task fixpoint
