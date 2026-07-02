@@ -140,7 +140,7 @@
         "A cmd/goal test asserts the format on a fixture with a deliberate type error."
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "SPIKE. FILES: cmd/goal/main.go — goToolchain, runGo, cmdBuild, new rewriteGoBuildStderr. APPROACH: (1) runGo sets cmd.Stderr = errOut verbatim (main.go:688); for verb 'build' capture stderr in a bytes.Buffer instead (route via param or a build-only wrapper). (2) Post-process line-wise with regex ^([^\\s:]+\\.goal):(\\d+)(?::(\\d+))?: (.*)$ — Go emits line-only positions because pipeline.AddLineDirectives writes basename //line directives; default col to 1. (3) Map basename -> invocation-relative path via map built from all ts[i].pkg.Files[j] (f.Name -> f.Path; Discover(root) paths are already invocation-relative). Emit path:line:col: error: [go-build] msg via checkDiag.render. (4) Suppress ^# package-header lines; tab-indented continuation lines (have/want) belong to the previous diag — append to its message; pass unrecognized lines through after the structured ones. Keep the trailing 'go build failed' error (prints after — satisfies 'suppressed or moved after'). PATTERN: checkDiag.render(). TESTS: clone TestBuildErrorMapsToGoalSource (main_test.go:92): var x int = \"nope\" on line 4; assert errOut matches bad.goal:4:1: error: [go-build] and contains no leading # demo line. PITFALLS: goal run shares goToolchain — the running PROGRAM's stderr must NOT be rewritten; apply only to build (or split runGo); don't orphan multi-line have/want continuations; basename collisions across packages can map to the wrong Path — resolve within the # header context or document; buffering loses streaming (fine for build only)."
     },
     {

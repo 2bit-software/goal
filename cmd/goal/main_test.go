@@ -106,6 +106,31 @@ func TestBuildErrorMapsToGoalSource(t *testing.T) {
 	}
 }
 
+// A Go-level build error renders in the same one-line diagnostic format as check and
+// syntax errors — `path/file.goal:line:col: error: [go-build] message` — with the Go
+// package-clause header suppressed, so one regex captures every error class (US-010).
+func TestBuildErrorRendersInDiagnosticFormat(t *testing.T) {
+	const bad = "package main\n\nfunc f() int {\n\tvar x int = \"nope\"\n\treturn x\n}\n\nfunc main() { _ = f() }\n"
+	dir := goalModule(t, map[string]string{"bad.goal": bad})
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"build", dir}, &out, &errOut)
+	if err == nil {
+		t.Fatal("expected build to fail on the type error")
+	}
+
+	// The type error on line 4 renders with the shared format and a [go-build] code. Go
+	// reports a line-only position, so the column defaults to 1.
+	line := regexp.MustCompile(`(?m)^\S+bad\.goal:4:1: error: \[go-build\] `)
+	if !line.MatchString(errOut.String()) {
+		t.Errorf("build error not in the [go-build] diagnostic format:\n%s", errOut.String())
+	}
+	// The Go package-clause header (`# demo`) must be suppressed.
+	if regexp.MustCompile(`(?m)^# `).MatchString(errOut.String()) {
+		t.Errorf("package-clause header line was not suppressed:\n%s", errOut.String())
+	}
+}
+
 func TestEmitWritesSiblingGo(t *testing.T) {
 	dir := goalModule(t, map[string]string{"main.goal": mainGoal})
 

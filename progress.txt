@@ -7797,3 +7797,36 @@
     error-severity `[elided-missing-field]` via the depth stage — handy for
     asserting JSON field values.
 ---
+## 2026-07-02T04:54:00Z - US-010
+- Mapped `goal build`'s Go-level errors into the shared check diagnostic format:
+  each positioned error now renders as
+  `path/file.goal:line:col: error: [go-build] message` (via checkDiag.render), with
+  the invocation-relative source path, the `# module/pkg` package-clause header
+  suppressed, and the `goal: go build failed` wrapper left to print after the
+  structured lines (it is main()'s returned-error print, already after errOut).
+- Approach: gated on `verb == "build"` inside goToolchain — capture the toolchain's
+  stderr into a bytes.Buffer, rewrite via new `rewriteGoBuildStderr(ts, raw)`, write to
+  errOut, return the runGo error. `goal run` (and future verbs) still stream stderr
+  verbatim, so a running program's own stderr is never rewritten. Toolchain basename ->
+  invocation-relative .goal path map built from ts[i].pkg.Files (Base(f.Name) -> f.Path).
+  Regex `^([^\s:]+\.goal):(\d+)(?::(\d+))?: (.*)$`; Go emits line-only positions so col
+  defaults to 1. Tab/space-indented continuation lines (have/want) append to the previous
+  diagnostic; unrecognized lines pass through after the structured ones.
+- Files: cmd/goal/main.go (imports bytes/regexp/strconv; goBuildLineRe; rewriteGoBuildStderr;
+  goToolchain build branch), cmd/goal/main_test.go (new TestBuildErrorRendersInDiagnosticFormat).
+- Verify: `go test ./cmd/goal -run TestBuild` all pass; `task check` CHECK OK; `task
+  fixpoint` FIXPOINT OK.
+- Learnings for future iterations:
+  - `goal: go build failed: exit status 1` is printed by main() from runGo's returned
+    error, i.e. AFTER anything written to errOut — so "move the wrapper after the
+    structured lines" needs no work, and a cmd/goal test finds the wrapper on the
+    returned `err`, not in the errOut buffer.
+  - Over the overlay the Go toolchain emits line-ONLY positions (the backend's //line
+    directives name the .goal basename with no column); default col to 1 when the
+    optional column group is empty.
+  - `[go-build]` (like `[syntax]`) is a cmd-side render code, not a sema catalog
+    feature — no internal/guide/catalog.goal entry and no AI-KNOWLEDGE-BOOTSTRAP regen;
+    cmd/goal is plain Go so no `task generate`.
+  - Only rewrite `verb == "build"`; branching inside goToolchain (which has `ts` for the
+    basename->path map) keeps `goal run`'s program stderr verbatim without touching runGo.
+---

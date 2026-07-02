@@ -13,13 +13,16 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"goal/internal/backend"
@@ -773,14 +776,102 @@ func depthFilePath(pkg *project.Package, name string) string {
 
 // goToolchain runs `go <verb> <target>` over the package with the generated Go supplied
 // as an overlay, so nothing is written to the source tree. Output (including any error,
-// already mapped to .goal positions by the //line directives) is relayed verbatim.
+// already mapped to .goal positions by the //line directives) is relayed verbatim —
+// except for `build`, whose stderr is rewritten into the shared check diagnostic format
+// (see rewriteGoBuildStderr). Only build is rewritten: `goal run` must relay the running
+// program's own stderr untouched.
 func goToolchain(root string, ts []transpiled, out, errOut io.Writer, verb, target string, progArgs ...string) error {
 	overlayPath, cleanup, err := writeOverlay(ts)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
-	return runGo(root, []string{"-overlay", overlayPath}, out, errOut, verb, target, progArgs...)
+	flags := []string{"-overlay", overlayPath}
+	if verb == "build" {
+		// Capture the toolchain's stderr so Go-level build errors render as
+		// `path/file.goal:line:col: error: [go-build] message`, parseable by the same
+		// regex as check and syntax diagnostics.
+		var buf bytes.Buffer
+		runErr := runGo(root, flags, out, &buf, verb, target, progArgs...)
+		if rendered := rewriteGoBuildStderr(ts, buf.String()); rendered != "" {
+			fmt.Fprint(errOut, rendered)
+		}
+		return runErr
+	}
+	return runGo(root, flags, out, errOut, verb, target, progArgs...)
+}
+
+// goBuildLineRe matches a Go toolchain diagnostic line that carries a .goal source
+// position. The Go tool emits line-only positions here (the backend's //line directives
+// name the .goal basename with no column), so the column group is optional.
+var goBuildLineRe = regexp.MustCompile(`^([^\s:]+\.goal):(\d+)(?::(\d+))?: (.*)$`)
+
+// rewriteGoBuildStderr converts `go build`'s stderr into the shared check diagnostic
+// format. Package-clause header lines (`# module/pkg`) are dropped; positioned lines
+// become `[go-build]` diagnostics with the invocation-relative source path (mapped from
+// the toolchain's basename back to the .goal path the user passed); tab/space-indented
+// continuation lines (the have/want detail of a multi-line error) stay attached to their
+// diagnostic; any other line is passed through after the structured lines so nothing is
+// silently dropped. NOTE: within one build the .goal basenames are assumed unique across
+// packages; a cross-package basename collision would map to the first-seen path.
+func rewriteGoBuildStderr(ts []transpiled, raw string) string {
+	pathByBase := map[string]string{}
+	for _, t := range ts {
+		for _, f := range t.pkg.Files {
+			base := filepath.Base(f.Name)
+			if _, seen := pathByBase[base]; !seen {
+				pathByBase[base] = f.Path
+			}
+		}
+	}
+
+	var diags []checkDiag
+	var passthrough []string
+	last := -1 // index in diags of the most recent, for continuation lines
+	for _, line := range strings.Split(strings.TrimRight(raw, "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "# ") {
+			last = -1 // package header; the run that follows starts fresh
+			continue
+		}
+		if strings.HasPrefix(line, "\t") || strings.HasPrefix(line, " ") {
+			if last >= 0 {
+				diags[last].message += " " + strings.TrimSpace(line)
+			} else {
+				passthrough = append(passthrough, line)
+			}
+			continue
+		}
+		if m := goBuildLineRe.FindStringSubmatch(line); m != nil {
+			ln, _ := strconv.Atoi(m[2])
+			col := 1
+			if m[3] != "" {
+				col, _ = strconv.Atoi(m[3])
+			}
+			path := m[1]
+			if p, ok := pathByBase[filepath.Base(m[1])]; ok {
+				path = p
+			}
+			diags = append(diags, checkDiag{path, ln, col, sema.Severity(sema.Severity_Error{}), "go-build", m[4]})
+			last = len(diags) - 1
+			continue
+		}
+		passthrough = append(passthrough, line)
+		last = -1
+	}
+
+	var b strings.Builder
+	for _, d := range diags {
+		b.WriteString(d.render())
+		b.WriteByte('\n')
+	}
+	for _, l := range passthrough {
+		b.WriteString(l)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 // runGo invokes the go tool with the given verb, flags, and target from dir.
