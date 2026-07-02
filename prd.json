@@ -244,7 +244,7 @@
         "Pinned counts bumped."
       ],
       "priority": 18,
-      "passes": false,
+      "passes": true,
       "notes": "SPIKE. FILES: internal/sema/resolve.goal (receiverType ~:530) only — implements.goal:84 already looks up info.Methods[ts.Name.Name] bare, nothing to change there. APPROACH: rewrite receiverType(fl *ast.FieldList) to peel the AST instead of string-trimming: take fl.List[0].Type, unwrap *ast.StarExpr, then unwrap *ast.IndexExpr/*ast.IndexListExpr to their .X, then strings.TrimPrefix(typeString(x), '*'). Methods map then keys Foo not Foo[T]. task generate. BONUS: this also repairs generic-receiver method resolution in the EMITTER — methodCalleeSig (emit.goal:2179) reads e.info.Methods[typ] with bare names and buildRecvTypes doc (~emit.goal:2192) already promises *Tree[T] -> Tree. PATTERN: foreignRecvBase (foreign.goal:451-469) does exactly this unwrap for foreign receivers — copy it. TESTS: testdata/check/07-implements/generic_receiver.goal clean case (type Closer interface{ Close() error }; type Box[T any] struct implements Closer {...}; func (b *Box[T]) Close() error) + generic_receiver_missing.goal with // want 'does not implement' on the type-decl line (diag Pos is the implements clause). corpus-gen; check 53->55 (coordinate the running total with other stories); auto-runs via TestSemaQuestionImplementsRunner (07-implements prefix in sema_question_test.go). PITFALLS: clean-case method signatures must not mention T or the Sig string-compare vs the interface genuinely mismatches; verify the parser accepts `type Box[T any] struct implements I` BEFORE writing fixtures; the key change alters emitter lookups — full corpus + fixpoint."
     },
     {

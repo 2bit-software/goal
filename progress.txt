@@ -137,6 +137,21 @@
   hand-edit the manifest). Keep fixtures OUT of internal/compiler: `task
   verify-generated` diffs internal/compiler against a fresh emit, so any non-emitted
   file there fails the drift gate.
+- A type/receiver-name map key must be produced by PEELING the AST, not by
+  string-rendering the type: `receiverType` (sema/resolve.goal) records method
+  receivers, and both the implements check (implements.goal) and the emitter
+  (`methodCalleeSig`, emit.goal) look those methods up by the BARE type name. A
+  generic receiver `*Box[T]` rendered to a string keys `Box[T]` and is never
+  found. Fix at the single key-PRODUCING site (unwrap `*ast.StarExpr`, then
+  `*ast.IndexExpr`/`*ast.IndexListExpr` to `.X`, mirroring `foreignRecvBase` in
+  foreign.goal) — that one change repairs the checker AND the emitter at once;
+  never patch the lookup strings (fragile, and leaves the other consumer broken).
+  (found in the audit-remediation US-018 generic-receiver fix.)
+- The pinned corpus counts in internal/corpus/generate_test.go (transpile / pkg /
+  check / doctest) DRIFT upward as stories add testdata cases, so the PRD notes'
+  absolute numbers (e.g. "check 53->55") go stale. Read the CURRENT `want N` from
+  generate_test.go and the actual `TestGenerateCounts` failure ("check cases = N,
+  want M") — bump to the observed N — rather than trusting the PRD's snapshot.
 - Corpus + selfhost are the ONLY external Go consumers of the compiler packages
   once cmd/* is repointed (US-018): when flipping imports
   goal/internal/<pkg> -> goal/internal/compiler/<pkg>, repoint per-SPECIFIC-package
@@ -8109,4 +8124,38 @@
   - Make each fix regression fixture put its ONLY non-conforming return inside the
     newly covered context (with an otherwise-conforming top-level return) so the
     test genuinely fails without the descent — a real guard, not a tautology.
+---
+
+## 2026-07-02T07:33:00Z - US-018
+- Fixed generic-receiver implements lookup: a generic struct declaring
+  `implements I` and satisfying it via generic-receiver methods
+  (`func (b *Box[T]) Close() error`) no longer false-fails. `receiverType`
+  (internal/sema/resolve.goal) recorded method receivers by rendering the type to
+  a string, so `*Box[T]` keyed `Box[T]` while implements.goal and the emitter look
+  the type up bare as `Box` — the method set was never found. Rewrote
+  `receiverType` to peel the AST (unwrap `*ast.StarExpr`, then
+  `*ast.IndexExpr`/`*ast.IndexListExpr` to `.X`, mirroring `foreignRecvBase` in
+  foreign.goal) so methods key the bare name. implements.goal needed no change
+  (already bare-keyed); the emitter's `methodCalleeSig` bare-name lookup is
+  repaired transitively.
+- Files: internal/sema/resolve.goal (regenerated internal/sema/resolve.go via
+  `task generate`); testdata/check/07-implements/generic_receiver.goal (clean
+  generic implementor, no want) + generic_receiver_missing.goal (generic
+  implementor missing Close(), `// want "missing method`); pinned check count
+  58->60 in internal/corpus/generate_test.go; regenerated corpus/manifest.json
+  via `go run ./cmd/corpus-gen`.
+- Verified: `task check` (go vet + verify-generated + full suite) PASS;
+  `task fixpoint` FIXPOINT OK. Commit 8aa163a.
+- Learnings for future iterations:
+  - See the new Codebase Patterns entries: peel generic index args at the
+    key-PRODUCING site (receiverType), not at the lookup, so both the sema
+    implements check and the emitter methodCalleeSig are fixed by one change.
+  - The PRD's "check 53->55" was stale — the live pinned count was already 58
+    (bumped by earlier stories). Trust `TestGenerateCounts`'s reported number, not
+    the PRD snapshot.
+  - No new diagnostic code (the negative case reuses the existing
+    missing-method report), so no catalog / AI-KNOWLEDGE-BOOTSTRAP regen needed.
+  - Interface methods in the fixtures are type-parameter-free (`Close() error`)
+    so the Sig string-compare is a genuine match; a method mentioning T would
+    legitimately mismatch.
 ---
