@@ -166,7 +166,7 @@
         "The bootstrap guide gains an exit-code contract section (regenerated)."
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "SPIKE. FILES: cmd/goal/main.go (main, run, parse*Flags, cmdCheck/cmdBuild error returns); docs/ai/toolchain.md + bootstrap regen. APPROACH: (1) type codedError struct{code int; err error} with Error()/Unwrap(); constructors usageErr (2), internalErr (3); func exitCode(err error) int via errors.As, default 1. (2) main(): os.Exit(exitCode(err)) replacing os.Exit(1) (main.go:98-103). (3) Classify: unknown command (main.go:149), topUsage no-args (107), every parse*Flags error, goal ai arg error -> usage(2). User-diagnostic paths stay bare (1): checker error count, go build failed, parse/syntax diags, interp runtime failure. Internal(3): writeOverlay failures, backend.TranspilePackage non-parse errors ('generated Go did not parse' — a real ICE, package.go:40), GoFormatter failures. (4) Tests exercise run() not main() — assert exitCode(err) on run's return. PATTERN: mirrors go tool's 1/2 split; none existing in repo. TESTS: main_test.go table test TestExitCodeClassification: run(['bogus'])->2, run(['check','--nope'])->2, bad-user-code check->1; for 3 either force writeOverlay failure via unwritable TMPDIR or just document (AC permits). PITFALLS: parse errors must stay 1 after US-008 rerouting (user code, not usage); goal run must propagate the PROGRAM's own nonzero exit as-is — never reclassify it as 2/3 (note the decision); toolchain.md change without bootstrap regen breaks TestBootstrapGoldenMatches."
     },
     {

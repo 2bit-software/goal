@@ -1,6 +1,11 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- `go build ./cmd/goal` (or ./cmd/goalc) drops a `goal`/`goalc` binary in the
+  repo ROOT that is NOT gitignored (found US-012) — it silently shows up as an
+  untracked file at commit time. For a quick compile check prefer
+  `go build -o /dev/null ./cmd/goal` or `go vet ./cmd/goal`; if you did build to
+  the default output, `rm` the binary before staging.
 - A doctest fixture is verified by TWO oracles: the compiled Go sidecar (go test)
   AND the goscript INTERP gate. The interp models a `Result` as a single variant
   Value, so `v, err := resultFn()` (two-value binding) FAILS under the interp
@@ -7863,4 +7868,35 @@
     (`go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`), unlike US-010's build
     rendering. cmd/goal needed no change: checkPackage already converts depth
     Diagnostics to the render format and exits non-zero on any Error severity.
+---
+
+## 2026-07-01T00:00:00Z - US-012
+- Classified goal command exit codes: usage errors exit 2, goal-internal
+  failures exit 3, user-code diagnostics stay the default 1 (success 0). Added a
+  codedError tag + usageErr/internalErr/exitCode in cmd/goal/main.go, switched
+  main() to os.Exit(exitCode(err)), and wrapped only the precise boundaries.
+  Documented the contract in docs/ai/toolchain.md and regenerated the bootstrap.
+- Files changed: cmd/goal/main.go, cmd/goal/main_test.go, docs/ai/toolchain.md,
+  AI-KNOWLEDGE-BOOTSTRAP.md.
+- Learnings for future iterations:
+  - Exit-code classification for cmd/goal is done with a codedError{code,err}
+    that delegates Error() and implements Unwrap(); exitCode() uses errors.As so
+    the tag survives fmt.Errorf("%w") wrapping AND message-text/errors.Is asserts
+    in existing tests keep passing. Default (untagged) is exit 1 — so every
+    existing user-code failure path needs NO change; only wrap the usage(2) and
+    internal(3) exceptions.
+  - The clean way to route a backend ICE to exit 3 without fragile string
+    matching: in cmdBuild, packageSyntaxDiags ALREADY gates parse errors before
+    transpileAll runs, so any post-gate transpileAll failure is provably a
+    backend defect -> internalErr. cmdRun has no such gate, so leave its
+    transpileAll bare (a parse error there is user code, stays 1). Left runGo
+    bare too so `goal run` propagates the program's own failure at 1, never 2/3.
+  - Added a len(pkgs)==0 guard to cmdBuild (matching cmdCheck) so the empty-input
+    "no packages found" condition stays exit 1 instead of being swept into the
+    internal(3) wrap of transpileAll.
+  - `go build ./cmd/goal` drops a `goal` binary in the repo root that is NOT
+    gitignored — delete it before staging or it lands in the commit. Prefer
+    `go build -o /dev/null ./cmd/goal` (or `go vet`) for a compile check.
+  - history/ is gitignored here (morse-code runtime), so morse-code initiative
+    artifacts are never part of the feature commit.
 ---
