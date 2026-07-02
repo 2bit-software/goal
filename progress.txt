@@ -8534,3 +8534,28 @@
     resolveQuestionCallee; single-file Analyze never runs EnrichForeign, so keep a
     fixture's `?` callee defined in the same file for the callee-* codes to fire.
 ---
+
+## 2026-07-02T10:44:49Z - US-028
+- Added six cmd/goal/main_test.go tests exercising the three depth-stage
+  (go/types) checker codes plus a clean twin for each:
+  discarded-result-error, dropped-stored-result, generic-missing-field.
+- Files changed: cmd/goal/main_test.go (test-only; no production/.goal edits,
+  no corpus manifest or pinned-count change).
+- Learnings for future iterations:
+  - The three depth-stage codes live in internal/typecheck (mustuse.goal for
+    discarded-result-error + dropped-stored-result; nozero.goal for
+    generic-missing-field) and ONLY surface through `goal check` in cmd/goal —
+    the corpus check harness is sema-only, so cmd/goal/main_test.go is the seam.
+  - Trigger recipes that work: discarded-result-error needs `v, _ := f()` with
+    f an in-package IDENT whose sema FuncSignature Mode is ModeResult (open-E
+    `Result[int, error]`); dropped-stored-result needs an UNEXPORTED
+    `Option[int]` (or closed-E Result) struct field never read via a selector
+    (exported fields give the `unresolved-dropped-field` WARNING variant instead,
+    which does not fail the check); generic-missing-field needs a keyed generic
+    literal `Pair[int]{x: 1}` (type is an IndexExpr) that omits a field.
+  - Assert the exact bracketed [code] substring, not just non-zero exit: the
+    depth stage silently degrades to a "depth stage unavailable" note when the
+    fixture does not transpile, so a code-string assertion catches degradation.
+  - `goalModule(t, map[string]string{...})` + `run([]string{"check", dir},...)`
+    is the established fixture pattern; clean twins assert stdout == "ok".
+---
