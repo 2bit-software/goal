@@ -559,6 +559,18 @@ func transpileAll(root string) ([]transpiled, error) {
 	return ts, nil
 }
 
+// reportWarnings prints each package's out-of-band front-end warnings (e.g. `?`
+// arity-resolution fallbacks, US-022) to errOut in the shared `file:line:col:
+// warning: [code] message` format, so they parse with the same regex as check and
+// build diagnostics. Warnings never affect exit status or generated output.
+func reportWarnings(ts []transpiled, errOut io.Writer) {
+	for _, t := range ts {
+		for _, w := range t.out.Warnings {
+			fmt.Fprintf(errOut, "%s:%d:%d: warning: [%s] %s\n", w.File, w.Line, w.Col, w.Code, w.Message)
+		}
+	}
+}
+
 func cmdBuild(root string, emit bool, emitDir string, out, errOut io.Writer) error {
 	// A syntax error is reported in the shared `file:line:col: error: [syntax] message`
 	// format before the Go toolchain runs, so build parse errors parse with the same
@@ -589,6 +601,7 @@ func cmdBuild(root string, emit bool, emitDir string, out, errOut io.Writer) err
 	if err != nil {
 		return internalErr(err)
 	}
+	reportWarnings(ts, errOut)
 	if emit {
 		return emitFiles(ts, emitDir, out)
 	}
@@ -609,6 +622,7 @@ func cmdTest(root string, out, errOut io.Writer) error {
 		// user syntax — classify it as internal (exit 3), as cmdBuild does.
 		return internalErr(err)
 	}
+	reportWarnings(ts, errOut)
 	return goToolchain(root, ts, out, errOut, "test", "./...", "-count=1")
 }
 
@@ -617,6 +631,7 @@ func cmdRun(root string, emit bool, emitDir string, progArgs []string, out, errO
 	if err != nil {
 		return err
 	}
+	reportWarnings(ts, errOut)
 	if emit {
 		if err := emitFiles(ts, emitDir, out); err != nil {
 			return err

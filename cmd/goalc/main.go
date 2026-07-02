@@ -76,6 +76,13 @@ func run(args []string, stdin io.Reader, out, errOut io.Writer) error {
 	if err != nil {
 		return err
 	}
+	for _, w := range result.Warnings {
+		file := w.File
+		if file == "" {
+			file = files[0]
+		}
+		fmt.Fprintf(errOut, "%s:%d:%d: warning: [%s] %s\n", file, w.Line, w.Col, w.Code, w.Message)
+	}
 	if testMode {
 		if result.Test == "" {
 			return fmt.Errorf("no doctests in input")

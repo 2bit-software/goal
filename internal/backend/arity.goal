@@ -14,6 +14,7 @@ package backend
 // two-value default, so resolution never fails the transpile.
 
 import (
+	"errors"
 	"go/importer"
 	"go/token"
 	"go/types"
@@ -33,16 +34,17 @@ type funcArity struct {
 // arityResolver maps a file's package qualifiers to import paths and resolves the
 // signatures of their exported functions on demand, caching each loaded package.
 type arityResolver struct {
-	imports map[string]string                 // qualifier -> import path
-	imp     types.Importer                    // lazily created stdlib importer
-	impTry  bool                              // whether importer creation was attempted
-	cache   map[string]map[string]funcArity   // import path -> func name -> arity
+	imports  map[string]string               // qualifier -> import path
+	imp      types.Importer                  // lazily created stdlib importer
+	impTry   bool                            // whether importer creation was attempted
+	cache    map[string]map[string]funcArity // import path -> func name -> arity
+	loadErrs map[string]error                // import path -> the swallowed load error (nil-keyed absent = resolved)
 }
 
 // newArityResolver builds a resolver over a file's imports. The importer itself is
 // created lazily, only if a `?` actually needs a package signature.
 func newArityResolver(f *ast.File) *arityResolver {
-	r := &arityResolver{imports: map[string]string{}, cache: map[string]map[string]funcArity{}}
+	r := &arityResolver{imports: map[string]string{}, cache: map[string]map[string]funcArity{}, loadErrs: map[string]error{}}
 	if f == nil {
 		return r
 	}
@@ -89,6 +91,26 @@ func (r *arityResolver) lookup(pkg, fn string) funcArity {
 	return a
 }
 
+// importErr reports the import path a file qualifier resolves to and the error, if
+// any, from the last attempt to load its package for arity resolution. It returns a
+// nil error when the qualifier is not a known import or the package imported cleanly;
+// a non-nil error means a `?` on `qualifier.Fn` fell back to the curated stdlib table
+// or the two-value default because the package could not be imported here (US-022). It
+// forces the load (populating the cache) so the answer reflects an actual attempt.
+func (r *arityResolver) importErr(qualifier string) (string, error) {
+	if r == nil {
+		return "", nil
+	}
+	path, ok := r.imports[qualifier]
+	if !ok {
+		return "", nil
+	}
+	if _, ok := r.cache[path]; !ok {
+		r.cache[path] = r.loadPackage(path)
+	}
+	return path, r.loadErrs[path]
+}
+
 // loadPackage imports one package and records the result shape of its exported
 // functions. A failed import yields an empty map (graceful fallback).
 func (r *arityResolver) loadPackage(path string) map[string]funcArity {
@@ -102,10 +124,16 @@ func (r *arityResolver) loadPackage(path string) map[string]funcArity {
 		r.impTry = true
 	}
 	if r.imp == nil {
+		r.loadErrs[path] = errors.New("no importer available")
 		return out
 	}
 	pkg, err := r.imp.Import(path)
-	if err != nil || pkg == nil {
+	if err != nil {
+		r.loadErrs[path] = err
+		return out
+	}
+	if pkg == nil {
+		r.loadErrs[path] = errors.New("importer returned a nil package")
 		return out
 	}
 	scope := pkg.Scope()

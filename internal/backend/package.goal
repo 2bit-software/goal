@@ -49,11 +49,12 @@ func TranspilePackage(pkg *project.Package) (pipeline.PackageOutput, error) {
 	var out pipeline.PackageOutput
 	var usedOption bool
 	for i, f := range pkg.Files {
-		goSrc, fileUsedOption, err := emitFileWith(files[i], info, true, f.Name)
+		goSrc, fileUsedOption, fileWarns, err := emitFileWith(files[i], info, true, f.Name)
 		if err != nil {
 			return pipeline.PackageOutput{}, fmt.Errorf("%s: %w", f.Name, err)
 		}
 		usedOption = usedOption || fileUsedOption
+		out.Warnings = append(out.Warnings, fileWarns...)
 		formatted, err := GoFormatter{}.Format([]byte(goSrc))
 		if err != nil {
 			return pipeline.PackageOutput{}, fmt.Errorf("%s: generated Go did not parse: %w\n--- generated ---\n%s", f.Name, err, goSrc)

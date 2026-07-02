@@ -4,6 +4,7 @@ package backend
 
 //line arity.go:4
 import (
+	"errors"
 	"go/importer"
 	"go/token"
 	"go/types"
@@ -11,105 +12,127 @@ import (
 	"strings"
 )
 
-//line arity.goal:27
+//line arity.goal:28
 type funcArity struct {
 	results  int
 	endsErr  bool
 	resolved bool
 }
 
-//line arity.goal:35
+//line arity.goal:36
 type arityResolver struct {
-	imports map[string]string
-	imp     types.Importer
-	impTry  bool
-	cache   map[string]map[string]funcArity
+	imports  map[string]string
+	imp      types.Importer
+	impTry   bool
+	cache    map[string]map[string]funcArity
+	loadErrs map[string]error
 }
 
-//line arity.goal:44
+//line arity.goal:46
 func newArityResolver(f *ast.File) *arityResolver {
-	/*line arity.goal:45*/ r := &arityResolver{imports: map[string]string{}, cache: map[string]map[string]funcArity{}}
-	/*line arity.goal:46*/ if f == nil {
-		/*line arity.goal:47*/ return r
+	/*line arity.goal:47*/ r := &arityResolver{imports: map[string]string{}, cache: map[string]map[string]funcArity{}, loadErrs: map[string]error{}}
+	/*line arity.goal:48*/ if f == nil {
+		/*line arity.goal:49*/ return r
 	}
-	/*line arity.goal:49*/ for _, imp := range f.Imports {
-		/*line arity.goal:50*/ if imp == nil || imp.Path == nil {
-			/*line arity.goal:51*/ continue
+	/*line arity.goal:51*/ for _, imp := range f.Imports {
+		/*line arity.goal:52*/ if imp == nil || imp.Path == nil {
+			/*line arity.goal:53*/ continue
 		}
-		/*line arity.goal:53*/ path := strings.Trim(imp.Path.Value, "\"`")
-		/*line arity.goal:54*/ alias := ""
-		/*line arity.goal:55*/ if imp.Name != nil {
-			/*line arity.goal:56*/ alias = imp.Name.Name
+		/*line arity.goal:55*/ path := strings.Trim(imp.Path.Value, "\"`")
+		/*line arity.goal:56*/ alias := ""
+		/*line arity.goal:57*/ if imp.Name != nil {
+			/*line arity.goal:58*/ alias = imp.Name.Name
 		} else if i := strings.LastIndexByte(path, '/'); i >= 0 {
-			/*line arity.goal:58*/ alias = path[i+1:]
+			/*line arity.goal:60*/ alias = path[i+1:]
 		} else {
-			/*line arity.goal:60*/ alias = path
+			/*line arity.goal:62*/ alias = path
 		}
-		/*line arity.goal:62*/ if alias != "" && alias != "_" && alias != "." {
-			/*line arity.goal:63*/ r.imports[alias] = path
+		/*line arity.goal:64*/ if alias != "" && alias != "_" && alias != "." {
+			/*line arity.goal:65*/ r.imports[alias] = path
 		}
 	}
-	/*line arity.goal:66*/ return r
+	/*line arity.goal:68*/ return r
 }
 
-//line arity.goal:72
+//line arity.goal:74
 func (r *arityResolver) lookup(pkg, fn string) funcArity {
-	/*line arity.goal:73*/ if r == nil {
-		/*line arity.goal:74*/ return funcArity{}
+	/*line arity.goal:75*/ if r == nil {
+		/*line arity.goal:76*/ return funcArity{}
 	}
-	/*line arity.goal:76*/ path, ok := r.imports[pkg]
-	/*line arity.goal:77*/ if !ok {
-		/*line arity.goal:78*/ return funcArity{}
+	/*line arity.goal:78*/ path, ok := r.imports[pkg]
+	/*line arity.goal:79*/ if !ok {
+		/*line arity.goal:80*/ return funcArity{}
 	}
-	/*line arity.goal:80*/ funcs, ok := r.cache[path]
-	/*line arity.goal:81*/ if !ok {
-		/*line arity.goal:82*/ funcs = r.loadPackage(path)
-		/*line arity.goal:83*/ r.cache[path] = funcs
+	/*line arity.goal:82*/ funcs, ok := r.cache[path]
+	/*line arity.goal:83*/ if !ok {
+		/*line arity.goal:84*/ funcs = r.loadPackage(path)
+		/*line arity.goal:85*/ r.cache[path] = funcs
 	}
-	/*line arity.goal:85*/ a, ok := funcs[fn]
-	/*line arity.goal:86*/ if !ok {
-		/*line arity.goal:87*/ return funcArity{}
+	/*line arity.goal:87*/ a, ok := funcs[fn]
+	/*line arity.goal:88*/ if !ok {
+		/*line arity.goal:89*/ return funcArity{}
 	}
-	/*line arity.goal:89*/ return a
+	/*line arity.goal:91*/ return a
 }
 
-//line arity.goal:94
+//line arity.goal:100
+func (r *arityResolver) importErr(qualifier string) (string, error) {
+	/*line arity.goal:101*/ if r == nil {
+		/*line arity.goal:102*/ return "", nil
+	}
+	/*line arity.goal:104*/ path, ok := r.imports[qualifier]
+	/*line arity.goal:105*/ if !ok {
+		/*line arity.goal:106*/ return "", nil
+	}
+	/*line arity.goal:108*/ if _, ok := r.cache[path]; !ok {
+		/*line arity.goal:109*/ r.cache[path] = r.loadPackage(path)
+	}
+	/*line arity.goal:111*/ return path, r.loadErrs[path]
+}
+
+//line arity.goal:116
 func (r *arityResolver) loadPackage(path string) map[string]funcArity {
-	/*line arity.goal:95*/ out := map[string]funcArity{}
-	/*line arity.goal:96*/ if !r.impTry {
-		/*line arity.goal:101*/ r.imp = importer.ForCompiler(token.NewFileSet(), "source", nil)
-		/*line arity.goal:102*/ r.impTry = true
+	/*line arity.goal:117*/ out := map[string]funcArity{}
+	/*line arity.goal:118*/ if !r.impTry {
+		/*line arity.goal:123*/ r.imp = importer.ForCompiler(token.NewFileSet(), "source", nil)
+		/*line arity.goal:124*/ r.impTry = true
 	}
-	/*line arity.goal:104*/ if r.imp == nil {
-		/*line arity.goal:105*/ return out
+	/*line arity.goal:126*/ if r.imp == nil {
+		/*line arity.goal:127*/ r.loadErrs[path] = errors.New("no importer available")
+		/*line arity.goal:128*/ return out
 	}
-	/*line arity.goal:107*/ pkg, err := r.imp.Import(path)
-	/*line arity.goal:108*/ if err != nil || pkg == nil {
-		/*line arity.goal:109*/ return out
+	/*line arity.goal:130*/ pkg, err := r.imp.Import(path)
+	/*line arity.goal:131*/ if err != nil {
+		/*line arity.goal:132*/ r.loadErrs[path] = err
+		/*line arity.goal:133*/ return out
 	}
-	/*line arity.goal:111*/ scope := pkg.Scope()
-	/*line arity.goal:112*/ for _, name := range scope.Names() {
-		/*line arity.goal:113*/ fn, ok := scope.Lookup(name).(*types.Func)
-		/*line arity.goal:114*/ if !ok {
-			/*line arity.goal:115*/ continue
+	/*line arity.goal:135*/ if pkg == nil {
+		/*line arity.goal:136*/ r.loadErrs[path] = errors.New("importer returned a nil package")
+		/*line arity.goal:137*/ return out
+	}
+	/*line arity.goal:139*/ scope := pkg.Scope()
+	/*line arity.goal:140*/ for _, name := range scope.Names() {
+		/*line arity.goal:141*/ fn, ok := scope.Lookup(name).(*types.Func)
+		/*line arity.goal:142*/ if !ok {
+			/*line arity.goal:143*/ continue
 		}
-		/*line arity.goal:117*/ sig, ok := fn.Type().(*types.Signature)
-		/*line arity.goal:118*/ if !ok {
-			/*line arity.goal:119*/ continue
+		/*line arity.goal:145*/ sig, ok := fn.Type().(*types.Signature)
+		/*line arity.goal:146*/ if !ok {
+			/*line arity.goal:147*/ continue
 		}
-		/*line arity.goal:121*/ out[name] = funcArity{results: sig.Results().Len(), endsErr: lastIsError(sig.Results()), resolved: true}
+		/*line arity.goal:149*/ out[name] = funcArity{results: sig.Results().Len(), endsErr: lastIsError(sig.Results()), resolved: true}
 	}
-	/*line arity.goal:123*/ return out
+	/*line arity.goal:151*/ return out
 }
 
-//line arity.goal:127
+//line arity.goal:155
 func lastIsError(res *types.Tuple) bool {
-	/*line arity.goal:128*/ if res == nil || res.Len() == 0 {
-		/*line arity.goal:129*/ return false
+	/*line arity.goal:156*/ if res == nil || res.Len() == 0 {
+		/*line arity.goal:157*/ return false
 	}
-	/*line arity.goal:131*/ last := res.At(res.Len() - 1).Type()
-	/*line arity.goal:132*/ return types.Identical(last, errorType)
+	/*line arity.goal:159*/ last := res.At(res.Len() - 1).Type()
+	/*line arity.goal:160*/ return types.Identical(last, errorType)
 }
 
-//line arity.goal:136
+//line arity.goal:164
 var errorType = types.Universe.Lookup("error").Type()

@@ -37,7 +37,7 @@ type goBackend struct {
 
 //line backend.goal:57
 func (goBackend) Emit(file *ast.File, info *sema.Info) (pipeline.Output, error) {
-	/*line backend.goal:58*/ src, err := emitFile(file, info)
+	/*line backend.goal:58*/ src, _, warns, err := emitFileWith(file, info, false, "")
 	/*line backend.goal:59*/ if err != nil {
 		/*line backend.goal:60*/ return pipeline.Output{}, err
 	}
@@ -45,7 +45,7 @@ func (goBackend) Emit(file *ast.File, info *sema.Info) (pipeline.Output, error) 
 	/*line backend.goal:65*/ if err != nil {
 		/*line backend.goal:66*/ return pipeline.Output{}, fmt.Errorf("doctests: %w", err)
 	}
-	/*line backend.goal:68*/ return pipeline.Output{Go: src, Test: test}, nil
+	/*line backend.goal:68*/ return pipeline.Output{Go: src, Test: test, Warnings: warns}, nil
 }
 
 //line backend.goal:80

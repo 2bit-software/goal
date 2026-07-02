@@ -55,7 +55,7 @@ type goBackend struct{}
 // Emit renders file to Go source, lowering goal-specific constructs through the
 // resolved semantic facts in info (enums, sealed interfaces, methods).
 func (goBackend) Emit(file *ast.File, info *sema.Info) (pipeline.Output, error) {
-	src, err := emitFile(file, info)
+	src, _, warns, err := emitFileWith(file, info, false, "")
 	if err != nil {
 		return pipeline.Output{}, err
 	}
@@ -65,7 +65,7 @@ func (goBackend) Emit(file *ast.File, info *sema.Info) (pipeline.Output, error) 
 	if err != nil {
 		return pipeline.Output{}, fmt.Errorf("doctests: %w", err)
 	}
-	return pipeline.Output{Go: src, Test: test}, nil
+	return pipeline.Output{Go: src, Test: test, Warnings: warns}, nil
 }
 
 // Transpile is the AST engine entry point: it parses goal source to an *ast.File,

@@ -43,7 +43,10 @@ func emitDoctests(f *ast.File, info *sema.Info, suppressPrelude bool, goalFile s
 	// source), so per-statement /*line*/ directives would point into synthetic
 	// coordinates — pass "" to suppress them. Mapping doctest failures to .goal
 	// positions is US-014's concern.
-	return emitFileWith(testFile, info, suppressPrelude, "")
+	// Doctest sidecars do not surface `?` arity warnings (they re-parse rendered goal
+	// text with synthetic positions); drop the warns return.
+	src, usedOption, _, err = emitFileWith(testFile, info, suppressPrelude, "")
+	return src, usedOption, err
 }
 
 // renderDoctests builds a goal-shaped `_test.go` source from the structured

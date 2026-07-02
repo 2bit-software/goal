@@ -1485,6 +1485,7 @@ The full set of stable codes the checker can emit:
 
 **05-question-prop**
 
+- `[question-arity-fallback]` (warning) — a package-qualified `?` callee's package could not be imported during arity resolution, so the destructure arity fell back to the curated stdlib table or the two-value `(T, error)` default; generated code may differ on a machine where the import resolves.
 - `[question-assign-unsupported]` (error) — a `?` on an assignment right-hand side targets something other than a single simple variable (e.g. `obj.f = f()?` or `a, b = f()?`), which would otherwise silently discard the unwrapped value; bind to one variable with `x := f()?` or `x = f()?`.
 - `[question-binds-nonvalue]` (error) — `name := expr?` binds a value but the callee doesn't return exactly `(value, error)`.
 - `[question-callee-no-error]` (error) — in a `Result[_, error]` function, a `?` callee yields no `error` to propagate — it returns nothing, a non-error type, an `Option`, or a closed-E `Result`.

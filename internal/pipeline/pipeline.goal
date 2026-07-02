@@ -13,6 +13,23 @@ package pipeline
 type Output struct {
 	Go   string
 	Test string
+	// Warnings are out-of-band, non-fatal diagnostics the front-end surfaced while
+	// producing this output (e.g. a `?` arity resolution that fell back because the
+	// callee's package could not be imported). They never affect Go/Test, so goldens
+	// stay byte-identical whether or not a warning fires.
+	Warnings []Warning
+}
+
+// Warning is an out-of-band, non-fatal front-end diagnostic surfaced alongside the
+// generated output. It is engine- and sema-independent so pipeline stays a leaf
+// package: drivers render it as `file:line:col: warning: [code] message`. The
+// canonical producer is the `?` arity resolver reporting that a package-qualified
+// callee's package could not be imported, so the destructure arity fell back to a
+// curated table or the two-value default (US-022).
+type Warning struct {
+	File          string
+	Line, Col     int
+	Code, Message string
 }
 
 // GoFile is one generated Go source: the base file name to write and its formatted
@@ -30,4 +47,8 @@ type GoFile struct {
 type PackageOutput struct {
 	Files []GoFile // transpiled sources, plus goal_prelude.go when the package uses closed-E Result
 	Tests []GoFile // doctest sidecars (`_test.go`), one per source file that has doctests
+	// Warnings are out-of-band, non-fatal front-end diagnostics accumulated across the
+	// package's files (e.g. `?` arity-resolution fallbacks, US-022). They never affect
+	// Files/Tests bytes; drivers render them to stderr.
+	Warnings []Warning
 }

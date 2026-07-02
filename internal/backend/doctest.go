@@ -21,51 +21,52 @@ func emitDoctests(f *ast.File, info *sema.Info, suppressPrelude bool, goalFile s
 	/*line doctest.goal:39*/ if err != nil {
 		/*line doctest.goal:40*/ return "", false, fmt.Errorf("doctest sidecar parse: %w\n--- rendered ---\n%s", err, goalTest)
 	}
-	/*line doctest.goal:46*/ return emitFileWith(testFile, info, suppressPrelude, "")
+	/*line doctest.goal:48*/ src, usedOption, _, err = emitFileWith(testFile, info, suppressPrelude, "")
+	/*line doctest.goal:49*/ return src, usedOption, err
 }
 
-//line doctest.goal:57
+//line doctest.goal:60
 func renderDoctests(f *ast.File, goalFile string) string {
-	/*line doctest.goal:58*/ pkg := "main"
-	/*line doctest.goal:59*/ if f != nil && f.Name != nil {
-		/*line doctest.goal:60*/ pkg = f.Name.Name
+	/*line doctest.goal:61*/ pkg := "main"
+	/*line doctest.goal:62*/ if f != nil && f.Name != nil {
+		/*line doctest.goal:63*/ pkg = f.Name.Name
 	}
-	/*line doctest.goal:63*/ var body strings.Builder
+	/*line doctest.goal:66*/ var body strings.Builder
 
-	/*line doctest.goal:64*/
+	/*line doctest.goal:67*/
 	counts := map[string]int{}
-	/*line doctest.goal:65*/ for _, d := range f.Decls {
-		/*line doctest.goal:66*/ fd, ok := d.(*ast.FuncDecl)
-		/*line doctest.goal:67*/ if !ok || fd.Name == nil || fd.Doc == nil || len(fd.Doc.Doctests) == 0 {
-			/*line doctest.goal:68*/ continue
+	/*line doctest.goal:68*/ for _, d := range f.Decls {
+		/*line doctest.goal:69*/ fd, ok := d.(*ast.FuncDecl)
+		/*line doctest.goal:70*/ if !ok || fd.Name == nil || fd.Doc == nil || len(fd.Doc.Doctests) == 0 {
+			/*line doctest.goal:71*/ continue
 		}
-		/*line doctest.goal:70*/ fn := fd.Name.Name
-		/*line doctest.goal:71*/ for _, dt := range fd.Doc.Doctests {
-			/*line doctest.goal:72*/ expr := strings.TrimSpace(dt.Input)
-			/*line doctest.goal:73*/ want := strings.TrimSpace(strings.Join(dt.Expected, "\n"))
-			/*line doctest.goal:74*/ if expr == "" || want == "" {
-				/*line doctest.goal:75*/ continue
+		/*line doctest.goal:73*/ fn := fd.Name.Name
+		/*line doctest.goal:74*/ for _, dt := range fd.Doc.Doctests {
+			/*line doctest.goal:75*/ expr := strings.TrimSpace(dt.Input)
+			/*line doctest.goal:76*/ want := strings.TrimSpace(strings.Join(dt.Expected, "\n"))
+			/*line doctest.goal:77*/ if expr == "" || want == "" {
+				/*line doctest.goal:78*/ continue
 			}
-			/*line doctest.goal:77*/ counts[fn]++
-			/*line doctest.goal:82*/ prefix := ""
-			/*line doctest.goal:83*/ if goalFile != "" && dt.Line > 0 {
-				/*line doctest.goal:84*/ prefix = fmt.Sprintf("%s:%d: ", goalFile, dt.Line)
+			/*line doctest.goal:80*/ counts[fn]++
+			/*line doctest.goal:85*/ prefix := ""
+			/*line doctest.goal:86*/ if goalFile != "" && dt.Line > 0 {
+				/*line doctest.goal:87*/ prefix = fmt.Sprintf("%s:%d: ", goalFile, dt.Line)
 			}
-			/*line doctest.goal:86*/ fmt.Fprintf(&body, "\nfunc TestDoctest_%s_%d(t *testing.T) {\n", fn, counts[fn])
-			/*line doctest.goal:87*/ fmt.Fprintf(&body, "\tgot := %s\n", expr)
-			/*line doctest.goal:88*/ fmt.Fprintf(&body, "\twant := %s\n", want)
-			/*line doctest.goal:89*/ fmt.Fprintf(&body, "\tif got != want {\n")
-			/*line doctest.goal:90*/ fmt.Fprintf(&body, "\t\tt.Errorf(\"%sdoctest %s: got %%v, want %%v\", got, want)\n", prefix, fn)
-			/*line doctest.goal:91*/ fmt.Fprintf(&body, "\t}\n}\n")
+			/*line doctest.goal:89*/ fmt.Fprintf(&body, "\nfunc TestDoctest_%s_%d(t *testing.T) {\n", fn, counts[fn])
+			/*line doctest.goal:90*/ fmt.Fprintf(&body, "\tgot := %s\n", expr)
+			/*line doctest.goal:91*/ fmt.Fprintf(&body, "\twant := %s\n", want)
+			/*line doctest.goal:92*/ fmt.Fprintf(&body, "\tif got != want {\n")
+			/*line doctest.goal:93*/ fmt.Fprintf(&body, "\t\tt.Errorf(\"%sdoctest %s: got %%v, want %%v\", got, want)\n", prefix, fn)
+			/*line doctest.goal:94*/ fmt.Fprintf(&body, "\t}\n}\n")
 		}
 	}
-	/*line doctest.goal:94*/ if body.Len() == 0 {
-		/*line doctest.goal:95*/ return ""
+	/*line doctest.goal:97*/ if body.Len() == 0 {
+		/*line doctest.goal:98*/ return ""
 	}
-	/*line doctest.goal:98*/ var b strings.Builder
+	/*line doctest.goal:101*/ var b strings.Builder
 
-	/*line doctest.goal:99*/
+	/*line doctest.goal:102*/
 	fmt.Fprintf(&b, "package %s\n\nimport \"testing\"\n", pkg)
-	/*line doctest.goal:100*/ b.WriteString(body.String())
-	/*line doctest.goal:101*/ return b.String()
+	/*line doctest.goal:103*/ b.WriteString(body.String())
+	/*line doctest.goal:104*/ return b.String()
 }

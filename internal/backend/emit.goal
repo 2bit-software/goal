@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"goal/internal/ast"
+	"goal/internal/pipeline"
 	"goal/internal/sema"
 	"goal/internal/token"
 )
@@ -96,14 +97,12 @@ type emitter struct {
 	// so the single-file transpile goldens stay byte-identical; the package driver
 	// (TranspilePackage) sets it to the file's name.
 	srcFile string
-}
-
-// emitFile renders a whole *ast.File to Go source text, lowering goal-specific
-// constructs through info, or returns the first unsupported-node error
-// encountered.
-func emitFile(f *ast.File, info *sema.Info) (string, error) {
-	src, _, err := emitFileWith(f, info, false, "")
-	return src, err
+	// warns collects out-of-band, non-fatal diagnostics surfaced during emit — today
+	// only `?` arity-resolution fallbacks (US-022): a package-qualified `?` callee
+	// whose package could not be imported, so the destructure arity fell back to the
+	// curated stdlib table or the two-value default. They thread out through
+	// emitFileWith and never affect the emitted bytes, so goldens stay byte-identical.
+	warns []pipeline.Warning
 }
 
 // emitFileWith is emitFile with the prelude-suppression knob the package driver
@@ -114,15 +113,15 @@ func emitFile(f *ast.File, info *sema.Info) (string, error) {
 // helper exactly once when any of its files needs it. srcFile is the .goal source
 // name used for the per-statement /*line*/ directives (US-013); empty suppresses
 // them (single-file emit and the doctest sidecar pass "").
-func emitFileWith(f *ast.File, info *sema.Info, suppressPrelude bool, srcFile string) (src string, usedOption bool, err error) {
+func emitFileWith(f *ast.File, info *sema.Info, suppressPrelude bool, srcFile string) (src string, usedOption bool, warns []pipeline.Warning, err error) {
 	e := emitter{info: info, pointerRecv: pointerReceiverSet(f), fileIdents: fileIdentSet(f), suppressPrelude: suppressPrelude, srcFile: srcFile}
 	e.arity = newArityResolver(f)
 	e.typeDecls = e.buildTypeDecls(f)
 	e.file(f)
 	if e.err != nil {
-		return "", false, e.err
+		return "", false, nil, e.err
 	}
-	return e.b.String(), e.usedOptionHelper, nil
+	return e.b.String(), e.usedOptionHelper, e.warns, nil
 }
 
 // gensym returns a fresh identifier built from want that collides with no name in
@@ -2110,6 +2109,7 @@ func (e *emitter) unwrapClosed(name string, u *ast.UnwrapExpr, discard bool, tok
 // — so an error-only `?` does not over-destructure. An unresolved callee keeps the
 // two-value form.
 func (e *emitter) unwrapResult(name string, u *ast.UnwrapExpr, discard bool, tok string) {
+	e.noteArityFallback(u)
 	n := 2
 	if sig, ok := e.calleeSig(u.X); ok && sig.EndsInError && sig.Arity >= 1 {
 		n = sig.Arity
@@ -2127,6 +2127,53 @@ func (e *emitter) unwrapResult(name string, u *ast.UnwrapExpr, discard bool, tok
 	e.p(name + ", " + e.errName + " " + tok + " ")
 	e.expr(u.X)
 	e.p("\nif " + e.errName + " != nil {\nreturn " + e.okName + ", " + e.errName + "\n}")
+}
+
+// noteArityFallback records a warning when a package-qualified `?` callee's package
+// could not be imported during arity resolution, so the destructure arity silently
+// fell back to the curated stdlib table or the two-value default — generated code that
+// may differ on a machine where the import resolves (US-022). It fires at most once per
+// `?` site and is a no-op for in-file calls, receiver/parameter method calls, and
+// imports that resolved cleanly; it never affects the emitted Go.
+func (e *emitter) noteArityFallback(u *ast.UnwrapExpr) {
+	if e.arity == nil || u == nil {
+		return
+	}
+	call, ok := u.X.(*ast.CallExpr)
+	if !ok {
+		return
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel == nil {
+		return
+	}
+	pkg, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return
+	}
+	// A `recv.M(...)` on a receiver/parameter is not a package qualifier — its arity
+	// resolves through the method set, not the importer — so it never degrades here.
+	if e.recvTypes != nil {
+		if _, isRecv := e.recvTypes[pkg.Name]; isRecv {
+			return
+		}
+	}
+	path, ierr := e.arity.importErr(pkg.Name)
+	if ierr == nil {
+		return // not an import, or the package imported cleanly
+	}
+	fallback := "the two-value (T, error) default"
+	if stdlibErrorOnly[pkg.Name+"."+sel.Sel.Name] {
+		fallback = "the curated stdlib error-only table"
+	}
+	e.warns = append(e.warns, pipeline.Warning{
+		File: e.srcFile,
+		Line: u.Question.Line,
+		Col:  u.Question.Col,
+		Code: "question-arity-fallback",
+		Message: fmt.Sprintf("`?` arity for %s.%s could not be resolved: importing %q failed (%v); assumed %s",
+			pkg.Name, sel.Sel.Name, path, ierr, fallback),
+	})
 }
 
 // unwrapOption lowers `?` in an Option function: it stores the *T result in a fresh

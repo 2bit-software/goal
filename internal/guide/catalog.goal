@@ -39,6 +39,7 @@ var diagnosticCatalog = []diagDoc{
 	{"question-callee-no-error", "05-question-prop", "error", "in a `Result[_, error]` function, a `?` callee yields no `error` to propagate — it returns nothing, a non-error type, an `Option`, or a closed-E `Result`."},
 	{"question-binds-nonvalue", "05-question-prop", "error", "`name := expr?` binds a value but the callee doesn't return exactly `(value, error)`."},
 	{"question-callee-unresolved", "05-question-prop", "warning", "a discarding `?` callee's arity can't be resolved lexically; the two-value form is assumed."},
+	{"question-arity-fallback", "05-question-prop", "warning", "a package-qualified `?` callee's package could not be imported during arity resolution, so the destructure arity fell back to the curated stdlib table or the two-value `(T, error)` default; generated code may differ on a machine where the import resolves."},
 	{"question-outside-result", "05-question-prop", "error", "`?` is used in a function whose return type is neither a `Result` nor an `Option`, so there is no failure channel to carry the propagated `Err`/`None`."},
 	{"question-assign-unsupported", "05-question-prop", "error", "a `?` on an assignment right-hand side targets something other than a single simple variable (e.g. `obj.f = f()?` or `a, b = f()?`), which would otherwise silently discard the unwrapped value; bind to one variable with `x := f()?` or `x = f()?`."},
 	// 06-error-e (closed-E Result)

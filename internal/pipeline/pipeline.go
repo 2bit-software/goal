@@ -4,18 +4,27 @@ package pipeline
 
 //line pipeline.goal:13
 type Output struct {
-	Go   string
-	Test string
+	Go       string
+	Test     string
+	Warnings []Warning
 }
 
-//line pipeline.goal:21
+//line pipeline.goal:29
+type Warning struct {
+	File          string
+	Line, Col     int
+	Code, Message string
+}
+
+//line pipeline.goal:38
 type GoFile struct {
 	Name string
 	Go   string
 }
 
-//line pipeline.goal:30
+//line pipeline.goal:47
 type PackageOutput struct {
-	Files []GoFile
-	Tests []GoFile
+	Files    []GoFile
+	Tests    []GoFile
+	Warnings []Warning
 }
