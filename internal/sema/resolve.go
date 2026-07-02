@@ -456,73 +456,83 @@ func joinTypes(types []string) string {
 	/*line resolve.goal:526*/ return strings.Join(types, ",")
 }
 
-//line resolve.goal:530
+//line resolve.goal:533
 func receiverType(fl *ast.FieldList) string {
-	/*line resolve.goal:531*/ if fl == nil || len(fl.List) == 0 {
-		/*line resolve.goal:532*/ return ""
+	/*line resolve.goal:534*/ if fl == nil || len(fl.List) == 0 {
+		/*line resolve.goal:535*/ return ""
 	}
-	/*line resolve.goal:534*/ return strings.TrimPrefix(typeString(fl.List[0].Type), "*")
+	/*line resolve.goal:537*/ expr := fl.List[0].Type
+	/*line resolve.goal:538*/ if star, ok := expr.(*ast.StarExpr); ok {
+		/*line resolve.goal:539*/ expr = star.X
+	}
+	/*line resolve.goal:541*/ switch e := expr.(type) {
+	case *ast.IndexExpr:
+		expr = e.X
+	case *ast.IndexListExpr:
+		expr = e.X
+	}
+	/*line resolve.goal:547*/ return strings.TrimPrefix(typeString(expr), "*")
 }
 
-//line resolve.goal:540
+//line resolve.goal:553
 func typeString(x ast.Expr) string {
-	/*line resolve.goal:543*/ if x == nil {
-		/*line resolve.goal:544*/ return ""
+	/*line resolve.goal:556*/ if x == nil {
+		/*line resolve.goal:557*/ return ""
 	}
-	/*line resolve.goal:546*/ switch v1 := x.(type) {
+	/*line resolve.goal:559*/ switch v1 := x.(type) {
 	case *ast.Ident:
 		{
-			/*line resolve.goal:548*/ return v1.Name
+			/*line resolve.goal:561*/ return v1.Name
 		}
 	case *ast.BasicLit:
 		{
-			/*line resolve.goal:551*/ return v1.Value
+			/*line resolve.goal:564*/ return v1.Value
 		}
 	case *ast.SelectorExpr:
 		{
-			/*line resolve.goal:554*/ return typeString(v1.X) + "." + selName(v1.Sel)
+			/*line resolve.goal:567*/ return typeString(v1.X) + "." + selName(v1.Sel)
 		}
 	case *ast.StarExpr:
 		{
-			/*line resolve.goal:557*/ return "*" + typeString(v1.X)
+			/*line resolve.goal:570*/ return "*" + typeString(v1.X)
 		}
 	case *ast.ParenExpr:
 		{
-			/*line resolve.goal:560*/ return "(" + typeString(v1.X) + ")"
+			/*line resolve.goal:573*/ return "(" + typeString(v1.X) + ")"
 		}
 	case *ast.ArrayType:
 		{
-			/*line resolve.goal:563*/ if v1.Len != nil {
-				/*line resolve.goal:564*/ return "[" + typeString(v1.Len) + "]" + typeString(v1.Elt)
+			/*line resolve.goal:576*/ if v1.Len != nil {
+				/*line resolve.goal:577*/ return "[" + typeString(v1.Len) + "]" + typeString(v1.Elt)
 			}
-			/*line resolve.goal:566*/ return "[]" + typeString(v1.Elt)
+			/*line resolve.goal:579*/ return "[]" + typeString(v1.Elt)
 		}
 	case *ast.MapType:
 		{
-			/*line resolve.goal:569*/ return "map[" + typeString(v1.Key) + "]" + typeString(v1.Value)
+			/*line resolve.goal:582*/ return "map[" + typeString(v1.Key) + "]" + typeString(v1.Value)
 		}
 	case *ast.IndexExpr:
 		{
-			/*line resolve.goal:572*/ return typeString(v1.X) + "[" + typeString(v1.Index) + "]"
+			/*line resolve.goal:585*/ return typeString(v1.X) + "[" + typeString(v1.Index) + "]"
 		}
 	case *ast.IndexListExpr:
 		{
-			/*line resolve.goal:575*/ parts := make([]string, 0, len(v1.Indices))
-			/*line resolve.goal:576*/ for _, idx := range v1.Indices {
-				/*line resolve.goal:577*/ parts = append(parts, typeString(idx))
+			/*line resolve.goal:588*/ parts := make([]string, 0, len(v1.Indices))
+			/*line resolve.goal:589*/ for _, idx := range v1.Indices {
+				/*line resolve.goal:590*/ parts = append(parts, typeString(idx))
 			}
-			/*line resolve.goal:579*/ return typeString(v1.X) + "[" + strings.Join(parts, ", ") + "]"
+			/*line resolve.goal:592*/ return typeString(v1.X) + "[" + strings.Join(parts, ", ") + "]"
 		}
 	case *ast.Ellipsis:
 		{
-			/*line resolve.goal:582*/ if v1.Elt != nil {
-				/*line resolve.goal:583*/ return "..." + typeString(v1.Elt)
+			/*line resolve.goal:595*/ if v1.Elt != nil {
+				/*line resolve.goal:596*/ return "..." + typeString(v1.Elt)
 			}
-			/*line resolve.goal:585*/ return "..."
+			/*line resolve.goal:598*/ return "..."
 		}
 	case *ast.ChanType:
 		{
-			/*line resolve.goal:588*/ switch v1.Dir.(type) {
+			/*line resolve.goal:601*/ switch v1.Dir.(type) {
 			case ast.ChanDir_RecvOnly:
 				return "<-chan " + typeString(v1.Value)
 			case ast.ChanDir_SendOnly:
@@ -535,76 +545,76 @@ func typeString(x ast.Expr) string {
 		}
 	case *ast.FuncType:
 		{
-			/*line resolve.goal:595*/ return "func" + funcTypeString(v1)
+			/*line resolve.goal:608*/ return "func" + funcTypeString(v1)
 		}
 	case *ast.InterfaceType:
 		{
-			/*line resolve.goal:598*/ if v1.Methods == nil || len(v1.Methods.List) == 0 {
-				/*line resolve.goal:599*/ return "interface{}"
+			/*line resolve.goal:611*/ if v1.Methods == nil || len(v1.Methods.List) == 0 {
+				/*line resolve.goal:612*/ return "interface{}"
 			}
-			/*line resolve.goal:601*/ return "interface{ ... }"
+			/*line resolve.goal:614*/ return "interface{ ... }"
 		}
 	case *ast.StructType:
 		{
-			/*line resolve.goal:604*/ if v1.Fields == nil || len(v1.Fields.List) == 0 {
-				/*line resolve.goal:605*/ return "struct{}"
+			/*line resolve.goal:617*/ if v1.Fields == nil || len(v1.Fields.List) == 0 {
+				/*line resolve.goal:618*/ return "struct{}"
 			}
-			/*line resolve.goal:607*/ return "struct{ ... }"
+			/*line resolve.goal:620*/ return "struct{ ... }"
 		}
 	default:
 		{
-			/*line resolve.goal:610*/ return ""
+			/*line resolve.goal:623*/ return ""
 		}
 	}
 }
 
-//line resolve.goal:616
+//line resolve.goal:629
 func funcTypeString(t *ast.FuncType) string {
-	/*line resolve.goal:617*/ var b strings.Builder
+	/*line resolve.goal:630*/ var b strings.Builder
 
-	/*line resolve.goal:618*/
+	/*line resolve.goal:631*/
 	b.WriteString("(")
-	/*line resolve.goal:619*/ b.WriteString(strings.Join(fieldTypes(t.Params), ", "))
-	/*line resolve.goal:620*/ b.WriteString(")")
-	/*line resolve.goal:621*/ if t.Results != nil && len(t.Results.List) > 0 {
-		/*line resolve.goal:622*/ res := fieldTypes(t.Results)
-		/*line resolve.goal:623*/ if len(t.Results.List) > 1 || len(t.Results.List[0].Names) > 0 {
-			/*line resolve.goal:624*/ b.WriteString(" (")
-			/*line resolve.goal:625*/ b.WriteString(strings.Join(res, ", "))
-			/*line resolve.goal:626*/ b.WriteString(")")
+	/*line resolve.goal:632*/ b.WriteString(strings.Join(fieldTypes(t.Params), ", "))
+	/*line resolve.goal:633*/ b.WriteString(")")
+	/*line resolve.goal:634*/ if t.Results != nil && len(t.Results.List) > 0 {
+		/*line resolve.goal:635*/ res := fieldTypes(t.Results)
+		/*line resolve.goal:636*/ if len(t.Results.List) > 1 || len(t.Results.List[0].Names) > 0 {
+			/*line resolve.goal:637*/ b.WriteString(" (")
+			/*line resolve.goal:638*/ b.WriteString(strings.Join(res, ", "))
+			/*line resolve.goal:639*/ b.WriteString(")")
 		} else {
-			/*line resolve.goal:628*/ b.WriteString(" ")
-			/*line resolve.goal:629*/ b.WriteString(res[0])
+			/*line resolve.goal:641*/ b.WriteString(" ")
+			/*line resolve.goal:642*/ b.WriteString(res[0])
 		}
 	}
-	/*line resolve.goal:632*/ return b.String()
+	/*line resolve.goal:645*/ return b.String()
 }
 
-//line resolve.goal:637
+//line resolve.goal:650
 func fieldTypes(fl *ast.FieldList) []string {
-	/*line resolve.goal:638*/ if fl == nil {
-		/*line resolve.goal:639*/ return nil
+	/*line resolve.goal:651*/ if fl == nil {
+		/*line resolve.goal:652*/ return nil
 	}
-	/*line resolve.goal:641*/ out := make([]string, 0, len(fl.List))
-	/*line resolve.goal:642*/ for _, f := range fl.List {
-		/*line resolve.goal:643*/ typ := typeString(f.Type)
-		/*line resolve.goal:644*/ if len(f.Names) > 0 {
-			/*line resolve.goal:645*/ names := make([]string, 0, len(f.Names))
-			/*line resolve.goal:646*/ for _, n := range f.Names {
-				/*line resolve.goal:647*/ names = append(names, n.Name)
+	/*line resolve.goal:654*/ out := make([]string, 0, len(fl.List))
+	/*line resolve.goal:655*/ for _, f := range fl.List {
+		/*line resolve.goal:656*/ typ := typeString(f.Type)
+		/*line resolve.goal:657*/ if len(f.Names) > 0 {
+			/*line resolve.goal:658*/ names := make([]string, 0, len(f.Names))
+			/*line resolve.goal:659*/ for _, n := range f.Names {
+				/*line resolve.goal:660*/ names = append(names, n.Name)
 			}
-			/*line resolve.goal:649*/ out = append(out, strings.Join(names, ", ")+" "+typ)
+			/*line resolve.goal:662*/ out = append(out, strings.Join(names, ", ")+" "+typ)
 		} else {
-			/*line resolve.goal:651*/ out = append(out, typ)
+			/*line resolve.goal:664*/ out = append(out, typ)
 		}
 	}
-	/*line resolve.goal:654*/ return out
+	/*line resolve.goal:667*/ return out
 }
 
-//line resolve.goal:657
+//line resolve.goal:670
 func selName(id *ast.Ident) string {
-	/*line resolve.goal:658*/ if id == nil {
-		/*line resolve.goal:659*/ return ""
+	/*line resolve.goal:671*/ if id == nil {
+		/*line resolve.goal:672*/ return ""
 	}
-	/*line resolve.goal:661*/ return id.Name
+	/*line resolve.goal:674*/ return id.Name
 }

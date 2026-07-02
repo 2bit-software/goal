@@ -526,12 +526,25 @@ func paramTypeListFL(fl *ast.FieldList) []string {
 func joinTypes(types []string) string { return strings.Join(types, ",") }
 
 // receiverType returns the bare receiver type name of a method receiver
-// `(r T)` / `(r *T)`, stripped of a leading "*"; "" when absent.
+// `(r T)` / `(r *T)` / `(r *T[U])`, stripped of a leading "*"; "" when absent.
+// Generic receivers are peeled to their base name (`*Box[T]` -> "Box",
+// `Pair[K, V]` -> "Pair") so methods key the same bare name the implements
+// check and the emitter look them up by.
 func receiverType(fl *ast.FieldList) string {
 	if fl == nil || len(fl.List) == 0 {
 		return ""
 	}
-	return strings.TrimPrefix(typeString(fl.List[0].Type), "*")
+	expr := fl.List[0].Type
+	if star, ok := expr.(*ast.StarExpr); ok {
+		expr = star.X
+	}
+	switch e := expr.(type) {
+	case *ast.IndexExpr: // generic receiver Type[T]
+		expr = e.X
+	case *ast.IndexListExpr: // generic receiver Type[T, U]
+		expr = e.X
+	}
+	return strings.TrimPrefix(typeString(expr), "*")
 }
 
 // typeString renders a type expression to source-equivalent, whitespace-canonical

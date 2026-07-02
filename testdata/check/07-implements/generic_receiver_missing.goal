@@ -1,0 +1,17 @@
+package box
+
+// Bag is generic and declares it implements Closer but never defines Close():
+// even after generic-receiver peeling keys its method set under the bare name
+// `Bag`, the required method is absent, so the contract asserted at the
+// declaration is unmet and the error lands at the `implements` clause.
+type Closer interface {
+	Close() error
+}
+
+type Bag[T any] struct implements Closer { // want "missing method `Close()"
+	item T
+}
+
+func (b *Bag[T]) Len() int {
+	return 0
+}

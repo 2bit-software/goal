@@ -1,0 +1,17 @@
+package box
+
+// Box is generic and satisfies Closer through a generic-receiver method
+// `func (b *Box[T]) Close() error`. Method receivers are keyed by the bare type
+// name (`Box`, not `Box[T]`), so implements checking finds the method set and
+// the contract holds. Clean case — no markers.
+type Closer interface {
+	Close() error
+}
+
+type Box[T any] struct implements Closer {
+	item T
+}
+
+func (b *Box[T]) Close() error {
+	return nil
+}

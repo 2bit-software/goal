@@ -617,6 +617,22 @@
       "normalize": "none"
     },
     {
+      "id": "testdata-check-07-implements-generic_receiver",
+      "kind": "check",
+      "input": "testdata/check/07-implements/generic_receiver.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-07-implements-generic_receiver_missing",
+      "kind": "check",
+      "input": "testdata/check/07-implements/generic_receiver_missing.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
       "id": "testdata-check-07-implements-grouped_param_names",
       "kind": "check",
       "input": "testdata/check/07-implements/grouped_param_names.goal",
