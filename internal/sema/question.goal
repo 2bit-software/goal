@@ -424,7 +424,15 @@ func resolveQuestionCallee(u *ast.UnwrapExpr, info *Info) (sig FuncSig, key stri
 			return s, f.Name, ok
 		}
 		*ast.SelectorExpr(f) => {
-			return FuncSig{}, exprName(f), false
+			// A package-qualified callee `pkg.Fn(...)?` resolves against the foreign
+			// function signatures EnrichForeign collects (keyed `alias.Func`, the same
+			// spelling exprName renders here). When the sig is known, `?` is checked
+			// against it exactly like an in-file callee; otherwise we stay permissive
+			// (known=false), leaving genuinely-unresolved imports deferred. A method on a
+			// value (`recv.M`) is not in FuncSignatures, so it also stays unresolved. US-021.
+			key := exprName(f)
+			s, ok := info.FuncSignatures[key]
+			return s, key, ok
 		}
 		_ => {
 			return FuncSig{}, "", false

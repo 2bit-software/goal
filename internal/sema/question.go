@@ -414,86 +414,88 @@ func resolveQuestionCallee(u *ast.UnwrapExpr, info *Info) (sig FuncSig, key stri
 		}
 	case *ast.SelectorExpr:
 		{
-			/*line question.goal:427*/ return FuncSig{}, exprName(v1), false
+			/*line question.goal:433*/ key := exprName(v1)
+			/*line question.goal:434*/ s, ok := info.FuncSignatures[key]
+			/*line question.goal:435*/ return s, key, ok
 		}
 	default:
 		{
-			/*line question.goal:430*/ return FuncSig{}, "", false
+			/*line question.goal:438*/ return FuncSig{}, "", false
 		}
 	}
 }
 
-//line question.goal:436
+//line question.goal:444
 func isResultErr(fun ast.Expr) bool {
-	/*line question.goal:437*/ sel, ok := fun.(*ast.SelectorExpr)
-	/*line question.goal:438*/ if !ok || sel.Sel == nil || sel.Sel.Name != "Err" {
-		/*line question.goal:439*/ return false
+	/*line question.goal:445*/ sel, ok := fun.(*ast.SelectorExpr)
+	/*line question.goal:446*/ if !ok || sel.Sel == nil || sel.Sel.Name != "Err" {
+		/*line question.goal:447*/ return false
 	}
-	/*line question.goal:441*/ id, ok := sel.X.(*ast.Ident)
-	/*line question.goal:442*/ return ok && id.Name == "Result"
+	/*line question.goal:449*/ id, ok := sel.X.(*ast.Ident)
+	/*line question.goal:450*/ return ok && id.Name == "Result"
 }
 
-//line question.goal:449
+//line question.goal:457
 func errVariantArg(arg ast.Expr) (qual, variant string, ok bool) {
-	/*line question.goal:450*/ switch v1 := arg.(type) {
+	/*line question.goal:458*/ switch v1 := arg.(type) {
 	case *ast.SelectorExpr:
 		{
-			/*line question.goal:452*/ base := exprName(v1.X)
-			/*line question.goal:453*/ if base == "" || v1.Sel == nil {
-				/*line question.goal:454*/ return "", "", false
+			/*line question.goal:460*/ base := exprName(v1.X)
+			/*line question.goal:461*/ if base == "" || v1.Sel == nil {
+				/*line question.goal:462*/ return "", "", false
 			}
-			/*line question.goal:456*/ return base, v1.Sel.Name, true
+			/*line question.goal:464*/ return base, v1.Sel.Name, true
 		}
 	case *ast.VariantLit:
 		{
-			/*line question.goal:459*/ base := exprName(v1.Enum)
-			/*line question.goal:460*/ if base == "" || v1.Variant == nil {
-				/*line question.goal:461*/ return "", "", false
+			/*line question.goal:467*/ base := exprName(v1.Enum)
+			/*line question.goal:468*/ if base == "" || v1.Variant == nil {
+				/*line question.goal:469*/ return "", "", false
 			}
-			/*line question.goal:463*/ return base, v1.Variant.Name, true
+			/*line question.goal:471*/ return base, v1.Variant.Name, true
 		}
 	default:
 		{
-			/*line question.goal:466*/ return "", "", false
+			/*line question.goal:474*/ return "", "", false
 		}
 	}
 }
 
-//line question.goal:473
+//line question.goal:481
 func semaVariantList(enumDecl *Enum) string {
-	/*line question.goal:474*/ names := make([]string, len(enumDecl.Variants))
-	/*line question.goal:475*/ for i, v := range enumDecl.Variants {
-		/*line question.goal:476*/ names[i] = "`" + enumDecl.Name + "." + v.Name + "`"
+	/*line question.goal:482*/ names := make([]string, len(enumDecl.Variants))
+	/*line question.goal:483*/ for i, v := range enumDecl.Variants {
+		/*line question.goal:484*/ names[i] = "`" + enumDecl.Name + "." + v.Name + "`"
 	}
-	/*line question.goal:478*/ return strings.Join(names, ", ")
+	/*line question.goal:486*/ return strings.Join(names, ", ")
 }
 
-//line question.goal:483
+//line question.goal:491
 func importAliases(file *ast.File) map[string]bool {
-	/*line question.goal:484*/ out := map[string]bool{}
-	/*line question.goal:485*/ for _, imp := range file.Imports {
-		/*line question.goal:486*/ if imp == nil || imp.Path == nil {
-			/*line question.goal:487*/ continue
+	/*line question.goal:492*/ out := map[string]bool{}
+	/*line question.goal:493*/ for _, imp := range file.Imports {
+		/*line question.goal:494*/ if imp == nil || imp.Path == nil {
+			/*line question.goal:495*/ continue
 		}
-		/*line question.goal:489*/ alias := ""
-		/*line question.goal:490*/ if imp.Name != nil {
-			/*line question.goal:491*/ alias = imp.Name.Name
+		/*line question.goal:497*/ alias := ""
+		/*line question.goal:498*/ if imp.Name != nil {
+			/*line question.goal:499*/ alias = imp.Name.Name
 		} else {
-			/*line question.goal:493*/ path := strings.Trim(imp.Path.Value, "\"`")
-			/*line question.goal:494*/ if i := strings.LastIndexByte(path, '/'); i >= 0 {
-				/*line question.goal:495*/ path = path[i+1:]
+			/*line question.goal:501*/ path := strings.Trim(imp.Path.Value, "\"`")
+			/*line question.goal:502*/ if i := strings.LastIndexByte(path, '/'); i >= 0 {
+				/*line question.goal:503*/ path = path[i+1:]
 			}
-			/*line question.goal:497*/ alias = path
+			/*line question.goal:505*/ alias = path
 		}
-		/*line question.goal:499*/ if alias != "" && alias != "_" && alias != "." {
-			/*line question.goal:500*/ out[alias] = true
+		/*line question.goal:507*/ if alias != "" && alias != "_" && alias != "." {
+			/*line question.goal:508*/ out[alias] = true
 		}
 	}
-	/*line question.goal:503*/ return out
+	/*line question.goal:511*/ return out
 }
 
-//line question.goal:508
+//line question.goal:516
 func isImportedCall(key string, imports map[string]bool) bool {
-	/*line question.goal:509*/ pkg, _, ok := strings.Cut(key, ".")
-	/*line question.goal:510*/ return ok && imports[pkg]
+	/*line question.goal:517*/ pkg, _, ok := strings.Cut(key, ".")
+	/*line question.goal:518*/ return ok && imports[pkg]
 }
