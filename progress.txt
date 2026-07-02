@@ -668,6 +668,17 @@
   arms yielding plain values and reconstruct the Result in tail position. A
   value-position `x := match ...` with plain-typed arms needs `var x T = match ...`.
 
+- Bootstrap ordering trap (found US-022): `task generate` first runs `go build -o
+  bin/goal ./cmd/goal`, then uses that binary to transpile `./internal`. So if a
+  `.goal` edit changes a type/signature that `cmd/goal` or `cmd/goalc` itself
+  consumes (e.g. a new field on `pipeline.Output`/`PackageOutput`), the build of
+  bin/goal fails against the STALE generated `.go`, and generate can never run to
+  refresh it — a deadlock. Break it by hand-patching just enough of the stale
+  generated `internal/.../*.go` (the struct/signature the drivers reference) so
+  bin/goal compiles; then `task generate` regenerates every mirror correctly and
+  overwrites the manual patch. The emitter's runtime logic being stale does not
+  matter for this step — transpiling source only emits structure as written.
+
 ## [2026-06-30T19:30:00Z] - US-009 (self-host-flip PRD)
 - Ported the goal AI-bootstrap guide surface (internal/guide) to goal source under
   internal/compiler/guide: catalog.goal is a VERBATIM copy of catalog.go (imports only
@@ -8285,4 +8296,31 @@
     edit, so it fires (expected) after editing a `.goal` but BEFORE `task generate`
     regenerates the sibling `.go` — verify-generated diffs stale. Regenerate, then
     the hook goes green; don't be alarmed by the interim verify-generated failure.
+---
+
+## 2026-07-02T08:50:00Z - US-022
+- Implemented `question-arity-fallback` warning: a `?` on a package-qualified
+  callee whose package cannot be imported during arity resolution now surfaces an
+  out-of-band warning naming the package, the import error, and the fallback used
+  (curated stdlib table vs two-value default). Successful resolution and the clean
+  stdlib case emit nothing; goldens + self-host fixpoint stay byte-identical.
+- Files: internal/backend/arity.goal (loadErrs + importErr), internal/backend/emit.goal
+  (emitter.warns, noteArityFallback, emitFileWith 4th return), internal/backend/{backend,
+  doctest,package}.goal (thread warns), internal/pipeline/pipeline.goal (Warning type +
+  Warnings on Output/PackageOutput), cmd/goal/main.go + cmd/goalc/main.go (render to
+  stderr), internal/guide/catalog.goal + AI-KNOWLEDGE-BOOTSTRAP.md, new
+  internal/backendtest/arity_fallback_test.go. Generated .go mirrors regenerated.
+- Learnings for future iterations:
+  - See the "Bootstrap ordering trap" pattern above (hit twice this story: once for
+    the pipeline.Warning field, once for a `:=`-vs-`=` slip in doctest.goal whose
+    stale generated .go blocked the very regenerate that would fix it).
+  - `pipeline` must stay sema-free (leaf package): use a plain `pipeline.Warning`
+    struct, not `sema.Diagnostic`, for anything crossing the backend->pipeline seam.
+  - Warnings are out-of-band by construction (never written into Output.Go/Test), so
+    they cost zero golden churn and zero pinned-count bumps — the cheapest way to add
+    a diagnostic that must not perturb the corpus.
+  - The `?` arity resolver uses the go/importer "source" compiler; stdlib packages
+    (os, etc.) always resolve, so the "clean stdlib emits no warning" assertion is
+    stable. Use a guaranteed-unresolvable path (example.invalid/nope) for the failure
+    fixture so it does not depend on the module cache.
 ---
