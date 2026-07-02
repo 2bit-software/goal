@@ -7695,3 +7695,29 @@
     TestBootstrapGoldenMatches fails.
   - Pinned corpus counts after this story: transpile 58, pkg 2, check 58, doctest 7.
 ---
+
+## [2026-07-02T03:55:00Z] - US-007
+- Rejected malformed if/for headers whose init statement has no following
+  condition (`if x := 1 { }` / `for x := 1 { }`), which previously parsed with the
+  init silently dropped and the block run unconditionally.
+- Added `condExpr(s ast.Stmt, kw string) ast.Expr` beside `stmtExpr` in
+  internal/parser/parser.goal: returns `es.X` for an `*ast.ExprStmt`, else records
+  `p.errorf(p.cur().Pos, "expected ; after init statement (missing %s condition)", kw)`
+  and returns nil. Routed parseIfStmt (was `stmtExpr(s1)`) and the parseForStmt
+  condition-only tail through it. Left `stmtExpr` + parseSwitchStmt untouched so a
+  tagless switch (legal nil Tag) still parses.
+- Files: internal/parser/parser.goal (+ regenerated internal/parser/parser.go via
+  `task generate`), cmd/goal/main_test.go (TestCheckRejectsMalformedIfForInit if/for
+  + TestCheckAcceptsValidIfForInit). No testdata/check fixture, no pinned-count bump.
+- Verify: `task check` exit 0; `task fixpoint` FIXPOINT OK. Commit dc8fad9.
+- Learnings for future iterations:
+  - `goal check` surfaces a PARSE error as the RETURNED error from cmdCheck
+    (wrapped `check <dir>: <line:col>: <msg>`), NOT on the errOut stream — sema
+    diagnostics go to errOut via checkDiag.render, but sema.AnalyzePackageInDir
+    returns the joined parser errors as a Go `error`, which cmdCheck propagates and
+    main() prints. A cmd/goal test on a parse-error input must assert on
+    `err.Error()`, not the errOut buffer (the errOut buffer is empty).
+  - The current parse-error position is line:col only (no filename) — the file path
+    + `error: [code]` bracketing is US-008 not yet landed, so do NOT assert
+    `<file>.goal:` in a US-007-era parse-error test; assert the line number.
+---
