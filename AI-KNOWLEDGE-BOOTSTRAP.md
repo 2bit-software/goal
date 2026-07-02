@@ -548,7 +548,7 @@ type User struct {
 }
 
 func lookup(id ID) (User, bool) {
-    return User{}, false
+    return User{...defaults}, false
 }
 
 func find(id ID) Option[User] {
@@ -582,7 +582,7 @@ type User struct {
 }
 
 func lookup(id ID) (User, bool) {
-	return User{}, false
+	return User{Name: ""}, false
 }
 
 func find(id ID) *User {
@@ -1074,7 +1074,7 @@ func newStore(name string) Store {
 _rejected with:_
 
 ```text
-backend: `...defaults` at 9:27 cannot default field `entries` of type `map[string]int`: a nil map panics on write — set it explicitly (e.g. `map[string]int{}`)
+defaults_unsafe.goal:9:27: error: [unsafe-default] `...defaults` cannot default field `entries` of type `map[string]int`: a nil map panics on write — set it explicitly (e.g. `map[string]int{}`)
 ```
 
 **Why:** a `nil` map reads fine but panics the moment something writes to it — exactly the

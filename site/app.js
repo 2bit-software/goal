@@ -224,7 +224,10 @@ async function runFeature(btn) {
   btn.textContent = "Running…";
   try {
     const transpile = await getTranspiler();
-    const result = transpile(withTrailingNewline(state.editor.value));
+    // Pass the feature's filename so located checker diagnostics render the same
+    // `name.goal:line:col:` prefix the doc shows.
+    const sourceName = state.current?.sourceName || "source.goal";
+    const result = transpile(withTrailingNewline(state.editor.value), sourceName);
     state.lastResult = result;
     // Re-render tabs so a freshly-produced _test.go becomes selectable.
     const head = out.parentElement.querySelector(".panel-head");

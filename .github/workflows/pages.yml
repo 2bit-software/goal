@@ -18,6 +18,8 @@ on:
       - "docs/overview.md"
       - "site/**"
       - "playground-e2e/**"
+      - "scripts/build-site.sh"
+      - "Taskfile.yml"
       - "go.mod"
       - ".github/workflows/pages.yml"
   workflow_dispatch: {}
@@ -48,15 +50,24 @@ jobs:
           # leaving the cache on warns about the missing dependencies file.
           cache: false
 
-      - name: Build the playground site
-        run: ./scripts/build-site.sh
+      # Node runs the headless playground gate. Pin it so the gate always runs —
+      # `task e2e` skips the check when node is absent, which must never happen here.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
 
-      # Gate the deploy: load the freshly-built goal.wasm in Node and assert every
-      # feature's live transpiler output matches its seed. A regression here blocks
-      # publishing rather than shipping a broken playground.
-      - name: Smoke-test the playground (wasm in Node)
-        working-directory: playground-e2e
-        run: node run.mjs
+      - name: Install Task
+        # $HOME/go/bin is on the runner PATH; pin to v3 to avoid surprise breaks.
+        run: go install github.com/go-task/task/v3/cmd/task@v3
+
+      # `task e2e` builds site/ (compiles goal.wasm, copies wasm_exec.js, and
+      # regenerates features.json — itself verifying every example against the host
+      # transpiler) and then loads the wasm in Node to assert every feature
+      # reproduces its seed. A regression in either stage fails here and blocks the
+      # deploy rather than shipping a broken playground.
+      - name: Build and gate the playground site
+        run: task e2e
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

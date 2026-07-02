@@ -3,6 +3,12 @@
 // the seed output baked into features.json. The seed is itself verified against
 // the host transpiler at generate time, so this closes the loop: doc == host
 // transpiler == WASM transpiler. A mismatch blocks the Pages deploy.
+//
+// goalTranspile runs `goal check` before lowering (same as goalc), so a
+// checker-rejected feature reproduces its diagnostic here — located by the
+// feature's sourceName, which we pass as the second argument. Doctest-failure
+// features are the one thing the wasm cannot reproduce (their seed is a runtime
+// `go test` message); the host gate runs those, so we only assert the sidecar.
 
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -29,11 +35,26 @@ const manifest = JSON.parse(await readFile(join(siteDir, "features.json"), "utf8
 const trim = (s) => (s ?? "").replace(/\n+$/, "");
 let total = 0;
 let failed = 0;
+let skipped = 0;
 
 for (const cat of manifest.categories) {
   for (const feat of cat.features) {
     total++;
-    const res = globalThis.goalTranspile(feat.source);
+    const res = globalThis.goalTranspile(feat.source, feat.sourceName);
+    // A doctest-failure feature's seed is a runtime `go test` message the wasm
+    // cannot produce; verify it emitted the _test.go sidecar and defer the run to
+    // the host gate.
+    if (feat.outputKind === "doctest-failure") {
+      if (res.error || !trim(res.test)) {
+        failed++;
+        const why = res.error ? `error: ${res.error}` : "no _test.go";
+        console.error(`✗ ${feat.title} — expected a doctest sidecar, got ${why}`);
+        continue;
+      }
+      skipped++;
+      console.log(`↷ ${feat.title} (doctest-failure — sidecar generated; run by host gate)`);
+      continue;
+    }
     // An "error" feature is a located compile error: assert the wasm rejects it with
     // exactly the seed message. Every other feature must transpile cleanly.
     if (feat.outputKind === "error") {
@@ -68,7 +89,9 @@ for (const cat of manifest.categories) {
   }
 }
 
-console.log(`\n${total - failed}/${total} features reproduced their seed output.`);
+const reproduced = total - failed - skipped;
+const tail = skipped ? `, ${skipped} skipped (doctest-failure, run by host gate).` : ".";
+console.log(`\n${reproduced}/${total} features reproduced their seed output${tail}`);
 process.exit(failed ? 1 : 0);
 
 function indent(s) {
