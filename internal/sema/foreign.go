@@ -5,6 +5,7 @@ package sema
 //line foreign.go:4
 import (
 	"bytes"
+	"fmt"
 	goast "go/ast"
 	"go/format"
 	goparser "go/parser"
@@ -18,308 +19,316 @@ import (
 	"strings"
 )
 
-//line foreign.goal:44
+//line foreign.goal:45
 type DirResolver func(importPath, fromDir string) (string, error)
 
-//line foreign.goal:59
+//line foreign.goal:60
 func EnrichForeign(info *Info, imports []*ast.ImportSpec, dir string, resolve DirResolver) []error {
-	/*line foreign.goal:60*/ if resolve == nil {
-		/*line foreign.goal:61*/ resolve = DefaultResolver
+	/*line foreign.goal:61*/ if resolve == nil {
+		/*line foreign.goal:62*/ resolve = DefaultResolver
 	}
-	/*line foreign.goal:63*/ if info.Structs == nil {
-		/*line foreign.goal:64*/ info.Structs = map[string][]Field{}
+	/*line foreign.goal:64*/ if info.Structs == nil {
+		/*line foreign.goal:65*/ info.Structs = map[string][]Field{}
 	}
-	/*line foreign.goal:66*/ if info.ForeignMethods == nil {
-		/*line foreign.goal:67*/ info.ForeignMethods = map[string]FuncSig{}
+	/*line foreign.goal:67*/ if info.ForeignMethods == nil {
+		/*line foreign.goal:68*/ info.ForeignMethods = map[string]FuncSig{}
 	}
-	/*line foreign.goal:69*/ if info.FuncSignatures == nil {
-		/*line foreign.goal:70*/ info.FuncSignatures = map[string]FuncSig{}
+	/*line foreign.goal:70*/ if info.FuncSignatures == nil {
+		/*line foreign.goal:71*/ info.FuncSignatures = map[string]FuncSig{}
 	}
-	/*line foreign.goal:72*/ if info.Enums == nil {
-		/*line foreign.goal:73*/ info.Enums = map[string]*Enum{}
+	/*line foreign.goal:73*/ if info.Enums == nil {
+		/*line foreign.goal:74*/ info.Enums = map[string]*Enum{}
 	}
-	/*line foreign.goal:75*/ if info.Sealed == nil {
-		/*line foreign.goal:76*/ info.Sealed = map[string]bool{}
+	/*line foreign.goal:76*/ if info.Sealed == nil {
+		/*line foreign.goal:77*/ info.Sealed = map[string]bool{}
 	}
-	/*line foreign.goal:78*/ if info.SealedImpls == nil {
-		/*line foreign.goal:79*/ info.SealedImpls = map[string][]string{}
+	/*line foreign.goal:79*/ if info.SealedImpls == nil {
+		/*line foreign.goal:80*/ info.SealedImpls = map[string][]string{}
 	}
-	/*line foreign.goal:81*/ var errs []error
+	/*line foreign.goal:82*/ var errs []error
 
-	/*line foreign.goal:82*/
+	/*line foreign.goal:83*/
 	loaded := map[string]bool{}
-	/*line foreign.goal:83*/ for _, imp := range imports {
-		/*line foreign.goal:84*/ if imp == nil || imp.Path == nil {
-			/*line foreign.goal:85*/ continue
+	/*line foreign.goal:84*/ for _, imp := range imports {
+		/*line foreign.goal:85*/ if imp == nil || imp.Path == nil {
+			/*line foreign.goal:86*/ continue
 		}
-		/*line foreign.goal:87*/ path, ok := importPath(imp.Path.Value)
-		/*line foreign.goal:88*/ if !ok || loaded[path] {
-			/*line foreign.goal:89*/ continue
+		/*line foreign.goal:88*/ path, ok := importPath(imp.Path.Value)
+		/*line foreign.goal:89*/ if !ok || loaded[path] {
+			/*line foreign.goal:90*/ continue
 		}
-		/*line foreign.goal:91*/ rawAlias := importAlias(imp)
-		/*line foreign.goal:92*/ if rawAlias == "_" {
-			/*line foreign.goal:93*/ continue
+		/*line foreign.goal:92*/ rawAlias := importAlias(imp)
+		/*line foreign.goal:93*/ if rawAlias == "_" {
+			/*line foreign.goal:94*/ continue
 		}
-		/*line foreign.goal:95*/ loaded[path] = true
-		/*line foreign.goal:96*/ resolved, err := resolve(path, dir)
-		/*line foreign.goal:97*/ if err != nil {
-			/*line foreign.goal:98*/ errs = append(errs, err)
-			/*line foreign.goal:99*/ continue
+		/*line foreign.goal:96*/ loaded[path] = true
+		/*line foreign.goal:97*/ resolved, err := resolve(path, dir)
+		/*line foreign.goal:98*/ if err != nil {
+			/*line foreign.goal:99*/ errs = append(errs, err)
+			/*line foreign.goal:100*/ continue
 		}
-		/*line foreign.goal:101*/ structs, funcs, methods, enums, sealed, err := foreignDecls(resolved, rawAlias)
-		/*line foreign.goal:102*/ if err != nil {
-			/*line foreign.goal:103*/ errs = append(errs, err)
-			/*line foreign.goal:104*/ continue
+		/*line foreign.goal:102*/ structs, funcs, methods, enums, sealed, warns, err := foreignDecls(resolved, rawAlias)
+		/*line foreign.goal:103*/ errs = append(errs, warns...)
+		/*line foreign.goal:104*/ if err != nil {
+			/*line foreign.goal:105*/ errs = append(errs, err)
+			/*line foreign.goal:106*/ continue
 		}
-		/*line foreign.goal:106*/ for name, fields := range structs {
-			/*line foreign.goal:107*/ info.Structs[name] = fields
+		/*line foreign.goal:108*/ for name, fields := range structs {
+			/*line foreign.goal:109*/ info.Structs[name] = fields
 		}
-		/*line foreign.goal:109*/ for name, sig := range funcs {
-			/*line foreign.goal:110*/ info.FuncSignatures[name] = sig
+		/*line foreign.goal:111*/ for name, sig := range funcs {
+			/*line foreign.goal:112*/ info.FuncSignatures[name] = sig
 		}
-		/*line foreign.goal:112*/ for name, sig := range methods {
-			/*line foreign.goal:113*/ info.ForeignMethods[name] = sig
+		/*line foreign.goal:114*/ for name, sig := range methods {
+			/*line foreign.goal:115*/ info.ForeignMethods[name] = sig
 		}
-		/*line foreign.goal:115*/ for name, en := range enums {
-			/*line foreign.goal:116*/ info.Enums[name] = en
+		/*line foreign.goal:117*/ for name, en := range enums {
+			/*line foreign.goal:118*/ info.Enums[name] = en
 		}
-		/*line foreign.goal:118*/ for iface, impls := range sealed {
-			/*line foreign.goal:119*/ info.Sealed[iface] = true
-			/*line foreign.goal:120*/ info.SealedImpls[iface] = impls
+		/*line foreign.goal:120*/ for iface, impls := range sealed {
+			/*line foreign.goal:121*/ info.Sealed[iface] = true
+			/*line foreign.goal:122*/ info.SealedImpls[iface] = impls
 		}
 	}
-	/*line foreign.goal:123*/ return errs
+	/*line foreign.goal:125*/ return errs
 }
 
-//line foreign.goal:128
+//line foreign.goal:130
 func importAlias(imp *ast.ImportSpec) string {
-	/*line foreign.goal:129*/ if imp.Name == nil {
-		/*line foreign.goal:130*/ return ""
+	/*line foreign.goal:131*/ if imp.Name == nil {
+		/*line foreign.goal:132*/ return ""
 	}
-	/*line foreign.goal:132*/ return imp.Name.Name
+	/*line foreign.goal:134*/ return imp.Name.Name
 }
 
-//line foreign.goal:137
+//line foreign.goal:139
 func importPath(tok string) (string, bool) {
-	/*line foreign.goal:138*/ if len(tok) < 2 || (tok[0] != '"' && tok[0] != '`') {
-		/*line foreign.goal:139*/ return "", false
+	/*line foreign.goal:140*/ if len(tok) < 2 || (tok[0] != '"' && tok[0] != '`') {
+		/*line foreign.goal:141*/ return "", false
 	}
-	/*line foreign.goal:141*/ if p, err := strconv.Unquote(tok); err == nil {
-		/*line foreign.goal:142*/ return p, true
+	/*line foreign.goal:143*/ if p, err := strconv.Unquote(tok); err == nil {
+		/*line foreign.goal:144*/ return p, true
 	}
-	/*line foreign.goal:144*/ return "", false
+	/*line foreign.goal:146*/ return "", false
 }
 
-//line foreign.goal:153
-func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs, methods map[string]FuncSig, enums map[string]*Enum, sealed map[string][]string, err error) {
-	/*line foreign.goal:154*/ entries, err := os.ReadDir(dir)
-	/*line foreign.goal:155*/ if err != nil {
-		/*line foreign.goal:156*/ return nil, nil, nil, nil, nil, err
+//line foreign.goal:155
+func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs, methods map[string]FuncSig, enums map[string]*Enum, sealed map[string][]string, warns []error, err error) {
+	/*line foreign.goal:156*/ entries, err := os.ReadDir(dir)
+	/*line foreign.goal:157*/ if err != nil {
+		/*line foreign.goal:158*/ return nil, nil, nil, nil, nil, nil, err
 	}
-	/*line foreign.goal:158*/ var goFiles, goalFiles []string
+	/*line foreign.goal:160*/ var goFiles, goalFiles []string
 
-	/*line foreign.goal:159*/
+	/*line foreign.goal:161*/
 	for _, e := range entries {
-		/*line foreign.goal:160*/ if e.IsDir() {
-			/*line foreign.goal:161*/ continue
+		/*line foreign.goal:162*/ if e.IsDir() {
+			/*line foreign.goal:163*/ continue
 		}
-		/*line foreign.goal:163*/ name := e.Name()
-		/*line foreign.goal:164*/ if strings.HasSuffix(name, "_test.go") {
-			/*line foreign.goal:165*/ continue
+		/*line foreign.goal:165*/ name := e.Name()
+		/*line foreign.goal:166*/ if strings.HasSuffix(name, "_test.go") {
+			/*line foreign.goal:167*/ continue
 		}
-		/*line foreign.goal:167*/ switch {
+		/*line foreign.goal:169*/ switch {
 		case strings.HasSuffix(name, ".go"):
 			goFiles = append(goFiles, name)
 		case strings.HasSuffix(name, ".goal"):
 			goalFiles = append(goalFiles, name)
 		}
 	}
-	/*line foreign.goal:180*/ if len(goFiles) == 0 && len(goalFiles) > 0 {
-		/*line foreign.goal:181*/ return goalForeignDecls(dir, requestedAlias, goalFiles)
-	}
-	/*line foreign.goal:183*/ fset := gotoken.NewFileSet()
-	/*line foreign.goal:184*/ var files []*goast.File
+	/*line foreign.goal:184*/ fset := gotoken.NewFileSet()
+	/*line foreign.goal:185*/ var files []*goast.File
 
-	/*line foreign.goal:185*/
+	/*line foreign.goal:186*/
 	pkgName := ""
-	/*line foreign.goal:186*/ for _, name := range goFiles {
-		/*line foreign.goal:187*/ f, perr := goparser.ParseFile(fset, filepath.Join(dir, name), nil, goparser.SkipObjectResolution)
-		/*line foreign.goal:188*/ if perr != nil {
-			/*line foreign.goal:189*/ continue
+	/*line foreign.goal:187*/ for _, name := range goFiles {
+		/*line foreign.goal:188*/ f, perr := goparser.ParseFile(fset, filepath.Join(dir, name), nil, goparser.SkipObjectResolution)
+		/*line foreign.goal:189*/ if perr != nil {
+			/*line foreign.goal:190*/ continue
 		}
-		/*line foreign.goal:191*/ if pkgName == "" {
-			/*line foreign.goal:192*/ pkgName = f.Name.Name
+		/*line foreign.goal:192*/ if pkgName == "" {
+			/*line foreign.goal:193*/ pkgName = f.Name.Name
 		}
-		/*line foreign.goal:194*/ files = append(files, f)
+		/*line foreign.goal:195*/ files = append(files, f)
 	}
-	/*line foreign.goal:196*/ alias := requestedAlias
-	/*line foreign.goal:197*/ if alias == "" {
-		/*line foreign.goal:198*/ alias = pkgName
+	/*line foreign.goal:197*/ alias := requestedAlias
+	/*line foreign.goal:198*/ if alias == "" {
+		/*line foreign.goal:199*/ alias = pkgName
 	}
-	/*line foreign.goal:200*/ structs = map[string][]Field{}
-	/*line foreign.goal:201*/ funcs = map[string]FuncSig{}
-	/*line foreign.goal:202*/ methods = map[string]FuncSig{}
-	/*line foreign.goal:203*/ markers := map[string]bool{}
-	/*line foreign.goal:204*/ for _, f := range files {
-		/*line foreign.goal:205*/ for _, decl := range f.Decls {
-			/*line foreign.goal:206*/ switch d := decl.(type) {
+	/*line foreign.goal:201*/ structs = map[string][]Field{}
+	/*line foreign.goal:202*/ funcs = map[string]FuncSig{}
+	/*line foreign.goal:203*/ methods = map[string]FuncSig{}
+	/*line foreign.goal:204*/ markers := map[string]bool{}
+	/*line foreign.goal:205*/ for _, f := range files {
+		/*line foreign.goal:206*/ for _, decl := range f.Decls {
+			/*line foreign.goal:207*/ switch d := decl.(type) {
 			case *goast.GenDecl:
 				if d.Tok != gotoken.TYPE {
-					/*line foreign.goal:209*/ continue
+					/*line foreign.goal:210*/ continue
 				}
 				for _, spec := range d.Specs {
-					/*line foreign.goal:212*/ ts, ok := spec.(*goast.TypeSpec)
-					/*line foreign.goal:213*/ if !ok || !ts.Name.IsExported() {
-						/*line foreign.goal:214*/ continue
+					/*line foreign.goal:213*/ ts, ok := spec.(*goast.TypeSpec)
+					/*line foreign.goal:214*/ if !ok || !ts.Name.IsExported() {
+						/*line foreign.goal:215*/ continue
 					}
-					/*line foreign.goal:216*/ if name, ok := markerEnumName(ts); ok {
-						/*line foreign.goal:217*/ markers[name] = true
-						/*line foreign.goal:218*/ continue
+					/*line foreign.goal:217*/ if name, ok := markerEnumName(ts); ok {
+						/*line foreign.goal:218*/ markers[name] = true
+						/*line foreign.goal:219*/ continue
 					}
-					/*line foreign.goal:220*/ st, ok := ts.Type.(*goast.StructType)
-					/*line foreign.goal:221*/ if !ok {
-						/*line foreign.goal:222*/ continue
+					/*line foreign.goal:221*/ st, ok := ts.Type.(*goast.StructType)
+					/*line foreign.goal:222*/ if !ok {
+						/*line foreign.goal:223*/ continue
 					}
-					/*line foreign.goal:224*/ structs[alias+"."+ts.Name.Name] = foreignFields(st, alias)
+					/*line foreign.goal:225*/ structs[alias+"."+ts.Name.Name] = foreignFields(st, alias)
 				}
 			case *goast.FuncDecl:
 				if !d.Name.IsExported() {
-					/*line foreign.goal:228*/ continue
+					/*line foreign.goal:229*/ continue
 				}
 				sig := FuncSig{Mode: Mode(Mode_ModeNone{}), Arity: goResultArity(d.Type), EndsInError: endsInErrorAST(d.Type)}
 				if d.Recv == nil {
-					/*line foreign.goal:237*/ funcs[alias+"."+d.Name.Name] = sig
+					/*line foreign.goal:238*/ funcs[alias+"."+d.Name.Name] = sig
 				} else if base := foreignRecvBase(d.Recv); base != "" {
-					/*line foreign.goal:239*/ methods[alias+"."+base+"."+d.Name.Name] = sig
+					/*line foreign.goal:240*/ methods[alias+"."+base+"."+d.Name.Name] = sig
 				}
 			}
 		}
 	}
-	/*line foreign.goal:244*/ enums = reconstructForeignEnums(markers, structs, alias)
-	/*line foreign.goal:251*/ return structs, funcs, methods, enums, nil, nil
+	/*line foreign.goal:245*/ enums = reconstructForeignEnums(markers, structs, alias)
+	/*line foreign.goal:255*/ if len(goalFiles) > 0 {
+		/*line foreign.goal:256*/ _, _, _, goalEnums, goalSealed, goalWarns, _ := goalForeignDecls(dir, requestedAlias, goalFiles)
+		/*line foreign.goal:257*/ for name, en := range goalEnums {
+			/*line foreign.goal:258*/ enums[name] = en
+		}
+		/*line foreign.goal:260*/ sealed = goalSealed
+		/*line foreign.goal:261*/ warns = append(warns, goalWarns...)
+	}
+	/*line foreign.goal:263*/ return structs, funcs, methods, enums, sealed, warns, nil
 }
 
-//line foreign.goal:259
+//line foreign.goal:271
 func markerEnumName(ts *goast.TypeSpec) (string, bool) {
-	/*line foreign.goal:260*/ it, ok := ts.Type.(*goast.InterfaceType)
-	/*line foreign.goal:261*/ if !ok || it.Methods == nil || len(it.Methods.List) != 1 {
-		/*line foreign.goal:262*/ return "", false
+	/*line foreign.goal:272*/ it, ok := ts.Type.(*goast.InterfaceType)
+	/*line foreign.goal:273*/ if !ok || it.Methods == nil || len(it.Methods.List) != 1 {
+		/*line foreign.goal:274*/ return "", false
 	}
-	/*line foreign.goal:264*/ m := it.Methods.List[0]
-	/*line foreign.goal:265*/ if len(m.Names) != 1 {
-		/*line foreign.goal:266*/ return "", false
+	/*line foreign.goal:276*/ m := it.Methods.List[0]
+	/*line foreign.goal:277*/ if len(m.Names) != 1 {
+		/*line foreign.goal:278*/ return "", false
 	}
-	/*line foreign.goal:268*/ if _, ok := m.Type.(*goast.FuncType); !ok {
-		/*line foreign.goal:269*/ return "", false
+	/*line foreign.goal:280*/ if _, ok := m.Type.(*goast.FuncType); !ok {
+		/*line foreign.goal:281*/ return "", false
 	}
-	/*line foreign.goal:271*/ if m.Names[0].Name != "is"+ts.Name.Name {
-		/*line foreign.goal:272*/ return "", false
+	/*line foreign.goal:283*/ if m.Names[0].Name != "is"+ts.Name.Name {
+		/*line foreign.goal:284*/ return "", false
 	}
-	/*line foreign.goal:274*/ return ts.Name.Name, true
+	/*line foreign.goal:286*/ return ts.Name.Name, true
 }
 
-//line foreign.goal:283
+//line foreign.goal:295
 func reconstructForeignEnums(markers map[string]bool, structs map[string][]Field, alias string) map[string]*Enum {
-	/*line foreign.goal:284*/ enums := map[string]*Enum{}
-	/*line foreign.goal:285*/ for name := range markers {
-		/*line foreign.goal:286*/ en := &Enum{Name: alias + "." + name, VSet: map[string]bool{}, FieldSet: map[string]map[string]bool{}}
-		/*line foreign.goal:291*/ prefix := alias + "." + name + "_"
-		/*line foreign.goal:292*/ for key, fields := range structs {
-			/*line foreign.goal:293*/ variant, ok := strings.CutPrefix(key, prefix)
-			/*line foreign.goal:294*/ if !ok {
-				/*line foreign.goal:295*/ continue
+	/*line foreign.goal:296*/ enums := map[string]*Enum{}
+	/*line foreign.goal:297*/ for name := range markers {
+		/*line foreign.goal:298*/ en := &Enum{Name: alias + "." + name, VSet: map[string]bool{}, FieldSet: map[string]map[string]bool{}}
+		/*line foreign.goal:303*/ prefix := alias + "." + name + "_"
+		/*line foreign.goal:304*/ for key, fields := range structs {
+			/*line foreign.goal:305*/ variant, ok := strings.CutPrefix(key, prefix)
+			/*line foreign.goal:306*/ if !ok {
+				/*line foreign.goal:307*/ continue
 			}
-			/*line foreign.goal:297*/ fset := map[string]bool{}
-			/*line foreign.goal:298*/ for _, f := range fields {
-				/*line foreign.goal:299*/ fset[f.Name] = true
+			/*line foreign.goal:309*/ fset := map[string]bool{}
+			/*line foreign.goal:310*/ for _, f := range fields {
+				/*line foreign.goal:311*/ fset[f.Name] = true
 			}
-			/*line foreign.goal:301*/ en.Variants = append(en.Variants, Variant{Name: variant, Fields: fields})
-			/*line foreign.goal:302*/ en.VSet[variant] = true
-			/*line foreign.goal:303*/ en.FieldSet[variant] = fset
+			/*line foreign.goal:313*/ en.Variants = append(en.Variants, Variant{Name: variant, Fields: fields})
+			/*line foreign.goal:314*/ en.VSet[variant] = true
+			/*line foreign.goal:315*/ en.FieldSet[variant] = fset
 		}
-		/*line foreign.goal:305*/ if len(en.VSet) > 0 {
-			/*line foreign.goal:306*/ enums[en.Name] = en
+		/*line foreign.goal:317*/ if len(en.VSet) > 0 {
+			/*line foreign.goal:318*/ enums[en.Name] = en
 		}
 	}
-	/*line foreign.goal:309*/ return enums
+	/*line foreign.goal:321*/ return enums
 }
 
-//line foreign.goal:323
-func goalForeignDecls(dir, requestedAlias string, goalFiles []string) (structs map[string][]Field, funcs, methods map[string]FuncSig, enums map[string]*Enum, sealed map[string][]string, err error) {
-	/*line foreign.goal:324*/ structs = map[string][]Field{}
-	/*line foreign.goal:325*/ funcs = map[string]FuncSig{}
-	/*line foreign.goal:326*/ methods = map[string]FuncSig{}
-	/*line foreign.goal:327*/ enums = map[string]*Enum{}
-	/*line foreign.goal:328*/ sealed = map[string][]string{}
-	/*line foreign.goal:329*/ files := make([]*ast.File, 0, len(goalFiles))
-	/*line foreign.goal:330*/ pkgName := ""
-	/*line foreign.goal:331*/ for _, name := range goalFiles {
-		/*line foreign.goal:332*/ data, rerr := os.ReadFile(filepath.Join(dir, name))
-		/*line foreign.goal:333*/ if rerr != nil {
-			/*line foreign.goal:334*/ continue
+//line foreign.goal:335
+func goalForeignDecls(dir, requestedAlias string, goalFiles []string) (structs map[string][]Field, funcs, methods map[string]FuncSig, enums map[string]*Enum, sealed map[string][]string, warns []error, err error) {
+	/*line foreign.goal:336*/ structs = map[string][]Field{}
+	/*line foreign.goal:337*/ funcs = map[string]FuncSig{}
+	/*line foreign.goal:338*/ methods = map[string]FuncSig{}
+	/*line foreign.goal:339*/ enums = map[string]*Enum{}
+	/*line foreign.goal:340*/ sealed = map[string][]string{}
+	/*line foreign.goal:341*/ files := make([]*ast.File, 0, len(goalFiles))
+	/*line foreign.goal:342*/ pkgName := ""
+	/*line foreign.goal:343*/ for _, name := range goalFiles {
+		/*line foreign.goal:344*/ data, rerr := os.ReadFile(filepath.Join(dir, name))
+		/*line foreign.goal:345*/ if rerr != nil {
+			/*line foreign.goal:346*/ warns = append(warns, fmt.Errorf("foreign %s: %w", filepath.Join(dir, name), rerr))
+			/*line foreign.goal:347*/ continue
 		}
-		/*line foreign.goal:336*/ f, perr := parser.ParseFile(string(data))
-		/*line foreign.goal:337*/ if perr != nil {
-			/*line foreign.goal:338*/ continue
+		/*line foreign.goal:349*/ f, perr := parser.ParseFile(string(data))
+		/*line foreign.goal:350*/ if perr != nil {
+			/*line foreign.goal:351*/ warns = append(warns, fmt.Errorf("foreign %s: %w", filepath.Join(dir, name), perr))
+			/*line foreign.goal:352*/ continue
 		}
-		/*line foreign.goal:340*/ if pkgName == "" && f.Name != nil {
-			/*line foreign.goal:341*/ pkgName = f.Name.Name
+		/*line foreign.goal:354*/ if pkgName == "" && f.Name != nil {
+			/*line foreign.goal:355*/ pkgName = f.Name.Name
 		}
-		/*line foreign.goal:343*/ files = append(files, f)
+		/*line foreign.goal:357*/ files = append(files, f)
 	}
-	/*line foreign.goal:345*/ alias := requestedAlias
-	/*line foreign.goal:346*/ if alias == "" {
-		/*line foreign.goal:347*/ alias = pkgName
+	/*line foreign.goal:359*/ alias := requestedAlias
+	/*line foreign.goal:360*/ if alias == "" {
+		/*line foreign.goal:361*/ alias = pkgName
 	}
-	/*line foreign.goal:349*/ if len(files) == 0 {
-		/*line foreign.goal:350*/ return structs, funcs, methods, enums, sealed, nil
+	/*line foreign.goal:363*/ if len(files) == 0 {
+		/*line foreign.goal:364*/ return structs, funcs, methods, enums, sealed, warns, nil
 	}
-	/*line foreign.goal:352*/ info := ResolvePackage(files)
-	/*line foreign.goal:353*/ for name, en := range info.Enums {
-		/*line foreign.goal:354*/ if en == nil || !isExportedName(name) {
-			/*line foreign.goal:355*/ continue
+	/*line foreign.goal:366*/ info := ResolvePackage(files)
+	/*line foreign.goal:367*/ for name, en := range info.Enums {
+		/*line foreign.goal:368*/ if en == nil || !isExportedName(name) {
+			/*line foreign.goal:369*/ continue
 		}
-		/*line foreign.goal:357*/ qual := alias + "." + name
-		/*line foreign.goal:358*/ qen := &Enum{Name: qual, VSet: map[string]bool{}, FieldSet: map[string]map[string]bool{}}
-		/*line foreign.goal:359*/ for _, v := range en.Variants {
-			/*line foreign.goal:360*/ fields := make([]Field, 0, len(v.Fields))
-			/*line foreign.goal:361*/ fset := map[string]bool{}
-			/*line foreign.goal:362*/ for _, fld := range v.Fields {
-				/*line foreign.goal:363*/ fields = append(fields, Field{Name: fld.Name, Type: qualifyForeignType(fld.Type, alias)})
-				/*line foreign.goal:364*/ fset[fld.Name] = true
+		/*line foreign.goal:371*/ qual := alias + "." + name
+		/*line foreign.goal:372*/ qen := &Enum{Name: qual, VSet: map[string]bool{}, FieldSet: map[string]map[string]bool{}}
+		/*line foreign.goal:373*/ for _, v := range en.Variants {
+			/*line foreign.goal:374*/ fields := make([]Field, 0, len(v.Fields))
+			/*line foreign.goal:375*/ fset := map[string]bool{}
+			/*line foreign.goal:376*/ for _, fld := range v.Fields {
+				/*line foreign.goal:377*/ fields = append(fields, Field{Name: fld.Name, Type: qualifyForeignType(fld.Type, alias)})
+				/*line foreign.goal:378*/ fset[fld.Name] = true
 			}
-			/*line foreign.goal:366*/ qen.Variants = append(qen.Variants, Variant{Name: v.Name, Fields: fields})
-			/*line foreign.goal:367*/ qen.VSet[v.Name] = true
-			/*line foreign.goal:368*/ qen.FieldSet[v.Name] = fset
+			/*line foreign.goal:380*/ qen.Variants = append(qen.Variants, Variant{Name: v.Name, Fields: fields})
+			/*line foreign.goal:381*/ qen.VSet[v.Name] = true
+			/*line foreign.goal:382*/ qen.FieldSet[v.Name] = fset
 		}
-		/*line foreign.goal:370*/ enums[qual] = qen
+		/*line foreign.goal:384*/ enums[qual] = qen
 	}
-	/*line foreign.goal:378*/ for iface := range info.Sealed {
-		/*line foreign.goal:379*/ if !isExportedName(iface) {
-			/*line foreign.goal:380*/ continue
+	/*line foreign.goal:392*/ for iface := range info.Sealed {
+		/*line foreign.goal:393*/ if !isExportedName(iface) {
+			/*line foreign.goal:394*/ continue
 		}
-		/*line foreign.goal:382*/ impls := make([]string, 0, len(info.SealedImpls[iface]))
-		/*line foreign.goal:383*/ for _, impl := range info.SealedImpls[iface] {
-			/*line foreign.goal:384*/ impls = append(impls, qualifyForeignType(impl, alias))
+		/*line foreign.goal:396*/ impls := make([]string, 0, len(info.SealedImpls[iface]))
+		/*line foreign.goal:397*/ for _, impl := range info.SealedImpls[iface] {
+			/*line foreign.goal:398*/ impls = append(impls, qualifyForeignType(impl, alias))
 		}
-		/*line foreign.goal:386*/ sealed[alias+"."+iface] = impls
+		/*line foreign.goal:400*/ sealed[alias+"."+iface] = impls
 	}
-	/*line foreign.goal:388*/ return structs, funcs, methods, enums, sealed, nil
+	/*line foreign.goal:402*/ return structs, funcs, methods, enums, sealed, warns, nil
 }
 
-//line foreign.goal:393
+//line foreign.goal:407
 func isExportedName(name string) bool {
-	/*line foreign.goal:394*/ if name == "" {
-		/*line foreign.goal:395*/ return false
+	/*line foreign.goal:408*/ if name == "" {
+		/*line foreign.goal:409*/ return false
 	}
-	/*line foreign.goal:397*/ c := name[0]
-	/*line foreign.goal:398*/ return c >= 'A' && c <= 'Z'
+	/*line foreign.goal:411*/ c := name[0]
+	/*line foreign.goal:412*/ return c >= 'A' && c <= 'Z'
 }
 
-//line foreign.goal:406
+//line foreign.goal:420
 func qualifyForeignType(t, alias string) string {
-	/*line foreign.goal:407*/ t = strings.TrimSpace(t)
-	/*line foreign.goal:408*/ switch {
+	/*line foreign.goal:421*/ t = strings.TrimSpace(t)
+	/*line foreign.goal:422*/ switch {
 	case strings.HasPrefix(t, "*"):
 		return "*" + qualifyForeignType(t[1:], alias)
 	case strings.HasPrefix(t, "[]"):
@@ -328,105 +337,105 @@ func qualifyForeignType(t, alias string) string {
 		return "..." + qualifyForeignType(t[3:], alias)
 	case strings.HasPrefix(t, "map["):
 		if i := strings.IndexByte(t, ']'); i > len("map[") {
-			/*line foreign.goal:417*/ return "map[" + qualifyForeignType(t[len("map["):i], alias) + "]" + qualifyForeignType(t[i+1:], alias)
+			/*line foreign.goal:431*/ return "map[" + qualifyForeignType(t[len("map["):i], alias) + "]" + qualifyForeignType(t[i+1:], alias)
 		}
 	case strings.HasPrefix(t, "["):
 		if i := strings.IndexByte(t, ']'); i > 0 {
-			/*line foreign.goal:421*/ return t[:i+1] + qualifyForeignType(t[i+1:], alias)
+			/*line foreign.goal:435*/ return t[:i+1] + qualifyForeignType(t[i+1:], alias)
 		}
 	}
-	/*line foreign.goal:424*/ if t == "" || isGoBuiltin(t) || strings.ContainsAny(t, ".{}()[] \t") {
-		/*line foreign.goal:425*/ return t
+	/*line foreign.goal:438*/ if t == "" || isGoBuiltin(t) || strings.ContainsAny(t, ".{}()[] \t") {
+		/*line foreign.goal:439*/ return t
 	}
-	/*line foreign.goal:427*/ return alias + "." + t
+	/*line foreign.goal:441*/ return alias + "." + t
 }
 
-//line foreign.goal:433
+//line foreign.goal:447
 func foreignFields(st *goast.StructType, alias string) []Field {
-	/*line foreign.goal:434*/ var fields []Field
+	/*line foreign.goal:448*/ var fields []Field
 
-	/*line foreign.goal:435*/
+	/*line foreign.goal:449*/
 	for _, f := range st.Fields.List {
-		/*line foreign.goal:436*/ if len(f.Names) == 0 {
-			/*line foreign.goal:437*/ continue
+		/*line foreign.goal:450*/ if len(f.Names) == 0 {
+			/*line foreign.goal:451*/ continue
 		}
-		/*line foreign.goal:439*/ typ := goTypeString(f.Type, alias)
-		/*line foreign.goal:440*/ for _, n := range f.Names {
-			/*line foreign.goal:441*/ if n.IsExported() {
-				/*line foreign.goal:442*/ fields = append(fields, Field{Name: n.Name, Type: typ})
+		/*line foreign.goal:453*/ typ := goTypeString(f.Type, alias)
+		/*line foreign.goal:454*/ for _, n := range f.Names {
+			/*line foreign.goal:455*/ if n.IsExported() {
+				/*line foreign.goal:456*/ fields = append(fields, Field{Name: n.Name, Type: typ})
 			}
 		}
 	}
-	/*line foreign.goal:446*/ return fields
+	/*line foreign.goal:460*/ return fields
 }
 
-//line foreign.goal:451
+//line foreign.goal:465
 func foreignRecvBase(recv *goast.FieldList) string {
-	/*line foreign.goal:452*/ if recv == nil || len(recv.List) == 0 {
-		/*line foreign.goal:453*/ return ""
+	/*line foreign.goal:466*/ if recv == nil || len(recv.List) == 0 {
+		/*line foreign.goal:467*/ return ""
 	}
-	/*line foreign.goal:455*/ expr := recv.List[0].Type
-	/*line foreign.goal:456*/ if star, ok := expr.(*goast.StarExpr); ok {
-		/*line foreign.goal:457*/ expr = star.X
+	/*line foreign.goal:469*/ expr := recv.List[0].Type
+	/*line foreign.goal:470*/ if star, ok := expr.(*goast.StarExpr); ok {
+		/*line foreign.goal:471*/ expr = star.X
 	}
-	/*line foreign.goal:459*/ switch e := expr.(type) {
+	/*line foreign.goal:473*/ switch e := expr.(type) {
 	case *goast.IndexExpr:
 		expr = e.X
 	case *goast.IndexListExpr:
 		expr = e.X
 	}
-	/*line foreign.goal:465*/ if id, ok := expr.(*goast.Ident); ok {
-		/*line foreign.goal:466*/ return id.Name
+	/*line foreign.goal:479*/ if id, ok := expr.(*goast.Ident); ok {
+		/*line foreign.goal:480*/ return id.Name
 	}
-	/*line foreign.goal:468*/ return ""
+	/*line foreign.goal:482*/ return ""
 }
 
-//line foreign.goal:473
+//line foreign.goal:487
 func endsInErrorAST(ft *goast.FuncType) bool {
-	/*line foreign.goal:474*/ if ft.Results == nil || len(ft.Results.List) == 0 {
-		/*line foreign.goal:475*/ return false
+	/*line foreign.goal:488*/ if ft.Results == nil || len(ft.Results.List) == 0 {
+		/*line foreign.goal:489*/ return false
 	}
-	/*line foreign.goal:477*/ last := ft.Results.List[len(ft.Results.List)-1]
-	/*line foreign.goal:478*/ id, ok := last.Type.(*goast.Ident)
-	/*line foreign.goal:479*/ return ok && id.Name == "error"
+	/*line foreign.goal:491*/ last := ft.Results.List[len(ft.Results.List)-1]
+	/*line foreign.goal:492*/ id, ok := last.Type.(*goast.Ident)
+	/*line foreign.goal:493*/ return ok && id.Name == "error"
 }
 
-//line foreign.goal:484
+//line foreign.goal:498
 func goResultArity(ft *goast.FuncType) int {
-	/*line foreign.goal:485*/ if ft.Results == nil {
-		/*line foreign.goal:486*/ return 0
+	/*line foreign.goal:499*/ if ft.Results == nil {
+		/*line foreign.goal:500*/ return 0
 	}
-	/*line foreign.goal:488*/ n := 0
-	/*line foreign.goal:489*/ for _, field := range ft.Results.List {
-		/*line foreign.goal:490*/ if len(field.Names) == 0 {
-			/*line foreign.goal:491*/ n++
-			/*line foreign.goal:492*/ continue
+	/*line foreign.goal:502*/ n := 0
+	/*line foreign.goal:503*/ for _, field := range ft.Results.List {
+		/*line foreign.goal:504*/ if len(field.Names) == 0 {
+			/*line foreign.goal:505*/ n++
+			/*line foreign.goal:506*/ continue
 		}
-		/*line foreign.goal:494*/ n += len(field.Names)
+		/*line foreign.goal:508*/ n += len(field.Names)
 	}
-	/*line foreign.goal:496*/ return n
+	/*line foreign.goal:510*/ return n
 }
 
-//line foreign.goal:504
+//line foreign.goal:518
 func goTypeString(expr goast.Expr, alias string) string {
-	/*line foreign.goal:505*/ switch e := expr.(type) {
+	/*line foreign.goal:519*/ switch e := expr.(type) {
 	case *goast.Ident:
 		if isGoBuiltin(e.Name) {
-			/*line foreign.goal:508*/ return e.Name
+			/*line foreign.goal:522*/ return e.Name
 		}
 		return alias + "." + e.Name
 	case *goast.StarExpr:
 		return "*" + goTypeString(e.X, alias)
 	case *goast.ArrayType:
 		if e.Len == nil {
-			/*line foreign.goal:515*/ return "[]" + goTypeString(e.Elt, alias)
+			/*line foreign.goal:529*/ return "[]" + goTypeString(e.Elt, alias)
 		}
 		return "[" + goExprText(e.Len) + "]" + goTypeString(e.Elt, alias)
 	case *goast.MapType:
 		return "map[" + goTypeString(e.Key, alias) + "]" + goTypeString(e.Value, alias)
 	case *goast.SelectorExpr:
 		if x, ok := e.X.(*goast.Ident); ok {
-			/*line foreign.goal:522*/ return x.Name + "." + e.Sel.Name
+			/*line foreign.goal:536*/ return x.Name + "." + e.Sel.Name
 		}
 		return goExprText(expr)
 	case *goast.InterfaceType:
@@ -438,88 +447,88 @@ func goTypeString(expr goast.Expr, alias string) string {
 	}
 }
 
-//line foreign.goal:536
+//line foreign.goal:550
 func goExprText(expr goast.Expr) string {
-	/*line foreign.goal:537*/ var b bytes.Buffer
+	/*line foreign.goal:551*/ var b bytes.Buffer
 
-	/*line foreign.goal:538*/
+	/*line foreign.goal:552*/
 	if err := format.Node(&b, gotoken.NewFileSet(), expr); err != nil {
-		/*line foreign.goal:539*/ return ""
+		/*line foreign.goal:553*/ return ""
 	}
-	/*line foreign.goal:541*/ return b.String()
+	/*line foreign.goal:555*/ return b.String()
 }
 
-//line foreign.goal:545
+//line foreign.goal:559
 func isGoBuiltin(name string) bool {
-	/*line foreign.goal:546*/ switch name {
+	/*line foreign.goal:560*/ switch name {
 	case "bool", "string", "error", "any", "byte", "rune", "uintptr", "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "float32", "float64", "complex64", "complex128":
 		return true
 	}
-	/*line foreign.goal:553*/ return false
+	/*line foreign.goal:567*/ return false
 }
 
-//line foreign.goal:561
+//line foreign.goal:575
 func DefaultResolver(importPath, fromDir string) (string, error) {
-	/*line foreign.goal:562*/ if dir, ok := moduleResolve(importPath, fromDir); ok {
-		/*line foreign.goal:563*/ return dir, nil
+	/*line foreign.goal:576*/ if dir, ok := moduleResolve(importPath, fromDir); ok {
+		/*line foreign.goal:577*/ return dir, nil
 	}
-	/*line foreign.goal:565*/ return goListResolve(importPath, fromDir)
+	/*line foreign.goal:579*/ return goListResolve(importPath, fromDir)
 }
 
-//line foreign.goal:572
+//line foreign.goal:586
 func moduleResolve(importPath, fromDir string) (string, bool) {
-	/*line foreign.goal:573*/ dir, err := filepath.Abs(fromDir)
-	/*line foreign.goal:574*/ if err != nil {
-		/*line foreign.goal:575*/ return "", false
+	/*line foreign.goal:587*/ dir, err := filepath.Abs(fromDir)
+	/*line foreign.goal:588*/ if err != nil {
+		/*line foreign.goal:589*/ return "", false
 	}
-	/*line foreign.goal:577*/ for {
-		/*line foreign.goal:578*/ modPath, ok := readModulePath(filepath.Join(dir, "go.mod"))
-		/*line foreign.goal:579*/ if ok {
-			/*line foreign.goal:580*/ if importPath == modPath {
-				/*line foreign.goal:581*/ return dir, isDir(dir)
+	/*line foreign.goal:591*/ for {
+		/*line foreign.goal:592*/ modPath, ok := readModulePath(filepath.Join(dir, "go.mod"))
+		/*line foreign.goal:593*/ if ok {
+			/*line foreign.goal:594*/ if importPath == modPath {
+				/*line foreign.goal:595*/ return dir, isDir(dir)
 			}
-			/*line foreign.goal:583*/ if rest, under := strings.CutPrefix(importPath, modPath+"/"); under {
-				/*line foreign.goal:584*/ cand := filepath.Join(dir, filepath.FromSlash(rest))
-				/*line foreign.goal:585*/ return cand, isDir(cand)
+			/*line foreign.goal:597*/ if rest, under := strings.CutPrefix(importPath, modPath+"/"); under {
+				/*line foreign.goal:598*/ cand := filepath.Join(dir, filepath.FromSlash(rest))
+				/*line foreign.goal:599*/ return cand, isDir(cand)
 			}
-			/*line foreign.goal:587*/ return "", false
+			/*line foreign.goal:601*/ return "", false
 		}
-		/*line foreign.goal:589*/ parent := filepath.Dir(dir)
-		/*line foreign.goal:590*/ if parent == dir {
-			/*line foreign.goal:591*/ return "", false
+		/*line foreign.goal:603*/ parent := filepath.Dir(dir)
+		/*line foreign.goal:604*/ if parent == dir {
+			/*line foreign.goal:605*/ return "", false
 		}
-		/*line foreign.goal:593*/ dir = parent
+		/*line foreign.goal:607*/ dir = parent
 	}
 }
 
-//line foreign.goal:599
+//line foreign.goal:613
 func readModulePath(goMod string) (string, bool) {
-	/*line foreign.goal:600*/ data, err := os.ReadFile(goMod)
-	/*line foreign.goal:601*/ if err != nil {
-		/*line foreign.goal:602*/ return "", false
+	/*line foreign.goal:614*/ data, err := os.ReadFile(goMod)
+	/*line foreign.goal:615*/ if err != nil {
+		/*line foreign.goal:616*/ return "", false
 	}
-	/*line foreign.goal:604*/ for line := range strings.SplitSeq(string(data), "\n") {
-		/*line foreign.goal:605*/ line = strings.TrimSpace(line)
-		/*line foreign.goal:606*/ if rest, ok := strings.CutPrefix(line, "module"); ok {
-			/*line foreign.goal:607*/ return strings.TrimSpace(rest), true
+	/*line foreign.goal:618*/ for line := range strings.SplitSeq(string(data), "\n") {
+		/*line foreign.goal:619*/ line = strings.TrimSpace(line)
+		/*line foreign.goal:620*/ if rest, ok := strings.CutPrefix(line, "module"); ok {
+			/*line foreign.goal:621*/ return strings.TrimSpace(rest), true
 		}
 	}
-	/*line foreign.goal:610*/ return "", false
+	/*line foreign.goal:624*/ return "", false
 }
 
-//line foreign.goal:615
+//line foreign.goal:629
 func goListResolve(importPath, fromDir string) (string, error) {
-	/*line foreign.goal:616*/ cmd := exec.Command("go", "list", "-f", "{{.Dir}}", "--", importPath)
-	/*line foreign.goal:617*/ cmd.Dir = fromDir
-	/*line foreign.goal:618*/ out, err := cmd.Output()
-	/*line foreign.goal:619*/ if err != nil {
-		/*line foreign.goal:620*/ return "", err
+	/*line foreign.goal:630*/ cmd := exec.Command("go", "list", "-f", "{{.Dir}}", "--", importPath)
+	/*line foreign.goal:631*/ cmd.Dir = fromDir
+	/*line foreign.goal:632*/ out, err := cmd.Output()
+	/*line foreign.goal:633*/ if err != nil {
+		/*line foreign.goal:634*/ return "", err
 	}
-	/*line foreign.goal:622*/ return strings.TrimSpace(string(out)), nil
+	/*line foreign.goal:636*/ return strings.TrimSpace(string(out)), nil
 }
 
-//line foreign.goal:626
+//line foreign.goal:640
 func isDir(path string) bool {
-	/*line foreign.goal:627*/ fi, err := os.Stat(path)
-	/*line foreign.goal:628*/ return err == nil && fi.IsDir()
+	/*line foreign.goal:641*/ fi, err := os.Stat(path)
+	/*line foreign.goal:642*/ return err == nil && fi.IsDir()
 }

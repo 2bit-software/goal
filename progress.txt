@@ -147,6 +147,18 @@
   foreign.goal) — that one change repairs the checker AND the emitter at once;
   never patch the lookup strings (fragile, and leaves the other consumer broken).
   (found in the audit-remediation US-018 generic-receiver fix.)
+- Foreign package enrichment (internal/sema/foreign.goal) reads facts from a
+  dependency's directory with TWO producers that must be composed, not chosen
+  (found US-020): the `.go` path (`foreignDecls`) reconstructs struct/func/method
+  arities AND §8.1-heuristic enums from generated Go, while the `.goal` path
+  (`goalForeignDecls`) runs the front end over the sibling's SOURCE and projects
+  its enums + sealed implementor sets. Enum/sealed facts must PREFER `.goal` source
+  (overlay it over the `.go`-derived enums, goal wins per key) so a cross-package
+  match/exhaustiveness check is not fooled by a stale generated `.go`; struct/func/
+  method facts must stay `.go`-derived (qualifyForeignType-vs-goTypeString type-
+  string drift). Per-file parse/read failures propagate through a `warns []error`
+  return that `EnrichForeign` folds into its `[]error` (the non-fatal `ferrs` from
+  `AnalyzePackageInDirWith`) — never swallow them with a bare `continue`.
 - Classify a rendered TYPE STRING by WHOLE TOKEN, never by raw `HasPrefix`
   (found US-019). `strings.HasPrefix(typ, "chan"/"func"/"interface")` matches
   user types named `channelSet`/`funcTable`/`interfaceish` and misfires. The
@@ -8194,4 +8206,43 @@
     messages are unchanged (pure classification fix), so the catalog is untouched.
   - `task fixpoint` was mandatory here (both checker AND emitter behavior shift);
     it stayed FIXPOINT OK.
+---
+
+## 2026-07-02T08:30:00Z - US-020
+- Foreign enrichment (`internal/sema/foreign.goal`) now PREFERS `.goal` SOURCE for
+  cross-package enum and sealed-interface facts even when a generated `.go` sits
+  beside the source: `foreignDecls` derives struct/func/method/enum facts from
+  `.go` as before, then overlays the `.goal`-derived enums (goal wins per key) and
+  adopts the `.goal` sealed implementor sets. Removed the old
+  `len(goFiles)==0 && len(goalFiles)>0` early-return gate; when only `.goal` exists
+  the `.go` loop is a no-op and the overlay is the sole enum/sealed producer, so the
+  source-only topology is preserved. Struct/func/method facts stay `.go`-derived to
+  avoid qualifyForeignType-vs-goTypeString type-string drift.
+- Individual foreign-file parse/read failures are no longer swallowed by a bare
+  `continue`: `foreignDecls` and `goalForeignDecls` accumulate a new `warns []error`
+  return, which `EnrichForeign` appends to its `errs` slice (surfaced as the
+  non-fatal `ferrs` from `AnalyzePackageInDirWith`). No exit-code change.
+- Files: internal/sema/foreign.goal (+ generated foreign.go via `task generate`),
+  internal/corpus/staledep_test.go (new, 2 tests), internal/corpus/testdata/
+  staledep/dep/{color.goal,color.go} (source w/ Red,Green,Blue + stale .go w/
+  Red,Green), internal/corpus/testdata/staledep_broken/dep/{color.goal,color.go}
+  (malformed .goal beside valid stale .go), prd.json (passes:true).
+- Verified: `task check` PASS; `task fixpoint` FIXPOINT OK.
+- Learnings for future iterations:
+  - See the new Codebase Patterns bullet on foreign enum/sealed overlay + warns.
+  - To prove multi-package sema behavior WITHOUT a testdata/check fixture (which the
+    recursive corpus walker would mis-index per-file), drive
+    `sema.AnalyzePackageInDirWith(srcs, dir, resolve)` from a handwritten Go test in
+    the Go-only `internal/corpus` infra, passing a fake `sema.DirResolver` that maps
+    the dep import path to an `internal/corpus/testdata/<name>/dep` fixture dir.
+    Enum exhaustiveness is keyed on the match ARMS' qualified enum name
+    (`patternEnumName` -> `dep.Color`), not the scrutinee type, so the consumer needs
+    no runnable dependency — just arms over `dep.Enum.Variant`.
+  - `internal/corpus/testdata/<name>` is safe for `.goal` fixtures: the manifest
+    generator (`corpus.Generate(root)`) only globs/walks the REPO-ROOT `testdata`
+    (features/*, testdata/*.goal, testdata/check/**), never `internal/corpus/testdata`.
+  - To author a realistic STALE generated `.go` enum fixture, transpile a fieldless
+    enum with `bin/goal build --emit=<dir> <dir>` and copy the emitted §8.1 marker
+    form (`type X interface{ isX() }` + `type X_Variant struct{}` + `func (X_Variant)
+    isX() {}`); drop the missing variant to simulate drift.
 ---

@@ -1,0 +1,10 @@
+package dep
+
+// Color is the current source of truth: three variants. The sibling color.go is a
+// STALE generated artifact that only knows Red and Green (see color.go). US-020
+// requires foreign enum facts to be read from this .goal source, not the stale .go.
+enum Color {
+    Red
+    Green
+    Blue
+}

@@ -23,6 +23,7 @@ package sema
 
 import (
 	"bytes"
+	"fmt"
 	goast "go/ast"
 	"go/format"
 	goparser "go/parser"
@@ -98,7 +99,8 @@ func EnrichForeign(info *Info, imports []*ast.ImportSpec, dir string, resolve Di
 			errs = append(errs, err)
 			continue
 		}
-		structs, funcs, methods, enums, sealed, err := foreignDecls(resolved, rawAlias)
+		structs, funcs, methods, enums, sealed, warns, err := foreignDecls(resolved, rawAlias)
+		errs = append(errs, warns...)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -150,10 +152,10 @@ func importPath(tok string) (string, bool) {
 // (keyed `alias.Recv.Method`), and its exported enums reconstructed from their generated
 // §8.1 sum encoding (keyed `alias.Enum`). requestedAlias is the qualifier the goal source
 // uses; when empty (an unaliased import) the package's own declared name is used.
-func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs, methods map[string]FuncSig, enums map[string]*Enum, sealed map[string][]string, err error) {
+func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs, methods map[string]FuncSig, enums map[string]*Enum, sealed map[string][]string, warns []error, err error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, nil, err
 	}
 	var goFiles, goalFiles []string
 	for _, e := range entries {
@@ -171,15 +173,14 @@ func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs
 			goalFiles = append(goalFiles, name)
 		}
 	}
-	// A sibling package that exists only as .goal SOURCE (not yet emitted to .go) is the
-	// real per-package `goal build ./internal` topology: each package is transpiled from
-	// .goal source, so a dependent resolves an imported sibling to its .goal dir, not a
-	// generated one. Read the enums straight from that source (the §8.1 facts the backend
-	// match/construction lowering consults) so a cross-package match/construction lowers,
-	// exactly as the .go path reconstructs them from the generated sum encoding. SEAM-CAP-2.
-	if len(goFiles) == 0 && len(goalFiles) > 0 {
-		return goalForeignDecls(dir, requestedAlias, goalFiles)
-	}
+	// Struct/func/method arities are read from the generated .go when it exists (that is
+	// the only place they live), but enum and sealed-interface facts are PREFERRED from
+	// the .goal SOURCE even when a generated .go sits beside it: the .go-derived enums are
+	// §8.1-heuristic reconstructions of possibly-stale generated code, so the .goal-derived
+	// enums/sealed are overlaid at the end of this function (goal wins per key). When only
+	// .goal source exists (the package is not yet emitted), the .go loop below is a no-op
+	// and that same overlay supplies the enums/sealed, preserving the source-only
+	// topology. SEAM-CAP-2 / US-020.
 	fset := gotoken.NewFileSet()
 	var files []*goast.File
 	pkgName := ""
@@ -242,13 +243,24 @@ func foreignDecls(dir, requestedAlias string) (structs map[string][]Field, funcs
 		}
 	}
 	enums = reconstructForeignEnums(markers, structs, alias)
-	// The .go path does not reconstruct sealed-interface implementor sets from the
-	// generated marker form: the real per-package `goal build ./internal` bootstrap
-	// resolves a sibling to its .goal SOURCE (the goalForeignDecls path below), so a
-	// cross-package sealed match is enriched there. Reconstructing sealed sets from an
-	// already-generated .go sibling is deferred, exactly as struct/func/method facts are
-	// from .goal source (SEAM-CAP-3c).
-	return structs, funcs, methods, enums, nil, nil
+	// Prefer .goal SOURCE for enum and sealed-interface facts: overlay the enums the
+	// front end reads from the sibling's .goal declarations (goal wins per key) over the
+	// §8.1-heuristic reconstructions above, and adopt its sealed implementor sets (the .go
+	// path reconstructs none). This keeps a cross-package match/construction correct even
+	// when a possibly-stale generated .go sits beside the source. When only .goal source
+	// exists the loops above were no-ops, so this is the sole enum/sealed producer,
+	// preserving the source-only topology. Struct/func/method facts stay .go-derived
+	// (qualifyForeignType vs goTypeString type-string drift). SEAM-CAP-2 / SEAM-CAP-3c /
+	// US-020. Per-file parse/read failures from the .goal side are surfaced as warnings.
+	if len(goalFiles) > 0 {
+		_, _, _, goalEnums, goalSealed, goalWarns, _ := goalForeignDecls(dir, requestedAlias, goalFiles)
+		for name, en := range goalEnums {
+			enums[name] = en
+		}
+		sealed = goalSealed
+		warns = append(warns, goalWarns...)
+	}
+	return structs, funcs, methods, enums, sealed, warns, nil
 }
 
 // markerEnumName reports the enum name encoded by ts when ts is the §8.1 marker
@@ -320,7 +332,7 @@ func reconstructForeignEnums(markers map[string]bool, structs map[string][]Field
 // scope (the .go path covers them once a package is generated). Parse/read failures are
 // tolerated per file, matching the .go path. SEAM-CAP-2 added the enum projection;
 // SEAM-CAP-3c added the sealed-interface implementor-set projection.
-func goalForeignDecls(dir, requestedAlias string, goalFiles []string) (structs map[string][]Field, funcs, methods map[string]FuncSig, enums map[string]*Enum, sealed map[string][]string, err error) {
+func goalForeignDecls(dir, requestedAlias string, goalFiles []string) (structs map[string][]Field, funcs, methods map[string]FuncSig, enums map[string]*Enum, sealed map[string][]string, warns []error, err error) {
 	structs = map[string][]Field{}
 	funcs = map[string]FuncSig{}
 	methods = map[string]FuncSig{}
@@ -331,10 +343,12 @@ func goalForeignDecls(dir, requestedAlias string, goalFiles []string) (structs m
 	for _, name := range goalFiles {
 		data, rerr := os.ReadFile(filepath.Join(dir, name))
 		if rerr != nil {
+			warns = append(warns, fmt.Errorf("foreign %s: %w", filepath.Join(dir, name), rerr))
 			continue // tolerate an unreadable sibling; read what we can
 		}
 		f, perr := parser.ParseFile(string(data))
 		if perr != nil {
+			warns = append(warns, fmt.Errorf("foreign %s: %w", filepath.Join(dir, name), perr))
 			continue // tolerate an unparseable sibling
 		}
 		if pkgName == "" && f.Name != nil {
@@ -347,7 +361,7 @@ func goalForeignDecls(dir, requestedAlias string, goalFiles []string) (structs m
 		alias = pkgName
 	}
 	if len(files) == 0 {
-		return structs, funcs, methods, enums, sealed, nil
+		return structs, funcs, methods, enums, sealed, warns, nil
 	}
 	info := ResolvePackage(files)
 	for name, en := range info.Enums {
@@ -385,7 +399,7 @@ func goalForeignDecls(dir, requestedAlias string, goalFiles []string) (structs m
 		}
 		sealed[alias+"."+iface] = impls
 	}
-	return structs, funcs, methods, enums, sealed, nil
+	return structs, funcs, methods, enums, sealed, warns, nil
 }
 
 // isExportedName reports whether name begins with an ASCII uppercase letter — a Go/goal

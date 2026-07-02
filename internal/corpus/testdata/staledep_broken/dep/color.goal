@@ -1,0 +1,9 @@
+package dep
+
+// DELIBERATELY MALFORMED (US-020): this .goal fails to parse, so foreign
+// enrichment must surface a warning naming this file rather than swallow it.
+enum Color {
+    Red
+    Green
+    @@@ this is not valid goal @@@
+}
