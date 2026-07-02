@@ -109,6 +109,72 @@ func CheckQuestionOutsideResult(file *ast.File, info *Info) []Diagnostic {
 	return diags
 }
 
+// CheckQuestionAssignForm enforces that a `?` on the right-hand side of an assignment
+// targets exactly one simple variable (an identifier or `_`). `?` at assignment position
+// binds (or discards) a single value, so a non-identifier left-hand side (`obj.f = f()?`)
+// or a multi-value left-hand side against a single `?` right-hand side (`a, b = f()?`)
+// cannot be lowered without silently discarding the unwrapped value — those are rejected
+// here rather than mis-lowered. Parallel per-index `?` (`a, b := f()?, g()?`) is fine: each
+// right-hand `?` is checked against its own left-hand target, so it never false-fires.
+func CheckQuestionAssignForm(file *ast.File, info *Info) []Diagnostic {
+	var diags []Diagnostic
+	if file == nil {
+		return diags
+	}
+	for _, d := range plainResultFuncs(file) {
+		diags = append(diags, questionAssignFormDiags(d.fn.Body)...)
+	}
+	return diags
+}
+
+// questionAssignFormDiags walks a function body and flags every `?`-carrying assignment
+// whose left-hand side is not a single simple variable.
+func questionAssignFormDiags(body *ast.BlockStmt) []Diagnostic {
+	var diags []Diagnostic
+	if body == nil {
+		return diags
+	}
+	ast.Walk(visitorFunc(func(n ast.Node) bool {
+		match n {
+			*ast.AssignStmt(s) => {
+				for i, rhs := range s.Rhs {
+					u, ok := rhs.(*ast.UnwrapExpr)
+					if !ok {
+						continue
+					}
+					if len(s.Lhs) != len(s.Rhs) {
+						diags = append(diags, questionAssignUnsupported(u.Question,
+							"the left-hand side has a different number of variables than the `?` results on the right"))
+						continue
+					}
+					if !isSimpleAssignTarget(s.Lhs[i]) {
+						diags = append(diags, questionAssignUnsupported(u.Question,
+							"`?` can only assign to a simple variable or `_`, not through a field, index, or other expression"))
+					}
+				}
+			}
+			_ => {}
+		}
+		return true
+	}), body)
+	return diags
+}
+
+// isSimpleAssignTarget reports whether e is a bare identifier (including `_`), the only
+// left-hand side a `?` assignment can lower into.
+func isSimpleAssignTarget(e ast.Expr) bool {
+	_, ok := e.(*ast.Ident)
+	return ok
+}
+
+// questionAssignUnsupported builds the diagnostic for a `?` assignment with an
+// unsupported left-hand side.
+func questionAssignUnsupported(p token.Pos, detail string) Diagnostic {
+	return Diagnostic{Pos: p, Severity: Severity.Error, Feature: "05-question-prop",
+		Code: "question-assign-unsupported",
+		Message: fmt.Sprintf("`?` assignment is unsupported here: %s; bind with `x := f()?` or `x = f()?` where `x` is a single variable", detail)}
+}
+
 // funcReturnText renders a function's declared results for a diagnostic: "no value" when
 // the function returns nothing, otherwise the parenthesized, backtick-quoted result-type
 // list (each shared-type name expanded), e.g. "`(int, string)`".

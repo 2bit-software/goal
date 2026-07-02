@@ -1,0 +1,27 @@
+package qprop
+
+type Box struct {
+	v int
+}
+
+func provide() Result[int, error] {
+	return Result.Ok(1)
+}
+
+// selectorLHS applies `?` to an assignment whose left-hand side is a field
+// selector, not a simple variable. `?` binds one value, so this cannot lower
+// without silently discarding the unwrapped value — it is rejected.
+func selectorLHS(b *Box) Result[int, error] {
+	b.v = provide()? // want "`?` assignment is unsupported"
+	return Result.Ok(b.v)
+}
+
+// multiLHS applies `?` to a multi-value left-hand side against a single `?`
+// right-hand side. The left-hand count does not match the results, so it is
+// rejected rather than silently discarding the value.
+func multiLHS() Result[int, error] {
+	a := 0
+	b := 0
+	a, b = provide()? // want "`?` assignment is unsupported"
+	return Result.Ok(a + b)
+}

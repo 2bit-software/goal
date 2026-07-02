@@ -33,21 +33,22 @@ func TestGenerateCounts(t *testing.T) {
 		}
 	}
 
-	if transpile != 55 {
-		t.Errorf("file-mode transpile pairs = %d, want 55", transpile)
+	if transpile != 56 {
+		t.Errorf("file-mode transpile pairs = %d, want 56", transpile)
 	}
 	// Package-mode cases reify the formerly-inline cross-file and foreign-derive
 	// package tests as on-disk fixtures.
 	if pkg != 2 {
 		t.Errorf("package-mode cases = %d, want 2", pkg)
 	}
-	if check != 53 {
-		t.Errorf("check cases = %d, want 53", check)
+	if check != 54 {
+		t.Errorf("check cases = %d, want 54", check)
 	}
 	// Doctest cases are additive: each transpile pair whose golden is an emitted
-	// _test.go sidecar (the four feature-11 examples) also yields a doctest case.
-	if doctest != 4 {
-		t.Errorf("doctest cases = %d, want 4", doctest)
+	// _test.go sidecar (the four feature-11 examples plus the testdata
+	// qprop_assign_eq `?`-assignment case) also yields a doctest case.
+	if doctest != 5 {
+		t.Errorf("doctest cases = %d, want 5", doctest)
 	}
 	if other != 0 {
 		t.Errorf("unexpected non-transpile/non-check/non-doctest cases = %d, want 0", other)

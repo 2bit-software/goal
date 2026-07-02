@@ -630,7 +630,7 @@ func (e *emitter) stmt(s ast.Stmt) {
 					e.matchStmt(x)
 				}
 				*ast.UnwrapExpr(x) => {
-					e.unwrap("_", x, true)
+					e.unwrap("_", x, true, ":=")
 				}
 				_ => {
 					e.expr(s.X)
@@ -649,13 +649,22 @@ func (e *emitter) stmt(s ast.Stmt) {
 		// unwrapped value binds to name (or is discarded), the failure early-returns.
 		if len(s.Rhs) == 1 {
 			if u, ok := s.Rhs[0].(*ast.UnwrapExpr); ok {
-				name := "_"
-				if len(s.Lhs) == 1 {
-					if id, ok := s.Lhs[0].(*ast.Ident); ok {
-						name = id.Name
-					}
+				// `?` at assignment position binds (or discards) exactly one value, so
+				// the left-hand side must be a single simple variable (or `_`). A
+				// multi-value LHS (`a, b = f()?`) or a non-identifier LHS
+				// (`obj.f = f()?`) would otherwise silently lower to a `_` discard,
+				// dropping the unwrapped value — reject it instead (the checker flags
+				// the same shapes with `question-assign-unsupported`).
+				if len(s.Lhs) != 1 {
+					e.fail("`?` at assignment position binds a single value; a multi-value left-hand side is not supported — assign to one variable")
+					return
 				}
-				e.unwrap(name, u, name == "_")
+				id, ok := s.Lhs[0].(*ast.Ident)
+				if !ok {
+					e.fail("`?` can only assign to a simple variable or `_`; assigning through this left-hand side is not supported")
+					return
+				}
+				e.unwrap(id.Name, u, id.Name == "_", s.Tok.String())
 				return
 			}
 		}
@@ -1994,14 +2003,14 @@ func (e *emitter) emitClosedResultReturn(x ast.Expr) bool {
 // and either way the enclosing function's failure (the Err / None) is
 // early-returned (§3.7, §8.3). All temporaries are scope-aware gensyms — there is
 // no `__goal_` prefix (US-035).
-func (e *emitter) unwrap(name string, u *ast.UnwrapExpr, discard bool) {
+func (e *emitter) unwrap(name string, u *ast.UnwrapExpr, discard bool, tok string) {
 	switch e.fnKind {
 	case roResultOpen:
-		e.unwrapResult(name, u, discard)
+		e.unwrapResult(name, u, discard, tok)
 	case roOption:
-		e.unwrapOption(name, u, discard)
+		e.unwrapOption(name, u, discard, tok)
 	case roResultClosed:
-		e.unwrapClosed(name, u, discard)
+		e.unwrapClosed(name, u, discard, tok)
 	default:
 		e.fail("`?` outside a Result- or Option-returning function")
 	}
@@ -2012,7 +2021,7 @@ func (e *emitter) unwrap(name string, u *ast.UnwrapExpr, discard bool) {
 // on Err returns the enclosing function's own closed-E Err carrying the failure.
 // When the callee's error type differs from the enclosing function's, the declared
 // `from func` conversion (sema.FromRegistry) is applied to the propagated value.
-func (e *emitter) unwrapClosed(name string, u *ast.UnwrapExpr, discard bool) {
+func (e *emitter) unwrapClosed(name string, u *ast.UnwrapExpr, discard bool, tok string) {
 	sig, ok := e.calleeSig(u.X)
 	// sig is a zero FuncSig (nil Mode) when !ok, so use a nil-safe `_` rest-arm.
 	isClosed := match sig.Mode {
@@ -2037,7 +2046,12 @@ func (e *emitter) unwrapClosed(name string, u *ast.UnwrapExpr, discard bool) {
 	if discard {
 		lhs = "_"
 	}
-	e.p("var " + lhs + " " + sig.T + "\n")
+	// With `:=` (or a discard) lhs is freshly bound, so declare it. With `=` the
+	// left-hand variable already exists in an enclosing scope, so re-declaring it
+	// would shadow (or fail to compile); assign into the existing one instead.
+	if discard || tok != "=" {
+		e.p("var " + lhs + " " + sig.T + "\n")
+	}
 	e.p("switch " + guard + " := ")
 	e.expr(u.X)
 	e.p(".(type) {\n")
@@ -2052,7 +2066,7 @@ func (e *emitter) unwrapClosed(name string, u *ast.UnwrapExpr, discard bool) {
 // arity — a plain `error`-returning callee yields one value, a `Result` callee two
 // — so an error-only `?` does not over-destructure. An unresolved callee keeps the
 // two-value form.
-func (e *emitter) unwrapResult(name string, u *ast.UnwrapExpr, discard bool) {
+func (e *emitter) unwrapResult(name string, u *ast.UnwrapExpr, discard bool, tok string) {
 	n := 2
 	if sig, ok := e.calleeSig(u.X); ok && sig.EndsInError && sig.Arity >= 1 {
 		n = sig.Arity
@@ -2067,7 +2081,7 @@ func (e *emitter) unwrapResult(name string, u *ast.UnwrapExpr, discard bool) {
 		e.fail("`?` binds a value but the callee returns %d value(s); write a bare `…?` to propagate only the error", sig.Arity)
 		return
 	}
-	e.p(name + ", " + e.errName + " := ")
+	e.p(name + ", " + e.errName + " " + tok + " ")
 	e.expr(u.X)
 	e.p("\nif " + e.errName + " != nil {\nreturn " + e.okName + ", " + e.errName + "\n}")
 }
@@ -2075,7 +2089,7 @@ func (e *emitter) unwrapResult(name string, u *ast.UnwrapExpr, discard bool) {
 // unwrapOption lowers `?` in an Option function: it stores the *T result in a fresh
 // pointer temp and, when nil, returns nil; otherwise it dereferences into the
 // bound name. Each `?` site mints its own temp, so chained `?`s never collide.
-func (e *emitter) unwrapOption(name string, u *ast.UnwrapExpr, discard bool) {
+func (e *emitter) unwrapOption(name string, u *ast.UnwrapExpr, discard bool, tok string) {
 	o := e.gensym("o")
 	if discard {
 		e.p("if " + o + " := ")
@@ -2085,7 +2099,7 @@ func (e *emitter) unwrapOption(name string, u *ast.UnwrapExpr, discard bool) {
 	}
 	e.p(o + " := ")
 	e.expr(u.X)
-	e.p("\nif " + o + " == nil {\nreturn nil\n}\n" + name + " := *" + o)
+	e.p("\nif " + o + " == nil {\nreturn nil\n}\n" + name + " " + tok + " *" + o)
 }
 
 // stdlibErrorOnly is the offline fallback for resolving error-only stdlib calls

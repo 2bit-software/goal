@@ -94,7 +94,65 @@ func CheckQuestionOutsideResult(file *ast.File, info *Info) []Diagnostic {
 	return diags
 }
 
-//line question.goal:115
+//line question.goal:119
+func CheckQuestionAssignForm(file *ast.File, info *Info) []Diagnostic {
+	var diags []Diagnostic
+
+	if file == nil {
+		return diags
+	}
+	for _, d := range plainResultFuncs(file) {
+		diags = append(diags, questionAssignFormDiags(d.fn.Body)...)
+	}
+	return diags
+}
+
+//line question.goal:132
+func questionAssignFormDiags(body *ast.BlockStmt) []Diagnostic {
+	var diags []Diagnostic
+
+	if body == nil {
+		return diags
+	}
+	ast.Walk(visitorFunc(func(n ast.Node) bool {
+		switch v1 := n.(type) {
+		case *ast.AssignStmt:
+			{
+				for i, rhs := range v1.Rhs {
+					u, ok := rhs.(*ast.UnwrapExpr)
+					if !ok {
+						continue
+					}
+					if len(v1.Lhs) != len(v1.Rhs) {
+						diags = append(diags, questionAssignUnsupported(u.Question, "the left-hand side has a different number of variables than the `?` results on the right"))
+						continue
+					}
+					if !isSimpleAssignTarget(v1.Lhs[i]) {
+						diags = append(diags, questionAssignUnsupported(u.Question, "`?` can only assign to a simple variable or `_`, not through a field, index, or other expression"))
+					}
+				}
+			}
+		default:
+			{
+			}
+		}
+		return true
+	}), body)
+	return diags
+}
+
+//line question.goal:165
+func isSimpleAssignTarget(e ast.Expr) bool {
+	_, ok := e.(*ast.Ident)
+	return ok
+}
+
+//line question.goal:172
+func questionAssignUnsupported(p token.Pos, detail string) Diagnostic {
+	return Diagnostic{Pos: p, Severity: Severity(Severity_Error{}), Feature: "05-question-prop", Code: "question-assign-unsupported", Message: fmt.Sprintf("`?` assignment is unsupported here: %s; bind with `x := f()?` or `x = f()?` where `x` is a single variable", detail)}
+}
+
+//line question.goal:181
 func funcReturnText(t *ast.FuncType) string {
 	if t == nil || t.Results == nil || len(t.Results.List) == 0 {
 		return "no value"
@@ -114,7 +172,7 @@ func funcReturnText(t *ast.FuncType) string {
 	return "`(" + strings.Join(parts, ", ") + ")`"
 }
 
-//line question.goal:134
+//line question.goal:200
 func appendQuestionResolved(diags []Diagnostic, p token.Pos, key string, csig FuncSig, discard bool) []Diagnostic {
 	var isOpenResult bool
 	switch csig.Mode.(type) {
@@ -171,7 +229,7 @@ func appendQuestionResolved(diags []Diagnostic, p token.Pos, key string, csig Fu
 	return diags
 }
 
-//line question.goal:184
+//line question.goal:250
 func CheckClosed(file *ast.File, info *Info) []Diagnostic {
 	var diags []Diagnostic
 
@@ -202,7 +260,7 @@ func CheckClosed(file *ast.File, info *Info) []Diagnostic {
 	return diags
 }
 
-//line question.goal:209
+//line question.goal:275
 func closedQuestionDiags(body *ast.BlockStmt, caller FuncSig, info *Info) []Diagnostic {
 	var diags []Diagnostic
 
@@ -234,7 +292,7 @@ func closedQuestionDiags(body *ast.BlockStmt, caller FuncSig, info *Info) []Diag
 	return diags
 }
 
-//line question.goal:247
+//line question.goal:313
 func closedErrDiags(body *ast.BlockStmt, caller FuncSig, info *Info) []Diagnostic {
 	var diags []Diagnostic
 
@@ -266,12 +324,12 @@ func closedErrDiags(body *ast.BlockStmt, caller FuncSig, info *Info) []Diagnosti
 	return diags
 }
 
-//line question.goal:291
+//line question.goal:357
 type plainFunc struct {
 	fn *ast.FuncDecl
 }
 
-//line question.goal:295
+//line question.goal:361
 func plainResultFuncs(file *ast.File) []plainFunc {
 	var out []plainFunc
 
@@ -299,7 +357,7 @@ func plainResultFuncs(file *ast.File) []plainFunc {
 	return out
 }
 
-//line question.goal:319
+//line question.goal:385
 func collectQuestionSites(body *ast.BlockStmt) []qsite {
 	var sites []qsite
 
@@ -332,7 +390,7 @@ func collectQuestionSites(body *ast.BlockStmt) []qsite {
 	return sites
 }
 
-//line question.goal:350
+//line question.goal:416
 func resolveQuestionCallee(u *ast.UnwrapExpr, info *Info) (sig FuncSig, key string, known bool) {
 	call, ok := u.X.(*ast.CallExpr)
 	if !ok {
@@ -355,7 +413,7 @@ func resolveQuestionCallee(u *ast.UnwrapExpr, info *Info) (sig FuncSig, key stri
 	}
 }
 
-//line question.goal:370
+//line question.goal:436
 func isResultErr(fun ast.Expr) bool {
 	sel, ok := fun.(*ast.SelectorExpr)
 	if !ok || sel.Sel == nil || sel.Sel.Name != "Err" {
@@ -365,7 +423,7 @@ func isResultErr(fun ast.Expr) bool {
 	return ok && id.Name == "Result"
 }
 
-//line question.goal:383
+//line question.goal:449
 func errVariantArg(arg ast.Expr) (qual, variant string, ok bool) {
 	switch v1 := arg.(type) {
 	case *ast.SelectorExpr:
@@ -391,7 +449,7 @@ func errVariantArg(arg ast.Expr) (qual, variant string, ok bool) {
 	}
 }
 
-//line question.goal:407
+//line question.goal:473
 func semaVariantList(enumDecl *Enum) string {
 	names := make([]string, len(enumDecl.Variants))
 	for i, v := range enumDecl.Variants {
@@ -400,7 +458,7 @@ func semaVariantList(enumDecl *Enum) string {
 	return strings.Join(names, ", ")
 }
 
-//line question.goal:417
+//line question.goal:483
 func importAliases(file *ast.File) map[string]bool {
 	out := map[string]bool{}
 	for _, imp := range file.Imports {
@@ -424,7 +482,7 @@ func importAliases(file *ast.File) map[string]bool {
 	return out
 }
 
-//line question.goal:442
+//line question.goal:508
 func isImportedCall(key string, imports map[string]bool) bool {
 	pkg, _, ok := strings.Cut(key, ".")
 	return ok && imports[pkg]

@@ -1464,6 +1464,7 @@ The full set of stable codes the checker can emit:
 
 **05-question-prop**
 
+- `[question-assign-unsupported]` (error) — a `?` on an assignment right-hand side targets something other than a single simple variable (e.g. `obj.f = f()?` or `a, b = f()?`), which would otherwise silently discard the unwrapped value; bind to one variable with `x := f()?` or `x = f()?`.
 - `[question-binds-nonvalue]` (error) — `name := expr?` binds a value but the callee doesn't return exactly `(value, error)`.
 - `[question-callee-no-error]` (error) — in a `Result[_, error]` function, a `?` callee yields no `error` to propagate — it returns nothing, a non-error type, an `Option`, or a closed-E `Result`.
 - `[question-callee-unresolved]` (warning) — a discarding `?` callee's arity can't be resolved lexically; the two-value form is assumed.

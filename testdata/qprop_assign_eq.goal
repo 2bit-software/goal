@@ -1,0 +1,30 @@
+package qprop
+
+// provide returns a Result whose Ok value the `?` assignment writes into an
+// existing, function-scoped variable.
+func provide() Result[int, error] {
+	return Result.Ok(9)
+}
+
+// outerAssign proves `x = f()?` assigns the existing outer `x` rather than
+// shadowing it with a nested `:=` binding: the `?` write happens inside a nested
+// block, so under the old lowering the assignment would bind a fresh block-scoped
+// `x` and the function-scoped `x` would stay 1.
+func outerAssign() Result[int, error] {
+	x := 1
+	if x == 1 {
+		x = provide()?
+	}
+	return Result.Ok(x)
+}
+
+/// snapshot unwraps outerAssign, proving the `x = f()?` inside a nested block
+/// updated the function-scoped `x` (a `:=` shadow would leave it 1).
+/// >>> snapshot()
+/// 9
+func snapshot() int {
+	return match outerAssign() {
+		Result.Ok(v) => v
+		Result.Err(e) => 0
+	}
+}

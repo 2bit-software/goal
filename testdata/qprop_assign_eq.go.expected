@@ -1,0 +1,11 @@
+package qprop
+
+import "testing"
+
+func TestDoctest_snapshot_1(t *testing.T) {
+	got := snapshot()
+	want := 9
+	if got != want {
+		t.Errorf("doctest snapshot: got %v, want %v", got, want)
+	}
+}
