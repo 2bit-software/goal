@@ -7623,3 +7623,32 @@
   - Current pinned corpus counts after this story: file-transpile 57, pkg 2,
     check 55, doctest 6 (in internal/corpus/generate_test.go).
 ---
+
+## 2026-07-02T00:00:00Z - US-005
+- Made Option.Some always capture by value: deleted the three identifier
+  aliasing shortcuts so `Option.Some(x)` snapshots x instead of aliasing it
+  via `&x`. Every argument shape now takes the copy path (hoisted temp or the
+  goalSome boxing helper).
+- Files changed: internal/backend/lower.goal (optionConstruction: dropped the
+  "some-addr" ident classification), internal/backend/emit.goal (optionValueExpr:
+  dropped the `&x` ident branch; tryOptionValue: dropped the dead some-addr arm),
+  regenerated internal/backend/{lower,emit}.go; new testdata/option_some_copy.goal
+  + .go.expected doctest sidecar; regolded features/04-option/examples/option_find,
+  option_passthrough and features/05-question-prop/examples/qprop_option goldens;
+  corpus/manifest.json; internal/corpus/generate_test.go counts (transpile 57->58,
+  doctest 6->7); AI-KNOWLEDGE-BOOTSTRAP.md.
+- Learnings for future iterations:
+  - `optionConstruction` (lower.goal) is the SINGLE Option-construction classifier;
+    its only caller is `tryOptionValue`. Removing a kind from the classifier makes
+    the matching switch arm dead — delete both together.
+  - There are TWO Option value-position lowering functions: `optionValueExpr`
+    (statement position, may hoist a `tmp :=` line — used by returns / Result.Ok
+    payloads) and `tryOptionValue` (pure expression via goalSome helper — used in
+    call args / struct fields / slice elements). A semantic change to Some must be
+    applied to BOTH or the two positions disagree.
+  - Widening the goalSome path makes `usedOptionHelper` fire for more files, so the
+    goalSome prelude appears in additional goldens — expected churn, regold via
+    update-goldens.
+  - Pinned corpus counts were already at 57/6 (not the PRD's stale 55/4); always
+    read the real deltas from `go test ./internal/corpus -run TestGenerateCounts`.
+---

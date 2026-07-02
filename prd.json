@@ -72,7 +72,7 @@
         "Existing Option goldens updated via the golden-update path and re-verified."
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "SPIKE. FILES: internal/backend/lower.goal — optionConstruction (52-77); internal/backend/emit.goal — optionValueExpr (1891-1919), tryOptionValue (1930-1948). APPROACH: pure deletion of the aliasing shortcuts so all shapes take the known-good copy paths. (1) optionConstruction: delete the ident special case (lines 73-75) so every single-arg Some returns 'some-box'; update doc comment (kinds become 'none'/'some-box'). (2) tryOptionValue: delete the 'some-addr' arm (1938-1940) — the default goalSome copy handles all args. (3) optionValueExpr: delete the ident branch (1911-1913) so every arg hoists some := e.gensym('some'); e.expr(arg); then &some — a copy. (4) task generate; regenerate goldens. PATTERN: the existing some-box/goalSome path (tryOptionValue default arm 1941-1945) and hoisted-temp path (optionValueExpr 1914-1918). TESTS: testdata/option_some_copy.goal: func snapshot() int { x := 1; o := Option.Some(x); x = 9; return match o {...} } with doctest >>> snapshot() -> 1 (transpile +1, doctest +1); corpus-gen + update-goldens. PITFALLS: broad golden churn — usedOptionHelper now fires for ident args so the goalSome prelude appears in more files including package-mode shared prelude (testdata/package fixtures); internal/interp may implement Some aliasing independently — run the interp gate (internal/corpus/interp_gate_test.go); compiler's own .goal uses Option.Some — generate + fixpoint; guide/by-example pages showing the &x lowering need updating + bootstrap regen (playground live-verifies examples — see memory: two verifiers)."
     },
     {
