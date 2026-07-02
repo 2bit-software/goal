@@ -7652,3 +7652,46 @@
   - Pinned corpus counts were already at 57/6 (not the PRD's stale 55/4); always
     read the real deltas from `go test ./internal/corpus -run TestGenerateCounts`.
 ---
+
+## 2026-07-02T03:39:00Z - US-006 (audit-remediation PRD)
+- Made the lexer report unterminated string/raw-string/rune literals and
+  out-of-radix numeric literals (0o889, 0b77, empty 0x/0o/0b) as located
+  diagnostics. Added lexer.Error{Pos,Code,Msg}, an errs field + errorf, and a
+  Scan(src) ([]Token, []Error) counterpart to Tokens. scanString/scanRune now stop
+  consuming the trailing newline in the backslash branch (the newline-swallow bug),
+  and the 0o/0b path scans with octal/binary predicates and records
+  invalid-number-literal on an out-of-radix or empty-digit prefix. sema.Analyze and
+  AnalyzePackageInDirWith prepend these as `00-lex` Error diagnostics, so
+  `goal check` renders them and exits 1.
+- Files changed: internal/lexer/lexer.goal, internal/sema/analyze.goal
+  (new lexDiagnostics), internal/sema/package.goal, internal/guide/catalog.goal
+  (four 00-lex catalog rows) + regenerated .go; AI-KNOWLEDGE-BOOTSTRAP.md;
+  testdata/check/00-lex/{bad_octal,bad_binary,unterminated_rune}.goal; corpus/manifest.json;
+  internal/corpus/generate_test.go (check 55->58); internal/corpus/lexer_errors_test.go;
+  cmd/goal/main_test.go.
+- Learnings for future iterations:
+  - The lex-diagnostic path is deliberately SEMA-side (lexer.Scan called from
+    Analyze/AnalyzePackageInDirWith), NOT through parser.errs. It only fires when
+    ParseFile SUCCEEDS — the malformed inputs still lex to a valid token stream. An
+    unterminated RAW string is the exception to watch: it runs to EOF and swallows
+    any following `}`, so a fixture with structure after it fails to parse; place
+    the raw string as the LAST token (nothing structural after) if you need
+    ParseFile to succeed.
+  - `// want "..."` markers use DOUBLE quotes, so they are inert inside a
+    single-quoted rune fixture and inside `//` comments after a number — but they
+    TERMINATE an unterminated interpreted-string fixture (the marker's first `"`
+    closes the string), turning it into `x := STRING IDENT STRING`, a parse error.
+    Cover unterminated-STRING/RAW-STRING and the newline-swallow AC via Go tests
+    (internal/corpus imports goal/internal/lexer fine); use testdata want fixtures
+    only for the quote-safe classes (bad octal/binary, unterminated rune).
+  - Every check case is exercised by TestASTEngineWholeCorpusBehavioralGate
+    (ast_gate_test.go) via SemaCheck -> sema.Analyze, so a new testdata/check/<dir>
+    is auto-covered without adding a per-dir runner. The dir-scoped runners
+    (sema_checker/fields/question_test.go) are ADDITIONAL, keyed by HasPrefix on a
+    single feature dir.
+  - The diagnostic-catalog codes feed the `goal ai` bootstrap guide; adding a new
+    feature section (00-lex) is picked up by catalogByFeature's sort, but you MUST
+    regenerate AI-KNOWLEDGE-BOOTSTRAP.md (`go run ./cmd/goal ai > ...`) or
+    TestBootstrapGoldenMatches fails.
+  - Pinned corpus counts after this story: transpile 58, pkg 2, check 58, doctest 7.
+---
