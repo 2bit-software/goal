@@ -832,7 +832,7 @@ func (p *parser) parseIfStmt() ast.Stmt {
 		s.Init = s1
 		s.Cond = p.parseExpr()
 	} else {
-		s.Cond = stmtExpr(s1)
+		s.Cond = p.condExpr(s1, "if")
 	}
 	p.exprLev = prev
 
@@ -897,7 +897,7 @@ func (p *parser) parseForStmt() ast.Stmt {
 	}
 
 	// Condition-only for: s1 carries the condition.
-	s := &ast.ForStmt{For: forPos, Cond: stmtExpr(s1)}
+	s := &ast.ForStmt{For: forPos, Cond: p.condExpr(s1, "for")}
 	p.exprLev = prev
 	s.Body = p.parseBlock()
 	return s
@@ -1077,6 +1077,19 @@ func stmtExpr(s ast.Stmt) ast.Expr {
 	if es, ok := s.(*ast.ExprStmt); ok {
 		return es.X
 	}
+	return nil
+}
+
+// condExpr returns the condition an if/for header carries as a bare simple
+// statement. Only an *ast.ExprStmt is a valid condition; any other simple
+// statement (e.g. `x := 1`) means the author wrote an init clause with no
+// following `; condition`, which would otherwise be silently dropped. Record a
+// located error naming the missing condition and return nil.
+func (p *parser) condExpr(s ast.Stmt, kw string) ast.Expr {
+	if es, ok := s.(*ast.ExprStmt); ok {
+		return es.X
+	}
+	p.errorf(p.cur().Pos, "expected ; after init statement (missing %s condition)", kw)
 	return nil
 }
 

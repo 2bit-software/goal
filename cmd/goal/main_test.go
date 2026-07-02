@@ -161,6 +161,65 @@ func TestCheckCleanProgramPasses(t *testing.T) {
 	}
 }
 
+// An if/for header whose init statement is followed by no condition (e.g.
+// `if x := 1 { }`) must be a parse error: the init would otherwise be silently
+// dropped and the block run unconditionally. `goal check` reports it at a source
+// position and names the missing condition, and exits non-zero (US-007).
+func TestCheckRejectsMalformedIfForInit(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "if",
+			src:  "package demo\n\nfunc f() {\n\tif x := 1 {\n\t}\n}\n",
+			want: "missing if condition",
+		},
+		{
+			name: "for",
+			src:  "package demo\n\nfunc f() {\n\tfor x := 1 {\n\t}\n}\n",
+			want: "missing for condition",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := goalModule(t, map[string]string{"bad.goal": tc.src})
+
+			var out, errOut bytes.Buffer
+			// The malformed header is a parse error; cmdCheck returns it wrapped
+			// (main prints it to stderr). The unified file:line:col: error: [code]
+			// format is US-008 — here we only require a located message naming the
+			// missing condition and a non-nil (exit 1) result.
+			err := run([]string{"check", dir}, &out, &errOut)
+			if err == nil {
+				t.Fatalf("expected check to fail on the malformed %s header\nstdout: %s\nstderr: %s", tc.name, out.String(), errOut.String())
+			}
+			msg := err.Error()
+			if !strings.Contains(msg, tc.want) {
+				t.Errorf("diagnostic does not name the missing condition (want %q):\n%s", tc.want, msg)
+			}
+			// Located: the header is on line 4, so the position appears as `4:`.
+			if !strings.Contains(msg, "4:") {
+				t.Errorf("diagnostic not located to a source position:\n%s", msg)
+			}
+		})
+	}
+}
+
+// The valid init+condition forms must still parse and check cleanly — the
+// rejection above must not catch `if x := f(); cond { }` or the three-clause
+// `for i := 0; i < n; i++ { }` (US-007 FR-3).
+func TestCheckAcceptsValidIfForInit(t *testing.T) {
+	const src = "package demo\n\nfunc f() int {\n\treturn 1\n}\n\nfunc g() int {\n\ttotal := 0\n\tif x := f(); x > 0 {\n\t\ttotal = x\n\t}\n\tfor i := 0; i < 3; i++ {\n\t\ttotal = total + i\n\t}\n\treturn total\n}\n"
+	dir := goalModule(t, map[string]string{"ok.goal": src})
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"check", dir}, &out, &errOut); err != nil {
+		t.Fatalf("valid init+condition forms should check clean: %v\nstderr: %s", err, errOut.String())
+	}
+}
+
 // A depth-stage transpile failure (here: a single file checked alone, whose enum
 // constructor references an enum declared in a sibling) is reported as a concise,
 // non-fatal note — not the full "--- generated ---" Go dump, which is reserved for

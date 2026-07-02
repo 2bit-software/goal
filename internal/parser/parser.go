@@ -703,7 +703,7 @@ func (p *parser) parseIfStmt() ast.Stmt {
 		s.Init = s1
 		s.Cond = p.parseExpr()
 	} else {
-		s.Cond = stmtExpr(s1)
+		s.Cond = p.condExpr(s1, "if")
 	}
 	p.exprLev = prev
 	s.Body = p.parseBlock()
@@ -757,7 +757,7 @@ func (p *parser) parseForStmt() ast.Stmt {
 		s.Body = p.parseBlock()
 		return s
 	}
-	s := &ast.ForStmt{For: forPos, Cond: stmtExpr(s1)}
+	s := &ast.ForStmt{For: forPos, Cond: p.condExpr(s1, "for")}
 	p.exprLev = prev
 	s.Body = p.parseBlock()
 	return s
@@ -931,7 +931,16 @@ func stmtExpr(s ast.Stmt) ast.Expr {
 	return nil
 }
 
-//line parser.goal:1085
+//line parser.goal:1088
+func (p *parser) condExpr(s ast.Stmt, kw string) ast.Expr {
+	if es, ok := s.(*ast.ExprStmt); ok {
+		return es.X
+	}
+	p.errorf(p.cur().Pos, "expected ; after init statement (missing %s condition)", kw)
+	return nil
+}
+
+//line parser.goal:1098
 func startsExpr(k token.Kind) bool {
 	switch k {
 	case token.IDENT, token.INT, token.FLOAT, token.IMAG, token.CHAR, token.STRING, token.LPAREN, token.ADD, token.SUB, token.NOT, token.XOR, token.AND, token.ARROW, token.MUL, token.MATCH, token.LBRACK, token.MAP, token.STRUCT, token.CHAN, token.INTERFACE, token.FUNC:
@@ -940,10 +949,10 @@ func startsExpr(k token.Kind) bool {
 	return false
 }
 
-//line parser.goal:1111
+//line parser.goal:1124
 const lowestBinaryPrec = 1
 
-//line parser.goal:1116
+//line parser.goal:1129
 func precedence(k token.Kind) int {
 	switch k {
 	case token.LOR:
@@ -960,12 +969,12 @@ func precedence(k token.Kind) int {
 	return 0
 }
 
-//line parser.goal:1134
+//line parser.goal:1147
 func (p *parser) parseExpr() ast.Expr {
 	return p.parseBinary(lowestBinaryPrec)
 }
 
-//line parser.goal:1142
+//line parser.goal:1155
 func (p *parser) parseBinary(minPrec int) ast.Expr {
 	x := p.parseUnary()
 	for {
@@ -982,7 +991,7 @@ func (p *parser) parseBinary(minPrec int) ast.Expr {
 	}
 }
 
-//line parser.goal:1165
+//line parser.goal:1178
 func (p *parser) parseUnary() ast.Expr {
 	switch p.kind() {
 	case token.ADD, token.SUB, token.NOT, token.XOR, token.AND, token.ARROW:
@@ -996,7 +1005,7 @@ func (p *parser) parseUnary() ast.Expr {
 	}
 }
 
-//line parser.goal:1180
+//line parser.goal:1193
 func (p *parser) parseOperand() ast.Expr {
 	t := p.cur()
 	switch t.Kind {
@@ -1027,7 +1036,7 @@ func (p *parser) parseOperand() ast.Expr {
 	}
 }
 
-//line parser.goal:1223
+//line parser.goal:1236
 func (p *parser) parseFuncOperand() ast.Expr {
 	kw := p.expect(token.FUNC)
 	ft := p.parseSignature()
@@ -1042,7 +1051,7 @@ func (p *parser) parseFuncOperand() ast.Expr {
 	return &ast.FuncLit{Type: ft, Body: body}
 }
 
-//line parser.goal:1240
+//line parser.goal:1253
 func (p *parser) parseTypeAssert(x ast.Expr) ast.Expr {
 	lp := p.expect(token.LPAREN)
 	ta := &ast.TypeAssertExpr{X: x, Lparen: lp.Pos}
@@ -1055,7 +1064,7 @@ func (p *parser) parseTypeAssert(x ast.Expr) ast.Expr {
 	return ta
 }
 
-//line parser.goal:1254
+//line parser.goal:1267
 func (p *parser) parsePostfix(x ast.Expr) ast.Expr {
 	for {
 		switch p.kind() {
@@ -1084,7 +1093,7 @@ func (p *parser) parsePostfix(x ast.Expr) ast.Expr {
 	}
 }
 
-//line parser.goal:1286
+//line parser.goal:1299
 func compositeOK(x ast.Expr) bool {
 	switch x.(type) {
 	case *ast.Ident:
@@ -1122,7 +1131,7 @@ func compositeOK(x ast.Expr) bool {
 	}
 }
 
-//line parser.goal:1305
+//line parser.goal:1318
 func (p *parser) parseCallSuffix(fun ast.Expr) ast.Expr {
 	lp := p.expect(token.LPAREN)
 	prev := p.exprLev
@@ -1159,7 +1168,7 @@ func (p *parser) parseCallSuffix(fun ast.Expr) ast.Expr {
 	return &ast.CallExpr{Fun: fun, Lparen: lp.Pos, Args: args, Ellipsis: ellipsis, Rparen: rp.Pos}
 }
 
-//line parser.goal:1347
+//line parser.goal:1360
 func (p *parser) parseIndexSuffix(x ast.Expr) ast.Expr {
 	lb := p.expect(token.LBRACK)
 	prev := p.exprLev
@@ -1187,7 +1196,7 @@ func (p *parser) parseIndexSuffix(x ast.Expr) ast.Expr {
 	return &ast.IndexListExpr{X: x, Lbrack: lb.Pos, Indices: indices, Rbrack: rb.Pos}
 }
 
-//line parser.goal:1382
+//line parser.goal:1395
 func (p *parser) finishSlice(x ast.Expr, lbrack token.Pos, prevLev int, low ast.Expr) ast.Expr {
 	s := &ast.SliceExpr{X: x, Lbrack: lbrack, Low: low}
 	p.expect(token.COLON)
@@ -1206,7 +1215,7 @@ func (p *parser) finishSlice(x ast.Expr, lbrack token.Pos, prevLev int, low ast.
 	return s
 }
 
-//line parser.goal:1402
+//line parser.goal:1415
 func (p *parser) parseCompositeLit(typ ast.Expr) ast.Expr {
 	lb := p.expect(token.LBRACE)
 	cl := &ast.CompositeLit{Type: typ, Lbrace: lb.Pos}
@@ -1226,7 +1235,7 @@ func (p *parser) parseCompositeLit(typ ast.Expr) ast.Expr {
 	return cl
 }
 
-//line parser.goal:1423
+//line parser.goal:1436
 func (p *parser) parseElement() ast.Expr {
 	if p.at(token.ELLIPSIS) {
 		return p.parseSpreadElement()
@@ -1239,7 +1248,7 @@ func (p *parser) parseElement() ast.Expr {
 	return x
 }
 
-//line parser.goal:1437
+//line parser.goal:1450
 func (p *parser) parseElementValue() ast.Expr {
 	if p.at(token.LBRACE) {
 		return p.parseCompositeLit(nil)
