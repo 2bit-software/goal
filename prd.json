@@ -462,7 +462,7 @@
         "Existing tasks unchanged."
       ],
       "priority": 35,
-      "passes": false,
+      "passes": true,
       "notes": "SPIKE. FILES: Taskfile.yml only. APPROACH: (1) update-goldens: `go test ./internal/corpus -run TestUpdateGoldens -update-goldens -count=1` (flag defined update_goldens_test.go:17); desc WARNS it rewrites committed .go.expected goldens. (2) corpus-gen: `go run ./cmd/corpus-gen` (default -out corpus/manifest.json, cmd/corpus-gen/main.go:20); desc warns it rewrites the committed manifest. (3) site: `./scripts/build-site.sh` (same script pages.yml runs). (4) e2e: deps [site] (run.mjs loads ../site/goal.wasm + wasm_exec.js — site must build first), then node run.mjs with dir: playground-e2e; guard node absence — NOTE Taskfile preconditions FAIL rather than skip by default, so use a `command -v node || { echo skip; exit 0; }` shell guard (or status:) and document in desc. (5) Gate wording: keep check fast; add check-full = task check + task fixpoint; update check's desc to point at check-full as the pre-commit/pre-push gate (AC's second option). PATTERN: existing composed tasks (check calling vet/verify-generated/test); fixpoint's deps usage. TESTS: task --list shows all; run task update-goldens, corpus-gen, site, e2e, check-full once each; after update-goldens + corpus-gen on a clean tree `git status` must show no drift (dirty output = latent drift bug — investigate, don't commit). PITFALLS: e2e without site fails opaquely on missing wasm — the deps entry is load-bearing; build-site.sh takes minutes (wasm) — never fold into check."
     },
     {

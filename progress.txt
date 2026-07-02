@@ -1,6 +1,15 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- docs/by-example.md is LIVE-VERIFIED, not just prose (found US-035): scripts/
+  build-site.sh runs build-playground, which transpiles every `Transpiles to:`
+  block with the HOST transpiler and hard-fails on any mismatch. So a compiler
+  lowering change (e.g. US-005 Option copy) MUST update the shown output in the
+  same story or `task site` breaks. by-example prose also feeds `goal ai`, so
+  after editing it regenerate `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`
+  (TestBootstrapGoldenMatches guards it). Regenerate the bootstrap AFTER the last
+  doc edit. Separately, `task e2e` checks goal.wasm reproduces those host seeds;
+  the WASM entrypoint currently lags the checker (see US-035 latent-bug note).
 - Consuming a `Result`-returning call in `.goal` without propagating (found US-031):
   you CANNOT single-bind it (`x := f()` -> "1 variable but 2 values") and you
   CANNOT `match f() {...}` directly (the emitter binds the scrutinee to one temp,
@@ -8761,4 +8770,35 @@
   - Do not restate the command list in a toolchain fragment: the `toolchain`
     section renders `guideCommands` live and TestToolchainSectionListsEveryCommand
     asserts every command appears there; `goal test` (US-015) is already listed.
+---
+
+## 2026-07-02T00:00:00Z - US-035
+- Added canonical Taskfile entries so common maintenance ops have one
+  invocation: `update-goldens` (runs the -update-goldens corpus test),
+  `corpus-gen` (`go run ./cmd/corpus-gen`), `site` (`./scripts/build-site.sh`),
+  `e2e` (deps [site], node playground gate, skips exit-0 when node absent), and
+  `check-full` (= check + fixpoint). `check`'s desc now names `check-full` as
+  the pre-commit/pre-push gate and calls itself the fast inner gate.
+- Building `site` surfaced pre-existing drift from US-005: the Option feature's
+  shown by-example output was still `return &u` while the live transpiler now
+  emits the copy `some := u; return &some`. Synced docs/by-example.md's Option
+  transpiled block + the "Lowers to" prose, then regenerated
+  AI-KNOWLEDGE-BOOTSTRAP.md (it embeds by-example prose).
+- Files changed: Taskfile.yml, docs/by-example.md, AI-KNOWLEDGE-BOOTSTRAP.md
+  (impl commit); prd.json + progress.txt (this bookkeeping commit).
+- Learnings for future iterations:
+  - Verify gates green: `task check` (exit 0) and `task fixpoint` (FIXPOINT OK).
+    `update-goldens` + `corpus-gen` on a clean tree leave NO git drift.
+  - site/ build outputs (features.json, goal.wasm, wasm_exec.js) are gitignored;
+    build-site.sh regenerates features.json seeds from the HOST transpiler each
+    run, so a stale by-example output block hard-fails build-playground.
+  - LATENT BUG (out of scope for US-035, unowned by any story): `task e2e`
+    reports only 13/23 features reproduce their seed. goal.wasm's transpile
+    entrypoint (cmd/goal-wasm) does NOT run the sema checker and emits old-style
+    `backend: ...` errors instead of the located `[code] file:line:col`
+    diagnostics the host `goal check` now produces — so every "Rejecting ..."
+    playground feature either doesn't reject or mismatches its seed. Needs its
+    own story to route the WASM entrypoint through sema.Check with the current
+    diagnostic rendering. Not fixable within a Taskfile-only change; the project
+    verifyCommands (check, fixpoint) are unaffected and stay green.
 ---
