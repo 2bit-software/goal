@@ -588,6 +588,19 @@
   and the protected token's count is unchanged, and grep for `internal/internal` to catch
   any accidental double-prefix. Conceptual prose ("the selfhost tree", "selfhost packages")
   and the compiler's own program name are NOT directory tokens — leave them.
+- The goscript INTERP (internal/interp) evaluates doctests as a SECOND oracle and
+  cannot run every construct (e.g. it has no *ast.FuncLit case; it resolves a
+  function's ?-propagation signature by NAME via sigFor). When a new doctest
+  fixture uses an interp-unsupported construct, record its case ID in the
+  honest-deferral registry internal/corpus/interp_gate_test.go `interpGateSkips`
+  (map[caseID]reason, blank reasons are rejected) — do NOT drop it silently. BOTH
+  TestInterpWholeCorpusBehavioralGate and TestInterpRunner consult that registry.
+  The compiled Go sidecar oracle (TestDoctestRunner) still proves behavior.
+- `Result.Ok(...)`/`Result.Err(...)` inside a MATCH ARM (value/return position) is
+  a PRE-EXISTING lowering gap: emitted unlowered even without closures. A bare tail
+  `return Result.Ok(x)` lowers fine. Design Result-returning fixtures to keep match
+  arms yielding plain values and reconstruct the Result in tail position. A
+  value-position `x := match ...` with plain-typed arms needs `var x T = match ...`.
 
 ## [2026-06-30T19:30:00Z] - US-009 (self-host-flip PRD)
 - Ported the goal AI-bootstrap guide surface (internal/guide) to goal source under
@@ -7570,4 +7583,43 @@
     name-run loop `for p.at(COMMA){advance; ident}` is safe because the widened
     lookahead already proved the run ends on an IDENT + type-start, so
     parseParamList's own inter-param comma handling is never stolen.
+---
+
+## 2026-07-02T02:59:40Z - US-004
+- Lowered function literals against their OWN function context. The FuncLit arm
+  in internal/backend/emit.goal now mirrors funcDecl's enter/exit: it detects the
+  literal's own Result/Option kind (open- and closed-E via resultOptionKind +
+  closedResultType), opens a fresh gensym scope (e.newScope), and mints the
+  literal's own ok/err named returns before e.funcSig, then restores the saved
+  fnKind/okName/errName/taken/closedT/closedE at the tail. recvTypes/curParams are
+  deliberately NOT reset (so recv.M()? inside a literal still resolves against the
+  outer receiver/params, per the US-004 spike).
+- Files changed: internal/backend/emit.goal (+ regenerated emit.go via task
+  generate), testdata/closure_result.goal + .go.expected (new corpus doctest
+  fixture), corpus/manifest.json (regenerated), internal/corpus/generate_test.go
+  (pinned counts: file-transpile 56->57, doctest 5->6),
+  internal/corpus/interp_gate_test.go + interp_runner_test.go (skip registry).
+- Learnings for future iterations:
+  - e.fail only records e.err and turns later e.p into no-ops; it does NOT
+    early-return out of a match arm, so an explicit save/restore at the tail of a
+    match arm always runs — no defer needed inside the arm.
+  - `Result.Ok(...)`/`Result.Err(...)` inside MATCH ARMS (value/return position)
+    is a PRE-EXISTING lowering gap: it is emitted unlowered even without closures.
+    A bare tail `return Result.Ok(x)` lowers fine. Design Result-returning corpus
+    fixtures to reconstruct the Result in tail position and keep match arms
+    yielding plain values.
+  - A value-position `x := match ...` needs an inferable arm type; when arms are
+    plain ints/exprs use `var x T = match ...` (the backend emits a helpful error
+    naming this).
+  - The goscript INTERP (internal/interp) has NO *ast.FuncLit case in evalExpr and
+    resolves a function's ?-propagation signature by NAME (sigFor ->
+    sema.FuncSignatures), so a nameless closure can't be interpreted. A doctest
+    exercising closures fails BOTH interp tiers. There are TWO interp doctest tests
+    in internal/corpus: TestInterpWholeCorpusBehavioralGate (honors interpGateSkips)
+    and TestInterpRunner (previously did NOT). The honest-deferral mechanism is
+    interpGateSkips (map[caseID]reason, blank-reason-enforced); the runner now
+    consults it too. Record interp-unsupported doctests there with a reason rather
+    than dropping them; the compiled Go sidecar oracle still proves behavior.
+  - Current pinned corpus counts after this story: file-transpile 57, pkg 2,
+    check 55, doctest 6 (in internal/corpus/generate_test.go).
 ---
