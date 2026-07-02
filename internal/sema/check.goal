@@ -43,13 +43,26 @@ func SeverityLabel(s Severity) string {
 
 // Diagnostic is one located semantic finding. Pos is the front-end source position
 // of the offending construct; Feature names the guarantee (e.g. "02-match"); Code is
-// a stable, greppable identifier; Message is the agent/human-facing explanation.
+// a stable, greppable identifier; Message is the agent/human-facing explanation. Fix,
+// when non-nil, is a machine-applyable repair (US-030) a consumer can apply verbatim
+// — `goal check --json` emits it and the LSP offers it as a per-diagnostic quickfix.
 type Diagnostic struct {
 	Pos      token.Pos
 	Severity Severity
 	Feature  string
 	Code     string
 	Message  string
+	Fix      *SuggestedFix
+}
+
+// SuggestedFix is a machine-applyable repair for a diagnostic: a pure insertion of
+// NewText at Pos (the byte offset / line:col of the character the text is inserted
+// before). It is deliberately insertion-only — never a deletion or replacement — so a
+// consumer can apply it without re-deriving spans. A diagnostic whose repair cannot be
+// derived safely carries a nil *SuggestedFix (the field is omitted downstream).
+type SuggestedFix struct {
+	Pos     token.Pos
+	NewText string
 }
 
 // Check runs every sema check currently implemented against the resolved file and
@@ -176,7 +189,25 @@ func checkOneMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 		Code:     "non-exhaustive-match",
 		Message: fmt.Sprintf("non-exhaustive `match` on enum `%s`: missing variant%s %s — handle %s, or add a `_` rest-arm to dismiss the rest",
 			enumDecl.Name, plural(len(missing)), quoteVariants(enumDecl.Name, missing), pronoun(len(missing))),
+		Fix: exhaustiveFix(enumDecl.Name, missing, m),
 	}}
+}
+
+// exhaustiveFix builds the machine-applyable repair for a non-exhaustive enum match:
+// one `Enum.Variant => panic("TODO")` arm per uncovered variant, inserted just before
+// the match's closing brace. Each arm begins on its own line (a leading newline), so
+// the insertion is well-formed whether the match was written on one line or many; the
+// `panic("TODO")` body is legal in both statement and value position. The position is
+// the closing brace so a consumer inserts the arms as the last entries of the match.
+func exhaustiveFix(enumName string, missing []string, m *ast.MatchExpr) *SuggestedFix {
+	if len(missing) == 0 || m.Rbrace == (token.Pos{}) {
+		return nil
+	}
+	text := ""
+	for _, v := range missing {
+		text += "\n\t\t" + enumName + "." + v + ` => panic("TODO")`
+	}
+	return &SuggestedFix{Pos: m.Rbrace, NewText: text}
 }
 
 // checkOneSealedMatch checks a `match` whose arms are type patterns over a

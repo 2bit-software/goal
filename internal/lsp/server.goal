@@ -124,7 +124,7 @@ func (s *Server) handle(m *rpcMessage) (stop bool) {
 		s.reply(m.ID, InitializeResult{
 			Capabilities: ServerCapabilities{
 				TextDocumentSync:       fullSync,
-				CodeActionProvider:     &CodeActionOptions{CodeActionKinds: []string{"source.fixAll", "source.fixAll.goal"}},
+				CodeActionProvider:     &CodeActionOptions{CodeActionKinds: []string{"source.fixAll", "source.fixAll.goal", "quickfix"}},
 				DocumentSymbolProvider: true,
 				SemanticTokensProvider: &SemanticTokensOptions{Legend: defaultSemanticLegend(), Full: true},
 				DefinitionProvider:     true,

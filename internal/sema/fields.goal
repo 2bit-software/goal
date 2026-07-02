@@ -27,6 +27,7 @@ import (
 	"strings"
 
 	"goal/internal/ast"
+	"goal/internal/token"
 )
 
 // CheckFields enforces feature-08 (no-zero-value): a struct literal of a known
@@ -97,7 +98,66 @@ func checkStructLit(lit *ast.CompositeLit, info *Info) []Diagnostic {
 		Code:     "missing-field",
 		Message: fmt.Sprintf("struct literal `%s{…}` omits required field%s %s — set %s explicitly, or add `...defaults` to fill the rest with zero values",
 			name, plural(len(missing)), quoteJoin(missing), pronoun(len(missing))),
+		Fix: missingFieldFix(lit, missing, fields),
 	}}
+}
+
+// missingFieldFix builds the machine-applyable repair for a struct literal that omits
+// required fields: `<name>: <zero>,` for each missing field, inserted just inside the
+// literal's opening brace. Each entry carries its own trailing comma and starts on a
+// fresh line, so the insertion is well-formed whether the literal was empty, single-
+// line, or multi-line. The repair is emitted only when EVERY missing field has a safely
+// derivable zero (fieldZeroLit); if any field's zero is unknown (a named/array/foreign
+// type whose zero could itself be incomplete or unsafe) the whole fix is omitted rather
+// than guessed — a diagnostic with no derivable repair carries a nil *SuggestedFix.
+func missingFieldFix(lit *ast.CompositeLit, missing []string, fields []Field) *SuggestedFix {
+	if len(missing) == 0 || lit.Lbrace == (token.Pos{}) {
+		return nil
+	}
+	typeOf := map[string]string{}
+	for _, f := range fields {
+		typeOf[f.Name] = f.Type
+	}
+	text := ""
+	for _, name := range missing {
+		zero, ok := fieldZeroLit(typeOf[name])
+		if !ok {
+			return nil // an undecidable zero: omit the whole fix
+		}
+		text += "\n\t\t" + name + ": " + zero + ","
+	}
+	// Insert just after the "{" so the first inserted entry's comma cleanly separates it
+	// from whatever follows (existing keyed elements, or the closing brace).
+	after := token.Pos{Offset: lit.Lbrace.Offset + 1, Line: lit.Lbrace.Line, Col: lit.Lbrace.Col + 1}
+	return &SuggestedFix{Pos: after, NewText: text}
+}
+
+// fieldZeroLit returns the explicit goal zero literal for a field's declared type, and
+// whether it is safely derivable. It mirrors the backend's zeroLit for the shapes whose
+// zero is an unambiguous untyped constant — nil for pointer/slice/map/chan/func/
+// interface and the bare `any`/`error`, "" for string, false for bool, 0 for the
+// numeric builtins. A named, array, or otherwise unrecognized type has no such
+// one-token zero (its zero may be a composite that itself needs fields), so it reports
+// ok=false and the caller omits the suggested fix.
+func fieldZeroLit(typ string) (string, bool) {
+	typ = strings.TrimSpace(typ)
+	switch TypeShape(typ) {
+	case "pointer", "slice", "map", "chan", "func", "interface":
+		return "nil", true
+	}
+	switch typ {
+	case "any", "error":
+		return "nil", true
+	case "string":
+		return `""`, true
+	case "bool":
+		return "false", true
+	case "int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+		"byte", "rune", "float32", "float64", "complex64", "complex128":
+		return "0", true
+	}
+	return "", false
 }
 
 // checkVariantLit checks one enum variant construction `Enum.Variant(label: …)`. It

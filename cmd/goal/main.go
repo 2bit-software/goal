@@ -755,7 +755,7 @@ func checkPackage(pkg *project.Package, errOut io.Writer) ([]checkDiag, error) {
 			if suppress[dedupKey(path, d.Pos.Line, d.Feature)] {
 				continue // type-backed finding owns this construct
 			}
-			diags = append(diags, checkDiag{path, d.Pos.Line, d.Pos.Col, d.Severity, d.Code, d.Message})
+			diags = append(diags, checkDiag{path, d.Pos.Line, d.Pos.Col, d.Severity, d.Code, d.Message, d.Fix})
 		}
 	}
 	for _, d := range depth {
@@ -764,7 +764,7 @@ func checkPackage(pkg *project.Package, errOut io.Writer) ([]checkDiag, error) {
 		// stages render uniformly without cmd/goal importing internal/check.
 		diags = append(diags, checkDiag{
 			depthFilePath(pkg, d.Pos.Filename), d.Pos.Line, d.Pos.Column,
-			sema.Severity(d.Severity), d.Code, d.Message,
+			sema.Severity(d.Severity), d.Code, d.Message, nil,
 		})
 	}
 	return diags, nil
@@ -796,6 +796,7 @@ type checkDiag struct {
 	line, col     int
 	severity      sema.Severity
 	code, message string
+	fix           *sema.SuggestedFix // machine-applyable repair, or nil (US-030)
 }
 
 // render formats the finding as `file:line:col: severity: [code] message`, matching both
@@ -805,21 +806,31 @@ func (d checkDiag) render() string {
 }
 
 // jsonDiag is the machine-readable shape of one diagnostic for `goal check --json`.
-// The fields are omitempty-free so every diagnostic serializes the full record; the
-// struct is intentionally extensible (a later story can add suggestedFix/endLine).
+// The core fields are omitempty-free so every diagnostic serializes the full record;
+// SuggestedFix (US-030) is optional and omitted for diagnostics with no known repair.
 type jsonDiag struct {
-	File     string `json:"file"`
-	Line     int    `json:"line"`
-	Col      int    `json:"col"`
-	Severity string `json:"severity"`
-	Code     string `json:"code"`
-	Message  string `json:"message"`
+	File         string            `json:"file"`
+	Line         int               `json:"line"`
+	Col          int               `json:"col"`
+	Severity     string            `json:"severity"`
+	Code         string            `json:"code"`
+	Message      string            `json:"message"`
+	SuggestedFix *jsonSuggestedFix `json:"suggestedFix,omitempty"`
+}
+
+// jsonSuggestedFix is the machine-applyable repair carried in --json: insert NewText at
+// (Line, Col) — the front-end's 1-based source position of the character the text is
+// inserted before. A consumer applies it as a pure insertion.
+type jsonSuggestedFix struct {
+	Line    int    `json:"line"`
+	Col     int    `json:"col"`
+	NewText string `json:"newText"`
 }
 
 // toJSON projects a checkDiag into its machine-readable form, rendering the severity
 // interface as its stable label ("error"/"warning").
 func (d checkDiag) toJSON() jsonDiag {
-	return jsonDiag{
+	jd := jsonDiag{
 		File:     d.file,
 		Line:     d.line,
 		Col:      d.col,
@@ -827,6 +838,14 @@ func (d checkDiag) toJSON() jsonDiag {
 		Code:     d.code,
 		Message:  d.message,
 	}
+	if d.fix != nil {
+		jd.SuggestedFix = &jsonSuggestedFix{
+			Line:    d.fix.Pos.Line,
+			Col:     d.fix.Pos.Col,
+			NewText: d.fix.NewText,
+		}
+	}
+	return jd
 }
 
 // sortDiags orders findings by file, then line, then column, for stable output.
@@ -848,7 +867,7 @@ func sortDiags(diags []checkDiag) {
 func parseErrorDiags(path string, errs []*parser.Error) []checkDiag {
 	diags := make([]checkDiag, 0, len(errs))
 	for _, e := range errs {
-		diags = append(diags, checkDiag{path, e.Pos.Line, e.Pos.Col, sema.Severity(sema.Severity_Error{}), "syntax", e.Msg})
+		diags = append(diags, checkDiag{path, e.Pos.Line, e.Pos.Col, sema.Severity(sema.Severity_Error{}), "syntax", e.Msg, nil})
 	}
 	return diags
 }
@@ -967,7 +986,7 @@ func rewriteGoBuildStderr(ts []transpiled, raw string) string {
 			if p, ok := pathByBase[filepath.Base(m[1])]; ok {
 				path = p
 			}
-			diags = append(diags, checkDiag{path, ln, col, sema.Severity(sema.Severity_Error{}), "go-build", m[4]})
+			diags = append(diags, checkDiag{path, ln, col, sema.Severity(sema.Severity_Error{}), "go-build", m[4], nil})
 			last = len(diags) - 1
 			continue
 		}

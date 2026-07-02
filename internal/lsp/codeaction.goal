@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"goal/internal/fix"
+	"goal/internal/sema"
 	"goal/internal/token"
 )
 
@@ -12,29 +13,45 @@ import (
 // `source.fixAll` umbrella so a client's `editor.codeActionsOnSave` can trigger it on save.
 const fixAllKind = "source.fixAll.goal"
 
-// codeActions answers a textDocument/codeAction request. When the document's buffer contains
-// plain-Go patterns that `fix.File` rewrites, it offers a single "Idiomatize file" action
-// whose edit replaces the whole document with the idiomatic source; otherwise it offers none.
-// The result is always a non-nil slice so it marshals as `[]`, never `null`.
+// quickfixKind is the code-action kind for a single repairable diagnostic's suggested fix
+// (US-030). Unlike fixAllKind (a whole-file rewrite), a quickfix is a one-diagnostic
+// insertion — the same repair `goal check --json` reports as `suggestedFix`.
+const quickfixKind = "quickfix"
+
+// codeActions answers a textDocument/codeAction request. It offers two families of action,
+// gated by the client's kind filter: the whole-file "Idiomatize file" rewrite (fixAllKind)
+// when `fix.File` would change the buffer, and one per-diagnostic quickfix (quickfixKind) for
+// every repairable check finding whose range overlaps the request. The result is always a
+// non-nil slice so it marshals as `[]`, never `null`.
 func (s *Server) codeActions(raw json.RawMessage) []CodeAction {
 	none := []CodeAction{}
 	var p CodeActionParams
 	if !s.decode(raw, &p, "codeAction") {
 		return none
 	}
-	if !wantsKind(p.Context.Only, fixAllKind) {
-		return none
-	}
 	text, version, ok := s.buffer(p.TextDocument.URI)
 	if !ok {
 		return none
 	}
-	// fix.File is a conservative lexical rewrite — it never panics on partial source and
-	// returns the input unchanged when there is nothing to idiomatize. It errors only when
-	// its own rewrite fails to reparse; offer no action rather than a corrupting edit.
+
+	actions := []CodeAction{}
+	if wantsKind(p.Context.Only, fixAllKind) {
+		actions = append(actions, s.idiomatizeAction(p, text, version)...)
+	}
+	if wantsKind(p.Context.Only, quickfixKind) {
+		actions = append(actions, s.quickfixActions(p, text, version)...)
+	}
+	return actions
+}
+
+// idiomatizeAction returns the whole-file "Idiomatize file" action, or nothing. fix.File is a
+// conservative lexical rewrite — it never panics on partial source and returns the input
+// unchanged when there is nothing to idiomatize. It errors only when its own rewrite fails to
+// reparse; offer no action rather than a corrupting edit.
+func (s *Server) idiomatizeAction(p CodeActionParams, text string, version int) []CodeAction {
 	out, _, _, err := fix.File(text)
 	if err != nil || out == text {
-		return none
+		return nil
 	}
 	end := token.OffsetToPosition(text, len(text))
 	return []CodeAction{{
@@ -51,6 +68,68 @@ func (s *Server) codeActions(raw json.RawMessage) []CodeAction {
 			}},
 		}}},
 	}}
+}
+
+// quickfixActions computes one quickfix per repairable diagnostic whose range overlaps the
+// requested range. Diagnostics are recomputed on demand from the current buffer (sema.Analyze),
+// so a fix is always against the exact text the client holds — no stale-diagnostic bookkeeping.
+// Each fix is a pure insertion of the diagnostic's SuggestedFix.NewText at its position; the
+// TextEdit is version-pinned so the client rejects it if the buffer moved underneath.
+func (s *Server) quickfixActions(p CodeActionParams, text string, version int) []CodeAction {
+	diags, err := sema.Analyze(text)
+	if err != nil {
+		return nil
+	}
+	tokEnd := tokenEnds(text)
+	var actions []CodeAction
+	for _, d := range diags {
+		if d.Fix == nil {
+			continue
+		}
+		if !rangesOverlap(toLSP(text, tokEnd, d).Range, p.Range) {
+			continue
+		}
+		at := Position{Line: d.Fix.Pos.Line - 1, Character: d.Fix.Pos.Col - 1}
+		actions = append(actions, CodeAction{
+			Title: quickfixTitle(d.Code),
+			Kind:  quickfixKind,
+			Edit: &WorkspaceEdit{DocumentChanges: []TextDocumentEdit{{
+				TextDocument: versionedTextDocumentIdentifier{URI: p.TextDocument.URI, Version: version},
+				Edits: []TextEdit{{
+					Range:   Range{Start: at, End: at},
+					NewText: d.Fix.NewText,
+				}},
+			}}},
+		})
+	}
+	return actions
+}
+
+// quickfixTitle names the repair for a diagnostic code, so the editor's lightbulb menu reads
+// naturally. An unrecognized code falls back to a generic title.
+func quickfixTitle(code string) string {
+	switch code {
+	case "non-exhaustive-match":
+		return "Add missing match arms"
+	case "missing-field":
+		return "Add omitted fields"
+	}
+	return "Apply suggested fix"
+}
+
+// rangesOverlap reports whether two half-open ranges share any position — the test a code
+// action uses to decide whether a diagnostic's fix is relevant to the requested range. A
+// zero-width request range (a bare cursor) overlaps a diagnostic that contains or touches it.
+func rangesOverlap(a, b Range) bool {
+	return !posLess(b.End, a.Start) && !posLess(a.End, b.Start)
+}
+
+// posLess reports whether position x precedes y in (line, character) order.
+func posLess(x, y Position) bool {
+	if x.Line != y.Line {
+		return x.Line < y.Line
+	}
+	return x.Character < y.Character
 }
 
 // wantsKind reports whether the client's code-action kind filter admits kind. An empty filter

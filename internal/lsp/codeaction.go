@@ -6,46 +6,106 @@ package lsp
 import (
 	"encoding/json"
 	"goal/internal/fix"
+	"goal/internal/sema"
 	"goal/internal/token"
 	"strings"
 )
 
-//line codeaction.goal:13
+//line codeaction.goal:14
 const fixAllKind = "source.fixAll.goal"
 
 //line codeaction.goal:19
-func (s *Server) codeActions(raw json.RawMessage) []CodeAction {
-	/*line codeaction.goal:20*/ none := []CodeAction{}
-	/*line codeaction.goal:21*/ var p CodeActionParams
+const quickfixKind = "quickfix"
 
-	/*line codeaction.goal:22*/
+//line codeaction.goal:26
+func (s *Server) codeActions(raw json.RawMessage) []CodeAction {
+	/*line codeaction.goal:27*/ none := []CodeAction{}
+	/*line codeaction.goal:28*/ var p CodeActionParams
+
+	/*line codeaction.goal:29*/
 	if !s.decode(raw, &p, "codeAction") {
-		/*line codeaction.goal:23*/ return none
-	}
-	/*line codeaction.goal:25*/ if !wantsKind(p.Context.Only, fixAllKind) {
-		/*line codeaction.goal:26*/ return none
-	}
-	/*line codeaction.goal:28*/ text, version, ok := s.buffer(p.TextDocument.URI)
-	/*line codeaction.goal:29*/ if !ok {
 		/*line codeaction.goal:30*/ return none
 	}
-	/*line codeaction.goal:35*/ out, _, _, err := fix.File(text)
-	/*line codeaction.goal:36*/ if err != nil || out == text {
-		/*line codeaction.goal:37*/ return none
+	/*line codeaction.goal:32*/ text, version, ok := s.buffer(p.TextDocument.URI)
+	/*line codeaction.goal:33*/ if !ok {
+		/*line codeaction.goal:34*/ return none
 	}
-	/*line codeaction.goal:39*/ end := token.OffsetToPosition(text, len(text))
-	/*line codeaction.goal:40*/ return []CodeAction{{Title: "Idiomatize file (goal fix)", Kind: fixAllKind, Edit: &WorkspaceEdit{DocumentChanges: []TextDocumentEdit{{TextDocument: versionedTextDocumentIdentifier{URI: p.TextDocument.URI, Version: version}, Edits: []TextEdit{{Range: Range{Start: Position{Line: 0, Character: 0}, End: Position{Line: end.Line - 1, Character: end.Col - 1}}, NewText: out}}}}}}}
+	/*line codeaction.goal:37*/ actions := []CodeAction{}
+	/*line codeaction.goal:38*/ if wantsKind(p.Context.Only, fixAllKind) {
+		/*line codeaction.goal:39*/ actions = append(actions, s.idiomatizeAction(p, text, version)...)
+	}
+	/*line codeaction.goal:41*/ if wantsKind(p.Context.Only, quickfixKind) {
+		/*line codeaction.goal:42*/ actions = append(actions, s.quickfixActions(p, text, version)...)
+	}
+	/*line codeaction.goal:44*/ return actions
 }
 
-//line codeaction.goal:59
-func wantsKind(only []string, kind string) bool {
-	/*line codeaction.goal:60*/ if len(only) == 0 {
-		/*line codeaction.goal:61*/ return true
+//line codeaction.goal:51
+func (s *Server) idiomatizeAction(p CodeActionParams, text string, version int) []CodeAction {
+	/*line codeaction.goal:52*/ out, _, _, err := fix.File(text)
+	/*line codeaction.goal:53*/ if err != nil || out == text {
+		/*line codeaction.goal:54*/ return nil
 	}
-	/*line codeaction.goal:63*/ for _, o := range only {
-		/*line codeaction.goal:64*/ if o == kind || strings.HasPrefix(kind, o+".") {
-			/*line codeaction.goal:65*/ return true
+	/*line codeaction.goal:56*/ end := token.OffsetToPosition(text, len(text))
+	/*line codeaction.goal:57*/ return []CodeAction{{Title: "Idiomatize file (goal fix)", Kind: fixAllKind, Edit: &WorkspaceEdit{DocumentChanges: []TextDocumentEdit{{TextDocument: versionedTextDocumentIdentifier{URI: p.TextDocument.URI, Version: version}, Edits: []TextEdit{{Range: Range{Start: Position{Line: 0, Character: 0}, End: Position{Line: end.Line - 1, Character: end.Col - 1}}, NewText: out}}}}}}}
+}
+
+//line codeaction.goal:78
+func (s *Server) quickfixActions(p CodeActionParams, text string, version int) []CodeAction {
+	/*line codeaction.goal:79*/ diags, err := sema.Analyze(text)
+	/*line codeaction.goal:80*/ if err != nil {
+		/*line codeaction.goal:81*/ return nil
+	}
+	/*line codeaction.goal:83*/ tokEnd := tokenEnds(text)
+	/*line codeaction.goal:84*/ var actions []CodeAction
+
+	/*line codeaction.goal:85*/
+	for _, d := range diags {
+		/*line codeaction.goal:86*/ if d.Fix == nil {
+			/*line codeaction.goal:87*/ continue
+		}
+		/*line codeaction.goal:89*/ if !rangesOverlap(toLSP(text, tokEnd, d).Range, p.Range) {
+			/*line codeaction.goal:90*/ continue
+		}
+		/*line codeaction.goal:92*/ at := Position{Line: d.Fix.Pos.Line - 1, Character: d.Fix.Pos.Col - 1}
+		/*line codeaction.goal:93*/ actions = append(actions, CodeAction{Title: quickfixTitle(d.Code), Kind: quickfixKind, Edit: &WorkspaceEdit{DocumentChanges: []TextDocumentEdit{{TextDocument: versionedTextDocumentIdentifier{URI: p.TextDocument.URI, Version: version}, Edits: []TextEdit{{Range: Range{Start: at, End: at}, NewText: d.Fix.NewText}}}}}})
+	}
+	/*line codeaction.goal:105*/ return actions
+}
+
+//line codeaction.goal:110
+func quickfixTitle(code string) string {
+	/*line codeaction.goal:111*/ switch code {
+	case "non-exhaustive-match":
+		return "Add missing match arms"
+	case "missing-field":
+		return "Add omitted fields"
+	}
+	/*line codeaction.goal:117*/ return "Apply suggested fix"
+}
+
+//line codeaction.goal:123
+func rangesOverlap(a, b Range) bool {
+	/*line codeaction.goal:124*/ return !posLess(b.End, a.Start) && !posLess(a.End, b.Start)
+}
+
+//line codeaction.goal:128
+func posLess(x, y Position) bool {
+	/*line codeaction.goal:129*/ if x.Line != y.Line {
+		/*line codeaction.goal:130*/ return x.Line < y.Line
+	}
+	/*line codeaction.goal:132*/ return x.Character < y.Character
+}
+
+//line codeaction.goal:138
+func wantsKind(only []string, kind string) bool {
+	/*line codeaction.goal:139*/ if len(only) == 0 {
+		/*line codeaction.goal:140*/ return true
+	}
+	/*line codeaction.goal:142*/ for _, o := range only {
+		/*line codeaction.goal:143*/ if o == kind || strings.HasPrefix(kind, o+".") {
+			/*line codeaction.goal:144*/ return true
 		}
 	}
-	/*line codeaction.goal:68*/ return false
+	/*line codeaction.goal:147*/ return false
 }

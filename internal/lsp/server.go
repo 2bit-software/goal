@@ -105,7 +105,7 @@ func (s *Server) Run(in io.Reader) error {
 func (s *Server) handle(m *rpcMessage) (stop bool) {
 	/*line server.goal:122*/ switch m.Method {
 	case "initialize":
-		s.reply(m.ID, InitializeResult{Capabilities: ServerCapabilities{TextDocumentSync: fullSync, CodeActionProvider: &CodeActionOptions{CodeActionKinds: []string{"source.fixAll", "source.fixAll.goal"}}, DocumentSymbolProvider: true, SemanticTokensProvider: &SemanticTokensOptions{Legend: defaultSemanticLegend(), Full: true}, DefinitionProvider: true, HoverProvider: true, ReferencesProvider: true, RenameProvider: true}, ServerInfo: ServerInfo{Name: "goal-lsp", Version: serverVersion}})
+		s.reply(m.ID, InitializeResult{Capabilities: ServerCapabilities{TextDocumentSync: fullSync, CodeActionProvider: &CodeActionOptions{CodeActionKinds: []string{"source.fixAll", "source.fixAll.goal", "quickfix"}}, DocumentSymbolProvider: true, SemanticTokensProvider: &SemanticTokensOptions{Legend: defaultSemanticLegend(), Full: true}, DefinitionProvider: true, HoverProvider: true, ReferencesProvider: true, RenameProvider: true}, ServerInfo: ServerInfo{Name: "goal-lsp", Version: serverVersion}})
 	case "shutdown":
 		s.replyNull(m.ID)
 	case "exit":
