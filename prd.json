@@ -474,7 +474,7 @@
         "`grep -rn selfhost --include='*.go' --include='*.goal' internal cmd` shows only live usage afterward."
       ],
       "priority": 36,
-      "passes": false,
+      "passes": true,
       "notes": "SPIKE. Deletion is the outcome (verified: goal/internal/selfhost is imported ONLY by its own selfhost_test.go:8; its BuildTranspiled/BuildAndTest gate is fully superseded by verify-generated/bootstrap/fixpoint). FILES: delete internal/selfhost/ entirely (selfhost.go + selfhost_test.go); edit Taskfile.yml comments at lines 55 and 90 ('byexample/corpus/selfhost' -> 'byexample/corpus'); optionally internal/main.goal + regenerated internal/main.go. APPROACH: (1) rm -rf internal/selfhost. (2) Fix the two Taskfile comments. (3) The AC grep will still hit internal/main.goal/main.go — the LIVE self-hosted compiler main uses the name (doc comment 'Command selfhost', usage string 'selfhost build --emit=<dir>', error prefix 'selfhost:' at lines 1,14,30,39,58). Decide: (a) classify as live usage in notes, or (b) rename those strings to goal-c and task generate (churns only internal/main.go) for a clean grep. Prefer (b) if fixpoint stays green. (4) task check + task fixpoint. PATTERN: none — pure removal; bootstrap/fixpoint already embody the replacement gate. TESTS: go build ./... && task check && task fixpoint; the AC grep; go vet clean. PITFALLS: renaming main.goal strings REQUIRES task generate; DECISIONS.md/SELF-HOST-*.md/README mention selfhost — .md files are outside the AC grep, leave history alone (README is US-032's job); don't touch _bootstrap/ artifacts; no pinned counts reference selfhost."
     },
     {

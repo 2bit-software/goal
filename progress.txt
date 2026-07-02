@@ -8802,3 +8802,23 @@
     diagnostic rendering. Not fixable within a Taskfile-only change; the project
     verifyCommands (check, fixpoint) are unaffected and stay green.
 ---
+
+## 2026-07-02 - US-036
+- Removed the orphaned internal/selfhost package (dead code with stale
+  correctness-check doc claims; its BuildTranspiled/BuildAndTest gate is fully
+  superseded by verify-generated / bootstrap / fixpoint).
+- Files changed: deleted internal/selfhost/selfhost.go and
+  internal/selfhost/selfhost_test.go; updated two Taskfile.yml comments
+  (byexample/corpus/selfhost -> byexample/corpus).
+- Verified: task check green, task fixpoint OK (FIXPOINT OK), go build ./... clean.
+- Learnings for future iterations:
+  - The name "selfhost" survives the AC grep in internal/main.goal + generated
+    internal/main.go: that is the LIVE goal-written compiler skeleton (Command
+    selfhost / `selfhost build --emit`), a SEPARATE thing from the deleted
+    harness package. It is legitimate live usage; do NOT delete or rename it
+    (renaming would churn generated Go via task generate for zero functional
+    gain and risk fixpoint).
+  - internal/selfhost was imported only by its own selfhost_test.go — confirm an
+    "orphan" package's importers with `grep -rln '"module/path"' --include='*.go'`
+    before deleting.
+---
