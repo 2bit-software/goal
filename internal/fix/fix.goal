@@ -2,7 +2,8 @@
 // inverse direction of the lowering passes. It is the engine behind `goal fix`: a function
 // written as a Go `(T, error)` tuple with manual `if err != nil { return zero, err }`
 // propagation becomes a `Result[T, error]` returning function whose body propagates with
-// `?`; a `switch` over an in-file enum becomes a `match`.
+// `?`; a `switch` over an in-file enum is reported as a suggestion to convert it to a
+// `match` (fix surfaces the opportunity but does not rewrite it — see fixSwitchToMatch).
 //
 // fix consumes the parsed goal AST: each pass parses the current source with
 // internal/parser and resolves its name-keyed facts with internal/sema, then locates

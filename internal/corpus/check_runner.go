@@ -15,9 +15,9 @@ import (
 //	// want "substring the diagnostic message must contain"
 //
 // The marker's own line is the line the diagnostic is expected on. Multiple
-// markers on one line are allowed. These semantics mirror the existing checker
-// harness (internal/check/check_test.go) so a check case behaves identically
-// whether driven by that harness or by this runner.
+// markers on one line are allowed. This runner — driven by the corpus manifest,
+// which generate.go builds by walking testdata/check recursively — is the sole
+// checker harness now that the legacy lexical checker is deleted.
 var wantMarkerRe = regexp.MustCompile(`//\s*want\s+"([^"]*)"`)
 
 // RunCheck executes one [KindCheck] Case against the checker function ck. It reads

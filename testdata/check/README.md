@@ -1,11 +1,14 @@
 # testdata/check — checker golden cases
 
-One subdirectory per guarantee, matching the `internal/check` slot:
+One subdirectory per checker guarantee:
 
 ```
 testdata/check/
+  00-lex/             lexer-error cases
+  01-enums/           enum-declaration cases
   08-no-zero-value/   field-completeness cases
   02-match/           match-exhaustiveness cases
+  05-question-prop/   ?-propagation cases
   07-implements/      interface-satisfaction cases
   06-error-e/         closedness & From-totality cases
   12-derive-convert/  conversion-totality cases
@@ -13,8 +16,10 @@ testdata/check/
   10-assert/          static-assert cases
 ```
 
-The harness (`internal/check/check_test.go`, `TestCases`) auto-discovers every
-`*.goal` file under here — **adding a case never touches the test file.**
+The corpus manifest (built by `internal/corpus/generate.go`, which walks this
+tree recursively) drives `RunCheck` (`internal/corpus/check_runner.go`), which
+matches diagnostics against the `// want` markers below. Adding a `*.goal` case
+here is auto-discovered — **it never touches the runner.**
 
 ## Inline expectation markers
 

@@ -1,5 +1,13 @@
 # Feature Audit Loop — one feature per iteration
 
+> **Historical — token-splice era.** This prompt describes the original
+> per-feature reference-transpiler loop. The project has since moved to a single
+> AST front-end: new features now land in the AST pipeline (`internal/lexer` →
+> `parser` → `sema` → `backend`) with corpus cases under `testdata/`, and the
+> standalone reference programs this prompt builds were retired to `attic/`. The
+> as-built architecture is documented in `REWRITE-ARCHITECTURE.md`. Read the
+> Step 3 / Step 5 notes below before following them literally.
+
 You are auditing and pinning down **one** feature of **goal** (the correctness-oriented Go
 dialect formerly called "Go+"). The full design rationale lives in `goal-design-spec.md`; the
 work queue lives in `TODO.md`. This prompt runs in a loop — **do exactly one feature per
@@ -103,10 +111,12 @@ Write `features/<NN-name>/TRANSPILE.md` containing:
 
 ## Step 3 — Build a reference transpiler (Deliverable C)
 
-Decided setup (do not re-litigate): **Go**, **per-feature standalone**. Each feature gets its
-own self-contained Go program in `features/<NN-name>/transpiler/` — its own `go.mod`, no
-dependency on other features' code. Copy/duplicate small shared helpers rather than building
-shared infra; a unified front-end is a later, separate effort.
+Decided setup (historical): **Go**, **per-feature standalone**. Each feature got its
+own self-contained Go program (archived today under `attic/features/<NN-name>/`) — its own
+`go.mod`, no dependency on other features' code. **As-built:** this reference-transpiler stage
+was superseded by the shared AST front-end; new features are now implemented directly in the
+AST pipeline (`internal/lexer`/`parser`/`sema`/`backend`) and pinned by corpus cases under
+`testdata/`. Treat the rest of this step as a description of how the retired references worked.
 
 **Crucial constraint: NO error checking yet.** Assume the input is already well-formed and
 type-correct. Do **not** implement exhaustiveness checking, must-use tracking, field-completeness
@@ -169,8 +179,10 @@ not just current state.
 
 ## Step 5 — Close out
 
-1. **Verify it runs.** From `features/<NN-name>/transpiler/`, the tests pass. Report the result
-   honestly — if a case is unhandled or a test fails, say so in the TODO note; do not claim done.
+1. **Verify it runs.** (As-built: run the AST pipeline gates — `task check` / `task fixpoint` —
+   and the feature's corpus cases.) Historically this ran the archived reference program under
+   `attic/features/<NN-name>/`. Report the result honestly — if a case is unhandled or a test
+   fails, say so in the TODO note; do not claim done.
 2. **Update `TODO.md`:** check this feature's box (`- [x]`), and under it add a one-line pointer
    to the three artifacts plus any decision worth surfacing (e.g. "chose `match { }` with `=>`
    arms; resolved switch-coexistence rule").

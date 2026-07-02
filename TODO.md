@@ -1,5 +1,12 @@
 # goal — Feature Audit TODO
 
+> **Historical — token-splice era.** This ledger tracks the original per-feature
+> audit loop. The as-built architecture is the single AST front-end documented in
+> `REWRITE-ARCHITECTURE.md`: features live in the AST pipeline
+> (`internal/lexer`/`parser`/`sema`/`backend`) with corpus cases under `testdata/`,
+> and the standalone reference programs referenced below were retired to `attic/`.
+> The per-feature "Done" notes are kept as history, not current build instructions.
+
 Working through each language feature to pin down **(A) syntax**, **(B) Go transpile target**,
 and **(C) a runnable per-feature reference transpiler in Go (no error checking yet)**.
 
@@ -17,7 +24,7 @@ sub-agent can't ask you questions. Sub-agents are fine for Deliverables B and C.
 Per-feature deliverables (every item):
 - `features/<NN-name>/SYNTAX.md` — final grammar + examples + rationale
 - `features/<NN-name>/TRANSPILE.md` — input→Go pairs + lowering rules + erasure/preservation
-- `features/<NN-name>/transpiler/` — standalone Go transpiler + passing `transpile_test.go`
+- the per-feature standalone Go program (retired — now archived under `attic/features/<NN-name>/`)
 - `features/<NN-name>/examples/` — `*.goal` / `*.go.expected` pairs
 - `DECISIONS.md` — append this feature's decisions, refused options (+why), and any undiscussed
   assumptions to the running ledger (root-level, shared across all features)
@@ -33,7 +40,7 @@ Per-feature deliverables (every item):
     payload syntax; construction syntax (`Status.Active(since: now())`); data-less variants.
   - Transpile to: sealed interface + one struct per variant + unexported `isStatus()` marker
     (§8.1). Both closedness forms target the **same** encoding.
-  - **Done:** `features/01-enums/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Chose
+  - **Done:** `features/01-enums/{SYNTAX,TRANSPILE}.md` + `examples/`. Chose
     brace-named payloads `Active { since: Time }`, qualified labeled-call construction
     `Status.Active(since: now())`, newline-separated variants, and `sealed interface` + per-variant
     `implements` for the standalone form (`sealed` confirmed as the closedness marker — not
@@ -54,7 +61,7 @@ Per-feature deliverables (every item):
     Expression-position `match` → `var x T` before the switch + assignment per arm (no IIFE).
   - Note: exhaustiveness is the checker's job — the reference transpiler **assumes** input is
     exhaustive and just emits the panic-default. No checking.
-  - **Done:** `features/02-match/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Chose
+  - **Done:** `features/02-match/{SYNTAX,TRANSPILE}.md` + `examples/`. Chose
     bind-the-value `Status.Active(a) => a.since`, qualified variants, and a unified
     statement/expression `match`. Resolved switch-coexistence: plain `switch` on a closed enum is a
     **compile error** redirecting to `match` (checker-enforced; transpiler passes plain `switch`
@@ -73,7 +80,7 @@ Per-feature deliverables (every item):
     `(T, error)`; `Ok(v)` → `(v, nil)`; `Err(e)` → `(zero, e)` (§8.3). Note the immediate-vs-
     stored fork (§8.7): stored `Result` value → sum encoding fallback; handle immediate for v1.
   - Note: must-use is the checker's job — not implemented here.
-  - **Done:** `features/03-result/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Chose
+  - **Done:** `features/03-result/{SYNTAX,TRANSPILE}.md` + `examples/`. Chose
     **qualified** `Result.Ok(...)` / `Result.Err(...)` (one uniform sum-type construction rule with
     01-enums) and always-explicit `Result[T, error]` (no shorthand). Implements the §8.3 keystone:
     return type → native `(T, error)`, `Ok(v)`→`(v, nil)`, `Err(e)`→`(__goal_ok, e)`, and a
@@ -92,7 +99,7 @@ Per-feature deliverables (every item):
   - Transpile to: pointer strategy for reference types (`None`→`nil`, `Some(u)`→`&u`, access via
     proven nil-check, §8.4); value types (`Option[int]`) box to `*int` for v1 (sum encoding is a
     later optimization). Same immediate-vs-stored fork as `Result`.
-  - **Done:** `features/04-option/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Chose
+  - **Done:** `features/04-option/{SYNTAX,TRANSPILE}.md` + `examples/`. Chose
     `Option[T]` bracket (not `T?`, keeping `?` for propagation) and qualified
     `Option.Some(...)` / `Option.None` (uniform with enums/Result). Implements the §8.4 pointer
     strategy: `Option[T]`→`*T`, `Option.None`→`nil`, `Option.Some(v)`→`&v` (bare ident) or a boxed
@@ -109,7 +116,7 @@ Per-feature deliverables (every item):
   - Transpile to: **open-`E` only for v1** — `x := f()?` → `x, err := f(); if err != nil { return
     zero, err }` (the idiomatic `if err != nil` the model knows). `Option` `?` → nil-check early
     return. Closed-`E` `?` needs `From`-conversion → defer to feature 06 / mark unsupported here.
-  - **Done:** `features/05-question-prop/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Chose
+  - **Done:** `features/05-question-prop/{SYNTAX,TRANSPILE}.md` + `examples/`. Chose
     **`?` always on the RHS of an assignment** — `name := expr?` keeps the value, `_ := expr?`
     discards it (propagate failure only); no bare `expr?` (explicit/consistent with the `_`-discard
     marker). Mode (Result vs Option) is the enclosing function's return type. Lowering matches §8.3:
@@ -128,7 +135,7 @@ Per-feature deliverables (every item):
   - Transpile to: closed-`E` `Result` → **sum encoding** (not native tuple); `?` over closed `E`
     → type-switch-and-return with a `From`-conversion call in the `Err` arm (§8.3).
   - Note: lint-level open-vs-closed *policy* is not a transpile concern; only the two lowerings are.
-  - **Done:** `features/06-error-e/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Closed `E`
+  - **Done:** `features/06-error-e/{SYNTAX,TRANSPILE}.md` + `examples/`. Closed `E`
     is just an `enum` used as the `Result` error type — **no new construction/match/`?` syntax** (the
     one-knob constraint). Resolved §9: the `From`-conversion is a **`from func`** modifier (in the
     established modifier-before-`func` slot; `?` auto-invokes it by `(Src)→Dst` signature; `from`
@@ -148,7 +155,7 @@ Per-feature deliverables (every item):
   - Transpile to: **erased** (Go's structural typing satisfies it). Optionally emit the free
     `var _ io.Writer = JSONWriter{}` assertion (recommended, §8.5). The reference transpiler emits
     this assertion; it does **not** verify the methods exist (checker's job).
-  - **Done:** `features/07-implements/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Surface
+  - **Done:** `features/07-implements/{SYNTAX,TRANSPILE}.md` + `examples/`. Surface
     is the inline `type T struct implements X { … }` clause, shared with feature 01 (revised from the
     earlier standalone `implements X for T`; see DECISIONS). Lowering per §8.5: strip the clause and
     emit the free `var _ X = T{}` (or
@@ -167,7 +174,7 @@ Per-feature deliverables (every item):
     fields present; `...defaults` lowers to explicit per-field default values (§8.5). The
     reference transpiler passes complete literals through and expands the defaults form; it does
     **not** reject incomplete literals (checker's job).
-  - **Done:** `features/08-no-zero-value/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`.
+  - **Done:** `features/08-no-zero-value/{SYNTAX,TRANSPILE}.md` + `examples/`.
     Resolved §9: chose **`...defaults`** as the explicit-defaults form (over `_`, bare `default`,
     `..Default`) — names the intent + leans on Go's `...` reading. Field-completeness is the
     **erased** static guarantee, so complete literals pass through **verbatim** (generates nothing
@@ -181,9 +188,10 @@ Per-feature deliverables (every item):
     error instead of silently filling them — `nil` map/pointer/chan/func, method interfaces, and
     `enum`/sealed sum types (no valid variant). Safe zeros (primitives, structs, nil slices, `error`,
     `any`, int-backed enums) still fill. Type-directed, scoped to defaulted fields; `Option[T]` is the
-    escape for an optional reference. Implemented in `internal/pass/defaults.go` (via
-    `analyze.Sealed`/`Enums`) and the standalone transpiler; tests in `internal/pass/defaults_test.go`
-    + `transpiler/rejects_test.go`; playground error demo ("Rejecting an unsafe default"). See the
+    escape for an optional reference. **As-built:** enforced by the `[unsafe-default]` checker in
+    `internal/sema` (zero-safety analysis over sealed/enum facts) and the backend lowering, with
+    cases under `testdata/check/08-no-zero-value/`; playground error demo ("Rejecting an unsafe
+    default"). (Historically prototyped as a token-splice defaults pass, now retired.) See the
     `DECISIONS.md` entry and updated §3.5.
 
 ## Tier 1.5 / Tier 2 — supporting
@@ -200,7 +208,7 @@ Per-feature deliverables (every item):
   - Transpile to: `if !(cond) { panic("assertion failed: <expr text>") }` including the source
     expression text (§8.6). Design the lowering toggleable via build tag (note it; v1 need not
     fully implement stripping).
-  - **Done:** `features/10-assert/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Resolved §9:
+  - **Done:** `features/10-assert/{SYNTAX,TRANSPILE}.md` + `examples/`. Resolved §9:
     chose **printf-style message with a bare fallback** (`assert cond [, "fmt", args...]`) over
     bare-only and single-string. **Runtime-preserved** lowering per §8.6: statement-bounded recognizer
     → `if !(cond) { panic("assertion failed: <expr>"[ + ": " + fmt.Sprintf(msg)]) }`. Expr text is
@@ -218,7 +226,7 @@ Per-feature deliverables (every item):
   - Transpile to: generated `_test.go` files running under `go test` (§8.6). The reference
     transpiler extracts doctests from comments and emits `func TestDoctest_...`. (goscript's own
     runner is out of scope — Go transpile path only.)
-  - **Done:** `features/11-doctests/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`. Chose
+  - **Done:** `features/11-doctests/{SYNTAX,TRANSPILE}.md` + `examples/`. Chose
     **`///` triple-slash** marker + **expected-on-next-line** form (`>>> expr` / result), both via
     `AskUserQuestion` (over `//` doc comments and inline `==`). Reads doc comments **from source**
     (lexer skips them); extracts each `>>> expr`/expected pair attached to the free func below it and
@@ -255,7 +263,7 @@ Per-feature deliverables (every item):
     types (would make narrowing compile-provable). `json.RawMessage` blobs stay first-class opaque
     fields (a registered blob↔blob / blob↔string conversion) — the feature does **not** force typing
     them.
-  - **Done:** `features/12-derive-convert/{SYNTAX,TRANSPILE}.md` + `transpiler/` + `examples/`.
+  - **Done:** `features/12-derive-convert/{SYNTAX,TRANSPILE}.md` + `examples/`.
     Chose **`derive func` (bodyless)** + partial-literal **`...derive(src)`** with **`_`** skip (via
     `AskUserQuestion`); leaf registry is `from func` (06, generalized). Three signature-encoded tiers
     (lossless / assert-total / Result-fallible); default narrowing = assert-total. Container recursion
