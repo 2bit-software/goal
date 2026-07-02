@@ -7463,3 +7463,28 @@
     feature as its plain "transpiles to" package Go (it does not show the testfail
     block), which is fine — the golden only needs to match the fresh render.
 ---
+
+## 2026-07-02T01:55:00Z - US-001
+- Added .github/workflows/ci.yml: a GitHub Actions workflow running the project's
+  correctness gates (`task check` then `task fixpoint`) on push to main and on
+  pull_request. Installs Go 1.26.x (setup-go@v6, cache:false) and the Task runner
+  (`go install github.com/go-task/task/v3/cmd/task@v3`). permissions: contents:read;
+  concurrency group ci-${{ github.ref }} with cancel-in-progress to collapse the
+  push+pull_request double-run on PR branches. pages.yml left untouched.
+- Files changed: .github/workflows/ci.yml (new); prd.json (US-001 passes:true).
+- Learnings for future iterations:
+  - This is the FIRST story of a freshly-swapped PRD (branchName
+    ralph/audit-remediation). prd.json arrives already-modified in the working tree
+    (the whole story list was replaced); the passes:true flip rides in the
+    chore(loop) bookkeeping commit alongside that swap.
+  - morse-code human-review gates (review/plan-review/tasks-review/verify-review) do
+    NOT clear with `workflow next` in automode — `next` reports "paused: awaiting
+    human review", then `morse-code workflow resume` unblocks and transitions to the
+    next step. Pattern each gate: `next` (pauses) then `resume`.
+  - morse-code `history/` is gitignored, so initiative artifacts (spec/plan/tasks/
+    audit reports) are NOT committed — only real source changes land.
+  - CI gate commands come from prd.json verifyCommands (`task check`, `task fixpoint`),
+    NOT from any skill. Both run green locally; fixpoint ends with "FIXPOINT OK".
+  - pyyaml is not preinstalled here; `python3 -m pip install pyyaml` then
+    yaml.safe_load validates a workflow file (the AC's parse check).
+---
