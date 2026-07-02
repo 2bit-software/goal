@@ -27,6 +27,14 @@ func TestInterpRunner(t *testing.T) {
 		if c.Kind != KindDoctest {
 			continue
 		}
+		// Honour the same honest-deferral registry as the whole-corpus gate: a
+		// doctest the interpreter cannot yet run (e.g. one using func literals)
+		// is skipped with its recorded reason rather than failing here, since
+		// the compiled doctest sidecar oracle still covers it.
+		if reason, ok := interpGateSkips[c.ID]; ok {
+			t.Logf("skipping %q under interpretation: %s", c.ID, reason)
+			continue
+		}
 		ran++
 		c := c
 		t.Run(c.ID, func(t *testing.T) {

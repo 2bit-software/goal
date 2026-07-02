@@ -1018,10 +1018,33 @@ func (e *emitter) expr(x ast.Expr) {
 			e.compositeLit(x)
 		}
 		*ast.FuncLit(x) => {
+			// A function literal lowers against its OWN signature, not the enclosing
+			// function's: enter a fresh function context (kind, gensym scope, and the
+			// open-Result success/error return names) so `Result.Ok`/`Result.Err` and
+			// `?` inside the literal reference the literal's returns. This mirrors
+			// funcDecl's enter/exit, but deliberately leaves recvTypes/curParams as the
+			// enclosing function's so `recv.M()?` inside the literal still resolves
+			// against the outer receiver and parameters. e.fail only records e.err (it
+			// does not early-return out of this arm), so the tail restore always runs.
+			litKind, _ := resultOptionKind(x.Type)
+			var litClosedT, litClosedE string
+			if il, isList := closedResultType(x.Type); isList {
+				litKind, litClosedT, litClosedE = roResultClosed, e.exprText(il.Indices[0]), e.exprText(il.Indices[1])
+			}
+			prevKind, prevOk, prevErr, prevTaken := e.fnKind, e.okName, e.errName, e.taken
+			prevClosedT, prevClosedE := e.closedT, e.closedE
+			e.fnKind, e.taken, e.okName, e.errName = litKind, e.newScope(), "", ""
+			e.closedT, e.closedE = litClosedT, litClosedE
+			if litKind == roResultOpen {
+				e.okName = e.gensym("ok")
+				e.errName = e.gensym("err")
+			}
 			e.p("func")
 			e.funcSig(x.Type)
 			e.p(" ")
 			e.block(x.Body)
+			e.fnKind, e.okName, e.errName, e.taken = prevKind, prevOk, prevErr, prevTaken
+			e.closedT, e.closedE = prevClosedT, prevClosedE
 		}
 		// Type expressions.
 		*ast.ArrayType(x) => {

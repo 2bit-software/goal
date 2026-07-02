@@ -825,6 +825,22 @@
       "normalize": "none"
     },
     {
+      "id": "testdata-closure_result",
+      "kind": "transpile",
+      "input": "testdata/closure_result.goal",
+      "expected": "testdata/closure_result.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-closure_result-doctest",
+      "kind": "doctest",
+      "input": "testdata/closure_result.goal",
+      "expected": "testdata/closure_result.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
       "id": "testdata-derive_closed_share",
       "kind": "transpile",
       "input": "testdata/derive_closed_share.goal",

@@ -1,0 +1,27 @@
+package closures
+
+import "testing"
+
+func TestDoctest_plainDoctest_1(t *testing.T) {
+	got := plainDoctest()
+	want := 42
+	if got != want {
+		t.Errorf("doctest plainDoctest: got %v, want %v", got, want)
+	}
+}
+
+func TestDoctest_propOk_1(t *testing.T) {
+	got := propOk()
+	want := 80
+	if got != want {
+		t.Errorf("doctest propOk: got %v, want %v", got, want)
+	}
+}
+
+func TestDoctest_propErr_1(t *testing.T) {
+	got := propErr()
+	want := -10
+	if got != want {
+		t.Errorf("doctest propErr: got %v, want %v", got, want)
+	}
+}

@@ -1,0 +1,76 @@
+package closures
+
+import "errors"
+
+// provide returns Ok(7) or an error, so the closure below has a Result to
+// propagate with `?`.
+func provide(ok bool) Result[int, error] {
+	if ok {
+		return Result.Ok(7)
+	}
+	return Result.Err(errors.New("no value"))
+}
+
+// plainWithResultClosure builds a Result-returning closure inside a PLAIN
+// (non-Result) function, invokes it, and unwraps it via match. Under the old
+// lowering the closure's `Result.Ok` lowered against the enclosing plain
+// function — which has no ok/err named returns — producing wrong or
+// non-compiling Go. With the fix the literal lowers against its own signature.
+func plainWithResultClosure(n int) int {
+	build := func() Result[int, error] {
+		return Result.Ok(n * 2)
+	}
+	return match build() {
+		Result.Ok(v) => v
+		Result.Err(e) => -1
+	}
+}
+
+// closureProp is a Result-returning function whose inner Result-returning
+// closure uses `?`. The `?` must propagate to the CLOSURE's own return, not to
+// closureProp: the outer function inspects the closure's Result via match, so a
+// closure error surfaces as the closure's Err (mapped to -1 here) and
+// closureProp itself still returns Ok — it never short-circuits against its own
+// signature.
+func closureProp(ok bool) Result[int, error] {
+	inner := func() Result[int, error] {
+		v := provide(ok)?
+		return Result.Ok(v + 1)
+	}
+	var got int = match inner() {
+		Result.Ok(v) => v
+		Result.Err(e) => -1
+	}
+	return Result.Ok(got * 10)
+}
+
+/// plainDoctest runs a Result-returning closure inside a plain function;
+/// 21 doubled is 42.
+/// >>> plainDoctest()
+/// 42
+func plainDoctest() int {
+	return plainWithResultClosure(21)
+}
+
+/// propOk proves `?` inside the closure yielded provide()'s Ok(7): 7+1=8,
+/// times 10 is 80.
+/// >>> propOk()
+/// 80
+func propOk() int {
+	return match closureProp(true) {
+		Result.Ok(v) => v
+		Result.Err(e) => 0
+	}
+}
+
+/// propErr proves `?` propagated provide()'s error to the CLOSURE's return
+/// (caught by the outer match as -1, then *10), not to closureProp's own
+/// return — closureProp still returns Ok(-10).
+/// >>> propErr()
+/// -10
+func propErr() int {
+	return match closureProp(false) {
+		Result.Ok(v) => v
+		Result.Err(e) => 0
+	}
+}

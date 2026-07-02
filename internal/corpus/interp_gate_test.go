@@ -18,11 +18,19 @@ import (
 // any entry has a blank reason or names a case that is not a doctest case in the
 // committed manifest.
 //
-// It is currently empty: every doctest case in the corpus passes under
-// interpretation. The blank-reason enforcement is exercised regardless by
-// TestInterpGateSkipListRejectsBlankReason, so the mechanism is proven even
-// while the list is empty.
-var interpGateSkips = map[string]string{}
+// The blank-reason enforcement is exercised regardless by
+// TestInterpGateSkipListRejectsBlankReason, so the mechanism is proven whatever
+// the list contains.
+var interpGateSkips = map[string]string{
+	// The goscript interpreter does not yet evaluate func literals (evalExpr has
+	// no *ast.FuncLit case) and cannot resolve a nameless closure's
+	// Result-propagation signature (sigFor keys sema.FuncSignatures by name).
+	// US-004's closure-lowering fix targets the Go backend; the compiled doctest
+	// sidecar oracle (TestDoctestRunner) covers this case behaviorally. Adding
+	// closure evaluation to the interpreter is deferred, recorded here rather
+	// than silently dropped.
+	"testdata-closure_result-doctest": "interpreter does not yet evaluate func literals (*ast.FuncLit); backend doctest sidecar oracle covers this case",
+}
 
 // TestInterpWholeCorpusBehavioralGate is US-027: the whole-corpus behavioral
 // parity gate for the goscript interpreter. It runs every applicable corpus case
