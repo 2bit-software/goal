@@ -8704,3 +8704,31 @@
     sort -u); do test -d $d || echo MISSING $d; done`. internal/selfhost is still a real
     dir and stays only inside the accurate self-hosted-compiler paragraph (US-036 territory).
 ---
+
+## 2026-07-02T12:30:00Z - US-033
+- Purged stale token-splice-era references from process/reference docs so they
+  describe the AST front-end. FEATURE-AUDIT-PROMPT.md and TODO.md gained a
+  "Historical — token-splice era" banner; their reference-transpiler mandates
+  now point at the AST pipeline (lexer/parser/sema/backend + corpus) and note
+  the retired programs live under attic/. testdata/check/README.md now names the
+  real harness (corpus manifest -> RunCheck) and the actual slot dirs (added
+  00-lex, 01-enums, 05-question-prop). check_runner.go dropped its "mirrors
+  internal/check" claim. fix.goal package doc no longer claims switch->match
+  rewriting (fixSwitchToMatch only suggests).
+- Files changed: FEATURE-AUDIT-PROMPT.md, TODO.md, testdata/check/README.md,
+  internal/corpus/check_runner.go, internal/fix/fix.goal (+ regenerated
+  internal/fix/fix.go).
+- Learnings for future iterations:
+  - The AC grep pattern `features/.*transpiler` is CASE-SENSITIVE and still
+    matches `attic/features/<NN>/transpiler`, and matches "transpiler(s)"
+    substrings — so to make the grep truly empty, never place the lowercase
+    word "transpiler" after any "features/" on the same physical line. Uppercase
+    `{SYNTAX,TRANSPILE}.md` does NOT match. Wording the pointer as "archived
+    under attic/features/<NN>/" (no trailing "transpiler" word) keeps it clean.
+  - A pure doc/comment change to a .goal file (e.g. fix.goal package doc) still
+    forces `task generate`: the added comment line shifts every //line directive
+    in the generated .go sibling by 1, so verify-generated fails until resynced.
+    The regen diff is line-directive-only (equal +/- counts) — expected, benign.
+  - history/ and _bootstrap/ are gitignored, so morse-code workflow artifacts
+    never pollute the commit; stage named files only.
+---
