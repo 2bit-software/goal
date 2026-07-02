@@ -66,7 +66,7 @@ func checkOneConvert(d *ast.FuncDecl, info *Info) []Diagnostic {
 
 	/*line convert.goal:93*/
 	for _, f := range tgtFields {
-		/*line convert.goal:94*/ if overridden[strings.ToLower(f.Name)] {
+		/*line convert.goal:94*/ if overridden[f.Name] {
 			/*line convert.goal:95*/ continue
 		}
 		/*line convert.goal:97*/ sf, found := findConvField(srcFields, f.Name)
@@ -157,7 +157,7 @@ func convertOverrides(body *ast.BlockStmt) map[string]bool {
 				/*line convert.goal:226*/ continue
 			}
 			/*line convert.goal:228*/ if key, ok := kv.Key.(*ast.Ident); ok {
-				/*line convert.goal:229*/ out[strings.ToLower(key.Name)] = true
+				/*line convert.goal:229*/ out[key.Name] = true
 			}
 		}
 	}
@@ -167,7 +167,7 @@ func convertOverrides(body *ast.BlockStmt) map[string]bool {
 //line convert.goal:237
 func findConvField(fields []Field, name string) (Field, bool) {
 	/*line convert.goal:238*/ for _, f := range fields {
-		/*line convert.goal:239*/ if strings.EqualFold(f.Name, name) {
+		/*line convert.goal:239*/ if f.Name == name {
 			/*line convert.goal:240*/ return f, true
 		}
 	}

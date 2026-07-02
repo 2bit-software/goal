@@ -91,7 +91,7 @@ func checkOneConvert(d *ast.FuncDecl, info *Info) []Diagnostic {
 
 	var diags []Diagnostic
 	for _, f := range tgtFields {
-		if overridden[strings.ToLower(f.Name)] {
+		if overridden[f.Name] {
 			continue // `Field: expr` override or `Field: _` skip — author-supplied
 		}
 		sf, found := findConvField(srcFields, f.Name)
@@ -203,7 +203,7 @@ func deferConvField(pos token.Pos, tgtType, srcType string, f Field, sfType stri
 	}
 }
 
-// convertOverrides reads the lowercased `Field: expr` / `Field: _` override names
+// convertOverrides reads the exact-cased `Field: expr` / `Field: _` override names
 // from a bodied derive's returned composite literal (the `...derive(src)` spread is
 // the implicit fill, ignored). A bodyless derive has no overrides.
 func convertOverrides(body *ast.BlockStmt) map[string]bool {
@@ -226,17 +226,17 @@ func convertOverrides(body *ast.BlockStmt) map[string]bool {
 				continue
 			}
 			if key, ok := kv.Key.(*ast.Ident); ok {
-				out[strings.ToLower(key.Name)] = true
+				out[key.Name] = true
 			}
 		}
 	}
 	return out
 }
 
-// findConvField returns the source field whose name matches (case-insensitively).
+// findConvField returns the source field whose name matches exactly (case-sensitive).
 func findConvField(fields []Field, name string) (Field, bool) {
 	for _, f := range fields {
-		if strings.EqualFold(f.Name, name) {
+		if f.Name == name {
 			return f, true
 		}
 	}

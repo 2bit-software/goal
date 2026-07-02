@@ -117,7 +117,7 @@ func (ip *Interp) deriveConvert(name string, src Value, srcType, tgtType string,
 
 	overridden := map[string]bool{}
 	for _, o := range overrides {
-		overridden[strings.ToLower(o.Name)] = true
+		overridden[o.Name] = true
 	}
 
 	out := make(map[string]Value, len(tgtFields))
@@ -136,7 +136,7 @@ func (ip *Interp) deriveConvert(name string, src Value, srcType, tgtType string,
 
 	// `...derive(src)`: the remaining target fields, resolved through the registry.
 	for _, f := range tgtFields {
-		if overridden[strings.ToLower(f.Name)] {
+		if overridden[f.Name] {
 			continue
 		}
 		sf, found := findFieldFold(srcFields, f.Name)
@@ -348,12 +348,12 @@ func deriveOverridesOf(body *ast.BlockStmt) []deriveOverride {
 	return nil
 }
 
-// findFieldFold returns the source field whose name matches name
-// case-insensitively, so a target field is sourced from its same-named source
+// findFieldFold returns the source field whose name matches name exactly
+// (case-sensitive), so a target field is sourced only from its same-named source
 // field. Mirrors the backend's findSemaField.
 func findFieldFold(fields []sema.Field, name string) (sema.Field, bool) {
 	for _, f := range fields {
-		if strings.EqualFold(f.Name, name) {
+		if f.Name == name {
 			return f, true
 		}
 	}

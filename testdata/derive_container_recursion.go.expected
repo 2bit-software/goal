@@ -31,8 +31,8 @@ func toTyped(r Raw) Typed {
 		out.Tags[i] = parseID(r.Tags[i])
 	}
 	out.Index = make(map[string]ID, len(r.Index))
-	for k, v := range r.Index {
-		out.Index[k] = parseID(v)
+	for k, v1 := range r.Index {
+		out.Index[k] = parseID(v1)
 	}
 	for i1 := range r.Pair {
 		out.Pair[i1] = parseID(r.Pair[i1])

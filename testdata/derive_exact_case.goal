@@ -1,0 +1,34 @@
+package derivex
+
+// derive_exact_case behaviorally locks two derive-lowering guarantees (US-023):
+//  1. Exact (case-sensitive) field matching: a target with both `ID` and `Id`
+//     maps each to its own same-named source field. Case-folded matching would
+//     conflate the two and mis-map at least one.
+//  2. The output variable is gensym'd: `toDst`'s source parameter is named
+//     `out`, so the naive `var out Dst` would collide with the parameter; the
+//     lowering renames its output variable instead.
+type Src struct {
+	ID int
+	Id int
+}
+
+type Dst struct {
+	ID int
+	Id int
+}
+
+// toDst's source parameter is deliberately named `out` to exercise the
+// output-variable collision.
+derive func toDst(out Src) Dst {
+	return Dst{...derive(out)}
+}
+
+/// mapped derives a Dst from a Src whose ID and Id differ, then returns
+/// ID*10 + Id — proving each field kept its own (unconflated) value.
+/// >>> mapped()
+/// 12
+func mapped() int {
+	s := Src{ID: 1, Id: 2}
+	d := toDst(s)
+	return d.ID*10 + d.Id
+}

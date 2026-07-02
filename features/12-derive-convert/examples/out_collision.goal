@@ -1,0 +1,20 @@
+package conv
+
+// A user local named `out` is in scope when an inline `...derive(src)` lowers,
+// and an explicit override reads it (`Total: out`). Without a scope-aware output
+// variable, the emitted block's `var out` would shadow the user's `out`, and the
+// override would read the wrong value. The gensym'd output variable keeps the
+// user's `out` visible (US-023).
+type Src struct {
+	Name string
+}
+
+type Dst struct {
+	Name  string
+	Total int
+}
+
+func build(s Src) Dst {
+	out := 42
+	return Dst{Total: out, ...derive(s)}
+}

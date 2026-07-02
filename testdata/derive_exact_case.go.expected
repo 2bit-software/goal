@@ -1,0 +1,11 @@
+package derivex
+
+import "testing"
+
+func TestDoctest_mapped_1(t *testing.T) {
+	got := mapped()
+	want := 12
+	if got != want {
+		t.Errorf("doctest mapped: got %v, want %v", got, want)
+	}
+}

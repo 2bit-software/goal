@@ -173,10 +173,13 @@ func f(s Src) Dst {
 	}
 }
 
-// TestInlineDeriveShadowsUserOut proves the block-scoped `var out` does not collide with
-// a user local of the same name: the conversion is emitted inside its own block, so the
-// outer `out` and the inner `var out Dst` coexist (a valid Go shadow).
-func TestInlineDeriveShadowsUserOut(t *testing.T) {
+// TestInlineDeriveRenamesOutputVarPastUserOut proves the derive output variable is
+// gensym'd so it never collides with a user local named `out`: the user's `out` is
+// preserved, and the emitted conversion uses a renamed output variable (`out1`)
+// rather than relying on a block-scoped `var out` to shadow it (US-023). Shadowing
+// alone was unsafe because an override expression reading the user `out` would bind
+// to the inner declaration.
+func TestInlineDeriveRenamesOutputVarPastUserOut(t *testing.T) {
 	src := `package conv
 
 type Src struct {
@@ -194,8 +197,14 @@ func convert(s Src) Dst {
 }
 `
 	got := mustTranspile(t, src)
-	if !strings.Contains(got, `out := "unrelated"`) || !strings.Contains(got, "var out Dst") {
-		t.Errorf("expected both the user `out` and a block-scoped `var out Dst`, got:\n%s", got)
+	if !strings.Contains(got, `out := "unrelated"`) {
+		t.Errorf("expected the user `out` to be preserved, got:\n%s", got)
+	}
+	if !strings.Contains(got, "var out1 Dst") {
+		t.Errorf("expected the derive output var to be gensym-renamed to out1, got:\n%s", got)
+	}
+	if strings.Contains(got, "var out Dst") {
+		t.Errorf("derive output var must not reuse the user identifier `out`, got:\n%s", got)
 	}
 }
 

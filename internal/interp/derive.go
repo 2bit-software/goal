@@ -84,7 +84,7 @@ func (ip *Interp) deriveConvert(name string, src Value, srcType, tgtType string,
 	/*line derive.goal:116*/ srcFields, _ := ip.structFields(baseTypeName(derefTypeName(srcType)))
 	/*line derive.goal:118*/ overridden := map[string]bool{}
 	/*line derive.goal:119*/ for _, o := range overrides {
-		/*line derive.goal:120*/ overridden[strings.ToLower(o.Name)] = true
+		/*line derive.goal:120*/ overridden[o.Name] = true
 	}
 	/*line derive.goal:123*/ out := make(map[string]Value, len(tgtFields))
 	/*line derive.goal:126*/ for _, o := range overrides {
@@ -98,7 +98,7 @@ func (ip *Interp) deriveConvert(name string, src Value, srcType, tgtType string,
 		/*line derive.goal:134*/ out[o.Name] = v
 	}
 	/*line derive.goal:138*/ for _, f := range tgtFields {
-		/*line derive.goal:139*/ if overridden[strings.ToLower(f.Name)] {
+		/*line derive.goal:139*/ if overridden[f.Name] {
 			/*line derive.goal:140*/ continue
 		}
 		/*line derive.goal:142*/ sf, found := findFieldFold(srcFields, f.Name)
@@ -296,7 +296,7 @@ func deriveOverridesOf(body *ast.BlockStmt) []deriveOverride {
 //line derive.goal:354
 func findFieldFold(fields []sema.Field, name string) (sema.Field, bool) {
 	/*line derive.goal:355*/ for _, f := range fields {
-		/*line derive.goal:356*/ if strings.EqualFold(f.Name, name) {
+		/*line derive.goal:356*/ if f.Name == name {
 			/*line derive.goal:357*/ return f, true
 		}
 	}

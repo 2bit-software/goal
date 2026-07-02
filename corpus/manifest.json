@@ -369,6 +369,14 @@
       "normalize": "gofmt"
     },
     {
+      "id": "features-12-derive-convert-examples-out_collision",
+      "kind": "transpile",
+      "input": "features/12-derive-convert/examples/out_collision.goal",
+      "expected": "features/12-derive-convert/examples/out_collision.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
       "id": "features-12-derive-convert-examples-slice",
       "kind": "transpile",
       "input": "features/12-derive-convert/examples/slice.goal",
@@ -901,6 +909,22 @@
       "kind": "transpile",
       "input": "testdata/derive_container_recursion.goal",
       "expected": "testdata/derive_container_recursion.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-derive_exact_case-doctest",
+      "kind": "doctest",
+      "input": "testdata/derive_exact_case.goal",
+      "expected": "testdata/derive_exact_case.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-derive_exact_case",
+      "kind": "transpile",
+      "input": "testdata/derive_exact_case.goal",
+      "expected": "testdata/derive_exact_case.go.expected",
       "mode": "file",
       "normalize": "gofmt"
     },

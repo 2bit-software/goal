@@ -84,10 +84,10 @@ func load(s string) Result[Config, AppError] {
 func toTyped(r Raw) (Typed, error) {
 	var out Typed
 	out.Name = r.Name
-	v, err := parseID(r.Key)
+	v1, err := parseID(r.Key)
 	if err != nil {
 		return out, err
 	}
-	out.Key = v
+	out.Key = v1
 	return out, nil
 }

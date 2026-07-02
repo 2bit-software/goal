@@ -1,6 +1,16 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- Derive lowering has THREE engines that must move in lockstep on field-matching
+  and output-var rules (found US-023): the backend emitter (emit.goal
+  emitConversionBody/resolveField/deriveBody + lower.goal findSemaField), the sema
+  checker (convert.goal checkOneConvert/convertOverrides/findConvField), and the
+  goscript interpreter (interp/derive.goal overridden + findFieldFold). Change one,
+  change all, or `goal check` passes while emit/interp diverge. The interp handles a
+  `derive func` (evalDerive) but NOT the inline `...derive` composite-literal spread
+  — behavioral derive doctests must use the `derive func` form to pass the interp
+  gate. The derive output variable is gensym'd (`e.gensym("out")`) and deriveDecl
+  seeds `e.taken = e.newScope()` so the func-mode gensyms see file identifiers.
 - internal/fix has TWO parallel AST traversals that MUST stay in lockstep on
   statement coverage (found US-017): `walkReturns` (resultsig.goal) classifies
   every non-closure return, and `descendStmt`/`forEachBlock` (fix.goal) is what
@@ -8324,3 +8334,33 @@
     stable. Use a guaranteed-unresolvable path (example.invalid/nope) for the failure
     fixture so it does not depend on the module cache.
 ---
+
+## 2026-07-02 - US-023
+- Hardened derive lowering: the generated conversion's output variable is now
+  minted via `e.gensym("out")` (so a derive-func source parameter named `out`, or
+  a user local in the inline `...derive` case, can never collide/shadow), and
+  field matching between source and target structs is exact (case-sensitive)
+  across all three derive engines (backend emitter, sema checker, interpreter).
+- Files changed: internal/backend/emit.goal (deriveDecl seeds e.taken; emitConversionBody
+  gensyms outVar; resolveField + deriveBody gained a trailing outVar param; fallible
+  leaf early-return uses outVar; overridden map keyed exactly), internal/backend/lower.goal
+  (findSemaField exact ==), internal/sema/convert.goal + internal/interp/derive.goal
+  (exact matching), internal/backendtest/inline_derive_test.go (renamed test asserts the
+  gensym rename instead of block-shadowing), internal/corpus/generate_test.go (transpile
+  58->60, doctest 7->8), corpus/manifest.json, 3 re-golded derive goldens, plus fixtures
+  testdata/derive_exact_case.goal and features/12-derive-convert/examples/out_collision.goal.
+  Generated .go regenerated via task generate.
+- Learnings for future iterations:
+  - The goscript interpreter lowers a `derive func` (FuncMod_FuncDerive, via
+    evalDerive -> findFieldFold) but NOT a plain inline `...derive(src)` spread in a
+    composite literal (only `...defaults` is interp-supported; inline derive is a
+    backend-only US-039 lowering). A behavioral derive DOCTEST must therefore use the
+    `derive func` form to pass the interp gate (TestInterpRunner / the whole-corpus
+    interp gate) — or be added to `interpGateSkips` with a reason. A plain func with
+    inline `...derive` in its return fails the interp gate with "unsupported spread
+    element in <T> literal".
+  - Seeding `e.taken = e.newScope()` in deriveDecl (previously nil at the top level)
+    makes the derive func's per-field gensyms see the whole file's identifiers, so
+    nested/loop temporaries can churn (v->v1, s->s1) in files that already use those
+    single letters elsewhere. This is benign, semantics-preserving golden churn —
+    regenerate with `-update-goldens`; `out`/`err` stay unchanged when no collision.

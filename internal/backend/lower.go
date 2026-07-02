@@ -420,7 +420,7 @@ func structFieldsOf(info *sema.Info, name string) ([]sema.Field, bool) {
 //line lower.goal:502
 func findSemaField(fields []sema.Field, name string) (sema.Field, bool) {
 	/*line lower.goal:503*/ for _, f := range fields {
-		/*line lower.goal:504*/ if strings.EqualFold(f.Name, name) {
+		/*line lower.goal:504*/ if f.Name == name {
 			/*line lower.goal:505*/ return f, true
 		}
 	}

@@ -496,12 +496,12 @@ func structFieldsOf(info *sema.Info, name string) ([]sema.Field, bool) {
 // are pure (no emitter state), so the derive lowering in emit.go composes them
 // with the scope-aware gensym and the AST override values.
 
-// findSemaField returns the source field whose name matches name
-// (case-insensitively), so a target field is sourced from its same-named source
+// findSemaField returns the source field whose name matches name exactly
+// (case-sensitive), so a target field is sourced only from its same-named source
 // field. Mirrors internal/pass.findField.
 func findSemaField(fields []sema.Field, name string) (sema.Field, bool) {
 	for _, f := range fields {
-		if strings.EqualFold(f.Name, name) {
+		if f.Name == name {
 			return f, true
 		}
 	}

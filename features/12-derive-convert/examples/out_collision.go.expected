@@ -1,0 +1,20 @@
+package conv
+
+type Src struct {
+	Name string
+}
+
+type Dst struct {
+	Name  string
+	Total int
+}
+
+func build(s Src) Dst {
+	out := 42
+	{
+		var out1 Dst
+		out1.Total = out
+		out1.Name = s.Name
+		return out1
+	}
+}

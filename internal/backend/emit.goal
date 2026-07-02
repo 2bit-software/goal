@@ -1326,6 +1326,14 @@ func (e *emitter) deriveDecl(d *ast.FuncDecl) {
 		return
 	}
 	overrides := e.deriveOverrides(d.Body)
+	// Enter a fresh gensym scope seeded with the file's identifiers (the derive
+	// path returns before funcDecl's scope setup, so e.taken is otherwise stale).
+	// This lets the output-var gensym below see a user identifier named `out`
+	// anywhere in the file and rename its output var to avoid corrupting the
+	// generated conversion. Saved/restored so a sibling decl starts clean.
+	prevTaken := e.taken
+	e.taken = e.newScope()
+	defer func() { e.taken = prevTaken }()
 	e.genConversion(d.Name.Name, srcName, srcType, tgtType, fallible, overrides)
 }
 
@@ -1414,19 +1422,25 @@ func (e *emitter) emitConversionBody(name, srcName, srcType, tgtType string, fal
 
 	overridden := map[string]bool{}
 	for _, o := range overrides {
-		overridden[strings.ToLower(o.Name)] = true
+		overridden[o.Name] = true // exact (case-sensitive) key
 	}
 
-	retVar := "out"
+	// The output variable is scope-aware: gensym never clashes with a source
+	// identifier (a derive-func source parameter, or a user local in the inline
+	// `...derive` case), so `out` can never alias or shadow a user binding. It
+	// returns the unchanged name `out` when free, so output stays byte-identical
+	// for the common case with no such collision.
+	outVar := e.gensym("out")
+	retVar := outVar
 	if strings.HasPrefix(strings.TrimSpace(tgtType), "*") {
-		retVar = "&out" // pointer target: built as a value, returned by address
+		retVar = "&" + outVar // pointer target: built as a value, returned by address
 	}
 	returnStmt := "return " + retVar
 	if fallible {
 		returnStmt = "return " + retVar + ", nil"
 	}
 
-	e.p("var out " + tgtVal + "\n")
+	e.p("var " + outVar + " " + tgtVal + "\n")
 
 	// A pointer source may be nil; a nil source yields the zero target rather than
 	// panicking on field access.
@@ -1447,12 +1461,12 @@ func (e *emitter) emitConversionBody(name, srcName, srcType, tgtType string, fal
 		if o.Skip {
 			continue
 		}
-		e.p("out." + o.Name + " = " + e.exprText(o.Value) + "\n")
+		e.p(outVar + "." + o.Name + " = " + e.exprText(o.Value) + "\n")
 	}
 
 	// The `...derive(src)` fill: remaining target fields, resolved through the registry.
 	for _, f := range tgtFields {
-		if overridden[strings.ToLower(f.Name)] {
+		if overridden[f.Name] {
 			continue
 		}
 		sf, found := findSemaField(srcFields, f.Name)
@@ -1466,7 +1480,7 @@ func (e *emitter) emitConversionBody(name, srcName, srcType, tgtType string, fal
 		}
 		// emitConversionBody is void and reports via e.fail, so this consumer uses `match`:
 		// the Err arm turns resolveField's error into a located e.fail, never `?`.
-		match e.resolveField("out."+f.Name, srcName+"."+sf.Name, sf.Type, f.Type, fallible, errName) {
+		match e.resolveField(outVar+"."+f.Name, srcName+"."+sf.Name, sf.Type, f.Type, fallible, errName, outVar) {
 		Result.Ok(stmts) => {
 			for _, s := range stmts {
 				e.p(s + "\n")
@@ -1493,7 +1507,7 @@ func (e *emitter) emitConversionBody(name, srcName, srcType, tgtType string, fal
 // unresolvable pair is an error (no field is silently zeroed). Mirrors
 // internal/pass.resolveField over sema facts; temporaries are scope-aware
 // gensyms (errName is the function's shared error name for the fallible path).
-func (e *emitter) resolveField(dst, srcExpr, sf, tf string, fallibleOK bool, errName string) Result[[]string, error] {
+func (e *emitter) resolveField(dst, srcExpr, sf, tf string, fallibleOK bool, errName, outVar string) Result[[]string, error] {
 	reg := e.info.FromRegistry
 	sf, tf = strings.TrimSpace(sf), strings.TrimSpace(tf)
 	if sf == tf {
@@ -1509,7 +1523,7 @@ func (e *emitter) resolveField(dst, srcExpr, sf, tf string, fallibleOK bool, err
 		v := e.gensym("v")
 		return Result.Ok([]string{
 			fmt.Sprintf("%s, %s := %s(%s)", v, errName, entry.Name, srcExpr),
-			fmt.Sprintf("if %s != nil {\nreturn out, %s\n}", errName, errName),
+			fmt.Sprintf("if %s != nil {\nreturn %s, %s\n}", errName, outVar, errName),
 			fmt.Sprintf("%s = %s", dst, v),
 		})
 	}
@@ -1567,7 +1581,7 @@ func (e *emitter) resolveField(dst, srcExpr, sf, tf string, fallibleOK bool, err
 		if _, tgtStruct := structFieldsOf(e.info, tf); tgtStruct {
 			v := e.gensym("s")
 			stmts := []string{fmt.Sprintf("var %s %s", v, tf)}
-			body := e.deriveBody(v, srcExpr, sf, tf, fallibleOK, errName)?
+			body := e.deriveBody(v, srcExpr, sf, tf, fallibleOK, errName, outVar)?
 			stmts = append(stmts, body...)
 			return Result.Ok(append(stmts, fmt.Sprintf("%s = %s", dst, v)))
 		}
@@ -1579,7 +1593,7 @@ func (e *emitter) resolveField(dst, srcExpr, sf, tf string, fallibleOK bool, err
 // into the already-declared dstVar — the recursion core for a nested struct
 // field. Every target field must be sourced (same name) and resolvable, or the
 // conversion is refused. Mirrors internal/pass.deriveBody over sema facts.
-func (e *emitter) deriveBody(dstVar, srcExpr, srcType, tgtType string, fallible bool, errName string) Result[[]string, error] {
+func (e *emitter) deriveBody(dstVar, srcExpr, srcType, tgtType string, fallible bool, errName, outVar string) Result[[]string, error] {
 	tgtFields, ok := structFieldsOf(e.info, tgtType)
 	if !ok {
 		return Result.Err(fmt.Errorf("unknown target struct %q", tgtType))
@@ -1593,7 +1607,7 @@ func (e *emitter) deriveBody(dstVar, srcExpr, srcType, tgtType string, fallible 
 		}
 		// resolveField's error is wrapped here with the nested-field context, so this
 		// consumer uses `match` rather than `?` (a bare `?` would drop the wrap).
-		match e.resolveField(dstVar+"."+f.Name, srcExpr+"."+sf.Name, sf.Type, f.Type, fallible, errName) {
+		match e.resolveField(dstVar+"."+f.Name, srcExpr+"."+sf.Name, sf.Type, f.Type, fallible, errName, outVar) {
 		Result.Ok(s) => { stmts = append(stmts, s...) }
 		Result.Err(err) => { return Result.Err(fmt.Errorf("nested field %q: %w", f.Name, err)) }
 		}
