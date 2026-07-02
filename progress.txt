@@ -181,6 +181,18 @@
   backend zero-literal lowering (zeroLit) dispatch on this ONE sema helper so
   they can never drift — same promotion pattern as sema.ZeroSafety (backend
   imports sema, not vice versa).
+- Any throwaway SUB-EMITTER must reproduce emitFileWith's full (text, usedOption,
+  err) contract, not just copy the Builder (found US-024). emitter.exprText renders
+  an expression through a fresh &emitter{...} for derive-override values, assert
+  messages, and alias underlying types; it used to drop sub.err (unsupported nodes
+  emitted truncated Go instead of a located `backend:` error) and sub.usedOptionHelper
+  (an `Option.Some(...)` override lowered to a `goalSome(...)` call whose boxing
+  prelude was never emitted -> undefined goalSome). Fix: share `taken` by reference
+  (gensym set), OR usedOptionHelper back onto the parent, and adopt the sub's FIRST
+  error (`if e.err == nil { e.err = sub.err }`). Inert for clean inputs (no golden
+  churn, fixpoint holds). To probe the emitter's "unsupported expression %T" arm from
+  a fixture that must still PARSE, use a postfix unwrap `x?` (*ast.UnwrapExpr, not
+  handled by expr()) — a `match` value does not parse in that position.
 - The pinned corpus counts in internal/corpus/generate_test.go (transpile / pkg /
   check / doctest) DRIFT upward as stories add testdata cases, so the PRD notes'
   absolute numbers (e.g. "check 53->55") go stale. Read the CURRENT `want N` from
@@ -8364,3 +8376,36 @@
     nested/loop temporaries can churn (v->v1, s->s1) in files that already use those
     single letters elsewhere. This is benign, semantics-preserving golden churn —
     regenerate with `-update-goldens`; `out`/`err` stay unchanged when no collision.
+
+## 2026-07-02T09:40:22Z - US-024
+- Made emitter.exprText propagate the throwaway sub-emitter's `err` and
+  `usedOptionHelper` flag (and share the `taken` gensym set by reference),
+  mirroring emitFileWith's (text, usedOption, err) contract. Previously both were
+  dropped, so `Option.Some(...)` in a derive override lowered to a `goalSome(...)`
+  call whose boxing prelude was never emitted (undefined `goalSome` -> compile
+  failure), and an unsupported node in an override yielded truncated Go instead of
+  a located `backend:` error.
+- Files changed: internal/backend/emit.goal (exprText) + regenerated
+  internal/backend/emit.go via `task generate`; new transpile fixture
+  features/12-derive-convert/examples/override_option_some.{goal,go.expected};
+  corpus/manifest.json + internal/corpus/generate_test.go (transpile 60->61);
+  new internal/backendtest/exprtext_propagation_test.go.
+- Learnings for future iterations:
+  - exprText/sub-emitter is the ONE re-emission site that used to silently drop
+    sub.err + sub.usedOptionHelper. Any expr rendered via exprText (derive-override
+    values through resolveField, assert messages, alias underlying types) now fails
+    loudly and can trip the option prelude. When adding a new sub-emitter, copy the
+    emitFileWith contract, not just the Builder.
+  - To exercise the emitter's "unsupported expression %T" arm from a FIXTURE that
+    must still PARSE: a `match` expression does NOT parse in value/override position
+    (parser wants IDENT), but a postfix unwrap `x?` parses to *ast.UnwrapExpr which
+    expr() does not handle -> `backend: unsupported expression *ast.UnwrapExpr` with
+    empty output. `<-ch` and `func(){}` are both handled (no error). Use `x?` for
+    an error-propagation probe. backend.Transpile does NOT run the checker, so such
+    a fixture never needs a testdata/check home.
+  - A `derive func` BODY still needs `...derive(src)` in its return literal to
+    satisfy the [missing-field] checker even when you only want to add one override
+    — the override alone leaves the other target fields "omitted". The body's other
+    statements are ignored; deriveOverrides just harvests the return literal's KV
+    pairs, and emitConversionBody regenerates the whole function.
+---
