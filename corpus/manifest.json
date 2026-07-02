@@ -841,6 +841,14 @@
       "normalize": "none"
     },
     {
+      "id": "testdata-check-12-derive-convert-nested_override_return",
+      "kind": "check",
+      "input": "testdata/check/12-derive-convert/nested_override_return.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
       "id": "testdata-check-12-derive-convert-ok_fallible",
       "kind": "check",
       "input": "testdata/check/12-derive-convert/ok_fallible.goal",
@@ -993,16 +1001,16 @@
       "normalize": "gofmt"
     },
     {
-      "id": "testdata-option_some_copy-doctest",
-      "kind": "doctest",
+      "id": "testdata-option_some_copy",
+      "kind": "transpile",
       "input": "testdata/option_some_copy.goal",
       "expected": "testdata/option_some_copy.go.expected",
       "mode": "file",
       "normalize": "gofmt"
     },
     {
-      "id": "testdata-option_some_copy",
-      "kind": "transpile",
+      "id": "testdata-option_some_copy-doctest",
+      "kind": "doctest",
       "input": "testdata/option_some_copy.goal",
       "expected": "testdata/option_some_copy.go.expected",
       "mode": "file",
@@ -1041,16 +1049,16 @@
       }
     },
     {
-      "id": "testdata-qprop_assign_eq-doctest",
-      "kind": "doctest",
+      "id": "testdata-qprop_assign_eq",
+      "kind": "transpile",
       "input": "testdata/qprop_assign_eq.goal",
       "expected": "testdata/qprop_assign_eq.go.expected",
       "mode": "file",
       "normalize": "gofmt"
     },
     {
-      "id": "testdata-qprop_assign_eq",
-      "kind": "transpile",
+      "id": "testdata-qprop_assign_eq-doctest",
+      "kind": "doctest",
       "input": "testdata/qprop_assign_eq.goal",
       "expected": "testdata/qprop_assign_eq.go.expected",
       "mode": "file",

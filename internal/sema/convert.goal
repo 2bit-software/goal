@@ -204,32 +204,40 @@ func deferConvField(pos token.Pos, tgtType, srcType string, f Field, sfType stri
 }
 
 // convertOverrides reads the exact-cased `Field: expr` / `Field: _` override names
-// from a bodied derive's returned composite literal (the `...derive(src)` spread is
-// the implicit fill, ignored). A bodyless derive has no overrides.
+// from a bodied derive's returned composite literals (the `...derive(src)` spread is
+// the implicit fill, ignored). Every `return T{…}` anywhere in the body is scanned —
+// including returns nested in `if`/`for`/`switch`/`select`/labeled blocks — except
+// returns inside a nested func literal, which belong to that closure. Override keys
+// are unioned across all returns: a field overridden in only one branch counts as
+// author-supplied (conservative — this suppresses a false unsourced-field for a field
+// that is genuinely sourced on at least one path). A bodyless derive has no overrides.
 func convertOverrides(body *ast.BlockStmt) map[string]bool {
 	out := map[string]bool{}
 	if body == nil {
 		return out
 	}
-	for _, s := range body.List {
-		ret, ok := s.(*ast.ReturnStmt)
-		if !ok || len(ret.Results) != 1 {
-			continue
-		}
-		cl, ok := ret.Results[0].(*ast.CompositeLit)
-		if !ok {
-			continue
-		}
-		for _, el := range cl.Elts {
-			kv, ok := el.(*ast.KeyValueExpr)
-			if !ok {
-				continue
+	ast.Walk(visitorFunc(func(n ast.Node) bool {
+		match n {
+			*ast.FuncLit(_) => {
+				return false // a closure's returns belong to the closure
 			}
-			if key, ok := kv.Key.(*ast.Ident); ok {
-				out[key.Name] = true
+			*ast.ReturnStmt(ret) => {
+				if len(ret.Results) == 1 {
+					if cl, ok := ret.Results[0].(*ast.CompositeLit); ok {
+						for _, el := range cl.Elts {
+							if kv, ok := el.(*ast.KeyValueExpr); ok {
+								if key, ok := kv.Key.(*ast.Ident); ok {
+									out[key.Name] = true
+								}
+							}
+						}
+					}
+				}
 			}
+			_ => {}
 		}
-	}
+		return true
+	}), body)
 	return out
 }
 

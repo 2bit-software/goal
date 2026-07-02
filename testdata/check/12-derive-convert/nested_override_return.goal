@@ -1,0 +1,27 @@
+package conv
+
+// Clean: a body-form derive whose `ExternalID` override lives ONLY inside a nested
+// `if`-block return — never at the top level. `ExternalID` has no same-named source
+// field on EventExecution, so before the whole-body override scan the checker falsely
+// reported it [unsourced-field]. Walking every return (with a func-literal cutoff)
+// sees the nested override and the derive is total. Both returns use the
+// `...derive(e)` spread, so the 08 field-completeness check steps aside and only the
+// derive override scan gates this case. No markers: any Error fails this case.
+
+type EventExecution struct {
+	ID       string
+	Railroad string
+}
+
+type StoredEvent struct {
+	ID         string
+	Railroad   string
+	ExternalID string
+}
+
+derive func toStorage(e EventExecution) StoredEvent {
+	if e.ID == "" {
+		return StoredEvent{ExternalID: "none", ...derive(e)}
+	}
+	return StoredEvent{...derive(e)}
+}

@@ -136,40 +136,47 @@ func deferConvField(pos token.Pos, tgtType, srcType string, f Field, sfType stri
 	/*line convert.goal:196*/ return Diagnostic{Pos: pos, Severity: Severity(Severity_Warning{}), Feature: "12-derive-convert", Code: "unresolved-derive-field", Message: fmt.Sprintf("cannot verify `derive func` field `%s.%s` (`%s`→`%s`): needs a map/Option/nested recursion the v1 checker keeps minimal — completeness deferred for this field", tgtType, f.Name, sfType, strings.TrimSpace(f.Type))}
 }
 
-//line convert.goal:209
+//line convert.goal:214
 func convertOverrides(body *ast.BlockStmt) map[string]bool {
-	/*line convert.goal:210*/ out := map[string]bool{}
-	/*line convert.goal:211*/ if body == nil {
-		/*line convert.goal:212*/ return out
+	/*line convert.goal:215*/ out := map[string]bool{}
+	/*line convert.goal:216*/ if body == nil {
+		/*line convert.goal:217*/ return out
 	}
-	/*line convert.goal:214*/ for _, s := range body.List {
-		/*line convert.goal:215*/ ret, ok := s.(*ast.ReturnStmt)
-		/*line convert.goal:216*/ if !ok || len(ret.Results) != 1 {
-			/*line convert.goal:217*/ continue
-		}
-		/*line convert.goal:219*/ cl, ok := ret.Results[0].(*ast.CompositeLit)
-		/*line convert.goal:220*/ if !ok {
-			/*line convert.goal:221*/ continue
-		}
-		/*line convert.goal:223*/ for _, el := range cl.Elts {
-			/*line convert.goal:224*/ kv, ok := el.(*ast.KeyValueExpr)
-			/*line convert.goal:225*/ if !ok {
-				/*line convert.goal:226*/ continue
+	/*line convert.goal:219*/ ast.Walk(visitorFunc(func(n ast.Node) bool {
+		/*line convert.goal:220*/ switch v := n.(type) {
+		case *ast.FuncLit:
+			{
+				/*line convert.goal:222*/ return false
 			}
-			/*line convert.goal:228*/ if key, ok := kv.Key.(*ast.Ident); ok {
-				/*line convert.goal:229*/ out[key.Name] = true
+		case *ast.ReturnStmt:
+			{
+				/*line convert.goal:225*/ if len(v.Results) == 1 {
+					/*line convert.goal:226*/ if cl, ok := v.Results[0].(*ast.CompositeLit); ok {
+						/*line convert.goal:227*/ for _, el := range cl.Elts {
+							/*line convert.goal:228*/ if kv, ok := el.(*ast.KeyValueExpr); ok {
+								/*line convert.goal:229*/ if key, ok := kv.Key.(*ast.Ident); ok {
+									/*line convert.goal:230*/ out[key.Name] = true
+								}
+							}
+						}
+					}
+				}
+			}
+		default:
+			{
 			}
 		}
-	}
-	/*line convert.goal:233*/ return out
+		/*line convert.goal:239*/ return true
+	}), body)
+	/*line convert.goal:241*/ return out
 }
 
-//line convert.goal:237
+//line convert.goal:245
 func findConvField(fields []Field, name string) (Field, bool) {
-	/*line convert.goal:238*/ for _, f := range fields {
-		/*line convert.goal:239*/ if f.Name == name {
-			/*line convert.goal:240*/ return f, true
+	/*line convert.goal:246*/ for _, f := range fields {
+		/*line convert.goal:247*/ if f.Name == name {
+			/*line convert.goal:248*/ return f, true
 		}
 	}
-	/*line convert.goal:243*/ return Field{}, false
+	/*line convert.goal:251*/ return Field{}, false
 }
