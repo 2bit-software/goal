@@ -25,5 +25,6 @@ func (GoTypesChecker) Check(pkg *project.Package) (ok []Diagnostic, err error) {
 	diags = append(diags, CheckImplements(p)...)
 	diags = append(diags, CheckMustUse(p)...)
 	diags = append(diags, CheckNoZeroValue(p)...)
+	diags = append(diags, goTypeDiags(p)...)
 	return diags, nil
 }

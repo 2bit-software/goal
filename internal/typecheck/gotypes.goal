@@ -1,0 +1,57 @@
+package typecheck
+
+import (
+	"go/types"
+	"strings"
+
+	"goal/internal/sema"
+)
+
+// CheckGoTypes surfaces the plain-Go type errors go/types already observed while
+// Load type-checked the lowered package. Load runs under an error-collecting
+// types.Config (SPIKE-B1), tolerantly gathering every types.Error into
+// Package.Errors so a check can still read partial type info; those errors are
+// themselves goal-mappable diagnostics — a `return a + b` mixing int and string,
+// or a call to an undefined function, is a real defect that must reject the
+// program so `ok` means the package genuinely compiles.
+//
+// Three filters keep it free of false positives:
+//   - te.Soft: Go "soft" errors (e.g. an unused import or variable) are advisory,
+//     not compile-blocking, so they are not surfaced here.
+//   - "could not import" messages: importer.Default cannot resolve uncompiled
+//     intra-module dependencies, which would otherwise false-positive on every
+//     multi-package module even though those imports are fine.
+//   - a position outside a .goal file: an error whose //line-resolved filename is
+//     not user-authored goal source (the injected prelude goal_prelude.go, or
+//     lowered-only code) maps to no source the author can fix, so it is dropped.
+//     This mirrors isGoalDeclared's .goal-suffix discriminator (nozero.go).
+//
+// A surviving error becomes a [go-type-error] diagnostic located at its .goal
+// position (line-accurate via //line; column is generated-file best-effort).
+func goTypeDiags(p *Package) []Diagnostic {
+	var diags []Diagnostic
+	for _, e := range p.Errors {
+		te, ok := e.(types.Error)
+		if !ok {
+			continue
+		}
+		if te.Soft {
+			continue
+		}
+		if strings.HasPrefix(te.Msg, "could not import") {
+			continue
+		}
+		pos := te.Fset.Position(te.Pos)
+		if !strings.HasSuffix(pos.Filename, ".goal") {
+			continue
+		}
+		diags = append(diags, Diagnostic{
+			Pos:      pos,
+			Severity: sema.Severity.Error,
+			Feature:  "go-types",
+			Code:     "go-type-error",
+			Message:  te.Msg,
+		})
+	}
+	return diags
+}

@@ -48,6 +48,8 @@ var diagnosticCatalog = []diagDoc{
 	{"unresolved-error-enum", "06-error-e", "warning", "the error enum of a closed-E `Result` can't be resolved lexically; deferred."},
 	{"unresolved-err-value", "06-error-e", "warning", "an `Err` value's type can't be resolved lexically; deferred."},
 	{"unresolved-question-error", "06-error-e", "warning", "a `?` site's error type can't be resolved lexically; deferred."},
+	// go-types (typed depth stage — go/types over the lowered Go)
+	{"go-type-error", "go-types", "error", "the lowered Go fails go/types type-checking (e.g. a type mismatch like `int + string`, or a call to an undefined function); the typed depth stage surfaces the go/types error at its `.goal` position so `ok` means the package actually compiles."},
 	// 07-implements
 	{"unimplemented-method", "07-implements", "error", "a `struct implements I` is missing a method required by interface `I`."},
 	{"method-signature-mismatch", "07-implements", "error", "a method exists but its signature doesn't satisfy the declared interface."},

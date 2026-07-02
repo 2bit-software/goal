@@ -1514,6 +1514,10 @@ The full set of stable codes the checker can emit:
 - `[unresolved-derive-type]` (warning) — a `derive func` type pair can't be resolved lexically; deferred to the typed stage.
 - `[unsourced-field]` (error) — a `derive func` target field has no source (registry leaf, recursion, expr, or `_`).
 
+**go-types**
+
+- `[go-type-error]` (error) — the lowered Go fails go/types type-checking (e.g. a type mismatch like `int + string`, or a call to an undefined function); the typed depth stage surfaces the go/types error at its `.goal` position so `ok` means the package actually compiles.
+
 **What the feedback looks like.** Running the checker on this program:
 
 ```goal
