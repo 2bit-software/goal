@@ -7721,3 +7721,48 @@
     + `error: [code]` bracketing is US-008 not yet landed, so do NOT assert
     `<file>.goal:` in a US-007-era parse-error test; assert the line number.
 ---
+
+## [2026-07-02T04:25:00Z] - US-008
+- Rendered parse (syntax) errors in the same one-line diagnostic format as
+  checker diagnostics — `file:line:col: error: [syntax] message` — across
+  `goal check`, `goal build`, and `goalc`, with the full user-supplied path and
+  a non-zero exit, so a single regex captures every error class.
+- Gave parser errors structure: exported `parser.Error{Pos token.Pos; Msg string}`
+  whose `Error()` renders `line:col: msg` (byte-identical to the old
+  `fmt.Errorf("%s: %s", pos.String(), msg)`, so US-007's err.Error() assertions
+  and any joined-string consumer are unchanged); `errorf` now appends `&Error{}`.
+- Added exported `parser.CollectErrors(err) []*Error`: recursively unwraps BOTH
+  the `errors.Join` fan-out (`Unwrap() []error`) and a single `%w` wrap
+  (`Unwrap() error`) via named interface types, deduplicated on
+  (line, col, message) so repeated trailing-EOF errors collapse to one line.
+- cmd/goal: `parseErrorDiags` + `packageSyntaxDiags` helpers; `checkPackage`
+  short-circuits to `[syntax]` diags when a file fails to parse (skips sema +
+  depth); `cmdBuild` pre-parses discovered packages and renders before the Go
+  toolchain runs. cmd/goalc renders via `sema.Diagnostic.Render`.
+- Files: internal/parser/parser.goal (+ regenerated parser.go), cmd/goal/main.go,
+  cmd/goalc/main.go, cmd/goal/main_test.go (new
+  TestSyntaxErrorsRenderInDiagnosticFormat for check+build; updated US-007's
+  TestCheckRejectsMalformedIfForInit to assert the [syntax] stderr line).
+- Verify: `task check` green (generated Go up to date, full suite ok);
+  `task fixpoint` FIXPOINT OK. Commit 2e81673.
+- Learnings for future iterations:
+  - Making a parse error render like a checker diagnostic MOVES it from the
+    RETURNED error (which main() prints as the wrapper) onto the errOut stream.
+    Any pre-US-008 test that asserted a parse error via `err.Error()` must be
+    updated to assert on the stderr buffer (the `[syntax]` line); `err` now only
+    carries the "N syntax/checker error(s)" tally.
+  - goal transpiles a Go type switch whose cases are NAMED INTERFACE types
+    (`case multiUnwrap:` where `type multiUnwrap interface{ Unwrap() []error }`)
+    without issue — the emit + fixpoint both pass. Use named interfaces (not
+    anonymous `case interface{...}:`) for clarity; both are valid type-expr cases.
+  - To thread a dedup set through a recursive helper WITHOUT hitting the goal
+    `*ptr = ...` deref-assign parser bug (only parses as the first stmt in a
+    block), pass the `map[string]bool` by reference and RETURN/append slices
+    instead of a `*[]T` out-param.
+  - `[syntax]` (like `[go-build]`) is a cmd-side render code, NOT a sema catalog
+    feature — no internal/guide/catalog.goal entry and no AI-KNOWLEDGE-BOOTSTRAP
+    regen; the bootstrap golden test stays green on its own.
+  - Generated Go spells the sealed Error severity as
+    `sema.Severity(sema.Severity_Error{})` — construct it that way from Go
+    callers (cmd/goal, cmd/goalc).
+---
