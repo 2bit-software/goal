@@ -725,6 +725,23 @@
   bin/goal compiles; then `task generate` regenerates every mirror correctly and
   overwrites the manual patch. The emitter's runtime logic being stale does not
   matter for this step — transpiling source only emits structure as written.
+- To unit-test the INTERNALS of an emitted package (one whose .go is generated
+  from a .goal sibling), you cannot drop a hand-written *_test.go beside it:
+  verify-generated does a two-way `diff -r -x '*.goal'` of `internal/<pkg>` vs the
+  fresh emit, and the extra test file (which the emit never produces) trips the
+  gate. Instead export the needed accessor from the .goal (then `task generate`)
+  and put the test in a Go-only SIBLING dir, e.g. internal/guidetest for
+  internal/guide — mirrors the existing internal/backendtest / internal/corpus
+  layout. Go-only dirs are outside the emit set so the drift gate never sees them.
+- The compiler emits stable diagnostic codes from FOUR dirs, not two (found
+  US-029): internal/lexer (00-lex codes), internal/sema (lexical checker),
+  internal/typecheck (typed depth stage), AND internal/backend — the emitter
+  emits `question-arity-fallback` as a pipeline.Warning (emit.goal), the lone
+  code neither checker produces. Any "scan the source for codes" tool must include
+  backend or that catalog entry looks sourceless. Kebab-shaped literals that are
+  NOT codes and need skipping: the `go-types` Feature label (all other feature
+  labels start with a digit, so `^[a-z]...` excludes them) and the `some-addr` /
+  `some-box` Option lowering kinds in backend/lower.
 
 ## [2026-06-30T19:30:00Z] - US-009 (self-host-flip PRD)
 - Ported the goal AI-bootstrap guide surface (internal/guide) to goal source under
@@ -8558,4 +8575,27 @@
     fixture does not transpile, so a code-string assertion catches degradation.
   - `goalModule(t, map[string]string{...})` + `run([]string{"check", dir},...)`
     is the established fixture pattern; clean twins assert stdout == "ok".
+---
+
+## [2026-07-02T11:05:00Z] - US-029 (audit-remediation PRD)
+- Added a parity gate proving the guide's diagnostic catalog stays in exact
+  sync with the codes the checker/emitter emit, both directions, so a new code
+  cannot ship undocumented and a stale catalog entry cannot linger.
+- Files changed: internal/guide/catalog.goal (new exported CatalogCodes()
+  accessor) + regenerated internal/guide/catalog.go via `task generate`; new
+  Go-only pkg internal/guidetest/catalog_parity_test.go. No corpus manifest /
+  pinned-count change (test-only + one exported wrapper).
+- Verification: `go test ./internal/guidetest` PASS (41 emitted == 41 catalog);
+  `task check` and `task fixpoint` both green.
+- Negative proof (both directions, reverted): injecting `fake-code-xyz` into
+  internal/sema made the test FAIL naming it as undocumented; injecting a bogus
+  `stale-fake-code` catalog entry made it FAIL naming it as stale.
+- Learnings for future iterations:
+  - Codes come from FOUR dirs (lexer/sema/typecheck/backend) — see the Codebase
+    Patterns note above; the PRD note's "sema+typecheck" scope was incomplete
+    (missed backend's question-arity-fallback).
+  - Extraction regex `^[a-z][a-z0-9]*(-[a-z0-9]+)+$` over those dirs yields the
+    catalog set exactly after a 3-entry skiplist {go-types, some-addr, some-box}.
+  - Test name TestDiagnosticCatalogMatchesSource is the exact name catalog.goal's
+    doc comment already promised.
 ---
