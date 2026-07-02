@@ -112,3 +112,11 @@ func catalogCodes() map[string]bool {
 	}
 	return out
 }
+
+// CatalogCodes returns the set of diagnostic codes the catalog documents. It is
+// exported so the catalog-parity gate (internal/guidetest's
+// TestDiagnosticCatalogMatchesSource) can compare the documented set against the
+// codes the checker and emitter actually emit.
+func CatalogCodes() map[string]bool {
+	return catalogCodes()
+}

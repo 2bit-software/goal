@@ -59,3 +59,8 @@ func catalogCodes() map[string]bool {
 	}
 	/*line catalog.goal:113*/ return out
 }
+
+//line catalog.goal:120
+func CatalogCodes() map[string]bool {
+	/*line catalog.goal:121*/ return catalogCodes()
+}
