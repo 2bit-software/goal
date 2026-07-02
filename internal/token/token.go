@@ -225,10 +225,27 @@ func OffsetToPosition(src string, off int) Pos {
 			/*line token.goal:349*/ lineStart = i + 1
 		}
 	}
-	/*line token.goal:352*/ return Pos{Offset: off, Line: line, Col: off - lineStart + 1}
+	/*line token.goal:352*/ return Pos{Offset: off, Line: line, Col: ColFor(src, lineStart, off)}
 }
 
-//line token.goal:357
+//line token.goal:361
+func ColFor(src string, lineStart, off int) int {
+	/*line token.goal:362*/ if lineStart < 0 {
+		/*line token.goal:363*/ lineStart = 0
+	}
+	/*line token.goal:365*/ if off > len(src) {
+		/*line token.goal:366*/ off = len(src)
+	}
+	/*line token.goal:368*/ col := 1
+	/*line token.goal:369*/ for i := lineStart; i < off; i++ {
+		/*line token.goal:370*/ if src[i]&0xC0 != 0x80 {
+			/*line token.goal:371*/ col++
+		}
+	}
+	/*line token.goal:374*/ return col
+}
+
+//line token.goal:379
 type Token struct {
 	Kind Kind
 	Lit  string

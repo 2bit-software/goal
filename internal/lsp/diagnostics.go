@@ -218,10 +218,10 @@ func (s *Server) publish(uri string, version int, diags []Diagnostic) {
 //line diagnostics.goal:264
 func toLSP(text string, tokEnd map[int]int, d sema.Diagnostic) Diagnostic {
 	/*line diagnostics.goal:265*/ start := d.Pos
-	/*line diagnostics.goal:266*/ rng := Range{Start: Position{Line: start.Line - 1, Character: start.Col - 1}, End: Position{Line: start.Line - 1, Character: lineLength(text, start.Line)}}
+	/*line diagnostics.goal:266*/ rng := Range{Start: Position{Line: start.Line - 1, Character: utf16Char(text, start.Offset)}, End: Position{Line: start.Line - 1, Character: lineLength(text, start.Line)}}
 	/*line diagnostics.goal:270*/ if end, ok := tokEnd[d.Pos.Offset]; ok && end > d.Pos.Offset {
 		/*line diagnostics.goal:271*/ e := token.OffsetToPosition(text, end)
-		/*line diagnostics.goal:272*/ rng.End = Position{Line: e.Line - 1, Character: e.Col - 1}
+		/*line diagnostics.goal:272*/ rng.End = Position{Line: e.Line - 1, Character: utf16Char(text, end)}
 	}
 	/*line diagnostics.goal:274*/ if rng.End.Line == rng.Start.Line && rng.End.Character <= rng.Start.Character {
 		/*line diagnostics.goal:275*/ rng.End.Character = rng.Start.Character + 1
@@ -279,5 +279,32 @@ func lineLength(src string, line1 int) int {
 	/*line diagnostics.goal:353*/ if idx >= len(lines) {
 		/*line diagnostics.goal:354*/ return 0
 	}
-	/*line diagnostics.goal:356*/ return len(strings.TrimRight(lines[idx], "\r"))
+	/*line diagnostics.goal:356*/ return utf16Len(strings.TrimRight(lines[idx], "\r"))
+}
+
+//line diagnostics.goal:364
+func utf16Char(text string, off int) int {
+	/*line diagnostics.goal:365*/ if off > len(text) {
+		/*line diagnostics.goal:366*/ off = len(text)
+	}
+	/*line diagnostics.goal:368*/ lineStart := 0
+	/*line diagnostics.goal:369*/ for i := 0; i < off; i++ {
+		/*line diagnostics.goal:370*/ if text[i] == '\n' {
+			/*line diagnostics.goal:371*/ lineStart = i + 1
+		}
+	}
+	/*line diagnostics.goal:374*/ return utf16Len(text[lineStart:off])
+}
+
+//line diagnostics.goal:378
+func utf16Len(s string) int {
+	/*line diagnostics.goal:379*/ n := 0
+	/*line diagnostics.goal:380*/ for _, r := range s {
+		/*line diagnostics.goal:381*/ if r >= 0x10000 {
+			/*line diagnostics.goal:382*/ n += 2
+		} else {
+			/*line diagnostics.goal:384*/ n++
+		}
+	}
+	/*line diagnostics.goal:387*/ return n
 }

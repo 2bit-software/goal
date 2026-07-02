@@ -264,12 +264,12 @@ func (s *Server) publish(uri string, version int, diags []Diagnostic) {
 func toLSP(text string, tokEnd map[int]int, d sema.Diagnostic) Diagnostic {
 	start := d.Pos
 	rng := Range{
-		Start: Position{Line: start.Line - 1, Character: start.Col - 1},
+		Start: Position{Line: start.Line - 1, Character: utf16Char(text, start.Offset)},
 		End:   Position{Line: start.Line - 1, Character: lineLength(text, start.Line)},
 	}
 	if end, ok := tokEnd[d.Pos.Offset]; ok && end > d.Pos.Offset {
 		e := token.OffsetToPosition(text, end)
-		rng.End = Position{Line: e.Line - 1, Character: e.Col - 1}
+		rng.End = Position{Line: e.Line - 1, Character: utf16Char(text, end)}
 	}
 	if rng.End.Line == rng.Start.Line && rng.End.Character <= rng.Start.Character {
 		rng.End.Character = rng.Start.Character + 1 // never an empty/inverted range
@@ -342,8 +342,8 @@ func tokenEnds(text string) map[int]int {
 	return m
 }
 
-// lineLength returns the character count of the given 1-based line, excluding
-// the trailing carriage return. ASCII source is assumed for character counting.
+// lineLength returns the UTF-16 code-unit length of the given 1-based line, excluding
+// the trailing carriage return — the Character an end-of-line LSP range endpoint needs.
 func lineLength(src string, line1 int) int {
 	idx := line1 - 1
 	if idx < 0 {
@@ -353,5 +353,36 @@ func lineLength(src string, line1 int) int {
 	if idx >= len(lines) {
 		return 0
 	}
-	return len(strings.TrimRight(lines[idx], "\r"))
+	return utf16Len(strings.TrimRight(lines[idx], "\r"))
+}
+
+// utf16Char returns the 0-based UTF-16 code-unit column of byte offset off in text, the
+// unit the LSP protocol measures Position.Character in. token.Col is rune-based (one per
+// code point); this re-expands any non-BMP rune (>= U+10000, e.g. an emoji) that precedes
+// off on the same line to the two UTF-16 units an editor counts, so ranges land on the
+// right character even past astral-plane text.
+func utf16Char(text string, off int) int {
+	if off > len(text) {
+		off = len(text)
+	}
+	lineStart := 0
+	for i := 0; i < off; i++ {
+		if text[i] == '\n' {
+			lineStart = i + 1
+		}
+	}
+	return utf16Len(text[lineStart:off])
+}
+
+// utf16Len counts the UTF-16 code units of s: one per BMP rune, two per rune >= U+10000.
+func utf16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		if r >= 0x10000 {
+			n += 2
+		} else {
+			n++
+		}
+	}
+	return n
 }

@@ -8829,3 +8829,9 @@
 - Replaced the per-decl strings.Count(src[:off]) full-rescan in declLines with an incremental newline counter (O(n) not O(n^2)); AddLineDirectives likewise tracks written newlines incrementally.
 - AC test in new internal/pipelinetest sibling pkg (pipeline is emitted, no in-tree _test.go). Regen churn: //line-only in ast/interp/parser/token generated .go where same-named methods exist. task check + task fixpoint green.
 - NOTE: implemented directly in the main loop context after three sub-agent delegations committed to a phantom environment whose git objects never reached the repo.
+
+## US-038 - Single rune-aware line/col computation
+- token.ColFor(src, lineStart, off) is the one column authority (counts UTF-8 lead bytes, b&0xC0 != 0x80, import-free); token.OffsetToPosition and lexer.pos() both route through it so byte- and rune-column impls can no longer drift.
+- LSP Position.Character is converted to UTF-16 explicitly: new utf16Char/utf16Len in internal/lsp re-expand non-BMP runes (>= U+10000) to two units; toLSP uses utf16Char for both endpoints and lineLength now returns UTF-16 length.
+- Tests: internal/tokentest (rune col on a 2-byte-é and tab/emoji line), internal/lexertest (lexer.Scan diagnostic column rune-aware), internal/lsptest (a 🚀 before an invalid binary literal lands the published diagnostic on UTF-16 column 17, not rune 16). Regen churn is //line-only. task check + task fixpoint green.
+- NOTE: implemented directly in the main loop context (delegation kept forking to a phantom environment); depth/symbols/codeaction Position producers keep rune columns (identical to UTF-16 for the all-BMP corpus).

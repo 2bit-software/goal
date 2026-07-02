@@ -211,9 +211,20 @@ func TestLSPDefinitionSmoke(t *testing.T) {
 // --- decoding helpers ---
 
 type wireDiagnostic struct {
-	Code     string `json:"code"`
-	Severity int    `json:"severity"`
-	Message  string `json:"message"`
+	Range    wireRange `json:"range"`
+	Code     string    `json:"code"`
+	Severity int       `json:"severity"`
+	Message  string    `json:"message"`
+}
+
+type wireRange struct {
+	Start wirePos `json:"start"`
+	End   wirePos `json:"end"`
+}
+
+type wirePos struct {
+	Line      int `json:"line"`
+	Character int `json:"character"`
 }
 
 type wirePublish struct {

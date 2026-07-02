@@ -104,9 +104,12 @@ func (l *Lexer) peek2() rune {
 	return r
 }
 
-// pos returns the position of the cursor's current rune.
+// pos returns the position of the cursor's current rune. Col is delegated to
+// token.ColFor — the single column authority — so the lexer's live cursor and
+// token.OffsetToPosition cannot disagree on a tab or multibyte line; the lexer keeps
+// only its incremental lineStart bookkeeping.
 func (l *Lexer) pos() token.Pos {
-	return token.Pos{Offset: l.offset, Line: l.line, Col: l.offset - l.lineStart + 1}
+	return token.Pos{Offset: l.offset, Line: l.line, Col: token.ColFor(l.src, l.lineStart, l.offset)}
 }
 
 // Tokens scans src to completion and returns every token, including the trailing

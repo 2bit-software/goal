@@ -349,7 +349,29 @@ func OffsetToPosition(src string, off int) Pos {
 			lineStart = i + 1
 		}
 	}
-	return Pos{Offset: off, Line: line, Col: off - lineStart + 1}
+	return Pos{Offset: off, Line: line, Col: ColFor(src, lineStart, off)}
+}
+
+// ColFor returns the 1-based rune column of byte offset off on the line beginning at
+// byte offset lineStart. It counts UTF-8 lead bytes — a byte is a continuation byte
+// when its top two bits are 10 (b&0xC0 == 0x80) — so a multibyte or tab-prefixed run
+// advances the column one per rune, not per byte. It is the single column authority:
+// OffsetToPosition and the lexer's cursor both route through it so the two cannot
+// drift. Hand-rolled byte-wise to keep this package import-free (see itoa).
+func ColFor(src string, lineStart, off int) int {
+	if lineStart < 0 {
+		lineStart = 0
+	}
+	if off > len(src) {
+		off = len(src)
+	}
+	col := 1
+	for i := lineStart; i < off; i++ {
+		if src[i]&0xC0 != 0x80 {
+			col++
+		}
+	}
+	return col
 }
 
 // Token is a single lexeme: its Kind, its source text (Lit, for identifiers,
