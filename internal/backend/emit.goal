@@ -1181,8 +1181,21 @@ func (e *emitter) exprText(x ast.Expr) string {
 		armFields:   e.armFields,
 		fileIdents:  e.fileIdents,
 		typeDecls:   e.typeDecls,
+		// Share the gensym reservation set by reference so a name minted while
+		// re-emitting the sub-expression (e.g. the goalSome temp) cannot collide
+		// with a parent temp. fnKind/closedT/closedE are intentionally NOT copied:
+		// exprText renders a value expression, not a function body.
+		taken: e.taken,
 	}
 	sub.expr(x)
+	// Mirror emitFileWith's contract: the sub-emitter produces a usedOption flag and
+	// an error that exprText used to drop. Propagate both so an Option.Some(...) inside
+	// a re-emitted value (e.g. a derive override) still triggers the goalSome prelude,
+	// and an unsupported node fails loudly instead of yielding truncated Go.
+	e.usedOptionHelper = e.usedOptionHelper || sub.usedOptionHelper
+	if e.err == nil {
+		e.err = sub.err
+	}
 	return sub.b.String()
 }
 

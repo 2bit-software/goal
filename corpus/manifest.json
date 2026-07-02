@@ -377,6 +377,14 @@
       "normalize": "gofmt"
     },
     {
+      "id": "features-12-derive-convert-examples-override_option_some",
+      "kind": "transpile",
+      "input": "features/12-derive-convert/examples/override_option_some.goal",
+      "expected": "features/12-derive-convert/examples/override_option_some.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
       "id": "features-12-derive-convert-examples-slice",
       "kind": "transpile",
       "input": "features/12-derive-convert/examples/slice.goal",

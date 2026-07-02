@@ -1,0 +1,21 @@
+package conv
+
+type Record struct {
+	ID   string
+	Name string
+}
+
+type View struct {
+	ID   string
+	Note *string
+}
+
+func toView(src Record) View {
+	var out View
+	out.Note = goalSome(src.Name)
+	out.ID = src.ID
+	return out
+}
+
+// goalSome boxes v into the pointer (*T) encoding of an Option Some value.
+func goalSome[T any](v T) *T { return &v }

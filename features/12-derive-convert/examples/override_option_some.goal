@@ -1,0 +1,22 @@
+package conv
+
+// A derive func whose override value is `Option.Some(...)` (US-024). The override
+// is rendered through the emitter's exprText sub-emitter; exprText must propagate
+// the sub-emitter's `usedOptionHelper` flag so the goalSome boxing helper prelude
+// is emitted and the generated Go compiles. Note is overridden; ID is auto-sourced.
+type Record struct {
+	ID   string
+	Name string
+}
+
+type View struct {
+	ID   string
+	Note Option[string]
+}
+
+derive func toView(src Record) View {
+	return View{
+		Note: Option.Some(src.Name),
+		...derive(src),
+	}
+}
