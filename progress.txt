@@ -8246,3 +8246,43 @@
     form (`type X interface{ isX() }` + `type X_Variant struct{}` + `func (X_Variant)
     isX() {}`); drop the missing variant to simulate drift.
 ---
+
+## 2026-07-02T08:34:00Z - US-021
+- Wired foreign function signatures into `?` (question) checking. Previously
+  `resolveQuestionCallee` (internal/sema/question.goal) resolved only bare in-file
+  identifiers; its `*ast.SelectorExpr` arm returned `known=false` unconditionally,
+  so a package-qualified callee `pkg.Fn()?` was silently skipped and misuse (`?` on
+  a foreign fn returning a single non-error value) slipped through to a generated-Go
+  compile failure. The selector arm now looks up `info.FuncSignatures[exprName(f)]`
+  — the same `alias.Func` key EnrichForeign writes — and returns the resolved sig
+  when present. Resolved foreign callees flow through the existing
+  `appendQuestionResolved` machinery, reusing `question-callee-no-error` (no new
+  codes). Unavailable sigs miss the lookup and stay permissive, exactly as before.
+  This was the story's PRIMARY outcome; the dead-`ForeignMethods`-plumbing fallback
+  was unnecessary and left untouched (method receivers stay unwired, optional per
+  the story).
+- Files: internal/sema/question.goal (+ regenerated internal/sema/question.go via
+  `task generate`); internal/corpus/foreignq_test.go (new, 2 tests) +
+  internal/corpus/testdata/foreignq/dep/dep.go (fixture dep exposing `One() int`
+  and `Get() (int, error)`); prd.json (passes:true).
+- Verified: `task check` PASS; `task fixpoint` FIXPOINT OK;
+  `go test ./internal/corpus -run TestForeignQuestion` ok. Commit e8d81fe.
+- Learnings for future iterations:
+  - `sema.AnalyzePackageInDirWith` returns `[][]sema.Diagnostic` (per-file slices),
+    NOT a `map[string][]Diagnostic`. Range it as a slice-of-slices (staledep_test.go
+    does the same). A helper typed as a map fails `go vet` in the prek hook.
+  - `internal/corpus/staledep_test.go` already defines the `resolverTo(importPath,
+    depDir) sema.DirResolver` helper in `package corpus`; reuse it from sibling
+    `*_test.go` files rather than redefining (duplicate symbol won't compile).
+  - Foreign func sigs are read from the dependency's `.go` files (EnrichForeign ->
+    foreignDecls), so a foreign-signature fixture needs only a plain `.go` package
+    under internal/corpus/testdata/<name>/dep — no `.goal` required. They land in
+    `info.FuncSignatures` keyed `<alias>.<Func>` with `Mode.ModeNone`, real `Arity`,
+    and `EndsInError`, which `appendQuestionResolved` already discriminates.
+  - No pinned-count / manifest change: internal/corpus/testdata is not walked by the
+    corpus manifest generator (only repo-root testdata/features are).
+  - The prek PostToolUse hook runs full `task check` on every `.goal`/`_test.go`
+    edit, so it fires (expected) after editing a `.goal` but BEFORE `task generate`
+    regenerates the sibling `.go` — verify-generated diffs stale. Regenerate, then
+    the hook goes green; don't be alarmed by the interim verify-generated failure.
+---
