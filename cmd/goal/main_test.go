@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -162,6 +163,91 @@ func TestCheckCleanProgramPasses(t *testing.T) {
 	}
 }
 
+// goal check --json emits its diagnostics as a single JSON array of objects with
+// stable field names, so an AI agent can consume them without regexing prose. The
+// diagnostic case round-trips and the command still exits non-zero (US-009).
+func TestCheckJSONReportsDiagnostics(t *testing.T) {
+	const src = `package demo
+
+type Inner struct {
+    a int
+    b int
+}
+
+func f() []Inner {
+    return []Inner{{a: 1}}
+}
+`
+	dir := goalModule(t, map[string]string{"x.goal": src})
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"check", "--json", dir}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected check to fail on the dropped field\nstdout: %s\nstderr: %s", out.String(), errOut.String())
+	}
+	if !json.Valid(out.Bytes()) {
+		t.Fatalf("stdout is not valid JSON:\n%s", out.String())
+	}
+	var diags []jsonDiag
+	if err := json.Unmarshal(out.Bytes(), &diags); err != nil {
+		t.Fatalf("unmarshal diagnostics: %v\n%s", err, out.String())
+	}
+	if len(diags) == 0 {
+		t.Fatalf("expected at least one diagnostic in JSON output, got none:\n%s", out.String())
+	}
+	found := false
+	for _, d := range diags {
+		if d.Code == "elided-missing-field" {
+			found = true
+			if d.Severity != "error" {
+				t.Errorf("severity = %q, want error", d.Severity)
+			}
+			if !strings.HasSuffix(d.File, "x.goal") {
+				t.Errorf("file = %q, want a path ending in x.goal", d.File)
+			}
+			if d.Line == 0 || d.Message == "" {
+				t.Errorf("diagnostic missing line/message: %+v", d)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected an [elided-missing-field] diagnostic in JSON:\n%s", out.String())
+	}
+}
+
+// A clean package emits an empty JSON array to stdout and exits 0 in --json mode.
+func TestCheckJSONCleanEmitsEmptyArray(t *testing.T) {
+	dir := goalModule(t, map[string]string{"main.goal": mainGoal})
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"check", "--json", dir}, &out, &errOut); err != nil {
+		t.Fatalf("clean --json check failed: %v\nstderr: %s", err, errOut.String())
+	}
+	if !json.Valid(out.Bytes()) {
+		t.Fatalf("stdout is not valid JSON:\n%s", out.String())
+	}
+	var diags []jsonDiag
+	if err := json.Unmarshal(out.Bytes(), &diags); err != nil {
+		t.Fatalf("unmarshal clean output: %v\n%s", err, out.String())
+	}
+	if len(diags) != 0 {
+		t.Errorf("clean package should emit an empty array, got: %+v", diags)
+	}
+	if strings.Contains(out.String(), "ok") {
+		t.Errorf("the human-readable ok line must be suppressed in --json mode:\n%s", out.String())
+	}
+}
+
+// --json is meaningful only for check; build rejects it as an unknown flag.
+func TestBuildRejectsJSONFlag(t *testing.T) {
+	dir := goalModule(t, map[string]string{"main.goal": mainGoal})
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"build", "--json", dir}, &out, &errOut); err == nil {
+		t.Errorf("build --json should be rejected as an unknown flag\nstdout: %s\nstderr: %s", out.String(), errOut.String())
+	}
+}
+
 // An if/for header whose init statement is followed by no condition (e.g.
 // `if x := 1 { }`) must be a parse error: the init would otherwise be silently
 // dropped and the block run unconditionally. `goal check` reports it at a source
@@ -308,18 +394,25 @@ func TestCheckDepthNoteOmitsGeneratedDump(t *testing.T) {
 }
 
 func TestParseFlags(t *testing.T) {
-	emit, emitDir, root, err := parseFlags([]string{"--emit=out", "./pkg/..."})
+	emit, jsonOut, emitDir, root, err := parseFlags([]string{"--emit=out", "./pkg/..."})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !emit || emitDir != "out" || root != "./pkg" {
-		t.Errorf("parseFlags = (%v, %q, %q), want (true, out, ./pkg)", emit, emitDir, root)
+	if !emit || jsonOut || emitDir != "out" || root != "./pkg" {
+		t.Errorf("parseFlags = (%v, %v, %q, %q), want (true, false, out, ./pkg)", emit, jsonOut, emitDir, root)
+	}
+	_, jsonOut, _, root, err = parseFlags([]string{"--json", "./pkg"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !jsonOut || root != "./pkg" {
+		t.Errorf("parseFlags --json = (json=%v, root=%q), want (true, ./pkg)", jsonOut, root)
 	}
 }
 
 func TestParseFlagsUnknownFlag(t *testing.T) {
 	// The legacy --engine flag was removed in US-043; it is now an unknown flag.
-	if _, _, _, err := parseFlags([]string{"--engine=splice"}); err == nil {
+	if _, _, _, _, err := parseFlags([]string{"--engine=splice"}); err == nil {
 		t.Error("--engine should be rejected as an unknown flag")
 	}
 }

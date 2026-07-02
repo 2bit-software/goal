@@ -137,14 +137,17 @@ func run(args []string, out, errOut io.Writer) error {
 		}
 		return cmdRun(root, emit, emitDir, progArgs, out, errOut)
 	case "build", "check":
-		emit, emitDir, root, err := parseFlags(rest)
+		emit, jsonOut, emitDir, root, err := parseFlags(rest)
 		if err != nil {
 			return err
 		}
 		if cmd == "build" {
+			if jsonOut {
+				return fmt.Errorf("unknown flag %q", "--json")
+			}
 			return cmdBuild(root, emit, emitDir, out, errOut)
 		}
-		return cmdCheck(root, out, errOut)
+		return cmdCheck(root, jsonOut, out, errOut)
 	default:
 		return fmt.Errorf("unknown command %q (%s)", cmd, topUsage())
 	}
@@ -164,10 +167,11 @@ func cmdAI(args []string, out io.Writer) error {
 	return guide.Render(out, section, guideCommands)
 }
 
-// parseFlags pulls --emit[=dir] and a single optional path argument out of args.
-// The path defaults to "." and a trailing "/..." (or bare "...") is stripped,
-// since discovery is already recursive.
-func parseFlags(args []string) (emit bool, emitDir, root string, err error) {
+// parseFlags pulls --emit[=dir], --json, and a single optional path argument out
+// of args. The path defaults to "." and a trailing "/..." (or bare "...") is
+// stripped, since discovery is already recursive. --json is meaningful only for
+// `check` (machine-readable diagnostics); `build`'s dispatch rejects it.
+func parseFlags(args []string) (emit, jsonOut bool, emitDir, root string, err error) {
 	root = "."
 	gotPath := false
 	for _, a := range args {
@@ -176,11 +180,13 @@ func parseFlags(args []string) (emit bool, emitDir, root string, err error) {
 			emit = true
 		case strings.HasPrefix(a, "--emit="):
 			emit, emitDir = true, strings.TrimPrefix(a, "--emit=")
+		case a == "--json":
+			jsonOut = true
 		case strings.HasPrefix(a, "-"):
-			return false, "", "", fmt.Errorf("unknown flag %q", a)
+			return false, false, "", "", fmt.Errorf("unknown flag %q", a)
 		default:
 			if gotPath {
-				return false, "", "", fmt.Errorf("expected a single path, got extra %q", a)
+				return false, false, "", "", fmt.Errorf("expected a single path, got extra %q", a)
 			}
 			root, gotPath = a, true
 		}
@@ -189,7 +195,7 @@ func parseFlags(args []string) (emit bool, emitDir, root string, err error) {
 	if root == "" {
 		root = "."
 	}
-	return emit, emitDir, root, nil
+	return emit, jsonOut, emitDir, root, nil
 }
 
 // Engine names select which back-end `goal run` uses. ast (the default)
@@ -531,7 +537,7 @@ func cmdRun(root string, emit bool, emitDir string, progArgs []string, out, errO
 	return goToolchain(root, ts, out, errOut, "run", target, progArgs...)
 }
 
-func cmdCheck(root string, out, errOut io.Writer) error {
+func cmdCheck(root string, jsonMode bool, out, errOut io.Writer) error {
 	pkgs, err := project.Discover(root)
 	if err != nil {
 		return err
@@ -539,19 +545,46 @@ func cmdCheck(root string, out, errOut io.Writer) error {
 	if len(pkgs) == 0 {
 		return fmt.Errorf("no .goal packages found under %s", root)
 	}
-	total := 0
+	// Accumulate every package's findings so JSON mode can emit a single array and
+	// both modes render in one stable order.
+	var all []checkDiag
 	for _, pkg := range pkgs {
 		diags, err := checkPackage(pkg, errOut)
 		if err != nil {
 			return fmt.Errorf("check %s: %w", pkg.Dir, err)
 		}
-		sortDiags(diags)
-		for _, d := range diags {
-			fmt.Fprintln(errOut, d.render())
-			if _, ok := d.severity.(sema.Severity_Error); ok {
-				total++
-			}
+		all = append(all, diags...)
+	}
+	sortDiags(all)
+
+	total := 0
+	for _, d := range all {
+		if _, ok := d.severity.(sema.Severity_Error); ok {
+			total++
 		}
+	}
+
+	if jsonMode {
+		// Machine-readable diagnostics go to stdout as one JSON array (empty ->
+		// "[]"); nothing else may print to stdout. The "ok" line is suppressed and
+		// any depth-stage notes stay on stderr (emitted inside checkPackage).
+		payload := make([]jsonDiag, 0, len(all))
+		for _, d := range all {
+			payload = append(payload, d.toJSON())
+		}
+		enc, err := json.MarshalIndent(payload, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(out, string(enc))
+		if total > 0 {
+			return fmt.Errorf("%d checker error(s)", total)
+		}
+		return nil
+	}
+
+	for _, d := range all {
+		fmt.Fprintln(errOut, d.render())
 	}
 	if total > 0 {
 		return fmt.Errorf("%d checker error(s)", total)
@@ -655,6 +688,31 @@ type checkDiag struct {
 // stages' native rendering.
 func (d checkDiag) render() string {
 	return fmt.Sprintf("%s:%d:%d: %s: [%s] %s", d.file, d.line, d.col, sema.SeverityLabel(d.severity), d.code, d.message)
+}
+
+// jsonDiag is the machine-readable shape of one diagnostic for `goal check --json`.
+// The fields are omitempty-free so every diagnostic serializes the full record; the
+// struct is intentionally extensible (a later story can add suggestedFix/endLine).
+type jsonDiag struct {
+	File     string `json:"file"`
+	Line     int    `json:"line"`
+	Col      int    `json:"col"`
+	Severity string `json:"severity"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+}
+
+// toJSON projects a checkDiag into its machine-readable form, rendering the severity
+// interface as its stable label ("error"/"warning").
+func (d checkDiag) toJSON() jsonDiag {
+	return jsonDiag{
+		File:     d.file,
+		Line:     d.line,
+		Col:      d.col,
+		Severity: sema.SeverityLabel(d.severity),
+		Code:     d.code,
+		Message:  d.message,
+	}
 }
 
 // sortDiags orders findings by file, then line, then column, for stable output.
