@@ -1,0 +1,7 @@
+package lex
+
+// badBinary has a binary literal with a digit (7) outside the binary radix. The
+// lexer records it as a located error at lex time.
+func badBinary() int {
+	return 0b77 // want "binary"
+}

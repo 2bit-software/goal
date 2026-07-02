@@ -5,20 +5,33 @@ package sema
 //line analyze.go:4
 import (
 	"fmt"
+	"goal/internal/lexer"
 	"goal/internal/parser"
 )
 
-//line analyze.goal:21
+//line analyze.goal:22
 func Analyze(src string) (ok []Diagnostic, err error) {
 	file, err := parser.ParseFile(src)
 	if err != nil {
 		return ok, err
 	}
 	info := Resolve(file)
-	return Check(file, info), nil
+	diags := lexDiagnostics(src)
+	return append(diags, Check(file, info)...), nil
 }
 
-//line analyze.goal:29
+//line analyze.goal:35
+func lexDiagnostics(src string) []Diagnostic {
+	_, errs := lexer.Scan(src)
+	var diags []Diagnostic
+
+	for _, e := range errs {
+		diags = append(diags, Diagnostic{Pos: e.Pos, Severity: Severity(Severity_Error{}), Feature: "00-lex", Code: e.Code, Message: e.Msg})
+	}
+	return diags
+}
+
+//line analyze.goal:52
 func HasErrors(diags []Diagnostic) bool {
 	for _, d := range diags {
 		var isErr bool
@@ -37,7 +50,7 @@ func HasErrors(diags []Diagnostic) bool {
 	return false
 }
 
-//line analyze.goal:45
+//line analyze.goal:68
 func (d Diagnostic) Render(filename string) string {
 	return fmt.Sprintf("%s:%d:%d: %s: [%s] %s", filename, d.Pos.Line, d.Pos.Col, SeverityLabel(d.Severity), d.Code, d.Message)
 }

@@ -36,7 +36,7 @@ func AnalyzePackageInDirWith(srcs []string, dir string, resolve DirResolver) ([]
 	ferrs := EnrichForeign(info, imports, dir, resolve)
 	out := make([][]Diagnostic, len(files))
 	for i, f := range files {
-		out[i] = Check(f, info)
+		out[i] = append(lexDiagnostics(srcs[i]), Check(f, info)...)
 	}
 	return out, ferrs, nil
 }

@@ -371,3 +371,26 @@ func TestCheckCorpusOutputUnchanged(t *testing.T) {
 		t.Errorf("finding should be located in status.goal:\n%s", stderr)
 	}
 }
+
+// TestCheckReportsUnterminatedString is US-006: a lex-malformed but still
+// parseable file (an unterminated string literal) makes `goal check` exit
+// non-zero with a located `[unterminated-string]` diagnostic pointing at the
+// offending file, instead of the malformation slipping through to generated Go.
+func TestCheckReportsUnterminatedString(t *testing.T) {
+	src := "package demo\n\nfunc greet() string {\n\treturn \"hello\n}\n"
+	dir := goalModule(t, map[string]string{"bad.goal": src})
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"check", dir}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("check should reject the unterminated string\nstdout: %s\nstderr: %s", out.String(), errOut.String())
+	}
+	stderr := errOut.String()
+	if !strings.Contains(stderr, "error: [unterminated-string]") {
+		t.Errorf("missing the unterminated-string finding:\n%s", stderr)
+	}
+	// The diagnostic is located on the return line (line 4) of bad.goal.
+	if !strings.Contains(stderr, "bad.goal:4:") {
+		t.Errorf("finding should be located at bad.goal:4:\n%s", stderr)
+	}
+}

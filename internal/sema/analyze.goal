@@ -9,6 +9,7 @@ package sema
 import (
 	"fmt"
 
+	"goal/internal/lexer"
 	"goal/internal/parser"
 )
 
@@ -21,7 +22,29 @@ import (
 func Analyze(src string) Result[[]Diagnostic, error] {
 	file := parser.ParseFile(src)?
 	info := Resolve(file)
-	return Result.Ok(Check(file, info))
+	diags := lexDiagnostics(src)
+	return Result.Ok(append(diags, Check(file, info)...))
+}
+
+// lexDiagnostics scans src for located lexical errors (unterminated string/raw
+// string/rune literals, malformed numeric literals) and maps each to an
+// Error-severity Diagnostic under feature "00-lex". These are surfaced here, at
+// the checker boundary, rather than through the parser: the malformed inputs still
+// lex to a valid token stream, so ParseFile succeeds and the parse gate is
+// unaffected — the lexer records the malformation as an Error the checker reports.
+func lexDiagnostics(src string) []Diagnostic {
+	_, errs := lexer.Scan(src)
+	var diags []Diagnostic
+	for _, e := range errs {
+		diags = append(diags, Diagnostic{
+			Pos:      e.Pos,
+			Severity: Severity.Error,
+			Feature:  "00-lex",
+			Code:     e.Code,
+			Message:  e.Msg,
+		})
+	}
+	return diags
 }
 
 // HasErrors reports whether any diagnostic in diags is Error severity (a rejected

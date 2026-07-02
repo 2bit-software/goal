@@ -385,6 +385,30 @@
       "normalize": "gofmt"
     },
     {
+      "id": "testdata-check-00-lex-bad_binary",
+      "kind": "check",
+      "input": "testdata/check/00-lex/bad_binary.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-00-lex-bad_octal",
+      "kind": "check",
+      "input": "testdata/check/00-lex/bad_octal.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-00-lex-unterminated_rune",
+      "kind": "check",
+      "input": "testdata/check/00-lex/unterminated_rune.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
       "id": "testdata-check-01-enums-ok_construction",
       "kind": "check",
       "input": "testdata/check/01-enums/ok_construction.goal",

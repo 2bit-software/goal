@@ -20,16 +20,29 @@ type Lexer struct {
 	rdOffset  int
 	line      int
 	lineStart int
+	errs      []Error
 }
 
-//line lexer.goal:40
+//line lexer.goal:44
+type Error struct {
+	Pos  token.Pos
+	Code string
+	Msg  string
+}
+
+//line lexer.goal:51
+func (l *Lexer) errorf(pos token.Pos, code, msg string) {
+	l.errs = append(l.errs, Error{Pos: pos, Code: code, Msg: msg})
+}
+
+//line lexer.goal:56
 func New(src string) *Lexer {
 	l := &Lexer{src: src, line: 1}
 	l.next()
 	return l
 }
 
-//line lexer.goal:50
+//line lexer.goal:66
 func (l *Lexer) next() {
 	if l.ch == '\n' {
 		l.line++
@@ -46,7 +59,7 @@ func (l *Lexer) next() {
 	l.ch = r
 }
 
-//line lexer.goal:67
+//line lexer.goal:83
 func (l *Lexer) peek() rune {
 	if l.rdOffset >= len(l.src) {
 		return eof
@@ -55,7 +68,7 @@ func (l *Lexer) peek() rune {
 	return r
 }
 
-//line lexer.goal:78
+//line lexer.goal:94
 func (l *Lexer) peek2() rune {
 	if l.rdOffset >= len(l.src) {
 		return eof
@@ -69,12 +82,12 @@ func (l *Lexer) peek2() rune {
 	return r
 }
 
-//line lexer.goal:92
+//line lexer.goal:108
 func (l *Lexer) pos() token.Pos {
 	return token.Pos{Offset: l.offset, Line: l.line, Col: l.offset - l.lineStart + 1}
 }
 
-//line lexer.goal:98
+//line lexer.goal:114
 func Tokens(src string) []token.Token {
 	l := New(src)
 	var toks []token.Token
@@ -88,7 +101,21 @@ func Tokens(src string) []token.Token {
 	}
 }
 
-//line lexer.goal:112
+//line lexer.goal:131
+func Scan(src string) ([]token.Token, []Error) {
+	l := New(src)
+	var toks []token.Token
+
+	for {
+		t := l.Next()
+		toks = append(toks, t)
+		if t.Kind == token.EOF {
+			return toks, l.errs
+		}
+	}
+}
+
+//line lexer.goal:145
 func (l *Lexer) Next() token.Token {
 	l.skipWhitespace()
 	pos := l.pos()
@@ -110,14 +137,14 @@ func (l *Lexer) Next() token.Token {
 	}
 }
 
-//line lexer.goal:136
+//line lexer.goal:169
 func (l *Lexer) skipWhitespace() {
 	for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' || l.ch == '\n' {
 		l.next()
 	}
 }
 
-//line lexer.goal:145
+//line lexer.goal:178
 func (l *Lexer) scanIdentifier(pos token.Pos) token.Token {
 	start := l.offset
 	for isLetter(l.ch) || isDigit(l.ch) {
@@ -130,13 +157,14 @@ func (l *Lexer) scanIdentifier(pos token.Pos) token.Token {
 	return token.Token{Kind: token.IDENT, Lit: lit, Pos: pos}
 }
 
-//line lexer.goal:161
+//line lexer.goal:194
 func (l *Lexer) scanNumber(pos token.Pos) token.Token {
 	start := l.offset
 	kind := token.INT
 	if l.ch == '0' && (l.peek() == 'x' || l.peek() == 'X') {
 		l.next()
 		l.next()
+		digitStart := l.offset
 		l.scanDigits(isHexDigit)
 		if l.ch == '.' {
 			kind = token.FLOAT
@@ -147,10 +175,27 @@ func (l *Lexer) scanNumber(pos token.Pos) token.Token {
 			kind = token.FLOAT
 			l.scanExponent()
 		}
+		if kind == token.INT && l.offset == digitStart {
+			l.errorf(pos, "invalid-number-literal", "hexadecimal literal has no digits")
+		}
 	} else if l.ch == '0' && (l.peek() == 'o' || l.peek() == 'O' || l.peek() == 'b' || l.peek() == 'B') {
+		isBin := l.peek() == 'b' || l.peek() == 'B'
 		l.next()
 		l.next()
-		l.scanDigits(isDigit)
+		digitStart := l.offset
+		if isBin {
+			l.scanDigits(isBinaryDigit)
+		} else {
+			l.scanDigits(isOctalDigit)
+		}
+		if l.offset == digitStart || isDigit(l.ch) {
+			if isBin {
+				l.errorf(pos, "invalid-number-literal", "invalid digit in binary literal")
+			} else {
+				l.errorf(pos, "invalid-number-literal", "invalid digit in octal literal")
+			}
+			l.scanDigits(isDigit)
+		}
 	} else {
 		l.scanDigits(isDigit)
 		if l.ch == '.' {
@@ -170,14 +215,14 @@ func (l *Lexer) scanNumber(pos token.Pos) token.Token {
 	return token.Token{Kind: kind, Lit: l.src[start:l.offset], Pos: pos}
 }
 
-//line lexer.goal:205
+//line lexer.goal:259
 func (l *Lexer) scanDigits(pred func(rune) bool) {
 	for pred(l.ch) || l.ch == '_' {
 		l.next()
 	}
 }
 
-//line lexer.goal:213
+//line lexer.goal:267
 func (l *Lexer) scanExponent() {
 	l.next()
 	if l.ch == '+' || l.ch == '-' {
@@ -186,59 +231,80 @@ func (l *Lexer) scanExponent() {
 	l.scanDigits(isDigit)
 }
 
-//line lexer.goal:223
+//line lexer.goal:280
 func (l *Lexer) scanString(pos token.Pos) token.Token {
 	start := l.offset
 	l.next()
+	terminated := false
 	for l.ch != eof && l.ch != '\n' {
 		if l.ch == '\\' {
 			l.next()
+			if l.ch == eof || l.ch == '\n' {
+				break
+			}
 			l.next()
 			continue
 		}
 		if l.ch == '"' {
 			l.next()
+			terminated = true
 			break
 		}
 		l.next()
 	}
+	if !terminated {
+		l.errorf(pos, "unterminated-string", "unterminated string literal")
+	}
 	return token.Token{Kind: token.STRING, Lit: l.src[start:l.offset], Pos: pos}
 }
 
-//line lexer.goal:243
+//line lexer.goal:311
 func (l *Lexer) scanRawString(pos token.Pos) token.Token {
 	start := l.offset
 	l.next()
+	terminated := false
 	for l.ch != eof {
 		if l.ch == '`' {
 			l.next()
+			terminated = true
 			break
 		}
 		l.next()
 	}
+	if !terminated {
+		l.errorf(pos, "unterminated-raw-string", "unterminated raw string literal")
+	}
 	return token.Token{Kind: token.STRING, Lit: l.src[start:l.offset], Pos: pos}
 }
 
-//line lexer.goal:257
+//line lexer.goal:333
 func (l *Lexer) scanRune(pos token.Pos) token.Token {
 	start := l.offset
 	l.next()
+	terminated := false
 	for l.ch != eof && l.ch != '\n' {
 		if l.ch == '\\' {
 			l.next()
+			if l.ch == eof || l.ch == '\n' {
+				break
+			}
 			l.next()
 			continue
 		}
 		if l.ch == '\'' {
 			l.next()
+			terminated = true
 			break
 		}
 		l.next()
 	}
+	if !terminated {
+		l.errorf(pos, "unterminated-rune", "unterminated rune literal")
+	}
 	return token.Token{Kind: token.CHAR, Lit: l.src[start:l.offset], Pos: pos}
 }
 
-//line lexer.goal:280
+//line lexer.goal:364
 func (l *Lexer) scanOperator(pos token.Pos) token.Token {
 	ch := l.ch
 	switch ch {
@@ -400,7 +466,7 @@ func (l *Lexer) scanOperator(pos token.Pos) token.Token {
 	return token.Token{Kind: token.ILLEGAL, Lit: lit, Pos: pos}
 }
 
-//line lexer.goal:454
+//line lexer.goal:538
 func (l *Lexer) op2(pos token.Pos, single token.Kind, next2 rune, double token.Kind) token.Token {
 	l.next()
 	if l.ch == next2 {
@@ -410,7 +476,7 @@ func (l *Lexer) op2(pos token.Pos, single token.Kind, next2 rune, double token.K
 	return tok(single, pos)
 }
 
-//line lexer.goal:464
+//line lexer.goal:548
 func (l *Lexer) scanLineComment(pos token.Pos) token.Token {
 	start := l.offset
 	for l.ch != eof && l.ch != '\n' {
@@ -419,7 +485,7 @@ func (l *Lexer) scanLineComment(pos token.Pos) token.Token {
 	return token.Token{Kind: token.COMMENT, Lit: l.src[start:l.offset], Pos: pos}
 }
 
-//line lexer.goal:475
+//line lexer.goal:559
 func (l *Lexer) scanDocComment(pos token.Pos) token.Token {
 	start := l.offset
 	for l.ch != eof && l.ch != '\n' {
@@ -428,7 +494,7 @@ func (l *Lexer) scanDocComment(pos token.Pos) token.Token {
 	return token.Token{Kind: token.DOC_COMMENT, Lit: l.src[start:l.offset], Pos: pos}
 }
 
-//line lexer.goal:484
+//line lexer.goal:568
 func (l *Lexer) scanBlockComment(pos token.Pos) token.Token {
 	start := l.offset
 	l.next()
@@ -444,22 +510,32 @@ func (l *Lexer) scanBlockComment(pos token.Pos) token.Token {
 	return token.Token{Kind: token.COMMENT, Lit: l.src[start:l.offset], Pos: pos}
 }
 
-//line lexer.goal:500
+//line lexer.goal:584
 func tok(k token.Kind, pos token.Pos) token.Token {
 	return token.Token{Kind: k, Pos: pos}
 }
 
-//line lexer.goal:504
+//line lexer.goal:588
 func isLetter(ch rune) bool {
 	return ch == '_' || unicode.IsLetter(ch)
 }
 
-//line lexer.goal:508
+//line lexer.goal:592
 func isDigit(ch rune) bool {
 	return '0' <= ch && ch <= '9'
 }
 
-//line lexer.goal:512
+//line lexer.goal:596
 func isHexDigit(ch rune) bool {
 	return isDigit(ch) || ('a' <= ch && ch <= 'f') || ('A' <= ch && ch <= 'F')
+}
+
+//line lexer.goal:600
+func isOctalDigit(ch rune) bool {
+	return '0' <= ch && ch <= '7'
+}
+
+//line lexer.goal:604
+func isBinaryDigit(ch rune) bool {
+	return ch == '0' || ch == '1'
 }

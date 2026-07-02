@@ -18,6 +18,11 @@ type diagDoc struct {
 // a test (TestDiagnosticCatalogMatchesSource) fails if the two diverge, so this catalog
 // cannot silently fall out of sync with the checker.
 var diagnosticCatalog = []diagDoc{
+	// 00-lex
+	{"unterminated-string", "00-lex", "error", "an interpreted `\"...\"` string literal reaches end-of-line or end-of-input without a closing quote."},
+	{"unterminated-raw-string", "00-lex", "error", "a raw `` `...` `` string literal reaches end-of-input without a closing backtick."},
+	{"unterminated-rune", "00-lex", "error", "a `'...'` rune literal reaches end-of-line or end-of-input without a closing quote."},
+	{"invalid-number-literal", "00-lex", "error", "a numeric literal has a digit outside its radix (e.g. `0o889`, `0b77`) or no digits after its `0x`/`0o`/`0b` prefix."},
 	// 01-enums
 	{"unknown-variant", "01-enums", "error", "constructing an enum variant the enum doesn't declare (its closed set is enforced at construction, not only at `match`)."},
 	// 02-match

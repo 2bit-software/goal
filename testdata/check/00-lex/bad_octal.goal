@@ -1,0 +1,8 @@
+package lex
+
+// badOctal has an octal literal with digits (8, 9) outside the octal radix. The
+// lexer records it as a located error at lex time instead of letting it slip
+// through to the generated Go.
+func badOctal() int {
+	return 0o889 // want "octal"
+}

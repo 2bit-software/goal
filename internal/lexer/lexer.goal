@@ -34,6 +34,22 @@ type Lexer struct {
 	rdOffset  int  // byte offset of the next rune to read
 	line      int  // 1-based line of ch
 	lineStart int  // byte offset of the first byte of the current line
+	errs      []Error
+}
+
+// Error is a located lexical error: a malformation the scanner recovers from
+// (still emitting a token so the parser makes progress) while recording where it
+// happened and a stable, greppable code. Consumers surface these as located
+// diagnostics via Scan; the parser's own token stream is unaffected.
+type Error struct {
+	Pos  token.Pos
+	Code string
+	Msg  string
+}
+
+// errorf records a located lexical error at pos.
+func (l *Lexer) errorf(pos token.Pos, code, msg string) {
+	l.errs = append(l.errs, Error{Pos: pos, Code: code, Msg: msg})
 }
 
 // New returns a Lexer positioned at the start of src.
@@ -107,6 +123,23 @@ func Tokens(src string) []token.Token {
 	}
 }
 
+// Scan scans src to completion and returns every token (including the trailing
+// EOF) together with any located lexical errors recorded along the way. It is the
+// error-aware counterpart of Tokens: the parser drives Tokens (these malformed
+// inputs still lex to a valid token stream, so parsing is unaffected), while the
+// checker drives Scan to surface the malformations as located diagnostics.
+func Scan(src string) ([]token.Token, []Error) {
+	l := New(src)
+	var toks []token.Token
+	for {
+		t := l.Next()
+		toks = append(toks, t)
+		if t.Kind == token.EOF {
+			return toks, l.errs
+		}
+	}
+}
+
 // Next returns the next token in the stream. Once the end of input is reached it
 // returns a token.EOF token, and keeps returning EOF on every subsequent call.
 func (l *Lexer) Next() token.Token {
@@ -165,6 +198,7 @@ func (l *Lexer) scanNumber(pos token.Pos) token.Token {
 	if l.ch == '0' && (l.peek() == 'x' || l.peek() == 'X') {
 		l.next() // 0
 		l.next() // x
+		digitStart := l.offset
 		l.scanDigits(isHexDigit)
 		// Hex float: fractional part and/or binary exponent (p/P).
 		if l.ch == '.' {
@@ -176,10 +210,30 @@ func (l *Lexer) scanNumber(pos token.Pos) token.Token {
 			kind = token.FLOAT
 			l.scanExponent()
 		}
+		if kind == token.INT && l.offset == digitStart {
+			l.errorf(pos, "invalid-number-literal", "hexadecimal literal has no digits")
+		}
 	} else if l.ch == '0' && (l.peek() == 'o' || l.peek() == 'O' || l.peek() == 'b' || l.peek() == 'B') {
+		isBin := l.peek() == 'b' || l.peek() == 'B'
 		l.next() // 0
 		l.next() // o/b
-		l.scanDigits(isDigit)
+		digitStart := l.offset
+		if isBin {
+			l.scanDigits(isBinaryDigit)
+		} else {
+			l.scanDigits(isOctalDigit)
+		}
+		// An empty digit run (0o / 0b with nothing valid after) or a stray decimal
+		// digit outside the radix (0o889, 0b77) is a malformed literal. Consume the
+		// trailing decimal digits so the bad token ends where a good one would.
+		if l.offset == digitStart || isDigit(l.ch) {
+			if isBin {
+				l.errorf(pos, "invalid-number-literal", "invalid digit in binary literal")
+			} else {
+				l.errorf(pos, "invalid-number-literal", "invalid digit in octal literal")
+			}
+			l.scanDigits(isDigit)
+		}
 	} else {
 		l.scanDigits(isDigit)
 		if l.ch == '.' {
@@ -219,55 +273,85 @@ func (l *Lexer) scanExponent() {
 }
 
 // scanString consumes an interpreted "..." string literal, honoring backslash
-// escapes. An unterminated string ends at end-of-input.
+// escapes. An unterminated string (one that reaches end-of-line or end-of-input
+// without a closing quote) is recorded as a located error and its token ends at
+// that boundary — the terminating newline is left unconsumed so the next line is
+// lexed as ordinary code rather than swallowed as string content.
 func (l *Lexer) scanString(pos token.Pos) token.Token {
 	start := l.offset
 	l.next() // opening quote
+	terminated := false
 	for l.ch != eof && l.ch != '\n' {
 		if l.ch == '\\' {
-			l.next() // skip the escaped rune
-			l.next()
+			l.next() // consume the backslash
+			// A backslash at end-of-line/end-of-input does not escape the newline
+			// away — the string is unterminated. Leave the newline for the caller.
+			if l.ch == eof || l.ch == '\n' {
+				break
+			}
+			l.next() // consume the escaped rune
 			continue
 		}
 		if l.ch == '"' {
 			l.next() // closing quote
+			terminated = true
 			break
 		}
 		l.next()
+	}
+	if !terminated {
+		l.errorf(pos, "unterminated-string", "unterminated string literal")
 	}
 	return token.Token{Kind: token.STRING, Lit: l.src[start:l.offset], Pos: pos}
 }
 
 // scanRawString consumes a raw `...` string literal, which runs verbatim (no
-// escapes) to the next backtick and may span lines.
+// escapes) to the next backtick and may span lines. Reaching end-of-input without
+// a closing backtick is recorded as a located error.
 func (l *Lexer) scanRawString(pos token.Pos) token.Token {
 	start := l.offset
 	l.next() // opening backtick
+	terminated := false
 	for l.ch != eof {
 		if l.ch == '`' {
 			l.next() // closing backtick
+			terminated = true
 			break
 		}
 		l.next()
+	}
+	if !terminated {
+		l.errorf(pos, "unterminated-raw-string", "unterminated raw string literal")
 	}
 	return token.Token{Kind: token.STRING, Lit: l.src[start:l.offset], Pos: pos}
 }
 
 // scanRune consumes a '...' character literal, honoring a single backslash escape.
+// An unterminated rune (reaching end-of-line or end-of-input without a closing
+// quote) is recorded as a located error, and — like scanString — a backslash at
+// end-of-line does not consume the newline.
 func (l *Lexer) scanRune(pos token.Pos) token.Token {
 	start := l.offset
 	l.next() // opening quote
+	terminated := false
 	for l.ch != eof && l.ch != '\n' {
 		if l.ch == '\\' {
-			l.next() // skip the escaped rune
-			l.next()
+			l.next() // consume the backslash
+			if l.ch == eof || l.ch == '\n' {
+				break
+			}
+			l.next() // consume the escaped rune
 			continue
 		}
 		if l.ch == '\'' {
 			l.next() // closing quote
+			terminated = true
 			break
 		}
 		l.next()
+	}
+	if !terminated {
+		l.errorf(pos, "unterminated-rune", "unterminated rune literal")
 	}
 	return token.Token{Kind: token.CHAR, Lit: l.src[start:l.offset], Pos: pos}
 }
@@ -511,4 +595,12 @@ func isDigit(ch rune) bool {
 
 func isHexDigit(ch rune) bool {
 	return isDigit(ch) || ('a' <= ch && ch <= 'f') || ('A' <= ch && ch <= 'F')
+}
+
+func isOctalDigit(ch rune) bool {
+	return '0' <= ch && ch <= '7'
+}
+
+func isBinaryDigit(ch rune) bool {
+	return ch == '0' || ch == '1'
 }

@@ -1445,6 +1445,13 @@ construct.
 
 The full set of stable codes the checker can emit:
 
+**00-lex**
+
+- `[invalid-number-literal]` (error) — a numeric literal has a digit outside its radix (e.g. `0o889`, `0b77`) or no digits after its `0x`/`0o`/`0b` prefix.
+- `[unterminated-raw-string]` (error) — a raw `` `...` `` string literal reaches end-of-input without a closing backtick.
+- `[unterminated-rune]` (error) — a `'...'` rune literal reaches end-of-line or end-of-input without a closing quote.
+- `[unterminated-string]` (error) — an interpreted `"..."` string literal reaches end-of-line or end-of-input without a closing quote.
+
 **01-enums**
 
 - `[unknown-variant]` (error) — constructing an enum variant the enum doesn't declare (its closed set is enforced at construction, not only at `match`).

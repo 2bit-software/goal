@@ -1,0 +1,8 @@
+package lex
+
+// unterminatedRune opens a rune literal with no closing quote before end-of-line.
+// The lexer records it as a located error at lex time. The `// want` marker uses
+// double quotes, so it does not interfere with the single-quoted rune literal.
+func unterminatedRune() rune {
+	return 'a // want "unterminated rune"
+}
