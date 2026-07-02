@@ -7830,3 +7830,37 @@
   - Only rewrite `verb == "build"`; branching inside goToolchain (which has `ts` for the
     basename->path map) keeps `goal run`'s program stderr verbatim without touching runGo.
 ---
+
+## [2026-07-02T05:15:00Z] - US-011
+- Surfaced the plain-Go type errors the typed depth stage already collects, so
+  `goal check` no longer prints `ok` for a package that doesn't compile. Added
+  `goTypeDiags(p *Package) []Diagnostic` in a new internal/typecheck/gotypes.goal
+  and wired it into GoTypesChecker.Check after the three existing depth checks.
+  Documented the new `[go-type-error]` code in internal/guide/catalog.goal and
+  regenerated AI-KNOWLEDGE-BOOTSTRAP.md.
+- Files changed: internal/typecheck/gotypes.goal (new) + gotypes.go (generated),
+  internal/typecheck/checker.goal + .go, internal/guide/catalog.goal + .go,
+  AI-KNOWLEDGE-BOOTSTRAP.md, cmd/goal/gotypeerror_test.go (new).
+- Learnings for future iterations:
+  - Load (typecheck.goal) already runs go/types under an error-collecting
+    types.Config, tolerantly gathering every types.Error into Package.Errors.
+    A depth check surfaces them by iterating p.Errors and type-asserting the
+    stdlib struct: `te, ok := e.(types.Error)` (value, not pointer — go/types
+    passes types.Error values). Fields: te.Soft, te.Msg, te.Fset, te.Pos.
+  - THREE load-bearing filters keep it false-positive-free across the whole
+    corpus (task check + fixpoint is the gate): skip `te.Soft` (advisory, e.g.
+    unused import/var); skip `strings.HasPrefix(te.Msg, "could not import")`
+    (importer.Default can't resolve uncompiled intra-module deps — would fire on
+    every multi-package module); and drop any error whose
+    `te.Fset.Position(te.Pos).Filename` does NOT end in `.goal`. The last filter
+    is the key one: //line directives resolve a user error's position back to the
+    .goal file, while the injected prelude (goal_prelude.go) and lowered-only code
+    stay `.go` — the same `.goal`-suffix discriminator isGoalDeclared uses in
+    nozero.goal. No `--no-strict` escape was needed; the filters sufficed.
+  - `[go-type-error]` is a real sema-style Diagnostic (Feature "go-types",
+    Severity sema.Severity.Error), NOT a cmd-side render code like `[go-build]`/
+    `[syntax]` — so it DOES need a catalog.goal row AND a bootstrap regen
+    (`go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`), unlike US-010's build
+    rendering. cmd/goal needed no change: checkPackage already converts depth
+    Diagnostics to the render format and exits non-zero on any Error severity.
+---
