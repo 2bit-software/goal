@@ -335,7 +335,7 @@
         "Pinned counts bumped."
       ],
       "priority": 25,
-      "passes": false,
+      "passes": true,
       "notes": "SPIKE. FILES: internal/sema/convert.goal (convertOverrides :209-234). APPROACH: (1) replace the top-level for-range over body.List ReturnStmt scan with ast.Walk(visitorFunc(...), body) collecting every *ast.ReturnStmt with len(Results)==1 whose Results[0] is *ast.CompositeLit, unioning strings.ToLower(key.Name) across ALL returns (union is conservative \u2014 suppresses false unsourced-field, which is the story's goal). (2) Return false at *ast.FuncLit so a closure's return literal doesn't pollute the override set. (3) Keep strings.ToLower keying AS-IS here \u2014 the EqualFold/case conflation is US-023's story; if US-023 already landed, match its exact-key change instead. (4) task generate. PATTERN: collectQuestionSites (question.goal:319-344) \u2014 same ast.Walk(visitorFunc) over a BlockStmt; visitorFunc already exists in sema. TESTS: testdata/check/12-derive-convert/nested_override_return.goal \u2014 derive func whose target has a field with no same-named source, overridden inside if cond { return T{Extra: ..., ...derive(src)} } plus a top-level return also overriding it; clean (no want). Keep one existing top-level case untouched. corpus-gen; check +1; runs via TestSemaConvertRunner (ast_gate_test.go:109). PITFALLS: backend deriveOverrides (emit.goal ~1281) ALSO scans only top-level body.List \u2014 a checker-clean nested derive still won't LOWER the branch logic; check-only fixtures never transpile so the fixture passes, but note the divergence as a follow-up tied to US-023; unioning across branches means a field overridden in only one return counts as sourced \u2014 document in the doc comment."
     },
     {

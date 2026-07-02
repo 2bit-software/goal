@@ -11,6 +11,22 @@
   — behavioral derive doctests must use the `derive func` form to pass the interp
   gate. The derive output variable is gensym'd (`e.gensym("out")`) and deriveDecl
   seeds `e.taken = e.newScope()` so the func-mode gensyms see file identifiers.
+- The pinned corpus counts (internal/corpus/generate_test.go: transpile/pkg/check/
+  doctest) DRIFT as stories land — they are NOT the numbers written in prd.json
+  notes. ALWAYS read the current literals from generate_test.go before bumping,
+  then regenerate `corpus/manifest.json` with `go run ./cmd/corpus-gen`. A new
+  testdata/check/<feature>/*.goal fixture is auto-discovered by the recursive
+  walk; the only code change is the count literal + its error message.
+- To build a DISCRIMINATING check fixture that isolates ONE checker, neutralize
+  the others: the field-completeness check (`checkStructLit`, fields.goal) steps
+  aside for any composite literal carrying a `...defaults`/`...derive(src)` spread
+  (`litHasSpread`). So a derive-override test uses the spread form and puts the
+  probe field's override on the path being tested only — pre-fix it fires, post-
+  fix it's clean. Corpus check fixtures are sema-only (`RunCheck` never
+  transpiles), so a check-clean fixture that the BACKEND would reject still passes
+  the harness — good for isolating sema behavior, but note any sema/backend
+  divergence as a follow-up (found US-025: convertOverrides now walks the whole
+  body but emit.goal deriveOverrides still scans top-level only).
 - internal/fix has TWO parallel AST traversals that MUST stay in lockstep on
   statement coverage (found US-017): `walkReturns` (resultsig.goal) classifies
   every non-closure return, and `descendStmt`/`forEachBlock` (fix.goal) is what
@@ -8408,4 +8424,39 @@
     — the override alone leaves the other target fields "omitted". The body's other
     statements are ignored; deriveOverrides just harvests the return literal's KV
     pairs, and emitConversionBody regenerates the whole function.
+---
+
+## 2026-07-02T09:58:40Z - US-025
+- Fixed the sema derive checker's `convertOverrides` (internal/sema/convert.goal)
+  so a `derive func` override placed inside a NESTED return (e.g.
+  `if cond { return T{Field: expr, ...derive(src)} }`) is recognized. Previously
+  only top-level `return T{...}` was scanned, so a branch override was invisible
+  and `checkOneConvert` emitted a false `[unsourced-field]` Error on a total
+  conversion. Rewrote it to `ast.Walk(visitorFunc(...))` the whole body with a
+  `*ast.FuncLit` cutoff, unioning override keys across every single-result
+  composite-literal return.
+- Files changed: internal/sema/convert.goal (+ regenerated convert.go),
+  testdata/check/12-derive-convert/nested_override_return.goal (new clean
+  fixture), corpus/manifest.json (regenerated), internal/corpus/generate_test.go
+  (pinned check count 61 -> 62).
+- Learnings for future iterations:
+  - A DISCRIMINATING nested-override check fixture must use the `...derive(e)`
+    spread form in BOTH returns: `checkStructLit` (fields.goal) steps aside when
+    a literal has a spread (`litHasSpread`), so field-completeness never fires and
+    the ONLY gate on the case is the derive override scan. Put the unsourced
+    field's override in the nested return ONLY (top-level uses bare
+    `T{...derive(e)}`) — then pre-fix it emits `[unsourced-field]`, post-fix it's
+    clean. If the top-level return also overrides it, the old top-level scan
+    already sees it and the test proves nothing.
+  - The pinned corpus counts drift as stories land: at US-025 they were
+    transpile=61, pkg=2, check=61, doctest=8 (NOT the 55/2/53/4 in the prd notes).
+    Always read internal/corpus/generate_test.go for the CURRENT numbers before
+    bumping.
+  - `convertOverrides` union-across-branches means a field overridden in only one
+    branch counts as sourced everywhere — intentional (suppresses false positives),
+    documented in the doc comment.
+  - Backend `deriveOverrides` (emit.goal) ALSO scans only top-level returns; a
+    check-clean nested derive still won't LOWER the branch correctly. Corpus check
+    fixtures are sema-only (RunCheck never transpiles), so this fixture passes, but
+    the sema/backend divergence remains an open follow-up.
 ---
