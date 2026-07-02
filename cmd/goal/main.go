@@ -15,6 +15,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -98,16 +99,63 @@ func topUsage() string {
 	return "usage: goal <" + strings.Join(names, "|") + "> [--emit[=dir]] [path]"
 }
 
+// codedError tags an error with the process exit code goal should return for it.
+// It classifies a failure into one of goal's exit-code tiers (see exitCode) while
+// staying transparent to errors.Is/As and preserving the underlying message, so
+// callers and tests that inspect the cause are unaffected.
+type codedError struct {
+	code int
+	err  error
+}
+
+func (e *codedError) Error() string { return e.err.Error() }
+func (e *codedError) Unwrap() error { return e.err }
+
+// usageErr tags err as a caller/invocation mistake — an unknown subcommand, an
+// unknown or malformed flag, or bad arguments — which goal reports with exit 2.
+func usageErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &codedError{code: 2, err: err}
+}
+
+// internalErr tags err as a goal-internal failure — a transpiler ICE (generated
+// Go that does not parse) or a build-overlay/toolchain setup failure not
+// attributable to the user's code — which goal reports with exit 3.
+func internalErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &codedError{code: 3, err: err}
+}
+
+// exitCode maps a run() error to goal's process exit code so an automated
+// consumer can triage failures without parsing prose: 0 success, 2 usage, 3
+// internal, and 1 (the default) for user-code diagnostics — checker findings,
+// syntax errors, a failed `go build` of correct-shaped output, a program's own
+// non-zero `goal run` exit, and interpreter runtime failures.
+func exitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	var ce *codedError
+	if errors.As(err, &ce) {
+		return ce.code
+	}
+	return 1
+}
+
 func main() {
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "goal:", err)
-		os.Exit(1)
+		os.Exit(exitCode(err))
 	}
 }
 
 func run(args []string, out, errOut io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("%s", topUsage())
+		return usageErr(fmt.Errorf("%s", topUsage()))
 	}
 	cmd, rest := args[0], args[1:]
 	if cmd == "--ai" { // alias: `goal --ai [section]` == `goal ai [section]`
@@ -121,19 +169,19 @@ func run(args []string, out, errOut io.Writer) error {
 	case "fix":
 		path, inplace, err := parseFixFlags(rest)
 		if err != nil {
-			return err
+			return usageErr(err)
 		}
 		return cmdFix(path, inplace, out, errOut)
 	case "fmt":
 		path, write, err := parseFmtFlags(rest)
 		if err != nil {
-			return err
+			return usageErr(err)
 		}
 		return cmdFmt(path, write, out, errOut)
 	case "run":
 		engine, emit, emitDir, root, progArgs, err := parseRunFlags(rest)
 		if err != nil {
-			return err
+			return usageErr(err)
 		}
 		if engine == engineInterp {
 			return cmdRunInterp(root, progArgs, out, errOut)
@@ -142,17 +190,17 @@ func run(args []string, out, errOut io.Writer) error {
 	case "build", "check":
 		emit, jsonOut, emitDir, root, err := parseFlags(rest)
 		if err != nil {
-			return err
+			return usageErr(err)
 		}
 		if cmd == "build" {
 			if jsonOut {
-				return fmt.Errorf("unknown flag %q", "--json")
+				return usageErr(fmt.Errorf("unknown flag %q", "--json"))
 			}
 			return cmdBuild(root, emit, emitDir, out, errOut)
 		}
 		return cmdCheck(root, jsonOut, out, errOut)
 	default:
-		return fmt.Errorf("unknown command %q (%s)", cmd, topUsage())
+		return usageErr(fmt.Errorf("unknown command %q (%s)", cmd, topUsage()))
 	}
 }
 
@@ -165,7 +213,7 @@ func cmdAI(args []string, out io.Writer) error {
 	case 1:
 		section = args[0]
 	default:
-		return fmt.Errorf("usage: goal ai [section] (sections: %s)", strings.Join(guide.SectionKeys(), ", "))
+		return usageErr(fmt.Errorf("usage: goal ai [section] (sections: %s)", strings.Join(guide.SectionKeys(), ", ")))
 	}
 	return guide.Render(out, section, guideCommands)
 }
@@ -494,6 +542,9 @@ func cmdBuild(root string, emit bool, emitDir string, out, errOut io.Writer) err
 	if derr != nil {
 		return derr
 	}
+	if len(pkgs) == 0 {
+		return fmt.Errorf("no .goal packages found under %s", root)
+	}
 	var syntax []checkDiag
 	for _, pkg := range pkgs {
 		syntax = append(syntax, packageSyntaxDiags(pkg)...)
@@ -506,9 +557,12 @@ func cmdBuild(root string, emit bool, emitDir string, out, errOut io.Writer) err
 		return fmt.Errorf("%d syntax error(s)", len(syntax))
 	}
 
+	// Every file parsed cleanly above, so a transpile failure here is a
+	// goal-internal defect (a backend ICE), not the user's syntax — classify it
+	// as an internal error (exit 3), distinct from user-code diagnostics.
 	ts, err := transpileAll(root)
 	if err != nil {
-		return err
+		return internalErr(err)
 	}
 	if emit {
 		return emitFiles(ts, emitDir, out)
@@ -783,7 +837,9 @@ func depthFilePath(pkg *project.Package, name string) string {
 func goToolchain(root string, ts []transpiled, out, errOut io.Writer, verb, target string, progArgs ...string) error {
 	overlayPath, cleanup, err := writeOverlay(ts)
 	if err != nil {
-		return err
+		// Materializing the overlay is pure toolchain scaffolding (temp dir + JSON);
+		// a failure here is internal, not a user-code diagnostic.
+		return internalErr(err)
 	}
 	defer cleanup()
 	flags := []string{"-overlay", overlayPath}

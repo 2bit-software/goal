@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -633,5 +635,61 @@ func TestCheckReportsUnterminatedString(t *testing.T) {
 	// The diagnostic is located on the return line (line 4) of bad.goal.
 	if !strings.Contains(stderr, "bad.goal:4:") {
 		t.Errorf("finding should be located at bad.goal:4:\n%s", stderr)
+	}
+}
+
+// TestExitCodeClassification locks the exit-code contract an AI consumer relies on
+// (US-012): user-code diagnostics exit 1, invocation/usage mistakes exit 2, and
+// goal-internal failures exit 3. The classifier is asserted directly (deterministic,
+// including the hard-to-reproduce internal tier) and end-to-end through run().
+func TestExitCodeClassification(t *testing.T) {
+	// Direct classifier: nil is success; a bare error defaults to user-code (1);
+	// the usage/internal tags override to 2/3.
+	if got := exitCode(nil); got != 0 {
+		t.Errorf("exitCode(nil) = %d, want 0", got)
+	}
+	if got := exitCode(errors.New("plain")); got != 1 {
+		t.Errorf("exitCode(plain) = %d, want 1", got)
+	}
+	if got := exitCode(usageErr(errors.New("bad flag"))); got != 2 {
+		t.Errorf("exitCode(usageErr) = %d, want 2", got)
+	}
+	if got := exitCode(internalErr(errors.New("ICE"))); got != 3 {
+		t.Errorf("exitCode(internalErr) = %d, want 3", got)
+	}
+	// The tag survives wrapping so classification works through an error chain.
+	if got := exitCode(fmt.Errorf("context: %w", internalErr(errors.New("ICE")))); got != 3 {
+		t.Errorf("exitCode(wrapped internalErr) = %d, want 3", got)
+	}
+
+	// End-to-end through run(): an unknown subcommand and an unknown flag are usage
+	// errors (2); a checker diagnostic over the user's goal is user-code (1).
+	badUserCode := goalModule(t, map[string]string{"x.goal": `package demo
+
+type Inner struct {
+    a int
+    b int
+}
+
+func f() []Inner {
+    return []Inner{{a: 1}}
+}
+`})
+	cases := []struct {
+		name string
+		args []string
+		want int
+	}{
+		{"unknown-subcommand", []string{"bogus-subcommand"}, 2},
+		{"unknown-flag", []string{"check", "--nope"}, 2},
+		{"user-code-diagnostic", []string{"check", badUserCode}, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			if got := exitCode(run(tc.args, &out, &errOut)); got != tc.want {
+				t.Errorf("exitCode(run(%v)) = %d, want %d\nstderr: %s", tc.args, got, tc.want, errOut.String())
+			}
+		})
 	}
 }
