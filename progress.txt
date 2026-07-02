@@ -1,6 +1,18 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- internal/fix has TWO parallel AST traversals that MUST stay in lockstep on
+  statement coverage (found US-017): `walkReturns` (resultsig.goal) classifies
+  every non-closure return, and `descendStmt`/`forEachBlock` (fix.goal) is what
+  the propagation rewriter (`safeLocalPropagationCalls`/`fixPropagate`) uses to
+  reach collapsible call sites. If one descends into a statement context the
+  other does not, a conforming bare-propagation return there gets classified but
+  never rewritten -> the signature converts to Result with an unreachable return
+  -> non-compiling output. When adding statement coverage, extend BOTH. Prefer
+  riding `ast.Walk(visitFn(...))` with a `*ast.FuncLit` cutoff (returns inside a
+  closure belong to the closure) — the pattern `unsafeRefOffset` already uses —
+  so all statement contexts (type switch, select/comm clause, labeled) are
+  covered uniformly for free.
 - The single-file transpile path has NO source filename: the corpus `Transpiler`
   interface is `Transpile(src string)` (runner.go), and `backend.Transpile` /
   `goBackend.Emit` carry no file name, so any feature that wants to embed the
@@ -8064,4 +8076,37 @@
     nothing and fixes stale line numbers. The exported-signature warning is a Skip
     (the exported fn is never converted), so it survives converged-only harvesting
     — TestFixExportedWarning still passes.
+---
+
+## 2026-07-02T07:14:00Z - US-017
+- Completed `goal fix`'s return-statement coverage so a non-conforming
+  `return x, err` hidden inside a type switch, select, or labeled statement is
+  seen by the signature classifier. `walkReturns` (internal/fix/resultsig.goal)
+  was rewritten to ride `ast.Walk(visitFn(...))` with a `*ast.FuncLit` cutoff
+  (mirroring `unsafeRefOffset`), replacing the hand-rolled statement walker that
+  only handled if/for/range/switch. Its companion traversal `descendStmt`
+  (internal/fix/fix.goal) gained the same TypeSwitchStmt/SelectStmt(CommClause)/
+  LabeledStmt cases in lockstep, so a conforming bare-propagation return in those
+  blocks stays reachable by the propagation rewriter instead of stranding the
+  converted signature on a non-compiling body. Non-conforming returns now hit the
+  existing "non-propagating return" Skip and the function is left unrewritten.
+- Files: internal/fix/resultsig.goal + internal/fix/fix.goal (regenerated
+  internal/fix/resultsig.go + internal/fix/fix.go via `task generate`),
+  cmd/goal/fix_test.go (+2 tests: non-conforming return in a type switch and in a
+  labeled for; each asserts no `Result[` in output and the skip on stderr).
+- Verified: `task check` (go vet + verify-generated + full suite) PASS;
+  `task fixpoint` FIXPOINT OK. Commit 36566d8.
+- Learnings for future iterations:
+  - internal/fix's classifier walk (walkReturns) and its propagation-rewrite walk
+    (descendStmt/forEachBlock) are separate and must agree on which statement
+    contexts they descend — see the new Codebase Patterns entry. Extending only
+    one reintroduces the silent half-conversion bug this story fixed.
+  - No signature change to any .goal function consumed by cmd/goal here, so the
+    bootstrap-cycle deadlock did not apply; `task generate` + `go build
+    ./internal/fix/...` was sufficient before running the full gates.
+  - No new diagnostic code: the story reuses the existing result-sig Skip report,
+    so no catalog/AI-KNOWLEDGE-BOOTSTRAP regen was needed.
+  - Make each fix regression fixture put its ONLY non-conforming return inside the
+    newly covered context (with an otherwise-conforming top-level return) so the
+    test genuinely fails without the descent — a real guard, not a tautology.
 ---

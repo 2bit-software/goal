@@ -231,7 +231,7 @@
         "Existing fix goldens pass."
       ],
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "notes": "SPIKE. FILES: internal/fix/resultsig.goal (walkReturns :299-342, classifyReturns), internal/fix/fix.goal (descendStmt :211-236, visitFn :240-250). APPROACH: (1) Collapse walkReturns onto ast.Walk: ast.Walk(visitFn(func(n) bool { FuncLit -> return false; ReturnStmt -> f(n) ; return true }), block) — ast/walk.goal already descends TypeSwitchStmt, SelectStmt/CommClause, LabeledStmt, DeferStmt/GoStmt; false at FuncLit preserves the closure boundary. (2) CRITICAL companion: also add TypeSwitchStmt, SelectStmt/CommClause, LabeledStmt cases to descendStmt in fix.goal — otherwise a bare-propagation return inside those blocks is classified 'left for fixPropagate' (classifyReturns :281), the signature converts, but fixPropagate/safeLocalPropagationCalls (forEachBlock-based) can't reach it -> non-compiling output, the exact forbidden failure. (3) Non-conforming returns in those contexts then hit classifyReturns default -> conforms=false -> existing 'has a non-propagating return' Skip report (resultsig.goal :144). PATTERN: unsafeRefOffset (resultsig.goal :217) — existing ast.Walk+visitFn with FuncLit cutoff. TESTS: cmd/goal/fix_test.go mimicking TestFixExportedWarning: fixtures with error returns inside switch v := x.(type) and inside a labeled for; assert file NOT rewritten (no Result[) and stderr contains the Skip. No corpus fix goldens exist — 'existing goldens' = the 6 fix_test.go tests stay green. PITFALLS: ast.Walk now also visits returns inside select comm bodies — a previously-converted fixture may newly Skip (re-check the 6 tests); task generate."
     },
     {
