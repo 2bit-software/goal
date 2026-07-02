@@ -30,13 +30,17 @@ programs through the Go toolchain, and **`goalc`**, the single-file transpiler p
 
 ```bash
 # whole-program driver (discovers .goal packages under a path; default ".")
-go run ./cmd/goal check ./app        # run the static checker; prints "ok" or located diagnostics
-go run ./cmd/goal run   ./app        # transpile + `go run` the sole `package main`
-go run ./cmd/goal build ./app        # transpile + `go build ./...`  (ephemeral, via -overlay)
-go run ./cmd/goal test  ./app        # transpile + `go test` the doctests (ephemeral, via -overlay)
-go run ./cmd/goal build --emit ./app # ALSO write generated .go (+ _test.go) beside each .goal
-go run ./cmd/goal fix ./app          # rewrite plain-Go patterns into idiomatic goal (stdout)
-go run ./cmd/goal fix -inplace ./app # ... and write the changes back to each file
+go run ./cmd/goal check ./app             # run the static checker; prints "ok" or located diagnostics
+go run ./cmd/goal run   ./app             # transpile + `go run` the sole `package main`
+go run ./cmd/goal run --engine=interp x.goal  # run a single .goal file under the goscript tree-walking interpreter
+go run ./cmd/goal build ./app             # transpile + `go build ./...`  (ephemeral, via -overlay)
+go run ./cmd/goal test  ./app             # transpile + `go test` the doctests (ephemeral, via -overlay)
+go run ./cmd/goal build --emit ./app      # ALSO write generated .go (+ _test.go) beside each .goal
+go run ./cmd/goal fix ./app               # rewrite plain-Go patterns into idiomatic goal (stdout)
+go run ./cmd/goal fix -inplace ./app      # ... and write the changes back to each file
+go run ./cmd/goal fmt ./app               # format .goal source into the canonical layout (stdout; -w writes back)
+go run ./cmd/goal ai                      # print the AI bootstrap guide (how to write goal) to stdout
+go run ./cmd/goal lsp                     # run the language server (editor diagnostics) over stdio
 
 # single-file primitive (transpiles one file to stdout)
 go run ./cmd/goalc path/to/file.goal       # lowered Go to stdout (checker runs first)
@@ -107,62 +111,48 @@ Locked conventions (see `DECISIONS.md`): qualified construction (`Status.Active(
 conventional names verbatim (`Ok`/`Err`/`Some`/`None`/`=>`/`_`/`?`), modifiers before
 `func` (`from`/`derive`), and `__goal_`-prefixed synthesized temporaries.
 
-## The unified front-end
+## The AST front-end
 
-`cmd/goalc` drives one pipeline that transpiles a program using **any combination** of
-the 11 features — there is no per-feature tool to pick. The pipeline is an ordered list
-of source→source passes; the driver threads the source string through them and formats
-**once** at the end.
-
-```
-internal/
-  scan/       lexer (byte-offset recovery), splice model, balanced-delimiter and
-              structural helpers — the shared low-level machinery
-  analyze/    name-keyed tables built ONCE from the original source, read-only to passes:
-              function signatures (open/closed Result mode + T/E), enums, sealed
-              interfaces, structs, type decls, the From-conversion registry
-  pass/       one file per construct; each Run(src, *Tables) (string, error) re-lexes,
-              splices its construct, and formats nothing
-  pipeline/   ordered Passes + driver; returns Output{Go, Test}
-cmd/goalc/    the CLI
-testdata/     multi-feature .goal/.go.expected programs (the real proof)
-features/     the 11 standalone reference transpilers — per-feature source of truth
-                (audited-but-cut features are frozen under features/_cut/)
-```
-
-Pass order:
+One engine-neutral front-end, pluggable back-ends. Source is lexed to tokens, parsed to a
+real AST with first-class positions, checked over that AST, and then handed to a back-end.
+There is no per-feature tool and no source→source splicing: a single front-end handles
+**any combination** of the 11 features, and the Go back-end formats the emitted Go once at
+the end. (`REWRITE-ARCHITECTURE.md` is the canonical, as-built architecture reference.)
 
 ```
-implements → defaults → result → option → question → closed → derive → assert → match → enums
+source ─▶ token ─▶ lexer ─▶ parser ─▶ AST ─▶ sema (check) ─┬─▶ backend/go    (transpile → Go)   ← today's product
+                                                           └─▶ backend/interp (tree-walk)        ← goscript runtime
+tools (lsp, fix, fmt, guide) all consume the same AST + sema results
 ```
 
-then format once. Doctests are extracted from the original source as a side output.
+The compiler and its tooling live under `internal/`:
 
-### How it works (and why)
+| Package | Responsibility |
+|---------|----------------|
+| `internal/token` | token kinds + `Pos` (offset/line/col); positions are first-class on the AST |
+| `internal/lexer` | source → tokens; knows `?`, `=>`, `field:`, `...`, `///`, contextual keywords; reports located lex errors |
+| `internal/ast` | node types + `Visitor`/`Walk` for declarations, statements, expressions, and patterns |
+| `internal/parser` | tokens → AST via Go-shaped recursive descent + Pratt expressions |
+| `internal/sema` | correctness checks over the AST: exhaustiveness, no-zero-value, must-use, implements, `?`-arity |
+| `internal/typecheck` | typed depth stage — loads the lowered Go into `go/types` for full Go+ semantics |
+| `internal/backend` | typed AST → Go source (the transpiler); doctest sidecar emission |
+| `internal/interp` | tree-walking evaluator (`run --engine=interp`), the goscript runtime |
+| `internal/pipeline` | driver: file/package discovery orchestration, source maps (`//line` directives), formatter selection |
+| `internal/project` | `.goal` package discovery on disk |
+| `internal/fix` | rewrite plain-Go patterns into idiomatic goal (`goal fix`) |
+| `internal/goalfmt` | canonical, comment-preserving `.goal` formatter (`goal fmt`) |
+| `internal/lsp` | language server: diagnostics, code actions |
+| `internal/guide` | the AI bootstrap guide + command catalog (`goal ai`) |
+| `internal/cap` | capability/effect model (shape now, surfaced later) |
+| `internal/corpus`, `internal/backendtest` | plain-Go test infrastructure (the golden corpus + behavioral gates) |
 
-Passes splice bytes, so byte offsets shift between them. Two rules make that safe:
-
-- **Name-keyed tables, never offsets.** Every cross-pass fact is keyed by symbol name
-  (function, type), built once from the original source, and survives re-lexing. Each
-  pass re-lexes the current source and rebuilds the spans it needs.
-- **Format once.** No pass calls `go/format`; only the driver does, at the end. An
-  intermediate source need only be *lexable*, not parseable.
-
-Several constructs share surface syntax but lower differently. Rather than have passes
-fight over them, each is **partitioned by a table fact**:
-
-- `match` is claimed by the open-Result, Option, closed-Result, or enum pass, chosen by
-  the arm qualifier and the scrutinee's mode.
-- each interface in a struct's `implements` clause becomes a marker method when it is a
-  sealed interface, a compile-time assertion otherwise.
-- `?` is handled open/Option in one pass and closed-E in another; a shared
-  enclosing-function lookup keeps them from both claiming the same `?`.
-- `from func` is one registry, shared by closed-E `?` (06) and `derive func` (12).
+The two CLIs sit above this: `cmd/goal` is the whole-program umbrella driver and
+`cmd/goalc` is the single-file transpiler primitive. Doctests are extracted from the AST as
+a side output and emitted as a `_test.go` sidecar.
 
 The headline case the architecture buys you: **open-E and closed-E `Result` in the same
 file** — native `(T, error)` tuples beside the `Ok[T,E]`/`Err[T,E]` sum encoding, with a
-`from func` conversion firing across error types. No single-feature transpiler can
-produce that; the unified pipeline does (`testdata/open_closed_mix.goal`).
+`from func` conversion firing across error types (`testdata/open_closed_mix.goal`).
 
 ## Status
 
@@ -171,9 +161,9 @@ multi-feature `testdata/` programs round-trip to correct, independently-compilin
 
 **Checker: implemented and on by default.** Each feature's guarantee now lands as a located
 `file:line:col: error: [code] message` diagnostic, emitted by `goal check` (and gating
-`goal build`/`run` and `goalc` unless `-nocheck` is given). It runs in two stages: a
-**lexical** stage (`internal/check`) over the original source, and a **typed depth** stage
-(`internal/typecheck`) that loads the lowered Go into `go/types` to answer what the lexical
+`goal build`/`run` and `goalc` unless `-nocheck` is given). It runs in two stages: an
+**AST** stage (`internal/sema`) over the parsed goal AST, and a **typed depth** stage
+(`internal/typecheck`) that loads the lowered Go into `go/types` to answer what the AST
 stage had to defer; the type-backed finding wins when both flag the same construct.
 Coverage spans exhaustiveness (02), must-use / dropped `Result` (03, 06), field-completeness
 (08), `implements` satisfaction and method-signature match (07), always-true/false `assert`
@@ -197,15 +187,17 @@ harness) stays plain Go.
 ## Tests
 
 ```bash
-go vet ./...
-go test -count=1 ./...
+task check      # go vet + verify-generated (drift gate) + the whole test suite
+task fixpoint   # rebuild the compiler from its own .goal and assert byte-identical output
 ```
 
-The `internal/pipeline` suite runs three checks: the multi-feature `testdata/` programs,
-every single-feature reference example re-run through the unified pipeline (regression
-locks), and the doctest side output. Because golden files are generated *from* the tool,
-the real verification is that generated programs **independently compile** in a throwaway
-module — and that runtime-preserved output (assert, doctests, derive) actually **runs**.
+The `internal/corpus` package drives the golden corpus, organized in manifest tiers:
+**transpile** (`.goal` → `.go.expected` programs), **check** (`testdata/check/` inputs and
+the diagnostics each is expected to flag), and **doctest** sidecars — plus a **behavioral**
+gate that runs generated programs in a throwaway module. Because golden files are generated
+*from* the tool, the real verification is that generated programs **independently compile**
+and that runtime-preserved output (assert, doctests, derive) actually **runs**. `task check`
+and `task fixpoint` are the two correctness gates.
 
 ## Project files
 
@@ -214,5 +206,7 @@ module — and that runtime-preserved output (assert, doctests, derive) actually
 - `TODO.md` — per-feature status and artifact pointers.
 - `REWRITE-ARCHITECTURE.md` — the AST front-end architecture as built (lexer → parser → AST → sema → backend).
 - `FEATURE-AUDIT-PROMPT.md` — the per-feature audit loop, for adding any future feature.
-- `features/NN-*/` — the 12 standalone reference transpilers (each with its own examples
-  and `DECISIONS.md`); the unified front-end reuses their logic, re-keyed by name.
+- `features/NN-*/` — per-feature reference material (`SYNTAX.md`, `TRANSPILE.md`, and
+  `examples/`). The standalone per-feature transpilers that once lived here were retired
+  once the AST front-end subsumed them; these directories now serve as the design source of
+  truth for each feature.

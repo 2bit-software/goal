@@ -1,10 +1,15 @@
 // Command goal is the umbrella CLI for the goal language: it discovers the .goal
-// packages under a path, transpiles them with the unified front-end, and drives the Go
+// packages under a path, transpiles them with the AST front-end, and drives the Go
 // toolchain over the result.
 //
-//	goal build [--emit[=dir]] [path]   transpile and `go build` (default ./.)
-//	goal run   [--emit[=dir]] [path]   transpile and `go run` the main package
-//	goal check [path]                  run the static checker over the package(s)
+//	goal build [--emit[=dir]] [path]        transpile and `go build` (default ./.)
+//	goal run   [--engine=ast|interp] [path] transpile and `go run` the main package (or interpret a file)
+//	goal check [path]                       run the static checker over the package(s)
+//	goal test  [path]                       transpile and `go test` the package's doctests
+//	goal fix   [-inplace] [path]            rewrite plain-Go patterns into idiomatic goal
+//	goal fmt   [-w] [path]                  format .goal source into the canonical layout
+//	goal ai    [section]                    print the AI bootstrap guide to stdout
+//	goal lsp                                run the language server over stdio
 //
 // By default build/run are ephemeral: the generated Go is mapped into the module with
 // `go build -overlay`, so nothing is written to the source tree and module/stdlib

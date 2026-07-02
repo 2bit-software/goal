@@ -8679,3 +8679,28 @@
     path (not compileSingle, which has no depth stage); default debounce is 200ms
     so sleep ~800ms before snapshotting publishDiagnostics.
 ---
+
+## 2026-07-02T12:10:00Z - US-032
+- Rewrote README.md architecture/status/tests sections to match the as-built AST
+  front-end and corrected the cmd/goal package doc block.
+- Quick start now documents fmt/ai/lsp/test and `run --engine=ast|interp`.
+- Replaced the "unified front-end" token-splice section (internal/scan|analyze|pass,
+  ordered source->source passes, pass-order list) with an "AST front-end" section:
+  source -> token -> lexer -> parser -> AST -> sema -> backend, plus a package table
+  that names only directories that exist.
+- Status: internal/check -> internal/sema (AST stage); typed depth = internal/typecheck.
+- Tests: dropped the "internal/pipeline suite" claim; describe internal/corpus manifest
+  tiers (transpile/check/doctest + behavioral) and task check / task fixpoint.
+- Project files: corrected "12 standalone reference transpilers" — transpilers retired,
+  features/NN now holds SYNTAX.md/TRANSPILE.md/examples.
+- Files changed: README.md, cmd/goal/main.go (doc comment only).
+- Learnings for future iterations:
+  - Docs-only story: no .goal edit, so no `task generate` needed; the cmd/goal doc
+    block is a `//` comment above `package main` so it cannot break the build.
+  - The real command set is authoritative in cmd/goal/main.go `guideCommands`
+    (build, run, check, test, fix, fmt, ai, lsp; run has --engine=ast|interp) — use it,
+    not memory, when documenting the CLI.
+  - AC directory-existence check: `for d in $(grep -o 'internal/[a-z]*' README.md |
+    sort -u); do test -d $d || echo MISSING $d; done`. internal/selfhost is still a real
+    dir and stays only inside the accurate self-hosted-compiler paragraph (US-036 territory).
+---
