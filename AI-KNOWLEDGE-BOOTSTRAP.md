@@ -1630,11 +1630,9 @@ The full set of stable codes the checker can emit:
 
 **08-no-zero-value**
 
-- `[elided-missing-field]` (error) — an elided literal (type inferred from a collection) omits required fields (typed stage).
-- `[generic-missing-field]` (error) — a generic struct literal omits required fields (typed stage).
 - `[unresolved-literal-type]` (warning) — a struct literal's type can't be resolved lexically; deferred to the typed stage.
 - `[unsafe-default]` (error) — a `...defaults` literal omits a field whose zero is unsafe (nil pointer/map/chan/func, method-bearing interface, or sum type).
-- `[unsafe-zero]` (error) — a struct or variant literal omits a field whose zero is unsafe (nil pointer/map/chan/func, method-bearing interface, or sum type); safe-zero omissions default silently.
+- `[unsafe-zero]` (error) — a struct or variant literal (including an elided or generic one, caught at the typed stage) omits a field whose zero is unsafe (nil pointer/map/chan/func, method-bearing interface, or sum type); safe-zero omissions default silently.
 
 **10-assert**
 

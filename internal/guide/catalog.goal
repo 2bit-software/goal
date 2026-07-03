@@ -56,9 +56,7 @@ var diagnosticCatalog = []diagDoc{
 	{"method-signature-mismatch", "07-implements", "error", "a method exists but its signature doesn't satisfy the declared interface."},
 	{"unresolved-interface", "07-implements", "warning", "the named interface of an `implements` clause can't be resolved lexically; deferred."},
 	// 08-no-zero-value
-	{"unsafe-zero", "08-no-zero-value", "error", "a struct or variant literal omits a field whose zero is unsafe (nil pointer/map/chan/func, method-bearing interface, or sum type); safe-zero omissions default silently."},
-	{"generic-missing-field", "08-no-zero-value", "error", "a generic struct literal omits required fields (typed stage)."},
-	{"elided-missing-field", "08-no-zero-value", "error", "an elided literal (type inferred from a collection) omits required fields (typed stage)."},
+	{"unsafe-zero", "08-no-zero-value", "error", "a struct or variant literal (including an elided or generic one, caught at the typed stage) omits a field whose zero is unsafe (nil pointer/map/chan/func, method-bearing interface, or sum type); safe-zero omissions default silently."},
 	{"unresolved-literal-type", "08-no-zero-value", "warning", "a struct literal's type can't be resolved lexically; deferred to the typed stage."},
 	{"unsafe-default", "08-no-zero-value", "error", "a `...defaults` literal omits a field whose zero is unsafe (nil pointer/map/chan/func, method-bearing interface, or sum type)."},
 	// 10-assert

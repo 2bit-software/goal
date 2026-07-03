@@ -146,9 +146,37 @@ func TestEmitWritesSiblingGo(t *testing.T) {
 }
 
 // goal check runs BOTH stages: the depth (go/types) stage catches an elided composite
-// literal that omits a field — a feature-08 violation the lexical stage cannot see — and
-// its type-backed finding suppresses the lexical stage's misfire on the same construct.
+// literal that omits a field whose zero is UNSAFE — a safety-only feature-08 violation the
+// lexical stage cannot see on an elided literal. Omitting the nil-map field `m` (whose zero
+// panics on write) is rejected with the shared `unsafe-zero` code; the safe-zero `a` is
+// free to be omitted.
 func TestCheckDepthStageCatchesElidedLiteral(t *testing.T) {
+	const src = `package demo
+
+type Inner struct {
+    a int
+    m map[string]int
+}
+
+func f() []Inner {
+    return []Inner{{a: 1}}
+}
+`
+	dir := goalModule(t, map[string]string{"x.goal": src})
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"check", dir}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected check to fail on the omitted unsafe-zero field\nstdout: %s\nstderr: %s", out.String(), errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "[unsafe-zero]") {
+		t.Errorf("type-backed [unsafe-zero] diagnostic not surfaced:\n%s", errOut.String())
+	}
+}
+
+// An elided literal that omits only SAFE-zero fields (here `b int`) defaults them silently
+// and checks clean — the depth stage no longer enforces completeness.
+func TestCheckDepthElidedSafeOmissionClean(t *testing.T) {
 	const src = `package demo
 
 type Inner struct {
@@ -163,17 +191,11 @@ func f() []Inner {
 	dir := goalModule(t, map[string]string{"x.goal": src})
 
 	var out, errOut bytes.Buffer
-	err := run([]string{"check", dir}, &out, &errOut)
-	if err == nil {
-		t.Fatalf("expected check to fail on the dropped field\nstdout: %s\nstderr: %s", out.String(), errOut.String())
+	if err := run([]string{"check", dir}, &out, &errOut); err != nil {
+		t.Fatalf("clean check failed on a safe-only elided omission: %v\nstderr: %s", err, errOut.String())
 	}
-	if !strings.Contains(errOut.String(), "[elided-missing-field]") {
-		t.Errorf("type-backed diagnostic not surfaced:\n%s", errOut.String())
-	}
-	// Dedup: the lexical stage's misfiring `[missing-field]` for the same construct is
-	// suppressed in favor of the type-backed one.
-	if strings.Contains(errOut.String(), "[missing-field]") {
-		t.Errorf("lexical misfire was not suppressed by the type-backed finding:\n%s", errOut.String())
+	if strings.TrimSpace(out.String()) != "ok" {
+		t.Errorf("want ok, got stdout=%q stderr=%q", out.String(), errOut.String())
 	}
 }
 
@@ -198,7 +220,7 @@ func TestCheckJSONReportsDiagnostics(t *testing.T) {
 
 type Inner struct {
     a int
-    b int
+    m map[string]int
 }
 
 func f() []Inner {
@@ -210,7 +232,7 @@ func f() []Inner {
 	var out, errOut bytes.Buffer
 	err := run([]string{"check", "--json", dir}, &out, &errOut)
 	if err == nil {
-		t.Fatalf("expected check to fail on the dropped field\nstdout: %s\nstderr: %s", out.String(), errOut.String())
+		t.Fatalf("expected check to fail on the omitted unsafe-zero field\nstdout: %s\nstderr: %s", out.String(), errOut.String())
 	}
 	if !json.Valid(out.Bytes()) {
 		t.Fatalf("stdout is not valid JSON:\n%s", out.String())
@@ -224,7 +246,7 @@ func f() []Inner {
 	}
 	found := false
 	for _, d := range diags {
-		if d.Code == "elided-missing-field" {
+		if d.Code == "unsafe-zero" {
 			found = true
 			if d.Severity != "error" {
 				t.Errorf("severity = %q, want error", d.Severity)
@@ -238,7 +260,7 @@ func f() []Inner {
 		}
 	}
 	if !found {
-		t.Errorf("expected an [elided-missing-field] diagnostic in JSON:\n%s", out.String())
+		t.Errorf("expected an [unsafe-zero] diagnostic in JSON:\n%s", out.String())
 	}
 }
 
@@ -668,7 +690,7 @@ func TestExitCodeClassification(t *testing.T) {
 
 type Inner struct {
     a int
-    b int
+    m map[string]int
 }
 
 func f() []Inner {
@@ -839,13 +861,14 @@ func TestTestFailingDoctestReportsGoalPosition(t *testing.T) {
 	}
 }
 
-// The depth (go/types) stage runs three checkers whose codes the lexical stage
-// cannot produce: discarded-result-error, dropped-stored-result, and
-// generic-missing-field. The corpus check harness is sema-only, so `goal check`
-// via cmd/goal is the only seam that exercises them. Each test below asserts the
-// specific bracketed [code] string (not merely a non-zero exit), so a run that
-// silently degraded to the "depth stage unavailable" note would fail rather than
-// masquerade as a pass (US-028).
+// The depth (go/types) stage runs checkers the lexical stage cannot: the
+// must-use ones (discarded-result-error, dropped-stored-result) and the
+// safety-only feature-08 residual on generic/elided literals (emitting the
+// shared unsafe-zero code). The corpus check harness is sema-only, so `goal
+// check` via cmd/goal is the only seam that exercises them. Each test below
+// asserts the specific bracketed [code] string (not merely a non-zero exit), so
+// a run that silently degraded to the "depth stage unavailable" note would fail
+// rather than masquerade as a pass (US-028).
 
 // discardedResultErrorGoal binds an open-E Result call's two returns and throws
 // the error position away with `_`, which the depth stage flags.
@@ -972,8 +995,23 @@ func TestCheckDepthDroppedStoredResultClean(t *testing.T) {
 }
 
 // genericMissingFieldGoal keys a generic literal `Pair[int]{...}` but omits the
-// required field y — a residual feature-08 gap only the typed stage can see.
+// UNSAFE-zero field m (a nil map) — a residual feature-08 safety gap only the
+// typed stage can see. The safe-zero field x may be omitted freely.
 const genericMissingFieldGoal = `package demo
+
+type Pair[T any] struct {
+    x T
+    m map[string]int
+}
+
+func f() Pair[int] {
+    return Pair[int]{x: 1}
+}
+`
+
+// genericMissingFieldCleanGoal omits only the safe-zero field y of the generic
+// literal, so it defaults silently and checks clean.
+const genericMissingFieldCleanGoal = `package demo
 
 type Pair[T any] struct {
     x T
@@ -985,32 +1023,21 @@ func f() Pair[int] {
 }
 `
 
-// genericMissingFieldCleanGoal names every field of the generic literal.
-const genericMissingFieldCleanGoal = `package demo
-
-type Pair[T any] struct {
-    x T
-    y T
-}
-
-func f() Pair[int] {
-    return Pair[int]{x: 1, y: 2}
-}
-`
-
 func TestCheckDepthGenericMissingField(t *testing.T) {
 	dir := goalModule(t, map[string]string{"x.goal": genericMissingFieldGoal})
 
 	var out, errOut bytes.Buffer
 	err := run([]string{"check", dir}, &out, &errOut)
 	if err == nil {
-		t.Fatalf("expected check to fail on the incomplete generic literal\nstdout: %s\nstderr: %s", out.String(), errOut.String())
+		t.Fatalf("expected check to fail on the omitted unsafe-zero field\nstdout: %s\nstderr: %s", out.String(), errOut.String())
 	}
-	if !strings.Contains(errOut.String(), "[generic-missing-field]") {
-		t.Errorf("depth-stage [generic-missing-field] not surfaced:\n%s", errOut.String())
+	if !strings.Contains(errOut.String(), "[unsafe-zero]") {
+		t.Errorf("depth-stage [unsafe-zero] not surfaced:\n%s", errOut.String())
 	}
 }
 
+// A generic literal that omits only a SAFE-zero field checks clean at the depth
+// stage — the safety-only rule defaults it silently.
 func TestCheckDepthGenericMissingFieldClean(t *testing.T) {
 	dir := goalModule(t, map[string]string{"x.goal": genericMissingFieldCleanGoal})
 

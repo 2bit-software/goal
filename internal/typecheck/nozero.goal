@@ -44,9 +44,7 @@ func CheckNoZeroValue(p *Package) []Diagnostic {
 			if !consider {
 				return true // plain `T{…}` is the lexical stage's; qualified is out of package
 			}
-			if d := litDiag(p, cl, kind); d != nil {
-				diags = append(diags, *d)
-			}
+			diags = append(diags, litDiag(p, cl, kind)...)
 			return true
 		})
 	}
@@ -76,12 +74,16 @@ func litClassOf(cl *ast.CompositeLit) (kind litClass, consider bool) {
 	}
 }
 
-// litDiag returns a missing-field Error for a composite literal cl that resolves to a
-// goal-package struct and omits at least one required field. It returns nil when cl is not
-// such a literal (unresolved type, non-struct, out-of-package, positional, or complete) —
-// a false "complete" is worse than an honest skip, and an unresolved literal is already a
-// Go error the harness collected.
-func litDiag(p *Package, cl *ast.CompositeLit, kind litClass) *Diagnostic {
+// litDiag returns the unsafe-zero Errors for a composite literal cl that resolves to a
+// goal-package struct and omits a field whose zero is UNSAFE. Safety-only (§8, feature-08
+// revision): an omitted field defaults to its zero and is accepted UNLESS that zero is
+// unsafe (a nil pointer/map/chan/func, a method-bearing interface, or a sum type with no
+// valid zero variant). It returns nil when cl is not a judgeable literal (unresolved type,
+// non-struct, out-of-package, positional) or omits only safe-zero fields — a false
+// "complete" is worse than an honest skip, and an unresolved literal is already a Go error
+// the harness collected. The unsafe/safe rule is zeroUnsafeType, the go/types twin of
+// sema.ZeroSafety, so the lexical and depth stages never disagree.
+func litDiag(p *Package, cl *ast.CompositeLit, kind litClass) []Diagnostic {
 	st, named := goalStructLit(p, cl)
 	if st == nil {
 		return nil
@@ -90,33 +92,90 @@ func litDiag(p *Package, cl *ast.CompositeLit, kind litClass) *Diagnostic {
 	if !keyed {
 		return nil // positional literal — Go itself requires every field, so no goal gap
 	}
-	missing := missingStructFields(st, present)
-	if len(missing) == 0 {
-		return nil
+	var diags []Diagnostic
+	for _, f := range missingStructFields(st, present) {
+		reason := zeroUnsafeType(p, f.Type())
+		if reason == "" {
+			continue
+		}
+		code, message := litMessage(kind, named, p.Info.Types[cl].Type, f.Name(),
+			types.TypeString(f.Type(), func(*types.Package) string { return "" }), reason)
+		diags = append(diags, Diagnostic{
+			Pos:      p.Fset.Position(cl.Pos()),
+			Severity: sema.Severity.Error,
+			Feature:  "08-no-zero-value",
+			Code:     code,
+			Message:  message,
+		})
 	}
-	code, message := litMessage(kind, named, p.Info.Types[cl].Type, missing)
-	return &Diagnostic{
-		Pos:      p.Fset.Position(cl.Pos()),
-		Severity: sema.Severity.Error,
-		Feature:  "08-no-zero-value",
-		Code:     code,
-		Message:  message,
-	}
+	return diags
 }
 
-// litMessage builds the greppable code and the actionable, form-specific message for a
-// literal of the given class missing the named fields.
-func litMessage(kind litClass, named *types.Named, inst types.Type, missing []string) (code, message string) {
-	name := named.Obj().Name()
+// litMessage builds the greppable `unsafe-zero` code and the actionable, form-specific
+// message for a literal of the given class that omits one field whose zero is unsafe. The
+// reason already ends with actionable guidance (from zeroUnsafeType/sema.ZeroSafety), so it
+// is appended verbatim rather than re-suffixed.
+func litMessage(kind litClass, named *types.Named, inst types.Type, field, ftype, reason string) (code, message string) {
 	if kind == classGeneric {
 		spelled := types.TypeString(inst, func(*types.Package) string { return "" })
-		return "generic-missing-field", fmt.Sprintf(
-			"generic literal `%s` omits required field%s %s — name every field (or write `%s{…, ...defaults}`)",
-			spelled, plural(len(missing)), quoteJoin(missing), spelled)
+		return "unsafe-zero", fmt.Sprintf(
+			"generic literal `%s` omits field `%s` of type `%s`: %s",
+			spelled, field, ftype, reason)
 	}
-	return "elided-missing-field", fmt.Sprintf(
-		"elided literal of `%s` omits required field%s %s — its type is inferred from the surrounding collection, so name every field (or write `%s{…, ...defaults}`)",
-		name, plural(len(missing)), quoteJoin(missing), name)
+	name := named.Obj().Name()
+	return "unsafe-zero", fmt.Sprintf(
+		"elided literal of `%s` omits field `%s` of type `%s`: %s",
+		name, field, ftype, reason)
+}
+
+// zeroUnsafeType reports why a struct field of go/types type t has no safe zero to fill by
+// omission, or "" when its zero is safe. It is the go/types twin of sema.ZeroSafety (which
+// classifies a rendered type string): a type whose nil zero panics or deadlocks on normal
+// use (pointer, map, chan, func, method-bearing interface) or a sum type with no valid zero
+// variant (a goal enum / sealed interface) is unsafe; a primitive, struct, array, nil
+// slice, error, or bare interface is safe. Sum-type membership is read off p.Sema (the same
+// Enums/Sealed maps sema.ZeroSafety consults), so the two stages classify identically. The
+// returned reason strings mirror sema.ZeroSafety verbatim.
+func zeroUnsafeType(p *Package, t types.Type) string {
+	switch u := t.(type) {
+	case *types.Pointer:
+		return "a nil pointer has no safe zero — set it explicitly, or use Option[T] for an optional value"
+	case *types.Map:
+		return "a nil map panics on write — set it explicitly"
+	case *types.Chan:
+		return "a nil channel blocks forever — set it explicitly"
+	case *types.Signature:
+		return "a nil func panics when called — set it explicitly"
+	case *types.Slice, *types.Array, *types.Basic:
+		return "" // nil slice / array composite / primitive zero are usable values
+	case *types.Interface:
+		// Bare `interface{}`/`any` has no methods, so its nil is harmless; a
+		// method-bearing interface's nil panics on a method call.
+		if u.NumMethods() == 0 {
+			return ""
+		}
+		return "a nil interface has no safe zero — set it explicitly"
+	case *types.Named:
+		name := u.Obj().Name()
+		if p.Sema != nil && (p.Sema.Enums[name] != nil || p.Sema.Sealed[name]) {
+			return "a sum type has no valid zero variant — set it explicitly"
+		}
+		if name == "error" {
+			return "" // nil error is the success value
+		}
+		switch under := u.Underlying().(type) {
+		case *types.Struct:
+			return ""
+		case *types.Interface:
+			if under.NumMethods() == 0 {
+				return ""
+			}
+			return "a nil interface has no safe zero — set it explicitly"
+		default:
+			return zeroUnsafeType(p, u.Underlying())
+		}
+	}
+	return "" // unknown/other: assume struct-like, as sema.ZeroSafety does
 }
 
 // goalStructLit resolves cl's type and returns the underlying struct and its named type
@@ -172,32 +231,15 @@ func litFieldKeys(cl *ast.CompositeLit) (present map[string]bool, keyed bool) {
 	return present, true
 }
 
-// missingStructFields returns the struct's field names not present in the literal, in
-// declaration order. Embedded fields are required like any other named field.
-func missingStructFields(st *types.Struct, present map[string]bool) []string {
-	var missing []string
+// missingStructFields returns the struct's fields not present in the literal, in
+// declaration order. Each field carries its (instantiated) type so the caller can classify
+// its zero's safety. Embedded fields are treated like any other named field.
+func missingStructFields(st *types.Struct, present map[string]bool) []*types.Var {
+	var missing []*types.Var
 	for i := 0; i < st.NumFields(); i++ {
-		if name := st.Field(i).Name(); !present[name] {
-			missing = append(missing, name)
+		if f := st.Field(i); !present[f.Name()] {
+			missing = append(missing, f)
 		}
 	}
 	return missing
-}
-
-// plural returns "s" when n != 1, for "field"/"fields" agreement.
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
-}
-
-// quoteJoin renders names as a comma-separated list of backtick-quoted identifiers in the
-// order given.
-func quoteJoin(names []string) string {
-	quoted := make([]string, len(names))
-	for i, n := range names {
-		quoted[i] = "`" + n + "`"
-	}
-	return strings.Join(quoted, ", ")
 }
