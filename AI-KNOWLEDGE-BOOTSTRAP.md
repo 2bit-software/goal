@@ -983,21 +983,25 @@ the claim is made, so `Square` can never drift out of `Shaper` unnoticed.
 
 #### No zero value
 
-Constructing a struct requires every declared field be set explicitly. The escape hatch
-is an explicit trailing `...defaults`, which fills the unset fields with their zero
-values — at most once per literal.
+An omitted struct field defaults to its zero — but only when that zero is *safe*. A field
+whose zero is a latent hazard (a nil `map`/pointer/`chan`/`func`, a method-bearing interface,
+or a sealed sum with no valid zero variant) must be set explicitly; everything else defaults
+silently. A trailing `...defaults` still fills the safe fields at once — now valid-but-redundant,
+so legacy code keeps compiling.
 
 ```goal
-User{ name: "a", email: "b@c", ...defaults }   // fill the rest with zeros
-User{ name: "a", email: "b@c", role: r, admin: t }   // complete literal
+User{ name: "a", email: "b@c" }                      // omitted role/admin have safe zeros — fine
+User{ name: "a", email: "b@c", ...defaults }         // redundant-but-accepted: fill the rest
+User{ name: "a", email: "b@c", role: r, admin: t }   // every field named — also fine
 ```
 
-**Unlocks:** Go's notorious zero-value footgun — an unset field silently reading back as
-`0`/`""`/`nil` — becomes a located compile error. Forgetting a field is caught by the
-checker, not discovered in production.
+**Unlocks:** Go's notorious zero-value footgun — an *unsafe* unset field (a `nil` map that
+panics on write, a `nil` pointer that panics on deref) silently slipping into production —
+becomes a located compile error at the construction site. Harmless zeros
+(`0`/`""`/`false`/nil slice/`Option[T]`) still default without ceremony.
 
-**Goal:** attack a *named, Go-specific* weakness by making required-field construction
-the default, with `...defaults` as a single, explicit, greppable opt-out.
+**Goal:** attack a *named, Go-specific* weakness by forcing only the *dangerous* zeros to be
+named, keeping safe construction ergonomic.
 
 ```goal
 package users
@@ -1783,8 +1787,10 @@ These tokens and shapes are recognized verbatim — do not deviate:
 - **Do** use `Option[T]` for "maybe absent," never a bare `*T` or a sentinel.
 - **Do** use `match` (never Go's `switch`) on enums / `Result` / `Option`, and prefer exhaustive
   arms over a reflexive `_` rest-arm — a `switch`'s `default:` silently defeats exhaustiveness.
-- **Do** write complete struct literals; reach for `...defaults` only deliberately, and expect
-  it to **reject** unsafe-zero fields (set those explicitly, or model them with `Option[T]`).
+- **Do** set any field whose zero is unsafe (nil `map`/pointer/`chan`/`func`, method-bearing
+  interface, sealed sum) explicitly; safe-zero fields may be omitted. `...defaults` is
+  valid-but-redundant now — expect it (and plain omission) to **reject** unsafe-zero fields
+  (set those explicitly, or model them with `Option[T]`).
 - **Do** add `/// >>> expr` / `/// expected` doctests on pure functions — the cheapest,
   highest-signal feedback band.
 - **Do** declare `type T struct implements I` when T is meant to satisfy I — catch drift at the
