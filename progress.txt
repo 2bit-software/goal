@@ -8835,3 +8835,28 @@
 - LSP Position.Character is converted to UTF-16 explicitly: new utf16Char/utf16Len in internal/lsp re-expand non-BMP runes (>= U+10000) to two units; toLSP uses utf16Char for both endpoints and lineLength now returns UTF-16 length.
 - Tests: internal/tokentest (rune col on a 2-byte-é and tab/emoji line), internal/lexertest (lexer.Scan diagnostic column rune-aware), internal/lsptest (a 🚀 before an invalid binary literal lands the published diagnostic on UTF-16 column 17, not rune 16). Regen churn is //line-only. task check + task fixpoint green.
 - NOTE: implemented directly in the main loop context (delegation kept forking to a phantom environment); depth/symbols/codeaction Position producers keep rune columns (identical to UTF-16 for the all-BMP corpus).
+
+---
+
+## Re-scope: status-doc-accuracy PRD (replaces the infeasible typed-depth-exhaustiveness PRD)
+
+The typed-depth-exhaustiveness PRD (5 stories) was proven architecturally infeasible: the
+depth stage runs go/types over LOWERED Go via importer.Default(), and the unresolved-* match/
+derive/? deferrals are exactly the cases that (a) don't lower and (b) importer.Default can't
+see across packages — verified on-disk (typecheck.goal:106, DECISIONS.md:1743-1749) plus a
+sub-agent's exp1-4. {sema-defers} ∩ {depth-can-resolve} = ∅. Re-scoped to the corrective the
+detour proved necessary.
+
+## US-001 - Write a verified language-state document
+- Created docs/STATUS.md: empirically-verified snapshot (every claim probed via `goalc` or
+  cited file:line). Sections: (a) complete/working incl. stored Result/Option, closed-E ?,
+  resolvable derive — all probed exit 0, contradicting the stale docs; (b) deferred-to-types
+  with the structural reason the depth stage can't reach them; (c) design boundaries (located
+  codes); (d) genuinely-open items (inline ? ICE, nested Err patterns, value-pos match, importer swap).
+- task check + task fixpoint green (doc-only; nothing regressed).
+
+## US-002 - Point stale planning docs at STATUS.md
+- Added STATUS.md pointers to README.md (§Status), ROADMAP_TO_GOAL.md (top), TODO.md (top).
+- Corrected the one INVERTED premise: ROADMAP §1.3 "No new parser for goal" annotated
+  [SUPERSEDED] — the AST rewrite added internal/parser + internal/ast.
+- task check + task fixpoint green.

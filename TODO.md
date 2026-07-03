@@ -1,5 +1,8 @@
 # goal — Feature Audit TODO
 
+> **Current state lives in [`docs/STATUS.md`](docs/STATUS.md)** (empirically verified). The
+> per-feature notes below are token-splice-era history, kept for the record, not the live picture.
+
 > **Historical — token-splice era.** This ledger tracks the original per-feature
 > audit loop. The as-built architecture is the single AST front-end documented in
 > `REWRITE-ARCHITECTURE.md`: features live in the AST pipeline

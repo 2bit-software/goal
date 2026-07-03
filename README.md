@@ -156,6 +156,10 @@ file** — native `(T, error)` tuples beside the `Ok[T,E]`/`Err[T,E]` sum encodi
 
 ## Status
 
+> For the empirically-verified, current state of every construct (what's complete, what's
+> deferred to real types, the deliberate design boundaries, and what's genuinely open), see
+> [`docs/STATUS.md`](docs/STATUS.md) — the authoritative snapshot.
+
 **Front-end: complete.** All 11 features compose. Every reference example and a suite of
 multi-feature `testdata/` programs round-trip to correct, independently-compiling Go.
 

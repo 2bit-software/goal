@@ -1,5 +1,10 @@
 # ROADMAP TO GOAL — making the transpiler language fully realized & usable
 
+> **Current state lives in [`docs/STATUS.md`](docs/STATUS.md)** (empirically verified). This
+> file is kept as the record of the original plan; several premises below (notably "no new
+> parser", §1.3/§3) were **superseded by the AST front-end rewrite** and no longer describe
+> the codebase.
+
 > **Historical.** This roadmap and its per-phase loop files (`BUILD-MODEL-TODO.md`,
 > `DEPTH-TODO.md`, `CHECKER-TODO.md`, `LOWERING-TODO.md`, `NEXT-SESSION.md`, the loop
 > prompts) were written for the token-splice pipeline. That architecture was retired by
@@ -69,9 +74,10 @@ These are inherited from the existing design discipline (`README.md`, `NEXT-SESS
 2. **Stay Go-shaped; lean on the Go toolchain.** Every divergence from Go must earn its keep.
    The corollary that drives this roadmap: when we need a hard analysis answer, **transpile to
    Go and ask the Go toolchain**, rather than rebuild it.
-3. **No new parser for `goal`.** The front-end is lexer + name-keyed tables + structural splice,
-   not a full AST. This stays. (Using `go/types` on *generated Go* does **not** violate this —
-   it parses Go, not goal. See §3.)
+3. **No new parser for `goal`.** ~~The front-end is lexer + name-keyed tables + structural splice,
+   not a full AST. This stays.~~ **[SUPERSEDED]** — the AST front-end rewrite added a real
+   `internal/parser` + `internal/ast`; goal *is* parsed to an AST now (see `docs/STATUS.md`,
+   `REWRITE-ARCHITECTURE.md`). The `go/types`-on-generated-Go point below still holds.
 4. **Name-keyed facts, never byte offsets, across passes.** Offsets shift under splicing; every
    cross-pass/cross-file fact is keyed by symbol name and rebuilt from source.
 5. **Format once, at the very end.** Only the driver calls `go/format`; intermediate source need
