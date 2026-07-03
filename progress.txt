@@ -8860,3 +8860,42 @@ detour proved necessary.
 - Corrected the one INVERTED premise: ROADMAP §1.3 "No new parser for goal" annotated
   [SUPERSEDED] — the AST rewrite added internal/parser + internal/ast.
 - task check + task fixpoint green.
+
+## [2026-07-03T00:00:00Z] - US-001
+- Made the lexical feature-08 field check safety-only: an omitted struct/variant field
+  defaults to its zero and is accepted unless that zero is UNSAFE (nil map/pointer/chan/
+  func, method-bearing interface, enum/sealed sum), in which case it errors with the new
+  `[unsafe-zero]` code. Retired the completeness code `[missing-field]` from the lexical
+  stage. `...defaults` / `[unsafe-default]` path left untouched.
+- Files changed: internal/sema/fields.goal (CheckFields threads decls into
+  checkStructLit/checkVariantLit; per-field ZeroSafety loop replaces the missing-field
+  emit; deleted dead helpers missingFieldNames/missingFieldFix/fieldZeroLit/quoteJoin and
+  dropped the freed token+strings imports), internal/guide/catalog.goal (missing-field ->
+  unsafe-zero), internal/lsp/codeaction.goal (removed dead missing-field quick-fix title),
+  the 3 testdata/check/08-no-zero-value/incomplete_* cases (now omit a nil-map field with
+  `// want [unsafe-zero]` markers), cmd/goal/suggestedfix_test.go (TestSuggestedFixMissingField
+  repurposed to TestSafetyOnlyFieldCheck: safe omission clean / unsafe omission -> unsafe-zero
+  no-fix), docs/by-example.md ("Rejecting an incomplete literal" rewritten to reject on an
+  unsafe map omission), DECISIONS.md (dated 08-revision ledger entry), regenerated *.go
+  siblings + AI-KNOWLEDGE-BOOTSTRAP.md.
+- Learnings for future iterations:
+  - docs/by-example.md error features are LIVE-verified by internal/guide's `goal ai`
+    (TestAICommandEmitsGuide + TestBootstrapGoldenMatches, both in `task check`), not just by
+    build-playground/`task site`. `writeFeatures` -> `lower` runs `sema.Analyze` on every
+    error feature and FAILS the guide if it no longer rejects. So loosening a checker rule
+    that an error-example depended on forces rewriting that example (omit an unsafe field so
+    it still rejects) IN THE SAME STORY, then regen the bootstrap — otherwise `task check`
+    breaks even though the change looks checker-local.
+  - The by-example fenced-code line number in a located locked block is 1-based over the
+    example source AS SHOWN; recount after editing comment lines (a 3-line comment shifted the
+    `return` from 13 to 14). Fastest way to get the exact `file:line:col` + message: regen the
+    bootstrap (`go run ./cmd/goal ai`) and grep it for the rendered block, then paste that into
+    by-example.md's `Rejected with:` block.
+  - `// want "sub"` corpus markers (internal/corpus/check_runner.go) match a diagnostic MESSAGE
+    substring on the marked line, not a code. RunCheck also fails on any Error on a line with no
+    marker, so a reject case can omit both safe and unsafe fields and prove the safe ones are
+    accepted (no unexpected error) while the marker claims the unsafe one.
+  - The catalog-parity gate (internal/guidetest) scans string literals only in sema/typecheck/
+    backend/lexer; retiring a code means removing BOTH its catalog diagDoc AND every code string
+    literal in those dirs, or the two directions of the gate disagree.
+---
