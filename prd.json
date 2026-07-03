@@ -31,7 +31,7 @@
         "Any depth-stage 08 tests that asserted the retired completeness codes are updated to the safety-only behavior; the full suite passes."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-001 (shares the unsafe-zero code + semantics). FILES: internal/typecheck/nozero.goal — CheckNoZeroValue / litDiag (generic-missing-field ~113, elided-missing-field ~117): instead of flagging any omitted field, resolve each omitted field's go/types.Type and flag only if its zero is unsafe. Mirror sema.ZeroSafety's rules over go/types: *types.Pointer / *types.Map / *types.Chan / *types.Signature -> unsafe; *types.Interface with methods -> unsafe; a named type whose underlying resolves from a goal enum/sealed sum -> unsafe (detect via the marker method or the sema Info if threaded); *types.Slice / *types.Array / *types.Basic / bare interface{} / error -> safe. Emit code `unsafe-zero` (consistent with US-001) at the .goal-mapped position. catalog.goal: remove generic-missing-field + elided-missing-field. Re-baseline typed-stage 08 tests (cmd/goal/gotypeerror_test.go, main_test.go, internal/corpus) that expected those codes. PITFALLS: the go/types safety classifier MUST match sema.ZeroSafety exactly or the two stages disagree (a case clean at one stage, error at the other); confirm the enum/sealed detection over lowered Go (the §8.1 encoding's marker method) matches what sema treats as a sum type; regen bootstrap."
     },
     {

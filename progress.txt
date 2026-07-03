@@ -8899,3 +8899,44 @@ detour proved necessary.
     backend/lexer; retiring a code means removing BOTH its catalog diagDoc AND every code string
     literal in those dirs, or the two directions of the gate disagree.
 ---
+
+## [2026-07-03T21:28:10Z] - US-002
+- Made the typed DEPTH stage's feature-08 check (internal/typecheck/nozero.goal
+  CheckNoZeroValue over elided `[]Inner{{…}}` and generic `Box[int]{…}` literals)
+  safety-only, matching the lexical stage from US-001: it now flags only an omitted
+  field whose go/types zero is UNSAFE (nil pointer/map/chan/func, method-bearing
+  interface, goal enum/sealed sum), emitting the shared `[unsafe-zero]` code. Retired
+  the completeness codes `generic-missing-field` and `elided-missing-field`.
+- Files changed: internal/typecheck/nozero.goal (new zeroUnsafeType classifier;
+  litDiag now returns []Diagnostic and emits per-unsafe-field; litMessage yields
+  unsafe-zero; missingStructFields returns []*types.Var; caller spread), internal/
+  guide/catalog.goal (dropped the two retired codes, folded elided/generic into the
+  unsafe-zero doc), cmd/goal/main_test.go (re-baselined the depth-08 tests +
+  TestExitCodeClassification fixture to unsafe-map omissions; added an elided
+  safe-omission-clean test; generic clean test now omits a safe field), regenerated
+  *.go siblings + AI-KNOWLEDGE-BOOTSTRAP.md. task check + task fixpoint green.
+- Learnings for future iterations:
+  - The depth Package threads the sema.Info as `p.Sema` (typecheck.goal:46), exposing
+    the SAME Enums/Sealed maps sema.ZeroSafety reads — so a go/types safety classifier
+    that looks up a *types.Named's Obj().Name() in p.Sema.Enums/Sealed matches the
+    lexical stage's sum-type detection exactly. This is the seam that keeps the two
+    stages from disagreeing; reuse it for any depth-stage rule that must mirror a
+    string-typed sema rule.
+  - go/types safety twin of sema.ZeroSafety: Pointer/Map/Chan/Signature -> unsafe;
+    method-bearing *types.Interface -> unsafe (empty interface{}/any safe); Slice/
+    Array/Basic safe; *types.Named -> sum-type lookup else recurse Underlying, with the
+    universe `error` (a named method-bearing interface) special-cased SAFE.
+  - CHICKEN-AND-EGG when a .goal edit changes a function's SIGNATURE and its caller in
+    the same file: `bin/goal` is built from the on-disk generated .go, but `task
+    generate`'s first step rebuilds bin/goal by compiling that .go. If the previous
+    emit already wrote the new signature but the OLD caller (a transient type error),
+    the rebuild fails and generate can't proceed. Fix: hand-patch the one caller line
+    in the generated .go so it compiles, then `task generate` re-emits everything
+    cleanly. (Hit here: litDiag *Diagnostic -> []Diagnostic + its CheckNoZeroValue
+    caller.) Safer alternative: change the caller in the .goal FIRST (or in the same
+    edit) so no intermediate emit is ever uncompilable.
+  - A checker LOOSENING breaks fixtures that relied on the strict behavior in
+    UNEXPECTED tests: besides the obvious depth-08 tests, TestExitCodeClassification's
+    "user-code-diagnostic" fixture used an elided literal omitting a SAFE field to force
+    exit 1 — now clean. grep test fixtures for the construct you loosened
+    (`{{a: 1}}`, `Pair[int]{`) and re-point each to an unsafe omission.
