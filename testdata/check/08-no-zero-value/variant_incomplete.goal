@@ -2,14 +2,15 @@ package shapes
 
 enum Shape {
 	Circle { r: float64 }
-	Rect   { w: float64, h: float64 }
+	Rect   { w: float64, h: float64, tags: map[string]int }
 	Dot
 }
 
-// unitRect omits `h` from the Rect variant construction. A variant has no
-// `...defaults` escape, so every field must be named — the omission is an error.
+// unitRect omits `h` and `tags` from the Rect variant construction. `h` is a safe-zero
+// float and defaults silently; `tags` is a map whose nil zero panics on write — the one
+// unsafe-zero omission (feature-08 safety-only rule), so it is the located error.
 func unitRect() Shape {
-	return Shape.Rect(w: 1.0) // want "omits required field `h`"
+	return Shape.Rect(w: 1.0) // want "omits field `tags` of type `map[string]int`"
 }
 
 // dot constructs a data-less variant: trivially complete, no diagnostic.

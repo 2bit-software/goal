@@ -952,10 +952,11 @@ ride `...defaults`.
 
 ## Rejecting an incomplete literal
 
-Without `...defaults`, every declared field must be set explicitly. A literal that omits
-one is a **located compile error** naming the missing field(s) — never a silent Go zero
-value. This is the completeness guarantee itself, separate from the `...defaults`
-safety carve-out above.
+An omitted field defaults to its zero — but only when that zero is *safe*. A literal that
+omits a field whose zero is **unsafe** (a nil map/pointer/chan/func, a method-bearing
+interface, or a sum type) is a **located compile error** naming the field. This is the
+safety-only rule: the genuinely-safe omissions (`string`, `int`, `bool`, nil slice,
+`Option[T]`) default silently, so only the dangerous zero is forced to be named.
 
 ```goal name=incomplete.goal
 package users
@@ -964,10 +965,12 @@ type User struct {
 	name  string
 	email string
 	admin bool
+	perms map[string]bool
 }
 
-// newUser omits `email` and `admin` with no `...defaults`: each unset field is a
-// located missing-field error, not a silent Go zero value.
+// newUser omits `email`, `admin`, and `perms`. The string/bool fields have safe zeros
+// and default silently; `perms` is a map whose nil zero panics on the first write — an
+// unsafe-zero omission, so it is the one located error.
 func newUser(name string) User {
 	return User{name: name}
 }
@@ -976,13 +979,13 @@ func newUser(name string) User {
 Rejected with:
 
 ```error
-incomplete.goal:12:9: error: [missing-field] struct literal `User{…}` omits required fields `email`, `admin` — set them explicitly, or add `...defaults` to fill the rest with zero values
+incomplete.goal:14:9: error: [unsafe-zero] struct literal `User{…}` omits field `perms` of type `map[string]bool`: a nil map panics on write — set it explicitly (e.g. `map[string]bool{}`)
 ```
 
-**Why:** in Go, `User{name: name}` compiles and reads back `email`/`admin` as `""`/`false`
-— the exact footgun this feature closes. goal makes the omission a checker error at the
-construction site, so the fix (name the fields, or opt into `...defaults`) is forced to be
-explicit.
+**Why:** in Go, `User{name: name}` compiles and reads back `perms` as a `nil` map that
+panics the moment anything writes to it — the exact footgun this feature closes. `email`
+and `admin` read back as `""`/`false`, which are harmless, so goal lets them default; only
+the unsafe `perms` zero is turned into a checker error at the construction site.
 
 # Runtime & test feedback
 

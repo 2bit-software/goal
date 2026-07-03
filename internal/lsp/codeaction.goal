@@ -111,8 +111,6 @@ func quickfixTitle(code string) string {
 	switch code {
 	case "non-exhaustive-match":
 		return "Add missing match arms"
-	case "missing-field":
-		return "Add omitted fields"
 	}
 	return "Apply suggested fix"
 }

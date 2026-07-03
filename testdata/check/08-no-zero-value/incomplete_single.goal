@@ -1,11 +1,13 @@
 package users
 
 type Point struct {
-	x int
-	y int
+	x    int
+	tags map[string]int
 }
 
-// origin sets only `x`; the single omitted field is named in the diagnostic.
+// origin sets only `x`. The omitted `x`-less rest includes `tags`, a map whose nil
+// zero panics on write — an unsafe-zero omission (feature-08 safety-only rule), so
+// the literal is rejected. A safe-zero field like `x` would default silently.
 func origin() Point {
-	return Point{x: 0} // want "omits required field `y`"
+	return Point{x: 0} // want "omits field `tags` of type `map[string]int`"
 }

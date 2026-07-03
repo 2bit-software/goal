@@ -4,10 +4,12 @@ type User struct {
 	name  string
 	email string
 	admin bool
+	perms map[string]bool
 }
 
-// newUser omits the `email` and `admin` fields without `...defaults` — each is a
-// located missing-field error, not a silent Go zero value.
+// newUser omits `email`, `admin`, and `perms`. The string/bool fields have safe zeros
+// and default silently; `perms` is a map whose nil zero panics on write — the one
+// unsafe-zero omission, so it is the only located error (feature-08 safety-only rule).
 func newUser(name string) User {
-	return User{name: name} // want "omits required fields `email`, `admin`"
+	return User{name: name} // want "omits field `perms` of type `map[string]bool`"
 }

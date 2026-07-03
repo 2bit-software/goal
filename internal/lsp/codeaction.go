@@ -78,34 +78,32 @@ func quickfixTitle(code string) string {
 	/*line codeaction.goal:111*/ switch code {
 	case "non-exhaustive-match":
 		return "Add missing match arms"
-	case "missing-field":
-		return "Add omitted fields"
 	}
-	/*line codeaction.goal:117*/ return "Apply suggested fix"
+	/*line codeaction.goal:115*/ return "Apply suggested fix"
 }
 
-//line codeaction.goal:123
+//line codeaction.goal:121
 func rangesOverlap(a, b Range) bool {
-	/*line codeaction.goal:124*/ return !posLess(b.End, a.Start) && !posLess(a.End, b.Start)
+	/*line codeaction.goal:122*/ return !posLess(b.End, a.Start) && !posLess(a.End, b.Start)
 }
 
-//line codeaction.goal:128
+//line codeaction.goal:126
 func posLess(x, y Position) bool {
-	/*line codeaction.goal:129*/ if x.Line != y.Line {
-		/*line codeaction.goal:130*/ return x.Line < y.Line
+	/*line codeaction.goal:127*/ if x.Line != y.Line {
+		/*line codeaction.goal:128*/ return x.Line < y.Line
 	}
-	/*line codeaction.goal:132*/ return x.Character < y.Character
+	/*line codeaction.goal:130*/ return x.Character < y.Character
 }
 
-//line codeaction.goal:138
+//line codeaction.goal:136
 func wantsKind(only []string, kind string) bool {
-	/*line codeaction.goal:139*/ if len(only) == 0 {
-		/*line codeaction.goal:140*/ return true
+	/*line codeaction.goal:137*/ if len(only) == 0 {
+		/*line codeaction.goal:138*/ return true
 	}
-	/*line codeaction.goal:142*/ for _, o := range only {
-		/*line codeaction.goal:143*/ if o == kind || strings.HasPrefix(kind, o+".") {
-			/*line codeaction.goal:144*/ return true
+	/*line codeaction.goal:140*/ for _, o := range only {
+		/*line codeaction.goal:141*/ if o == kind || strings.HasPrefix(kind, o+".") {
+			/*line codeaction.goal:142*/ return true
 		}
 	}
-	/*line codeaction.goal:147*/ return false
+	/*line codeaction.goal:145*/ return false
 }

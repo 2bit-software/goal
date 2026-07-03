@@ -1084,10 +1084,11 @@ ride `...defaults`.
 
 #### Rejecting an incomplete literal
 
-Without `...defaults`, every declared field must be set explicitly. A literal that omits
-one is a **located compile error** naming the missing field(s) — never a silent Go zero
-value. This is the completeness guarantee itself, separate from the `...defaults`
-safety carve-out above.
+An omitted field defaults to its zero — but only when that zero is *safe*. A literal that
+omits a field whose zero is **unsafe** (a nil map/pointer/chan/func, a method-bearing
+interface, or a sum type) is a **located compile error** naming the field. This is the
+safety-only rule: the genuinely-safe omissions (`string`, `int`, `bool`, nil slice,
+`Option[T]`) default silently, so only the dangerous zero is forced to be named.
 
 ```goal
 package users
@@ -1096,10 +1097,12 @@ type User struct {
 	name  string
 	email string
 	admin bool
+	perms map[string]bool
 }
 
-// newUser omits `email` and `admin` with no `...defaults`: each unset field is a
-// located missing-field error, not a silent Go zero value.
+// newUser omits `email`, `admin`, and `perms`. The string/bool fields have safe zeros
+// and default silently; `perms` is a map whose nil zero panics on the first write — an
+// unsafe-zero omission, so it is the one located error.
 func newUser(name string) User {
 	return User{name: name}
 }
@@ -1108,13 +1111,13 @@ func newUser(name string) User {
 _rejected with:_
 
 ```text
-incomplete.goal:12:9: error: [missing-field] struct literal `User{…}` omits required fields `email`, `admin` — set them explicitly, or add `...defaults` to fill the rest with zero values
+incomplete.goal:14:9: error: [unsafe-zero] struct literal `User{…}` omits field `perms` of type `map[string]bool`: a nil map panics on write — set it explicitly (e.g. `map[string]bool{}`)
 ```
 
-**Why:** in Go, `User{name: name}` compiles and reads back `email`/`admin` as `""`/`false`
-— the exact footgun this feature closes. goal makes the omission a checker error at the
-construction site, so the fix (name the fields, or opt into `...defaults`) is forced to be
-explicit.
+**Why:** in Go, `User{name: name}` compiles and reads back `perms` as a `nil` map that
+panics the moment anything writes to it — the exact footgun this feature closes. `email`
+and `admin` read back as `""`/`false`, which are harmless, so goal lets them default; only
+the unsafe `perms` zero is turned into a checker error at the construction site.
 
 ### Runtime & test feedback
 
@@ -1629,9 +1632,9 @@ The full set of stable codes the checker can emit:
 
 - `[elided-missing-field]` (error) — an elided literal (type inferred from a collection) omits required fields (typed stage).
 - `[generic-missing-field]` (error) — a generic struct literal omits required fields (typed stage).
-- `[missing-field]` (error) — a struct literal omits a required field and has no `...defaults`.
 - `[unresolved-literal-type]` (warning) — a struct literal's type can't be resolved lexically; deferred to the typed stage.
 - `[unsafe-default]` (error) — a `...defaults` literal omits a field whose zero is unsafe (nil pointer/map/chan/func, method-bearing interface, or sum type).
+- `[unsafe-zero]` (error) — a struct or variant literal omits a field whose zero is unsafe (nil pointer/map/chan/func, method-bearing interface, or sum type); safe-zero omissions default silently.
 
 **10-assert**
 
@@ -1682,7 +1685,6 @@ produces:
 
 ```text
 sample.goal:10:12: error: [non-exhaustive-match] non-exhaustive `match` on enum `Color`: missing variant `Color.Blue` — handle it, or add a `_` rest-arm to dismiss the rest
-sample.goal:22:12: error: [missing-field] struct literal `Cfg{…}` omits required field `port` — set it explicitly, or add `...defaults` to fill the rest with zero values
 ```
 
 ## A complete starter program

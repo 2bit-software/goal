@@ -857,6 +857,32 @@ Entry kinds:
   §02 ("File-layout / `Code` scheme + the 08-fields cross-check interaction") and §12 ("testdata avoids
   `...derive` literals that trip the 08 field-completeness check").
 
+### 08 revision: lexical field check is safety-only; `[missing-field]` → `[unsafe-zero]` (2026-07-03, US-001)
+- **Kind:** decision (supersedes the completeness framing of the `missing-field` entry above).
+- **Chose:** the lexical field check (`internal/sema/fields.goal` `CheckFields`) enforces **safety only**:
+  an omitted struct- or variant-literal field defaults to its zero and is **accepted**, and *only* a
+  field whose zero is **unsafe** (nil map/pointer/chan/func, method-bearing interface, or enum/sealed
+  sum) is a located error. The completeness code `[missing-field]` is **retired** and replaced by
+  `[unsafe-zero]`, which reuses the shared `sema.ZeroSafety` classifier — the same rule the
+  `...defaults` path (`CheckUnsafeDefaults` → `[unsafe-default]`) already uses, so the two never
+  disagree. `...defaults` stays **valid-but-redundant** (legacy code keeps compiling); its
+  `[unsafe-default]` behavior is unchanged.
+- **Over:** (a) keeping full completeness (every field must be named) — rejected: it is ceremony with
+  no safety payoff for fields whose zero is harmless (`""`/`0`/`false`/nil slice/`Option`), and it
+  fought Go ergonomics. (b) a global bare-zero ban — rejected: too broad, would reject safe defaults
+  everywhere. (c) an opt-in `struct zero` marker — rejected: adds surface for what the safety
+  classifier already decides automatically. Retired `[missing-field]` rather than keep it as a
+  no-op to avoid a dead diagnostic code lingering in the catalog and LSP.
+- **Why / consequence:** the guarantee that actually matters is "no *silent unsafe* zero," not "no
+  silent zero." Migration landed in US-001: the three `incomplete_*` testdata cases now omit an
+  unsafe (nil-map) field with `// want [unsafe-zero]` markers; `docs/by-example.md`'s "Rejecting an
+  incomplete literal" example was rewritten to reject on an unsafe map omission (it is
+  build-playground/guide live-verified); the catalog gained `unsafe-zero` and dropped `missing-field`;
+  the LSP `missing-field` quick-fix title and the `missing-field` suggested-fix machinery were removed;
+  `AI-KNOWLEDGE-BOOTSTRAP.md` was regenerated. The typed-depth-stage codes
+  `generic-missing-field`/`elided-missing-field` are unchanged here and revised separately in US-002.
+  Spec §3.5 / STATUS prose follow in US-003.
+
 ---
 
 ## 09-pure — CUT (not in v1)

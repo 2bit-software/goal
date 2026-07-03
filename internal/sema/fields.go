@@ -6,285 +6,239 @@ package sema
 import (
 	"fmt"
 	"goal/internal/ast"
-	"goal/internal/token"
-	"strings"
 )
 
-//line fields.goal:39
+//line fields.goal:37
 func CheckFields(file *ast.File, info *Info) []Diagnostic {
-	/*line fields.goal:40*/ var diags []Diagnostic
+	/*line fields.goal:38*/ decls := buildDeclKinds(file)
+	/*line fields.goal:39*/ var diags []Diagnostic
 
-	/*line fields.goal:41*/
+	/*line fields.goal:40*/
 	ast.Walk(visitorFunc(func(n ast.Node) bool {
-		/*line fields.goal:42*/ switch v1 := n.(type) {
+		/*line fields.goal:41*/ switch v1 := n.(type) {
 		case *ast.CompositeLit:
 			{
-				/*line fields.goal:44*/ diags = append(diags, checkStructLit(v1, info)...)
+				/*line fields.goal:43*/ diags = append(diags, checkStructLit(v1, info, decls)...)
 			}
 		case *ast.VariantLit:
 			{
-				/*line fields.goal:47*/ diags = append(diags, checkVariantLit(v1, info)...)
+				/*line fields.goal:46*/ diags = append(diags, checkVariantLit(v1, info, decls)...)
 			}
 		default:
 			{
 			}
 		}
-		/*line fields.goal:51*/ return true
+		/*line fields.goal:50*/ return true
 	}), file)
-	/*line fields.goal:53*/ return diags
+	/*line fields.goal:52*/ return diags
 }
 
-//line fields.goal:64
-func checkStructLit(lit *ast.CompositeLit, info *Info) []Diagnostic {
-	/*line fields.goal:65*/ name, ok := identName(lit.Type)
-	/*line fields.goal:66*/ if !ok {
-		/*line fields.goal:67*/ return nil
+//line fields.goal:63
+func checkStructLit(lit *ast.CompositeLit, info *Info, decls map[string]string) []Diagnostic {
+	/*line fields.goal:64*/ name, ok := identName(lit.Type)
+	/*line fields.goal:65*/ if !ok {
+		/*line fields.goal:66*/ return nil
 	}
-	/*line fields.goal:69*/ if litHasSpread(lit) {
-		/*line fields.goal:70*/ return nil
+	/*line fields.goal:68*/ if litHasSpread(lit) {
+		/*line fields.goal:69*/ return nil
 	}
-	/*line fields.goal:72*/ present := litKeys(lit)
-	/*line fields.goal:73*/ fields, known := info.Structs[name]
-	/*line fields.goal:74*/ if !known {
-		/*line fields.goal:78*/ if len(present) == 0 {
-			/*line fields.goal:79*/ return nil
+	/*line fields.goal:71*/ present := litKeys(lit)
+	/*line fields.goal:72*/ fields, known := info.Structs[name]
+	/*line fields.goal:73*/ if !known {
+		/*line fields.goal:77*/ if len(present) == 0 {
+			/*line fields.goal:78*/ return nil
 		}
-		/*line fields.goal:81*/ return []Diagnostic{{Pos: lit.Pos(), Severity: Severity(Severity_Warning{}), Feature: "08-no-zero-value", Code: "unresolved-literal-type", Message: fmt.Sprintf("cannot verify field completeness of `%s{…}`: type `%s` is not declared in this file — field-completeness deferred", name, name)}}
+		/*line fields.goal:80*/ return []Diagnostic{{Pos: lit.Pos(), Severity: Severity(Severity_Warning{}), Feature: "08-no-zero-value", Code: "unresolved-literal-type", Message: fmt.Sprintf("cannot verify field completeness of `%s{…}`: type `%s` is not declared in this file — field-completeness deferred", name, name)}}
 	}
-	/*line fields.goal:90*/ missing := missingFieldNames(fields, present)
-	/*line fields.goal:91*/ if len(missing) == 0 {
-		/*line fields.goal:92*/ return nil
-	}
-	/*line fields.goal:94*/ return []Diagnostic{{Pos: lit.Pos(), Severity: Severity(Severity_Error{}), Feature: "08-no-zero-value", Code: "missing-field", Message: fmt.Sprintf("struct literal `%s{…}` omits required field%s %s — set %s explicitly, or add `...defaults` to fill the rest with zero values", name, plural(len(missing)), quoteJoin(missing), pronoun(len(missing))), Fix: missingFieldFix(lit, missing, fields)}}
-}
+	/*line fields.goal:94*/ var diags []Diagnostic
 
-//line fields.goal:113
-func missingFieldFix(lit *ast.CompositeLit, missing []string, fields []Field) *SuggestedFix {
-	/*line fields.goal:114*/ if len(missing) == 0 || lit.Lbrace == (token.Pos{}) {
-		/*line fields.goal:115*/ return nil
-	}
-	/*line fields.goal:117*/ typeOf := map[string]string{}
-	/*line fields.goal:118*/ for _, f := range fields {
-		/*line fields.goal:119*/ typeOf[f.Name] = f.Type
-	}
-	/*line fields.goal:121*/ text := ""
-	/*line fields.goal:122*/ for _, name := range missing {
-		/*line fields.goal:123*/ zero, ok := fieldZeroLit(typeOf[name])
-		/*line fields.goal:124*/ if !ok {
-			/*line fields.goal:125*/ return nil
+	/*line fields.goal:95*/
+	for _, f := range fields {
+		/*line fields.goal:96*/ if present[f.Name] {
+			/*line fields.goal:97*/ continue
 		}
-		/*line fields.goal:127*/ text += "\n\t\t" + name + ": " + zero + ","
+		/*line fields.goal:99*/ reason := ZeroSafety(f.Type, decls, info, 0)
+		/*line fields.goal:100*/ if reason == "" {
+			/*line fields.goal:101*/ continue
+		}
+		/*line fields.goal:103*/ diags = append(diags, Diagnostic{Pos: lit.Pos(), Severity: Severity(Severity_Error{}), Feature: "08-no-zero-value", Code: "unsafe-zero", Message: fmt.Sprintf("struct literal `%s{…}` omits field `%s` of type `%s`: %s", name, f.Name, f.Type, reason)})
 	}
-	/*line fields.goal:131*/ after := token.Pos{Offset: lit.Lbrace.Offset + 1, Line: lit.Lbrace.Line, Col: lit.Lbrace.Col + 1}
-	/*line fields.goal:132*/ return &SuggestedFix{Pos: after, NewText: text}
+	/*line fields.goal:112*/ return diags
 }
 
-//line fields.goal:142
-func fieldZeroLit(typ string) (string, bool) {
-	/*line fields.goal:143*/ typ = strings.TrimSpace(typ)
-	/*line fields.goal:144*/ switch TypeShape(typ) {
-	case "pointer", "slice", "map", "chan", "func", "interface":
-		return "nil", true
+//line fields.goal:120
+func checkVariantLit(lit *ast.VariantLit, info *Info, decls map[string]string) []Diagnostic {
+	/*line fields.goal:121*/ enumName := exprName(lit.Enum)
+	/*line fields.goal:122*/ enumDecl := info.Enums[enumName]
+	/*line fields.goal:123*/ if enumDecl == nil || lit.Variant == nil {
+		/*line fields.goal:124*/ return nil
 	}
-	/*line fields.goal:148*/ switch typ {
-	case "any", "error":
-		return "nil", true
-	case "string":
-		return `""`, true
-	case "bool":
-		return "false", true
-	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr", "byte", "rune", "float32", "float64", "complex64", "complex128":
-		return "0", true
+	/*line fields.goal:126*/ declared, ok := variantFields(enumDecl, lit.Variant.Name)
+	/*line fields.goal:127*/ if !ok || len(declared) == 0 {
+		/*line fields.goal:128*/ return nil
 	}
-	/*line fields.goal:160*/ return "", false
+	/*line fields.goal:130*/ present := labeledArgNames(lit.Args)
+	/*line fields.goal:134*/ var diags []Diagnostic
+
+	/*line fields.goal:135*/
+	for _, f := range declared {
+		/*line fields.goal:136*/ if present[f.Name] {
+			/*line fields.goal:137*/ continue
+		}
+		/*line fields.goal:139*/ reason := ZeroSafety(f.Type, decls, info, 0)
+		/*line fields.goal:140*/ if reason == "" {
+			/*line fields.goal:141*/ continue
+		}
+		/*line fields.goal:143*/ diags = append(diags, Diagnostic{Pos: lit.Pos(), Severity: Severity(Severity_Error{}), Feature: "08-no-zero-value", Code: "unsafe-zero", Message: fmt.Sprintf("variant construction `%s.%s(…)` omits field `%s` of type `%s`: %s", enumDecl.Name, lit.Variant.Name, f.Name, f.Type, reason)})
+	}
+	/*line fields.goal:152*/ return diags
 }
 
-//line fields.goal:168
-func checkVariantLit(lit *ast.VariantLit, info *Info) []Diagnostic {
-	/*line fields.goal:169*/ enumName := exprName(lit.Enum)
-	/*line fields.goal:170*/ enumDecl := info.Enums[enumName]
-	/*line fields.goal:171*/ if enumDecl == nil || lit.Variant == nil {
-		/*line fields.goal:172*/ return nil
-	}
-	/*line fields.goal:174*/ declared, ok := variantFields(enumDecl, lit.Variant.Name)
-	/*line fields.goal:175*/ if !ok || len(declared) == 0 {
-		/*line fields.goal:176*/ return nil
-	}
-	/*line fields.goal:178*/ present := labeledArgNames(lit.Args)
-	/*line fields.goal:179*/ missing := missingFieldNames(declared, present)
-	/*line fields.goal:180*/ if len(missing) == 0 {
-		/*line fields.goal:181*/ return nil
-	}
-	/*line fields.goal:183*/ return []Diagnostic{{Pos: lit.Pos(), Severity: Severity(Severity_Error{}), Feature: "08-no-zero-value", Code: "missing-field", Message: fmt.Sprintf("variant construction `%s.%s(…)` omits required field%s %s — a variant has no `...defaults`; name every field", enumDecl.Name, lit.Variant.Name, plural(len(missing)), quoteJoin(missing))}}
-}
-
-//line fields.goal:205
+//line fields.goal:167
 func CheckUnsafeDefaults(file *ast.File, info *Info) []Diagnostic {
-	/*line fields.goal:206*/ decls := buildDeclKinds(file)
-	/*line fields.goal:207*/ var diags []Diagnostic
+	/*line fields.goal:168*/ decls := buildDeclKinds(file)
+	/*line fields.goal:169*/ var diags []Diagnostic
 
-	/*line fields.goal:208*/
+	/*line fields.goal:170*/
 	ast.Walk(visitorFunc(func(n ast.Node) bool {
-		/*line fields.goal:209*/ if lit, ok := n.(*ast.CompositeLit); ok {
-			/*line fields.goal:210*/ diags = append(diags, checkUnsafeDefaults(lit, info, decls)...)
+		/*line fields.goal:171*/ if lit, ok := n.(*ast.CompositeLit); ok {
+			/*line fields.goal:172*/ diags = append(diags, checkUnsafeDefaults(lit, info, decls)...)
 		}
-		/*line fields.goal:212*/ return true
+		/*line fields.goal:174*/ return true
 	}), file)
-	/*line fields.goal:214*/ return diags
+	/*line fields.goal:176*/ return diags
+}
+
+//line fields.goal:185
+func checkUnsafeDefaults(lit *ast.CompositeLit, info *Info, decls map[string]string) []Diagnostic {
+	/*line fields.goal:186*/ name, ok := identName(lit.Type)
+	/*line fields.goal:187*/ if !ok {
+		/*line fields.goal:188*/ return nil
+	}
+	/*line fields.goal:190*/ spread, ok := defaultsSpread(lit)
+	/*line fields.goal:191*/ if !ok {
+		/*line fields.goal:192*/ return nil
+	}
+	/*line fields.goal:194*/ fields, known := info.Structs[name]
+	/*line fields.goal:195*/ if !known {
+		/*line fields.goal:196*/ return nil
+	}
+	/*line fields.goal:198*/ present := litKeys(lit)
+	/*line fields.goal:199*/ var diags []Diagnostic
+
+	/*line fields.goal:200*/
+	for _, f := range fields {
+		/*line fields.goal:201*/ if present[f.Name] {
+			/*line fields.goal:202*/ continue
+		}
+		/*line fields.goal:204*/ reason := ZeroSafety(f.Type, decls, info, 0)
+		/*line fields.goal:205*/ if reason == "" {
+			/*line fields.goal:206*/ continue
+		}
+		/*line fields.goal:208*/ diags = append(diags, Diagnostic{Pos: spread.Pos(), Severity: Severity(Severity_Error{}), Feature: "08-no-zero-value", Code: "unsafe-default", Message: fmt.Sprintf("`...defaults` cannot default field `%s` of type `%s`: %s", f.Name, f.Type, reason)})
+	}
+	/*line fields.goal:217*/ return diags
 }
 
 //line fields.goal:223
-func checkUnsafeDefaults(lit *ast.CompositeLit, info *Info, decls map[string]string) []Diagnostic {
-	/*line fields.goal:224*/ name, ok := identName(lit.Type)
-	/*line fields.goal:225*/ if !ok {
-		/*line fields.goal:226*/ return nil
-	}
-	/*line fields.goal:228*/ spread, ok := defaultsSpread(lit)
-	/*line fields.goal:229*/ if !ok {
-		/*line fields.goal:230*/ return nil
-	}
-	/*line fields.goal:232*/ fields, known := info.Structs[name]
-	/*line fields.goal:233*/ if !known {
-		/*line fields.goal:234*/ return nil
-	}
-	/*line fields.goal:236*/ present := litKeys(lit)
-	/*line fields.goal:237*/ var diags []Diagnostic
-
-	/*line fields.goal:238*/
-	for _, f := range fields {
-		/*line fields.goal:239*/ if present[f.Name] {
-			/*line fields.goal:240*/ continue
-		}
-		/*line fields.goal:242*/ reason := ZeroSafety(f.Type, decls, info, 0)
-		/*line fields.goal:243*/ if reason == "" {
-			/*line fields.goal:244*/ continue
-		}
-		/*line fields.goal:246*/ diags = append(diags, Diagnostic{Pos: spread.Pos(), Severity: Severity(Severity_Error{}), Feature: "08-no-zero-value", Code: "unsafe-default", Message: fmt.Sprintf("`...defaults` cannot default field `%s` of type `%s`: %s", f.Name, f.Type, reason)})
-	}
-	/*line fields.goal:255*/ return diags
-}
-
-//line fields.goal:261
 func defaultsSpread(lit *ast.CompositeLit) (*ast.SpreadElement, bool) {
-	/*line fields.goal:262*/ for _, elt := range lit.Elts {
-		/*line fields.goal:263*/ sp, ok := elt.(*ast.SpreadElement)
-		/*line fields.goal:264*/ if !ok {
-			/*line fields.goal:265*/ continue
+	/*line fields.goal:224*/ for _, elt := range lit.Elts {
+		/*line fields.goal:225*/ sp, ok := elt.(*ast.SpreadElement)
+		/*line fields.goal:226*/ if !ok {
+			/*line fields.goal:227*/ continue
 		}
-		/*line fields.goal:267*/ if id, ok := sp.X.(*ast.Ident); ok && id.Name == "defaults" {
-			/*line fields.goal:268*/ return sp, true
+		/*line fields.goal:229*/ if id, ok := sp.X.(*ast.Ident); ok && id.Name == "defaults" {
+			/*line fields.goal:230*/ return sp, true
 		}
 	}
-	/*line fields.goal:271*/ return nil, false
+	/*line fields.goal:233*/ return nil, false
 }
 
-//line fields.goal:279
+//line fields.goal:241
 func buildDeclKinds(file *ast.File) map[string]string {
-	/*line fields.goal:280*/ m := map[string]string{}
-	/*line fields.goal:281*/ if file == nil {
-		/*line fields.goal:282*/ return m
+	/*line fields.goal:242*/ m := map[string]string{}
+	/*line fields.goal:243*/ if file == nil {
+		/*line fields.goal:244*/ return m
 	}
-	/*line fields.goal:284*/ for _, d := range file.Decls {
-		/*line fields.goal:285*/ gd, ok := d.(*ast.GenDecl)
-		/*line fields.goal:286*/ if !ok || gd.Tok.String() != "type" {
-			/*line fields.goal:287*/ continue
+	/*line fields.goal:246*/ for _, d := range file.Decls {
+		/*line fields.goal:247*/ gd, ok := d.(*ast.GenDecl)
+		/*line fields.goal:248*/ if !ok || gd.Tok.String() != "type" {
+			/*line fields.goal:249*/ continue
 		}
-		/*line fields.goal:289*/ for _, s := range gd.Specs {
-			/*line fields.goal:290*/ ts, ok := s.(*ast.TypeSpec)
-			/*line fields.goal:291*/ if !ok || ts.Name == nil {
-				/*line fields.goal:292*/ continue
+		/*line fields.goal:251*/ for _, s := range gd.Specs {
+			/*line fields.goal:252*/ ts, ok := s.(*ast.TypeSpec)
+			/*line fields.goal:253*/ if !ok || ts.Name == nil {
+				/*line fields.goal:254*/ continue
 			}
-			/*line fields.goal:294*/ switch ts.Type.(type) {
+			/*line fields.goal:256*/ switch ts.Type.(type) {
 			case *ast.StructType:
 				{
-					/*line fields.goal:296*/ m[ts.Name.Name] = "struct"
+					/*line fields.goal:258*/ m[ts.Name.Name] = "struct"
 				}
 			case *ast.InterfaceType:
 				{
-					/*line fields.goal:299*/ m[ts.Name.Name] = "interface"
+					/*line fields.goal:261*/ m[ts.Name.Name] = "interface"
 				}
 			default:
 				{
-					/*line fields.goal:302*/ m[ts.Name.Name] = typeString(ts.Type)
+					/*line fields.goal:264*/ m[ts.Name.Name] = typeString(ts.Type)
 				}
 			}
 		}
 	}
-	/*line fields.goal:307*/ return m
+	/*line fields.goal:269*/ return m
 }
 
-//line fields.goal:313
+//line fields.goal:275
 func identName(e ast.Expr) (string, bool) {
-	/*line fields.goal:314*/ if id, ok := e.(*ast.Ident); ok {
-		/*line fields.goal:315*/ return id.Name, true
+	/*line fields.goal:276*/ if id, ok := e.(*ast.Ident); ok {
+		/*line fields.goal:277*/ return id.Name, true
 	}
-	/*line fields.goal:317*/ return "", false
+	/*line fields.goal:279*/ return "", false
 }
 
-//line fields.goal:322
+//line fields.goal:284
 func litKeys(lit *ast.CompositeLit) map[string]bool {
-	/*line fields.goal:323*/ present := map[string]bool{}
-	/*line fields.goal:324*/ for _, elt := range lit.Elts {
-		/*line fields.goal:325*/ kv, ok := elt.(*ast.KeyValueExpr)
-		/*line fields.goal:326*/ if !ok {
-			/*line fields.goal:327*/ continue
+	/*line fields.goal:285*/ present := map[string]bool{}
+	/*line fields.goal:286*/ for _, elt := range lit.Elts {
+		/*line fields.goal:287*/ kv, ok := elt.(*ast.KeyValueExpr)
+		/*line fields.goal:288*/ if !ok {
+			/*line fields.goal:289*/ continue
 		}
-		/*line fields.goal:329*/ if id, ok := kv.Key.(*ast.Ident); ok {
-			/*line fields.goal:330*/ present[id.Name] = true
+		/*line fields.goal:291*/ if id, ok := kv.Key.(*ast.Ident); ok {
+			/*line fields.goal:292*/ present[id.Name] = true
 		}
 	}
-	/*line fields.goal:333*/ return present
+	/*line fields.goal:295*/ return present
 }
 
-//line fields.goal:338
+//line fields.goal:300
 func litHasSpread(lit *ast.CompositeLit) bool {
-	/*line fields.goal:339*/ for _, elt := range lit.Elts {
-		/*line fields.goal:340*/ if _, ok := elt.(*ast.SpreadElement); ok {
-			/*line fields.goal:341*/ return true
+	/*line fields.goal:301*/ for _, elt := range lit.Elts {
+		/*line fields.goal:302*/ if _, ok := elt.(*ast.SpreadElement); ok {
+			/*line fields.goal:303*/ return true
 		}
 	}
-	/*line fields.goal:344*/ return false
+	/*line fields.goal:306*/ return false
 }
 
-//line fields.goal:349
+//line fields.goal:311
 func labeledArgNames(args []ast.Expr) map[string]bool {
-	/*line fields.goal:350*/ present := map[string]bool{}
-	/*line fields.goal:351*/ for _, a := range args {
-		/*line fields.goal:352*/ if la, ok := a.(*ast.LabeledArg); ok && la.Label != nil {
-			/*line fields.goal:353*/ present[la.Label.Name] = true
+	/*line fields.goal:312*/ present := map[string]bool{}
+	/*line fields.goal:313*/ for _, a := range args {
+		/*line fields.goal:314*/ if la, ok := a.(*ast.LabeledArg); ok && la.Label != nil {
+			/*line fields.goal:315*/ present[la.Label.Name] = true
 		}
 	}
-	/*line fields.goal:356*/ return present
+	/*line fields.goal:318*/ return present
 }
 
-//line fields.goal:361
+//line fields.goal:323
 func variantFields(enumDecl *Enum, variant string) ([]Field, bool) {
-	/*line fields.goal:362*/ for _, v := range enumDecl.Variants {
-		/*line fields.goal:363*/ if v.Name == variant {
-			/*line fields.goal:364*/ return v.Fields, true
+	/*line fields.goal:324*/ for _, v := range enumDecl.Variants {
+		/*line fields.goal:325*/ if v.Name == variant {
+			/*line fields.goal:326*/ return v.Fields, true
 		}
 	}
-	/*line fields.goal:367*/ return nil, false
-}
-
-//line fields.goal:372
-func missingFieldNames(declared []Field, present map[string]bool) []string {
-	/*line fields.goal:373*/ var missing []string
-
-	/*line fields.goal:374*/
-	for _, f := range declared {
-		/*line fields.goal:375*/ if !present[f.Name] {
-			/*line fields.goal:376*/ missing = append(missing, f.Name)
-		}
-	}
-	/*line fields.goal:379*/ return missing
-}
-
-//line fields.goal:384
-func quoteJoin(names []string) string {
-	/*line fields.goal:385*/ quoted := make([]string, len(names))
-	/*line fields.goal:386*/ for i, n := range names {
-		/*line fields.goal:387*/ quoted[i] = "`" + n + "`"
-	}
-	/*line fields.goal:389*/ return strings.Join(quoted, ", ")
+	/*line fields.goal:329*/ return nil, false
 }

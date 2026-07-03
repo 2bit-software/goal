@@ -115,7 +115,7 @@ func TestSuggestedFixExhaustiveMatch(t *testing.T) {
 	assertCheckClean(t, dir)
 }
 
-const missingFieldGoal = `package demo
+const safeOmissionGoal = `package demo
 
 type Point struct {
 	X int
@@ -127,34 +127,47 @@ func mk() Point {
 }
 `
 
-// A missing-field diagnostic carries a suggestedFix; applying its insertion makes the
-// package check clean (US-030 AC1).
-func TestSuggestedFixMissingField(t *testing.T) {
-	dir := goalModule(t, map[string]string{"point.goal": missingFieldGoal})
+const unsafeOmissionGoal = `package demo
 
-	diags := checkJSON(t, dir)
-	var fix *jsonDiagWire
+type Cache struct {
+	name    string
+	entries map[string]int
+}
+
+func mk() Cache {
+	return Cache{name: "c"}
+}
+`
+
+// The feature-08 lexical check is safety-only (US-001): omitting a field whose zero is
+// SAFE (here `Y int`) is accepted with exit 0, while omitting a field whose zero is
+// UNSAFE (a nil map that panics on write) is a located `[unsafe-zero]` error carrying no
+// suggested fix. The `...defaults` unsafe path is covered separately by
+// TestSuggestedFixOmittedForUnrepairable.
+func TestSafetyOnlyFieldCheck(t *testing.T) {
+	// (a) A struct literal omitting only a safe-zero field checks clean.
+	safeDir := goalModule(t, map[string]string{"point.goal": safeOmissionGoal})
+	assertCheckClean(t, safeDir)
+
+	// (b) A struct literal omitting an unsafe-zero (nil map) field is rejected with a
+	//     located [unsafe-zero] error and no suggested fix.
+	unsafeDir := goalModule(t, map[string]string{"cache.goal": unsafeOmissionGoal})
+	diags := checkJSON(t, unsafeDir)
+	var uz *jsonDiagWire
 	for i := range diags {
-		if diags[i].Code == "missing-field" {
-			fix = &diags[i]
+		if diags[i].Code == "unsafe-zero" {
+			uz = &diags[i]
 		}
 	}
-	if fix == nil {
-		t.Fatalf("no missing-field diagnostic: %+v", diags)
+	if uz == nil {
+		t.Fatalf("no unsafe-zero diagnostic for an omitted nil-map field: %+v", diags)
 	}
-	if fix.SuggestedFix == nil {
-		t.Fatal("missing-field diagnostic carried no suggestedFix")
+	if !strings.Contains(uz.Message, "entries") {
+		t.Errorf("unsafe-zero diagnostic does not name the omitted field: %q", uz.Message)
 	}
-	if !strings.Contains(fix.SuggestedFix.NewText, "Y:") {
-		t.Errorf("suggestedFix does not add the missing field: %q", fix.SuggestedFix.NewText)
+	if uz.SuggestedFix != nil {
+		t.Errorf("unsafe-zero diagnostic unexpectedly carried a suggestedFix: %+v", uz.SuggestedFix)
 	}
-
-	path := filepath.Join(dir, "point.goal")
-	patched := applyInsertion(missingFieldGoal, fix.SuggestedFix.Line, fix.SuggestedFix.Col, fix.SuggestedFix.NewText)
-	if err := os.WriteFile(path, []byte(patched), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	assertCheckClean(t, dir)
 }
 
 const unsafeDefaultGoal = `package demo
