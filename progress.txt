@@ -8940,3 +8940,31 @@ detour proved necessary.
     "user-code-diagnostic" fixture used an elided literal omitting a SAFE field to force
     exit 1 — now clean. grep test fixtures for the construct you loosened
     (`{{a: 1}}`, `Pair[int]{`) and re-point each to an unsafe omission.
+
+## 2026-07-03T21:47:00Z - US-003
+- Revised spec + docs to describe feature 08 (no-zero-value) as SAFETY-ONLY,
+  matching the checker landed in US-001/US-002.
+- Files changed:
+  - goal-design-spec.md §3.5: rewrote What-it-is / Why / gains / Refused / Sample
+    to safety-only (omitted fields default; only UNSAFE zeros must be named);
+    `...defaults` marked redundant-but-accepted; named the `unsafe-zero` code;
+    updated implementation-notes bullets; retitled §8.0 "field-completeness"
+    guarantee to "unsafe-zero safety" (two spots).
+  - DECISIONS.md: appended dated `## 08-revision` entry (choice: drop
+    completeness, keep `...defaults`, `[missing-field]` -> `[unsafe-zero]`;
+    rejected: global bare-zero, `struct zero` opt-in, with why).
+  - docs/STATUS.md: added a feature-08 "no-zero-value is safety-only" note in
+    section (a).
+- Learnings for future iterations:
+  - docs/by-example.md needed NO change: US-001 already rewrote the "Rejecting an
+    incomplete literal" example to omit an unsafe field (`perms map[string]bool`)
+    and assert `[unsafe-zero]`. So this docs story triggered NO bootstrap /
+    features.json regen and stayed gate-inert. Verify with
+    `grep missing-field docs/by-example.md` (empty) before assuming a regen.
+  - DECISIONS.md is append-only: new dated entries go at the END of the file
+    (last was US-014), NOT inserted into the historical `## 08-no-zero-value`
+    block. Prior entries stay as history; the new one says "supersedes".
+  - Pure-docs stories (spec/DECISIONS/STATUS, not by-example.md) do not touch
+    any .goal, generated .go, or golden, so `task check` + `task fixpoint` pass
+    without regeneration.
+---

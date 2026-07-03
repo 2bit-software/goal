@@ -422,52 +422,74 @@ The clause takes a comma-separated list, so a struct may assert several interfac
 
 #### What it is
 
-Constructing a struct **requires all fields be set explicitly** (or explicitly defaulted).
-Forgetting a field is a compile error, not a silent zero value. **This is a default, not
-opt-in.**
+**Safety-only** (revised — see DECISIONS.md §08-revision). An omitted struct or variant
+field **defaults to its zero value**, exactly as in Go — *except* when that zero is a latent
+hazard. A field whose zero is **unsafe** — `nil` map (panics on write), `nil` pointer (panics
+on deref), `nil` chan/func, a method-bearing named interface, or an enum / sealed sum with no
+valid variant — **must be set explicitly**; omitting it is a located `[unsafe-zero]` compile
+error. Safe zeros (primitives, structs, nil slices, `error`) fill silently. **This is a
+default, not opt-in.**
+
+The earlier model demanded *completeness* — every field named or explicitly defaulted. That
+was dropped: naming a field whose zero is harmless is pure ceremony with no safety payoff.
 
 #### Why we chose it
 
-- Go's zero values are a notorious silent-error source: a struct with an unset field is
-  silently the zero value, not an error. This is a *named, Go-specific footgun* — we're
-  attacking Go's actual weakness, not adding generic rigor.
+- Go's *unsafe* zero values are a notorious silent-error source: a struct with an unset `nil`
+  map or pointer is silently a landmine that panics later, not at construction. This is a
+  *named, Go-specific footgun* — we attack Go's actual weakness (the hazardous zeros) without
+  taxing the harmless ones.
 - **Default, not opt-in** (decided): an opt-in strictness the model forgets to opt into
   catches nothing — "default is what makes it actually catch." This is the same
   safe-path-as-default logic that decided `_` over reflexive `default`.
+- **Safety over completeness** (decided): completeness rejected an omitted *safe* zero, which
+  is ordinary, correct Go-superset code — ceremony with no proportional payoff. Classifying
+  the omitted field *by type* keeps the diagnostic on the fields that can actually bite.
 
 #### What it gains us
 
-"Forgot to set a field" moves from silent-zero-value into a located compile error.
+"Forgot to set a field whose zero panics" moves from a silent latent crash into a located
+`[unsafe-zero]` compile error. Omitting a safe-zero field stays legal and quiet.
 
 #### Refused / denied
 
-- **Opt-in field-completeness.** Refused for the *default* posture — it would be forgotten.
-  (An explicit "use defaults" form is provided so the strictness is satisfiable without
-  ceremony where defaults are genuinely wanted.)
+- **Full field-completeness.** Refused: it flagged harmless safe-zero omissions, adding
+  ceremony without safety. Superseded by the safety-only rule above.
+- **Opt-in safety.** Refused for the *default* posture — it would be forgotten.
+- **`...defaults` is now redundant-but-accepted.** It was the escape hatch from
+  completeness; under safety-only, plain omission already fills safe zeros, so `...defaults`
+  fills nothing extra. It stays valid (legacy code keeps compiling) and still *rejects* an
+  unsafe zero — via the unchanged `[unsafe-default]` diagnostic — so the escape hatch can
+  never silently reintroduce the footgun.
 
 #### Sample
 
 ```goplus
-type User struct { name string; email string; role Role }
+type User struct { name string; role Role; perms map[string]bool }
 
-// Error: missing field `role`.
-u := User{ name: "a", email: "b@c" }
+// Error: [unsafe-zero] — `perms` omitted, and a nil map panics on write.
+u := User{ name: "a", role: Role.Member }
 
-// OK — explicit:
-u := User{ name: "a", email: "b@c", role: Role.Member }
+// OK — safe-zero fields may be omitted; they default silently.
+type Point struct { x int; y int; label string }
+p := Point{ x: 1 }        // y, label default to 0 / "" — no error.
 
-// OK — explicitly opting into defaults for the rest:
-u := User{ name: "a", email: "b@c", ...defaults }
+// OK — every unsafe field set explicitly:
+u := User{ name: "a", role: Role.Member, perms: map[string]bool{} }
+
+// OK — `...defaults` still accepted (now redundant); still rejects an unsafe zero.
+u := User{ name: "a", role: Role.Member, perms: map[string]bool{}, ...defaults }
 ```
 
 #### Implementation notes
 
-- This is **pervasive, not additive** — it changes how every struct is constructed and is a
-  real divergence from Go. We accept it because it's high-value pure error-catching on a named
-  Go footgun, and we make it a default deliberately.
-- Provide a low-ceremony explicit-defaults form so the common "I really do want zero/defaults"
-  case isn't painful (or the model routes around the whole feature). **Resolved:** `...defaults`.
-- **`...defaults` fills only *safe* zeros; an unsafe zero is a located error.** The escape hatch
+- This is **narrow, not pervasive** — it changes struct construction *only* for fields whose
+  zero is unsafe; safe-zero omissions behave exactly like Go. We accept it because it's
+  high-value pure error-catching on a named Go footgun, and we make it a default deliberately.
+- `...defaults` is retained as a **redundant-but-accepted** form (it was the completeness-era
+  escape hatch). Under safety-only, plain omission already fills safe zeros, so `...defaults`
+  fills nothing extra; it stays valid so legacy code keeps compiling. **Resolved:** `...defaults`.
+- **`...defaults` fills only *safe* zeros; an unsafe zero is a located `[unsafe-default]` error.** The escape hatch
   must not silently reintroduce the very footgun this feature closes. A field whose zero is a latent
   hazard — `nil` map (panics on write), `nil` pointer (panics on deref), `nil` chan/func, a
   method-bearing named interface, or a sum type with no valid variant — is rejected with a located
@@ -755,12 +777,12 @@ This section gives the target Go for each feature. It is the contract the transp
 
 ### 8.0 Governing principle: checks erased, guarantees compiled in
 
-By transpile time the Go+ checker has **proven** exhaustiveness, must-use, field-completeness,
-and `implements`. The generated Go therefore does **not** re-check those — they
+By transpile time the Go+ checker has **proven** exhaustiveness, must-use, unsafe-zero safety
+(§3.5), and `implements`. The generated Go therefore does **not** re-check those — they
 constrained *which source was legal*, and re-litigating proven facts only bloats the output.
 But there is a sharp distinction:
 
-- **Static guarantees** (exhaustiveness, `implements`, field-completeness, must-use)
+- **Static guarantees** (exhaustiveness, `implements`, unsafe-zero safety, must-use)
   → **erased entirely.** They produced no runtime behavior; generated Go simply omits them.
 - **Runtime semantics** (the *value* a `match` produces, `Result`/`?` control flow, `Option`
   branching, runtime `assert`) → **preserved exactly.** They affect what the program *does*.

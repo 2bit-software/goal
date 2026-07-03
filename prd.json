@@ -44,7 +44,7 @@
         "docs/STATUS.md's feature-08 line reflects safety-only; `grep -q 'safety-only' docs/STATUS.md` succeeds."
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-001/002 (docs describe the final behavior). Docs are not toolchain-verified (unlike docs/by-example.md, which build-playground checks), so these edits are low-risk for the gate. FILES: goal-design-spec.md §3.5; DECISIONS.md (append, do not rewrite history); docs/STATUS.md (the §(a)/(c) feature-08 rows). If docs/by-example.md's 'Rejecting an incomplete literal' example was NOT already rewritten in US-001, rewrite it here to omit an unsafe field and regen AI-KNOWLEDGE-BOOTSTRAP.md + features.json (that example IS build-playground-verified, so it must still reject). Keep prose consistent with the retired [missing-field] / new [unsafe-zero] naming."
     }
   ]

@@ -27,6 +27,12 @@ assert, doctests, derive-convert) lower and check. Notably — cases the stale d
 | `derive func` over structs resolvable in-file/import | lowers clean |
 | bind-then-`match` a stored `Result` (`r := f(); match r {…}`) | lowers clean |
 
+**no-zero-value is safety-only** (revised — `DECISIONS.md` §08-revision): an omitted
+struct/variant field defaults to its zero; only a field whose zero is **unsafe** (nil
+map/pointer/chan/func, method-bearing interface, or enum/sealed sum) must be set explicitly,
+else a located `[unsafe-zero]` error. Safe-zero omissions are legal and silent. `...defaults`
+is redundant-but-accepted and still rejects an unsafe zero via `[unsafe-default]`.
+
 ## (b) Deferred to real types — the depth stage cannot close these
 
 These stay honest `Warning`s (`unresolved-match-enum`/`-sealed`, `unresolved-error-enum`,

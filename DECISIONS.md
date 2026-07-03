@@ -3615,3 +3615,60 @@ behavioral + interp + check tiers green.
   `internal/compiler`, so it is reproducible evidence yet touches none of the
   `task check` / `generate` / `verify-generated` / `fixpoint` gates.
 
+---
+
+## 08-revision — feature 08 reframed from completeness to safety-only (2026-07-03)
+
+Supersedes the original `## 08-no-zero-value` decision (completeness). The prior entries
+stay as history; this is the current state.
+
+### Feature 08 is safety-only, not field-completeness
+- **Kind:** decision.
+- **Chose:** an omitted struct/variant field **defaults to its zero** (exactly like Go);
+  only a field whose zero is **unsafe** must be set explicitly. Unsafe = `nil` map (panics
+  on write), `nil` pointer (panics on deref), `nil` chan/func, a method-bearing named
+  interface, or an enum / sealed sum with no valid variant. Omitting such a field is a
+  located `[unsafe-zero]` compile error; omitting a safe-zero field (primitive, struct, nil
+  slice, `error`) is legal and silent. The safe/unsafe split is computed by
+  `sema.ZeroSafety(typ, decls, info, depth)`.
+- **Over:** the original **completeness** model — every field must be named or explicitly
+  defaulted, forgetting any field is `[missing-field]`.
+- **Why:** completeness rejected an omitted *safe* zero, which is ordinary, correct
+  Go-superset code — ceremony with no proportional safety payoff. The real Go footgun is the
+  *hazardous* zero (a `nil` map/pointer that panics later, not at construction). Classifying
+  the omitted field *by type* keeps the diagnostic exactly on the fields that can bite and
+  lets harmless omissions through. Same safe-path-as-default logic that made §3.5 a default
+  rather than opt-in.
+
+### Diagnostic code: `[missing-field]` → `[unsafe-zero]`
+- **Kind:** decision.
+- **Chose:** RETIRE `[missing-field]` from the lexical stage (and the typed-depth
+  `generic-missing-field` / `elided-missing-field`); ADD `[unsafe-zero]` for a plain omission
+  of an unsafe field. KEEP `[unsafe-default]` UNCHANGED for the `...defaults` path
+  (`CheckUnsafeDefaults`).
+- **Over:** renaming everything under one code, or keeping `[missing-field]` for the unsafe
+  case.
+- **Why:** the two paths already existed separately; minimizing churn, `[unsafe-default]`
+  stays as-is and only the completeness code is replaced. (Landed in US-001 lexical, US-002
+  typed-depth.)
+
+### `...defaults` kept as redundant-but-accepted
+- **Kind:** decision.
+- **Chose:** keep `...defaults` valid. It was the completeness-era escape hatch; under
+  safety-only, plain omission already fills safe zeros, so `...defaults` fills nothing extra.
+  It stays legal (legacy code keeps compiling) and still *rejects* an unsafe zero via the
+  unchanged `[unsafe-default]` diagnostic.
+- **Over:** removing `...defaults` as dead syntax.
+- **Why:** removing it would break existing source for zero safety benefit; keeping it costs
+  nothing and preserves the guarantee that the escape hatch never reintroduces the footgun.
+
+### Rejected alternatives
+- **Global bare-zero rejection** (reject every bare zero value everywhere, not just defaulted
+  struct fields). **Refused:** far too broad — it would flag ordinary correct Go-superset code
+  across the whole language (every `var x int`, every zero literal), a massive divergence with
+  no proportional safety payoff. The footgun is specifically the *silently-defaulted struct
+  field*, so the check stays scoped to construction.
+- **`struct zero` opt-in** (an explicit opt-in form to get the strict/safe construction).
+  **Refused:** opt-in strictness the author forgets to opt into catches nothing — "default is
+  what makes it actually catch." Same reason §3.5 is a default, not opt-in.
+
