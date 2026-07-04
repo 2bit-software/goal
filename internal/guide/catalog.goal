@@ -102,6 +102,23 @@ func catalogByFeature() []struct {
 	return out
 }
 
+// catalogCodesForFeature returns the diagnostic codes documented for one feature key
+// (e.g. "01-enums"), sorted by Code, or nil when the key is empty or has no codes. It
+// lets `goal category <name>` show just the diagnostics that belong to that feature.
+func catalogCodesForFeature(key string) []diagDoc {
+	if key == "" {
+		return nil
+	}
+	var codes []diagDoc
+	for _, d := range diagnosticCatalog {
+		if d.Feature == key {
+			codes = append(codes, d)
+		}
+	}
+	sort.Slice(codes, func(i, j int) bool { return codes[i].Code < codes[j].Code })
+	return codes
+}
+
 // catalogCodes returns the set of diagnostic codes the catalog documents.
 func catalogCodes() map[string]bool {
 	out := make(map[string]bool, len(diagnosticCatalog))

@@ -51,16 +51,35 @@ func catalogByFeature() []struct {
 	/*line catalog.goal:102*/ return out
 }
 
-//line catalog.goal:106
-func catalogCodes() map[string]bool {
-	/*line catalog.goal:107*/ out := make(map[string]bool, len(diagnosticCatalog))
-	/*line catalog.goal:108*/ for _, d := range diagnosticCatalog {
-		/*line catalog.goal:109*/ out[d.Code] = true
+//line catalog.goal:108
+func catalogCodesForFeature(key string) []diagDoc {
+	/*line catalog.goal:109*/ if key == "" {
+		/*line catalog.goal:110*/ return nil
 	}
-	/*line catalog.goal:111*/ return out
+	/*line catalog.goal:112*/ var codes []diagDoc
+
+	/*line catalog.goal:113*/
+	for _, d := range diagnosticCatalog {
+		/*line catalog.goal:114*/ if d.Feature == key {
+			/*line catalog.goal:115*/ codes = append(codes, d)
+		}
+	}
+	/*line catalog.goal:118*/ sort.Slice(codes, func(i, j int) bool {
+		/*line catalog.goal:118*/ return codes[i].Code < codes[j].Code
+	})
+	/*line catalog.goal:119*/ return codes
 }
 
-//line catalog.goal:118
+//line catalog.goal:123
+func catalogCodes() map[string]bool {
+	/*line catalog.goal:124*/ out := make(map[string]bool, len(diagnosticCatalog))
+	/*line catalog.goal:125*/ for _, d := range diagnosticCatalog {
+		/*line catalog.goal:126*/ out[d.Code] = true
+	}
+	/*line catalog.goal:128*/ return out
+}
+
+//line catalog.goal:135
 func CatalogCodes() map[string]bool {
-	/*line catalog.goal:119*/ return catalogCodes()
+	/*line catalog.goal:136*/ return catalogCodes()
 }
