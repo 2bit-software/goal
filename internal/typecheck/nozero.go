@@ -99,7 +99,7 @@ func litMessage(kind litClass, named *types.Named, inst types.Type, field, ftype
 func zeroUnsafeType(p *Package, t types.Type) string {
 	/*line nozero.goal:140*/ switch u := t.(type) {
 	case *types.Pointer:
-		return "a nil pointer has no safe zero — set it explicitly, or use Option[T] for an optional value"
+		return "a nil pointer has no safe zero — replace the pointer with `Option[T]` if the field is optional, or set it explicitly"
 	case *types.Map:
 		return "a nil map panics on write — set it explicitly"
 	case *types.Chan:

@@ -10,7 +10,7 @@ func ZeroSafety(typ string, decls map[string]string, info *Info, depth int) stri
 	/*line zerosafety.goal:21*/ typ = strings.TrimSpace(typ)
 	/*line zerosafety.goal:22*/ switch TypeShape(typ) {
 	case "pointer":
-		return "a nil pointer has no safe zero — set it explicitly, or use Option[T] for an optional value"
+		return "a nil pointer has no safe zero — replace the pointer with `Option[T]` if the field is optional, or set it explicitly"
 	case "map":
 		return "a nil map panics on write — set it explicitly (e.g. `" + typ + "{}`)"
 	case "chan":
