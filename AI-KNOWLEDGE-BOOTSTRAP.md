@@ -77,6 +77,7 @@ message:
 - `goal fmt [-w] [path]` — format .goal source into the canonical, comment-preserving layout
     - `-w` — write the formatted result back to each file instead of printing to stdout
 - `goal ai [section]` — print the AI bootstrap guide (how to write goal) to stdout
+- `goal category [name]` — list the language features, or print one feature's full reference
 - `goal lsp` — run the language server (editor diagnostics) over stdio
 
 `goal fix [-inplace] [path]` rewrites plain-Go patterns into idiomatic goal (`Result` + `?`); add `-inplace` to edit files in place instead of printing.

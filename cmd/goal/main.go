@@ -9,6 +9,7 @@
 //	goal fix   [-inplace] [path]            rewrite plain-Go patterns into idiomatic goal
 //	goal fmt   [-w] [path]                  format .goal source into the canonical layout
 //	goal ai    [section]                    print the AI bootstrap guide to stdout
+//	goal category [name]                    list language features, or print one in full
 //	goal lsp                                run the language server over stdio
 //
 // By default build/run are ephemeral: the generated Go is mapped into the module with
@@ -94,6 +95,11 @@ var guideCommands = []guide.Command{
 		Usage:   "goal ai [section]",
 	},
 	{
+		Name:    "category",
+		Summary: "list the language features, or print one feature's full reference",
+		Usage:   "goal category [name]",
+	},
+	{
 		Name:    "lsp",
 		Summary: "run the language server (editor diagnostics) over stdio",
 		Usage:   "goal lsp",
@@ -174,6 +180,8 @@ func run(args []string, out, errOut io.Writer) error {
 	switch cmd {
 	case "ai":
 		return cmdAI(rest, out)
+	case "category":
+		return cmdCategory(rest, out)
 	case "lsp":
 		return lsp.NewServer(out).Run(os.Stdin)
 	case "fix":
@@ -240,6 +248,26 @@ func cmdAI(args []string, out io.Writer) error {
 		return usageErr(fmt.Errorf("usage: goal ai [section] (sections: %s)", strings.Join(guide.SectionKeys(), ", ")))
 	}
 	return guide.Render(out, section, guideCommands)
+}
+
+// cmdCategory prints the list of language-feature categories (no argument) or one
+// category's full reference (a single name). More than one argument is a usage error; an
+// unknown name is reported by guide.RenderCategory with the valid set named.
+func cmdCategory(args []string, out io.Writer) error {
+	switch len(args) {
+	case 0:
+		var b strings.Builder
+		b.WriteString("Language features — run `goal category <name>` for one in full:\n\n")
+		for _, c := range guide.Categories() {
+			fmt.Fprintf(&b, "  %-14s %s\n", c.Name, c.Description)
+		}
+		_, err := io.WriteString(out, b.String())
+		return err
+	case 1:
+		return guide.RenderCategory(out, args[0])
+	default:
+		return usageErr(fmt.Errorf("usage: goal category [name] (categories: %s)", strings.Join(guide.CategoryNames(), ", ")))
+	}
 }
 
 // parseFlags pulls --emit[=dir], --json, and a single optional path argument out
