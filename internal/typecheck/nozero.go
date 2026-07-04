@@ -75,29 +75,32 @@ func litDiag(p *Package, cl *ast.CompositeLit, kind litClass) []Diagnostic {
 		/*line nozero.goal:98*/ if reason == "" {
 			/*line nozero.goal:99*/ continue
 		}
-		/*line nozero.goal:101*/ code, message := litMessage(kind, named, p.Info.Types[cl].Type, f.Name(), types.TypeString(f.Type(), func(*types.Package) string {
-			/*line nozero.goal:102*/ return ""
+		/*line nozero.goal:106*/ if gt, ok := goalFieldType(p, named.Obj().Name(), f.Name()); ok && sema.ZeroSafety(gt, nil, p.Sema, 0) == "" {
+			/*line nozero.goal:107*/ continue
+		}
+		/*line nozero.goal:109*/ code, message := litMessage(kind, named, p.Info.Types[cl].Type, f.Name(), types.TypeString(f.Type(), func(*types.Package) string {
+			/*line nozero.goal:110*/ return ""
 		}), reason)
-		/*line nozero.goal:103*/ diags = append(diags, Diagnostic{Pos: p.Fset.Position(cl.Pos()), Severity: sema.Severity(sema.Severity_Error{}), Feature: "08-no-zero-value", Code: code, Message: message})
+		/*line nozero.goal:111*/ diags = append(diags, Diagnostic{Pos: p.Fset.Position(cl.Pos()), Severity: sema.Severity(sema.Severity_Error{}), Feature: "08-no-zero-value", Code: code, Message: message})
 	}
-	/*line nozero.goal:111*/ return diags
+	/*line nozero.goal:119*/ return diags
 }
 
-//line nozero.goal:118
+//line nozero.goal:126
 func litMessage(kind litClass, named *types.Named, inst types.Type, field, ftype, reason string) (code, message string) {
-	/*line nozero.goal:119*/ if kind == classGeneric {
-		/*line nozero.goal:120*/ spelled := types.TypeString(inst, func(*types.Package) string {
-			/*line nozero.goal:120*/ return ""
+	/*line nozero.goal:127*/ if kind == classGeneric {
+		/*line nozero.goal:128*/ spelled := types.TypeString(inst, func(*types.Package) string {
+			/*line nozero.goal:128*/ return ""
 		})
-		/*line nozero.goal:121*/ return "unsafe-zero", fmt.Sprintf("generic literal `%s` omits field `%s` of type `%s`: %s", spelled, field, ftype, reason)
+		/*line nozero.goal:129*/ return "unsafe-zero", fmt.Sprintf("generic literal `%s` omits field `%s` of type `%s`: %s", spelled, field, ftype, reason)
 	}
-	/*line nozero.goal:125*/ name := named.Obj().Name()
-	/*line nozero.goal:126*/ return "unsafe-zero", fmt.Sprintf("elided literal of `%s` omits field `%s` of type `%s`: %s", name, field, ftype, reason)
+	/*line nozero.goal:133*/ name := named.Obj().Name()
+	/*line nozero.goal:134*/ return "unsafe-zero", fmt.Sprintf("elided literal of `%s` omits field `%s` of type `%s`: %s", name, field, ftype, reason)
 }
 
-//line nozero.goal:139
+//line nozero.goal:147
 func zeroUnsafeType(p *Package, t types.Type) string {
-	/*line nozero.goal:140*/ switch u := t.(type) {
+	/*line nozero.goal:148*/ switch u := t.(type) {
 	case *types.Pointer:
 		return "a nil pointer has no safe zero — replace the pointer with `Option[T]` if the field is optional, or set it explicitly"
 	case *types.Map:
@@ -110,84 +113,97 @@ func zeroUnsafeType(p *Package, t types.Type) string {
 		return ""
 	case *types.Interface:
 		if u.NumMethods() == 0 {
-			/*line nozero.goal:155*/ return ""
+			/*line nozero.goal:163*/ return ""
 		}
 		return "a nil interface has no safe zero — set it explicitly"
 	case *types.Named:
 		name := u.Obj().Name()
 		if p.Sema != nil && (p.Sema.Enums[name] != nil || p.Sema.Sealed[name]) {
-			/*line nozero.goal:161*/ return "a sum type has no valid zero variant — set it explicitly"
+			/*line nozero.goal:169*/ return "a sum type has no valid zero variant — set it explicitly"
 		}
 		if name == "error" {
-			/*line nozero.goal:164*/ return ""
+			/*line nozero.goal:172*/ return ""
 		}
 		switch under := u.Underlying().(type) {
 		case *types.Struct:
 			return ""
 		case *types.Interface:
 			if under.NumMethods() == 0 {
-				/*line nozero.goal:171*/ return ""
+				/*line nozero.goal:179*/ return ""
 			}
 			return "a nil interface has no safe zero — set it explicitly"
 		default:
 			return zeroUnsafeType(p, u.Underlying())
 		}
 	}
-	/*line nozero.goal:178*/ return ""
+	/*line nozero.goal:186*/ return ""
 }
 
-//line nozero.goal:183
+//line nozero.goal:195
+func goalFieldType(p *Package, structName, field string) (string, bool) {
+	/*line nozero.goal:196*/ if p.Sema == nil {
+		/*line nozero.goal:197*/ return "", false
+	}
+	/*line nozero.goal:199*/ for _, f := range p.Sema.Structs[structName] {
+		/*line nozero.goal:200*/ if f.Name == field {
+			/*line nozero.goal:201*/ return f.Type, true
+		}
+	}
+	/*line nozero.goal:204*/ return "", false
+}
+
+//line nozero.goal:209
 func goalStructLit(p *Package, cl *ast.CompositeLit) (*types.Struct, *types.Named) {
-	/*line nozero.goal:184*/ tv, ok := p.Info.Types[cl]
-	/*line nozero.goal:185*/ if !ok || tv.Type == nil {
-		/*line nozero.goal:186*/ return nil, nil
+	/*line nozero.goal:210*/ tv, ok := p.Info.Types[cl]
+	/*line nozero.goal:211*/ if !ok || tv.Type == nil {
+		/*line nozero.goal:212*/ return nil, nil
 	}
-	/*line nozero.goal:188*/ named, ok := tv.Type.(*types.Named)
-	/*line nozero.goal:189*/ if !ok || !isGoalDeclared(p, named) {
-		/*line nozero.goal:190*/ return nil, nil
+	/*line nozero.goal:214*/ named, ok := tv.Type.(*types.Named)
+	/*line nozero.goal:215*/ if !ok || !isGoalDeclared(p, named) {
+		/*line nozero.goal:216*/ return nil, nil
 	}
-	/*line nozero.goal:192*/ st, ok := named.Underlying().(*types.Struct)
-	/*line nozero.goal:193*/ if !ok {
-		/*line nozero.goal:194*/ return nil, nil
+	/*line nozero.goal:218*/ st, ok := named.Underlying().(*types.Struct)
+	/*line nozero.goal:219*/ if !ok {
+		/*line nozero.goal:220*/ return nil, nil
 	}
-	/*line nozero.goal:196*/ return st, named
+	/*line nozero.goal:222*/ return st, named
 }
 
-//line nozero.goal:205
+//line nozero.goal:231
 func isGoalDeclared(p *Package, named *types.Named) bool {
-	/*line nozero.goal:206*/ obj := named.Obj()
-	/*line nozero.goal:207*/ if obj.Pkg() != p.Types {
-		/*line nozero.goal:208*/ return false
+	/*line nozero.goal:232*/ obj := named.Obj()
+	/*line nozero.goal:233*/ if obj.Pkg() != p.Types {
+		/*line nozero.goal:234*/ return false
 	}
-	/*line nozero.goal:210*/ return strings.HasSuffix(p.Fset.Position(obj.Pos()).Filename, ".goal")
+	/*line nozero.goal:236*/ return strings.HasSuffix(p.Fset.Position(obj.Pos()).Filename, ".goal")
 }
 
-//line nozero.goal:218
+//line nozero.goal:244
 func litFieldKeys(cl *ast.CompositeLit) (present map[string]bool, keyed bool) {
-	/*line nozero.goal:219*/ present = map[string]bool{}
-	/*line nozero.goal:220*/ for _, e := range cl.Elts {
-		/*line nozero.goal:221*/ kv, ok := e.(*ast.KeyValueExpr)
-		/*line nozero.goal:222*/ if !ok {
-			/*line nozero.goal:223*/ return nil, false
+	/*line nozero.goal:245*/ present = map[string]bool{}
+	/*line nozero.goal:246*/ for _, e := range cl.Elts {
+		/*line nozero.goal:247*/ kv, ok := e.(*ast.KeyValueExpr)
+		/*line nozero.goal:248*/ if !ok {
+			/*line nozero.goal:249*/ return nil, false
 		}
-		/*line nozero.goal:225*/ id, ok := kv.Key.(*ast.Ident)
-		/*line nozero.goal:226*/ if !ok {
-			/*line nozero.goal:227*/ return nil, false
+		/*line nozero.goal:251*/ id, ok := kv.Key.(*ast.Ident)
+		/*line nozero.goal:252*/ if !ok {
+			/*line nozero.goal:253*/ return nil, false
 		}
-		/*line nozero.goal:229*/ present[id.Name] = true
+		/*line nozero.goal:255*/ present[id.Name] = true
 	}
-	/*line nozero.goal:231*/ return present, true
+	/*line nozero.goal:257*/ return present, true
 }
 
-//line nozero.goal:237
+//line nozero.goal:263
 func missingStructFields(st *types.Struct, present map[string]bool) []*types.Var {
-	/*line nozero.goal:238*/ var missing []*types.Var
+	/*line nozero.goal:264*/ var missing []*types.Var
 
-	/*line nozero.goal:239*/
+	/*line nozero.goal:265*/
 	for i := 0; i < st.NumFields(); i++ {
-		/*line nozero.goal:240*/ if f := st.Field(i); !present[f.Name()] {
-			/*line nozero.goal:241*/ missing = append(missing, f)
+		/*line nozero.goal:266*/ if f := st.Field(i); !present[f.Name()] {
+			/*line nozero.goal:267*/ missing = append(missing, f)
 		}
 	}
-	/*line nozero.goal:244*/ return missing
+	/*line nozero.goal:270*/ return missing
 }

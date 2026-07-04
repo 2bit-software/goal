@@ -98,6 +98,14 @@ func litDiag(p *Package, cl *ast.CompositeLit, kind litClass) []Diagnostic {
 		if reason == "" {
 			continue
 		}
+		// go/types has already lowered goal sugar (Option[T] -> *T), so a genuinely-safe
+		// Option field reads here as an unsafe nil pointer. Re-check the field against its
+		// goal-source type and defer to sema.ZeroSafety — the exact rule the lexical stage
+		// trusts — so the two stages agree: an omitted Option is a safe None, while a real
+		// *T / map / chan / func field still resolves to unsafe and is reported.
+		if gt, ok := goalFieldType(p, named.Obj().Name(), f.Name()); ok && sema.ZeroSafety(gt, nil, p.Sema, 0) == "" {
+			continue
+		}
 		code, message := litMessage(kind, named, p.Info.Types[cl].Type, f.Name(),
 			types.TypeString(f.Type(), func(*types.Package) string { return "" }), reason)
 		diags = append(diags, Diagnostic{
@@ -176,6 +184,24 @@ func zeroUnsafeType(p *Package, t types.Type) string {
 		}
 	}
 	return "" // unknown/other: assume struct-like, as sema.ZeroSafety does
+}
+
+// goalFieldType returns the goal-source type string for the named field of the goal
+// struct, and whether it was found. The depth stage reads go/types, which has already
+// lowered goal sugar (e.g. Option[T] -> *T); the goal-side type restores the pre-lowering
+// shape so a safety verdict matches the lexical stage (which classifies Option[T] as a
+// safe zero). Facts come from p.Sema (sema.ResolvePackage), the same table the lexical
+// checker consults. An unknown struct or field (embedded / foreign) reports ok=false.
+func goalFieldType(p *Package, structName, field string) (string, bool) {
+	if p.Sema == nil {
+		return "", false
+	}
+	for _, f := range p.Sema.Structs[structName] {
+		if f.Name == field {
+			return f.Type, true
+		}
+	}
+	return "", false
 }
 
 // goalStructLit resolves cl's type and returns the underlying struct and its named type

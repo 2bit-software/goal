@@ -66,7 +66,7 @@
         "The `--json` / JSON-RPC wire is unchanged (Option[T] lowers to *T), verified by the LSP and cmd/goal tests in the gate."
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Pattern mirrors the completed Diagnostic.Fix -> Option[SuggestedFix] change (and relies on the statement-position Option-match backend fix already landed). rpcResponse.Error is in internal/lsp; a success response carries None. Only convert fields that are legitimately absent, not required ones (those are US-006)."
     },
     {
@@ -78,7 +78,7 @@
         "Each affected literal sets the pointer field explicitly at construction (no post-literal assignment relied upon for safety)."
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "plainFunc.fn (*ast.FuncDecl, internal/sema), Package.Types (*types.Package, internal/typecheck), emitter.arity (*arityResolver, internal/backend). These are always set immediately after construction today; move them into the literal."
     },
     {

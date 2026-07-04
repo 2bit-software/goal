@@ -101,13 +101,18 @@ func Load(pkg *project.Package) Result[*Package, error] {
 		Types:      map[ast.Expr]types.TypeAndValue{},
 		Selections: map[*ast.SelectorExpr]*types.Selection{},
 	}
-	p := &Package{Fset: fset, Info: info, Files: files, Sema: semaInfo, Src: pkg, goalFiles: goalFiles}
+	// Run go/types first, collecting errors into a local slice, so Types and Errors
+	// are both set in the &Package{…} literal below — the required *types.Package
+	// pointer is never omitted (no post-literal assignment relied upon for safety).
+	var typeErrs []error
 	conf := types.Config{
 		Importer: importer.Default(),
-		Error:    func(e error) { p.Errors = append(p.Errors, e) },
+		Error:    func(e error) { typeErrs = append(typeErrs, e) },
 	}
 	// Check returns a usable (possibly incomplete) package even when Error fires.
-	p.Types, _ = conf.Check(pkg.Name, fset, files, info)
+	typesPkg, _ := conf.Check(pkg.Name, fset, files, info)
+	p := &Package{Fset: fset, Info: info, Files: files, Sema: semaInfo, Src: pkg,
+		goalFiles: goalFiles, Types: typesPkg, Errors: typeErrs}
 	return Result.Ok(p)
 }
 

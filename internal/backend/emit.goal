@@ -130,8 +130,10 @@ func emitFileWith(f *ast.File, info *sema.Info, suppressPrelude bool, srcFile st
 		typeDecls: map[string]string{},
 		recvTypes: map[string]string{},
 		curParams: map[string]string{},
+		// arity is a required (never-nil) resolver — set it in the literal rather
+		// than assigning it after, so the construction omits no unsafe pointer.
+		arity: newArityResolver(f),
 	}
-	e.arity = newArityResolver(f)
 	e.typeDecls = e.buildTypeDecls(f)
 	e.file(f)
 	if e.err != nil {
@@ -1207,6 +1209,10 @@ func (e *emitter) exprText(x ast.Expr) string {
 		// with a parent temp. fnKind/closedT/closedE are intentionally NOT copied:
 		// exprText renders a value expression, not a function body.
 		taken: e.taken,
+		// Share the parent's arity resolver (built from the same file) so a
+		// qualified `?` inside a re-emitted value lowers with the same arity facts
+		// and the literal omits no unsafe nil pointer.
+		arity: e.arity,
 		// recvTypes/curParams carry no receiver/parameter context into a value
 		// expression, but are set to empty maps so the literal omits no unsafe
 		// nil map; every lookup then reports "not found" exactly as nil would.

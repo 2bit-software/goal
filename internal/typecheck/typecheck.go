@@ -56,15 +56,18 @@ func Load(pkg *project.Package) (ok *Package, err1 error) {
 		/*line typecheck.goal:95*/ files = append(files, f)
 	}
 	/*line typecheck.goal:98*/ info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}, Types: map[ast.Expr]types.TypeAndValue{}, Selections: map[*ast.SelectorExpr]*types.Selection{}}
-	/*line typecheck.goal:104*/ p := &Package{Fset: fset, Info: info, Files: files, Sema: semaInfo, Src: pkg, goalFiles: goalFiles}
-	/*line typecheck.goal:105*/ conf := types.Config{Importer: importer.Default(), Error: func(e error) {
-		/*line typecheck.goal:107*/ p.Errors = append(p.Errors, e)
+	/*line typecheck.goal:107*/ var typeErrs []error
+
+	/*line typecheck.goal:108*/
+	conf := types.Config{Importer: importer.Default(), Error: func(e error) {
+		/*line typecheck.goal:110*/ typeErrs = append(typeErrs, e)
 	}}
-	/*line typecheck.goal:110*/ p.Types, _ = conf.Check(pkg.Name, fset, files, info)
-	/*line typecheck.goal:111*/ return p, nil
+	/*line typecheck.goal:113*/ typesPkg, _ := conf.Check(pkg.Name, fset, files, info)
+	/*line typecheck.goal:114*/ p := &Package{Fset: fset, Info: info, Files: files, Sema: semaInfo, Src: pkg, goalFiles: goalFiles, Types: typesPkg, Errors: typeErrs}
+	/*line typecheck.goal:116*/ return p, nil
 }
 
-//line typecheck.goal:118
+//line typecheck.goal:123
 type Diagnostic struct {
 	Pos      token.Position
 	Severity sema.Severity
@@ -73,20 +76,20 @@ type Diagnostic struct {
 	Message  string
 }
 
-//line typecheck.goal:127
+//line typecheck.goal:132
 func (d Diagnostic) String() string {
-	/*line typecheck.goal:128*/ return fmt.Sprintf("%s: %s: [%s] %s", d.Pos, d.Severity, d.Code, d.Message)
+	/*line typecheck.goal:133*/ return fmt.Sprintf("%s: %s: [%s] %s", d.Pos, d.Severity, d.Code, d.Message)
 }
 
-//line typecheck.goal:134
+//line typecheck.goal:139
 func (p *Package) GoalPos(n ast.Node) token.Position {
-	/*line typecheck.goal:135*/ return p.Fset.Position(n.Pos())
+	/*line typecheck.goal:140*/ return p.Fset.Position(n.Pos())
 }
 
-//line typecheck.goal:140
+//line typecheck.goal:145
 func (p *Package) Lookup(name string) types.Object {
-	/*line typecheck.goal:141*/ if p.Types == nil {
-		/*line typecheck.goal:142*/ return nil
+	/*line typecheck.goal:146*/ if p.Types == nil {
+		/*line typecheck.goal:147*/ return nil
 	}
-	/*line typecheck.goal:144*/ return p.Types.Scope().Lookup(name)
+	/*line typecheck.goal:149*/ return p.Types.Scope().Lookup(name)
 }

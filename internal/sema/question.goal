@@ -373,7 +373,7 @@ func plainResultFuncs(file *ast.File) []plainFunc {
 		if !plain || fn.Recv != nil || fn.Name == nil || fn.Type == nil || fn.Body == nil {
 			continue
 		}
-		out = append(out, plainFunc{fn})
+		out = append(out, plainFunc{fn: fn})
 	}
 	return out
 }

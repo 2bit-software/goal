@@ -1,6 +1,22 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- The no-unsafe-zero self-check runs TWO stages that must agree (found US-006 self-check):
+  the LEXICAL stage (internal/sema/fields.goal via sema.ZeroSafety) classifies a rendered
+  goal TYPE STRING and treats `Option[T]` as a SAFE zero (a None); the DEPTH stage
+  (internal/typecheck/nozero.goal) runs go/types over the GENERATED Go, where `Option[T]`
+  has lowered to `*T`, so it sees a bare pointer and false-flags an omitted Option. The
+  depth stage only fires on ELIDED (`[]T{{…}}`) and GENERIC (`Box[int]{…}`) literals (plain
+  `T{…}` is the lexical stage's), so an Option field on such a literal is the blind spot. To
+  keep the stages in lockstep, the depth stage consults the goal-side field type via
+  `p.Sema.Structs[name]` (a `[]sema.Field{Name,Type}`) and defers to `sema.ZeroSafety` — a
+  suppression that can only REMOVE false positives (a real `*T`/map/chan still resolves
+  unsafe). Also: the unsafe-zero checker counts only KEYED fields, so a POSITIONAL
+  single-field literal (`plainFunc{fn}`) reads as omitting the field — switch to keyed
+  (`plainFunc{fn: fn}`). And a required pointer assigned right AFTER a literal
+  (`p := &T{...}; p.X = ...`) is flagged; move it into the literal (restructure so the value
+  is computed into a local first when a closure captured the struct, as typecheck.goal's
+  Package.Types did with conf.Check).
 - Introducing the FIRST `Option[T]` into a package makes the backend emit a NEW
   per-package helper `internal/<pkg>/goal_options.go` (found US-004). After
   `task generate` it shows up as UNTRACKED — `git add` it or the commit ships a
@@ -9075,4 +9091,66 @@ detour proved necessary.
   - The unsafe-zero checker flags a POSITIONAL single-field struct literal
     (`roleVisitor{roles}`) as omitting the map field; switching to the keyed form
     (`roleVisitor{roles: roles}`) clears it without changing behavior.
+---
+
+## 2026-07-04T21:54:00Z - US-005
+- Modeled the LSP `rpcResponse.Error` field as `Option[rpcError]` instead of
+  `*rpcError`, so a success response carries a safe `None` rather than an unsafe
+  omitted nil pointer. This clears the last two non-interpreter `[unsafe-zero]`
+  errors under internal/lsp (both `rpcResponse{…}` success literals). Commit
+  dc5090c.
+- Files changed: internal/lsp/jsonrpc.goal (field type), internal/lsp/server.goal
+  (replyError now `Option.Some(rpcError{...})`), regenerated internal/lsp/server.go.
+- Verified: `goal check ./internal | grep '[unsafe-zero]' | grep '^internal/lsp/'`
+  is empty; `task check-full` green with FIXPOINT OK.
+- Learnings for future iterations:
+  - Converting a pointer field to `Option[T]` in a package that ALREADY uses
+    Option (lsp did, via US-004) adds NO new file: `goal_options.go` already
+    exists and is tracked, so `git status` after `task generate` shows only the
+    edited `.goal` and its `.go` sibling — no untracked helper to remember to add
+    (contrast with US-004's first-Option-in-package gotcha).
+  - A struct field whose type changes from `*T` to `Option[T]` produces a
+    BYTE-IDENTICAL generated `.go` for the type declaration (both lower to `*T`),
+    so the type-def file (jsonrpc.go here) shows NO diff — only the construction
+    site's file (server.go: `&rpcError{...}` -> `goalSome(rpcError{...})`)
+    changes. Don't be surprised when `git status` lists fewer generated files
+    than source files touched.
+  - A field that is only ever JSON-marshaled (no goal-side reader) is the
+    cleanest Option conversion: change the field type + the one `Option.Some`
+    construction; omitted literals default to `None`; the `json:",omitempty"`
+    wire is preserved because `Option[T]` lowers to `*T`. No `match`/`?` consumer
+    edits needed.
+---
+
+## 2026-07-04T22:40:00Z - US-006 (self-check-cleanup PRD)
+- Cleared every remaining NON-INTERPRETER `[unsafe-zero]` error from
+  `goal check ./internal` (11 diagnostics): the three named required pointers plus the
+  seven `Diagnostic.Fix` depth-stage false positives.
+- Files changed (each .goal + regenerated .go sibling):
+  - internal/sema/question.goal — `plainFunc{fn}` -> `plainFunc{fn: fn}` (keyed so the
+    completeness checker sees the field set).
+  - internal/backend/emit.goal — `arity *arityResolver` moved into BOTH `emitter{…}`
+    literals: `emitFileWith` sets `arity: newArityResolver(f)` (dropped the post-literal
+    assign); `exprText` sub-emitter shares `arity: e.arity` (same-file resolver — also
+    closes a latent nil-arity gap for a qualified `?` inside a re-emitted value expr).
+  - internal/typecheck/typecheck.goal — `Package.Types` (+ `Errors`) now set in the
+    `&Package{…}` literal: run `conf.Check` into a local `typesPkg` and collect errors into
+    a local slice via the `conf.Error` closure, then build the struct.
+  - internal/typecheck/nozero.goal — added `goalFieldType(p, structName, field)` and, in
+    `litDiag`, skip a missing field when `sema.ZeroSafety(goalType, nil, p.Sema, 0) == ""`.
+    This makes the depth stage Option-aware and agree with the lexical stage.
+- Verified: acceptance grep
+  `goal check ./internal 2>&1 | grep '[unsafe-zero]' | grep -v '^internal/interp/'` is
+  EMPTY; `task check-full` exits 0 with `FIXPOINT OK` (all package tests green).
+- Learnings for future iterations:
+  - Golden/fixpoint stability held for all four edits: the arity/Types/Errors moves are
+    behavior-preserving (value was always set immediately anyway), the keyed literal is a
+    pure spelling change, and the depth-stage suppression only removes false positives.
+  - Sharing `e.arity` into the exprText sub-emitter (was nil) caused NO golden churn —
+    exprText renders assert messages / alias underlyings, which don't hit the arity paths.
+  - US-007 (the capstone assert + interpreter-boundary doc) is now unblocked: the
+    non-interpreter self-check is clean; only the interpreter's Value union remains.
+  - NOTE: the US-003/US-004/US-005 progress entries and their prd.json `passes:true` flags
+    were still UNCOMMITTED in the working tree when US-006 started (prior workers committed
+    code but not the bookkeeping); this commit sweeps them in.
 ---

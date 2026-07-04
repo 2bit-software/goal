@@ -361,7 +361,7 @@ func plainResultFuncs(file *ast.File) []plainFunc {
 		/*line question.goal:373*/ if !plain || fn.Recv != nil || fn.Name == nil || fn.Type == nil || fn.Body == nil {
 			/*line question.goal:374*/ continue
 		}
-		/*line question.goal:376*/ out = append(out, plainFunc{fn})
+		/*line question.goal:376*/ out = append(out, plainFunc{fn: fn})
 	}
 	/*line question.goal:378*/ return out
 }
