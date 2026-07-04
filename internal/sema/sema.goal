@@ -129,9 +129,22 @@ type Info struct {
 	EmbeddedIfaces map[string][]string
 }
 
-// New returns an empty *Info. Back-ends that do not yet need semantic facts (the
-// plain-Go subset) call New to satisfy the Backend.Emit signature; its maps are
-// nil (read-only callers range over them harmlessly).
+// New returns an *Info with every map field initialized to an empty (non-nil)
+// map. Back-ends that do not yet need semantic facts (the plain-Go subset) call
+// New to satisfy the Backend.Emit signature; read-only callers range over the
+// empty maps harmlessly, while any writer is panic-safe (a nil map would panic
+// on write, which the no-unsafe-zero discipline forbids).
 func New() *Info {
-	return &Info{}
+	return &Info{
+		FuncSignatures: map[string]FuncSig{},
+		Enums:          map[string]*Enum{},
+		Sealed:         map[string]bool{},
+		SealedImpls:    map[string][]string{},
+		Structs:        map[string][]Field{},
+		FromRegistry:   map[[2]string]ConvEntry{},
+		Methods:        map[string][]Method{},
+		ForeignMethods: map[string]FuncSig{},
+		Interfaces:     map[string][]Method{},
+		EmbeddedIfaces: map[string][]string{},
+	}
 }

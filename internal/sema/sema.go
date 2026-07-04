@@ -83,7 +83,7 @@ type Info struct {
 	EmbeddedIfaces map[string][]string
 }
 
-//line sema.goal:135
+//line sema.goal:137
 func New() *Info {
-	/*line sema.goal:136*/ return &Info{}
+	/*line sema.goal:138*/ return &Info{FuncSignatures: map[string]FuncSig{}, Enums: map[string]*Enum{}, Sealed: map[string]bool{}, SealedImpls: map[string][]string{}, Structs: map[string][]Field{}, FromRegistry: map[[2]string]ConvEntry{}, Methods: map[string][]Method{}, ForeignMethods: map[string]FuncSig{}, Interfaces: map[string][]Method{}, EmbeddedIfaces: map[string][]string{}}
 }
