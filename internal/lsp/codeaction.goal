@@ -83,24 +83,28 @@ func (s *Server) quickfixActions(p CodeActionParams, text string, version int) [
 	tokEnd := tokenEnds(text)
 	var actions []CodeAction
 	for _, d := range diags {
-		if d.Fix == nil {
-			continue
+		match d.Fix {
+			Option.None => {
+				continue
+			}
+			Option.Some(f) => {
+				if !rangesOverlap(toLSP(text, tokEnd, d).Range, p.Range) {
+					continue
+				}
+				at := Position{Line: f.Pos.Line - 1, Character: f.Pos.Col - 1}
+				actions = append(actions, CodeAction{
+					Title: quickfixTitle(d.Code),
+					Kind:  quickfixKind,
+					Edit: &WorkspaceEdit{DocumentChanges: []TextDocumentEdit{{
+						TextDocument: versionedTextDocumentIdentifier{URI: p.TextDocument.URI, Version: version},
+						Edits: []TextEdit{{
+							Range:   Range{Start: at, End: at},
+							NewText: f.NewText,
+						}},
+					}}},
+				})
+			}
 		}
-		if !rangesOverlap(toLSP(text, tokEnd, d).Range, p.Range) {
-			continue
-		}
-		at := Position{Line: d.Fix.Pos.Line - 1, Character: d.Fix.Pos.Col - 1}
-		actions = append(actions, CodeAction{
-			Title: quickfixTitle(d.Code),
-			Kind:  quickfixKind,
-			Edit: &WorkspaceEdit{DocumentChanges: []TextDocumentEdit{{
-				TextDocument: versionedTextDocumentIdentifier{URI: p.TextDocument.URI, Version: version},
-				Edits: []TextEdit{{
-					Range:   Range{Start: at, End: at},
-					NewText: d.Fix.NewText,
-				}},
-			}}},
-		})
 	}
 	return actions
 }

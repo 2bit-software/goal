@@ -61,49 +61,53 @@ func (s *Server) quickfixActions(p CodeActionParams, text string, version int) [
 
 	/*line codeaction.goal:85*/
 	for _, d := range diags {
-		/*line codeaction.goal:86*/ if d.Fix == nil {
-			/*line codeaction.goal:87*/ continue
+		/*line codeaction.goal:86*/ if o1 := d.Fix; o1 != nil {
+			f := *o1
+			/*line codeaction.goal:91*/ if !rangesOverlap(toLSP(text, tokEnd, d).Range, p.Range) {
+				/*line codeaction.goal:92*/ continue
+			}
+			/*line codeaction.goal:94*/ at := Position{Line: f.Pos.Line - 1, Character: f.Pos.Col - 1}
+			/*line codeaction.goal:95*/ actions = append(actions, CodeAction{Title: quickfixTitle(d.Code), Kind: quickfixKind, Edit: &WorkspaceEdit{DocumentChanges: []TextDocumentEdit{{TextDocument: versionedTextDocumentIdentifier{URI: p.TextDocument.URI, Version: version}, Edits: []TextEdit{{Range: Range{Start: at, End: at}, NewText: f.NewText}}}}}})
+
+		} else {
+			/*line codeaction.goal:88*/ continue
+
 		}
-		/*line codeaction.goal:89*/ if !rangesOverlap(toLSP(text, tokEnd, d).Range, p.Range) {
-			/*line codeaction.goal:90*/ continue
-		}
-		/*line codeaction.goal:92*/ at := Position{Line: d.Fix.Pos.Line - 1, Character: d.Fix.Pos.Col - 1}
-		/*line codeaction.goal:93*/ actions = append(actions, CodeAction{Title: quickfixTitle(d.Code), Kind: quickfixKind, Edit: &WorkspaceEdit{DocumentChanges: []TextDocumentEdit{{TextDocument: versionedTextDocumentIdentifier{URI: p.TextDocument.URI, Version: version}, Edits: []TextEdit{{Range: Range{Start: at, End: at}, NewText: d.Fix.NewText}}}}}})
 	}
-	/*line codeaction.goal:105*/ return actions
+	/*line codeaction.goal:109*/ return actions
 }
 
-//line codeaction.goal:110
+//line codeaction.goal:114
 func quickfixTitle(code string) string {
-	/*line codeaction.goal:111*/ switch code {
+	/*line codeaction.goal:115*/ switch code {
 	case "non-exhaustive-match":
 		return "Add missing match arms"
 	}
-	/*line codeaction.goal:115*/ return "Apply suggested fix"
+	/*line codeaction.goal:119*/ return "Apply suggested fix"
 }
 
-//line codeaction.goal:121
+//line codeaction.goal:125
 func rangesOverlap(a, b Range) bool {
-	/*line codeaction.goal:122*/ return !posLess(b.End, a.Start) && !posLess(a.End, b.Start)
+	/*line codeaction.goal:126*/ return !posLess(b.End, a.Start) && !posLess(a.End, b.Start)
 }
 
-//line codeaction.goal:126
+//line codeaction.goal:130
 func posLess(x, y Position) bool {
-	/*line codeaction.goal:127*/ if x.Line != y.Line {
-		/*line codeaction.goal:128*/ return x.Line < y.Line
+	/*line codeaction.goal:131*/ if x.Line != y.Line {
+		/*line codeaction.goal:132*/ return x.Line < y.Line
 	}
-	/*line codeaction.goal:130*/ return x.Character < y.Character
+	/*line codeaction.goal:134*/ return x.Character < y.Character
 }
 
-//line codeaction.goal:136
+//line codeaction.goal:140
 func wantsKind(only []string, kind string) bool {
-	/*line codeaction.goal:137*/ if len(only) == 0 {
-		/*line codeaction.goal:138*/ return true
+	/*line codeaction.goal:141*/ if len(only) == 0 {
+		/*line codeaction.goal:142*/ return true
 	}
-	/*line codeaction.goal:140*/ for _, o := range only {
-		/*line codeaction.goal:141*/ if o == kind || strings.HasPrefix(kind, o+".") {
-			/*line codeaction.goal:142*/ return true
+	/*line codeaction.goal:144*/ for _, o := range only {
+		/*line codeaction.goal:145*/ if o == kind || strings.HasPrefix(kind, o+".") {
+			/*line codeaction.goal:146*/ return true
 		}
 	}
-	/*line codeaction.goal:145*/ return false
+	/*line codeaction.goal:149*/ return false
 }

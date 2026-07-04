@@ -143,7 +143,8 @@ func exhaustiveFix(enumName string, missing []string, m *ast.MatchExpr) *Suggest
 	/*line check.goal:207*/ for _, v := range missing {
 		/*line check.goal:208*/ text += "\n\t\t" + enumName + "." + v + ` => panic("TODO")`
 	}
-	/*line check.goal:210*/ return &SuggestedFix{Pos: m.Rbrace, NewText: text}
+	/*line check.goal:210*/ some := SuggestedFix{Pos: m.Rbrace, NewText: text}
+	return &some
 }
 
 //line check.goal:222
