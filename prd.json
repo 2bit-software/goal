@@ -53,7 +53,7 @@
         "The LSP end-to-end tests in the gate stay green."
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "roleVisitor.roles is a map[int]int (initialize it); packageEntry.open is a *openFile (make it Option[openFile] if genuinely optional, else set it explicitly)."
     },
     {

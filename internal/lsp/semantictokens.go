@@ -92,7 +92,7 @@ func astRoles(src string) map[int]int {
 	/*line semantictokens.goal:105*/ if err != nil || file == nil {
 		/*line semantictokens.goal:106*/ return roles
 	}
-	/*line semantictokens.goal:108*/ ast.Walk(roleVisitor{roles}, file)
+	/*line semantictokens.goal:108*/ ast.Walk(roleVisitor{roles: roles}, file)
 	/*line semantictokens.goal:109*/ return roles
 }
 

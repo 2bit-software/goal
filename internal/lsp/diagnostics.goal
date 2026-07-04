@@ -85,26 +85,29 @@ func (s *Server) compile(uri, text string, version int) {
 	// Publish refreshed diagnostics for every open file in the package — fixing one file
 	// clears the stale cross-file diagnostics of its open siblings without touching them.
 	for i := range views {
-		of := views[i].open
-		if of == nil {
-			continue // not open in the editor; nothing to show
-		}
-		if s.superseded(of.uri, of.version) {
-			continue
-		}
-		base := filepath.Base(of.path)
-		tokEnd := tokenEnds(of.text)
-		out := make([]Diagnostic, 0, len(perFile[i]))
-		for _, d := range perFile[i] {
-			if suppress[dedupKey(base, d.Pos.Line, d.Feature)] {
-				continue // a type-backed finding owns this construct
+		match views[i].open {
+			Option.None => {
+				continue // not open in the editor; nothing to show
 			}
-			out = append(out, toLSP(of.text, tokEnd, d))
+			Option.Some(of) => {
+				if s.superseded(of.uri, of.version) {
+					continue
+				}
+				base := filepath.Base(of.path)
+				tokEnd := tokenEnds(of.text)
+				out := make([]Diagnostic, 0, len(perFile[i]))
+				for _, d := range perFile[i] {
+					if suppress[dedupKey(base, d.Pos.Line, d.Feature)] {
+						continue // a type-backed finding owns this construct
+					}
+					out = append(out, toLSP(of.text, tokEnd, d))
+				}
+				for _, d := range depthByBase[base] {
+					out = append(out, depthToLSP(of.text, d))
+				}
+				s.publish(of.uri, of.version, out)
+			}
 		}
-		for _, d := range depthByBase[base] {
-			out = append(out, depthToLSP(of.text, d))
-		}
-		s.publish(of.uri, of.version, out)
 	}
 }
 
@@ -188,7 +191,7 @@ func (s *Server) openFilesInDir(dir string) map[string]openFile {
 type packageEntry struct {
 	path string
 	src  string
-	open *openFile
+	open Option[openFile]
 }
 
 // mergePackageView builds the package's sources, path-sorted for a deterministic table
@@ -205,10 +208,10 @@ func mergePackageView(disk []fileSrc, open map[string]openFile) []packageEntry {
 		o := of
 		if e, found := byPath[o.path]; found {
 			e.src = o.text // buffer wins over disk
-			e.open = &o
+			e.open = Option.Some(o)
 			continue
 		}
-		byPath[o.path] = &packageEntry{path: o.path, src: o.text, open: &o}
+		byPath[o.path] = &packageEntry{path: o.path, src: o.text, open: Option.Some(o)}
 		paths = append(paths, o.path)
 	}
 	sort.Strings(paths)

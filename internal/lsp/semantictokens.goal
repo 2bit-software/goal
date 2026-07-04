@@ -105,7 +105,7 @@ func astRoles(src string) map[int]int {
 	if err != nil || file == nil {
 		return roles
 	}
-	ast.Walk(roleVisitor{roles}, file)
+	ast.Walk(roleVisitor{roles: roles}, file)
 	return roles
 }
 

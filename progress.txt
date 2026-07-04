@@ -1,6 +1,11 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- Introducing the FIRST `Option[T]` into a package makes the backend emit a NEW
+  per-package helper `internal/<pkg>/goal_options.go` (found US-004). After
+  `task generate` it shows up as UNTRACKED — `git add` it or the commit ships a
+  non-compiling generated package. verify-generated diffs the filesystem only,
+  so it stays green while the file is untracked; `git status` is what catches it.
 - docs/by-example.md is LIVE-VERIFIED, not just prose (found US-035): scripts/
   build-site.sh runs build-playground, which transpiles every `Transpiles to:`
   block with the HOST transpiler and hard-fails on any mismatch. So a compiler
@@ -9042,4 +9047,32 @@ detour proved necessary.
     omissions are gone.
   - Single .goal file edit -> only its .go sibling changes after `task generate`
     (task generate is deterministic), so the commit stays small.
+---
+
+## 2026-07-04 - US-004
+- Made internal/lsp follow the no-unsafe-zero rule for two struct fields:
+  initialized roleVisitor.roles at its construction site and modeled
+  packageEntry.open as Option[openFile] (an absent open document is now a safe
+  None instead of a nil *openFile).
+- Files changed: internal/lsp/semantictokens.goal (roleVisitor{roles} ->
+  roleVisitor{roles: roles}), internal/lsp/diagnostics.goal (open field type +
+  Option.Some at construction + statement-position match consumer), regenerated
+  internal/lsp/{semantictokens,diagnostics}.go, and NEW internal/lsp/goal_options.go.
+- Left rpcResponse.Error (server.goal) untouched: it is US-005's explicit scope.
+- Learnings for future iterations:
+  - Converting a pointer field to Option[T] in a package that used NO Option
+    before makes the backend emit a NEW per-package helper module
+    `internal/<pkg>/goal_options.go` (defines goalSome/goalNone etc). It is
+    untracked after `task generate` — you MUST `git add` it or the commit ships
+    a broken (non-compiling) generated package. verify-generated only diffs the
+    filesystem, so it stays green even while the file is untracked; git status
+    is the check that catches it.
+  - To consume an Option[T] in statement position with early-exit control flow,
+    copy the codeaction.goal:86 idiom: `match x { Option.None => { continue }
+    Option.Some(v) => { ...body with continue/return... } }`. It lowers to
+    `if p := x; p != nil { v := *p ... } else { ... }`, so `continue`/`return`
+    inside an arm targets the enclosing loop/func correctly.
+  - The unsafe-zero checker flags a POSITIONAL single-field struct literal
+    (`roleVisitor{roles}`) as omitting the map field; switching to the keyed form
+    (`roleVisitor{roles: roles}`) clears it without changing behavior.
 ---
