@@ -3672,3 +3672,46 @@ stay as history; this is the current state.
   **Refused:** opt-in strictness the author forgets to opt into catches nothing — "default is
   what makes it actually catch." Same reason §3.5 is a default, not opt-in.
 
+### 2026-07-04 — Interpreter `Value` tagged-union left as the sole `[unsafe-zero]` source
+- **Kind:** decision.
+- **Context:** the `ralph/self-check-cleanup` PRD (US-001..006) cleared every *non-interpreter*
+  `[unsafe-zero]` diagnostic from `goal check ./internal`. As of this entry
+  `goal check ./internal 2>&1 | grep '[unsafe-zero]' | grep -v '^internal/interp/'` is EMPTY —
+  zero non-interpreter unsafe-zero errors — while ~434 `[unsafe-zero]` diagnostics remain, ALL
+  under `internal/interp/`.
+- **Source of the remaining ~434:** they all trace to `internal/interp/value.goal`'s `Value`
+  type — a hand-rolled tagged union:
+  ```
+  type Value struct {
+      Kind    Kind
+      Int     int64
+      Float   float64
+      Str     string
+      Bool    bool
+      Struct  *StructValue // KindStruct
+      Slice   []Value      // KindSlice
+      Map     *MapValue    // KindMap
+      Func    *FuncValue   // KindFunc
+      Variant *Variant     // KindVariant
+  }
+  ```
+  The union is discriminated by `Kind`; for any given kind only one payload field is populated.
+  So every `Value{Kind: ..., X: ...}` construction NECESSARILY omits the other pointer payload
+  fields (`Struct`, `Map`, `Func`, `Variant`), and the unsafe-zero checker flags each omitted
+  `*T` — several per literal, across the interpreter's many `Value` constructions, summing to
+  ~434. The count is *structural* (inherent to the union representation), not a per-site
+  oversight the way the US-001..006 omissions were.
+- **Chose:** DEFER converting `Value` to a real sum type (a goal `enum` / sealed union where
+  each case carries only its own payload, read via `match`). The non-interpreter self-check is
+  clean and that boundary is now the explicit scope line for this PRD.
+- **Over:** converting `Value` -> sum type now (would silence the remaining ~434), or globally
+  suppressing `[unsafe-zero]` under `internal/interp/`.
+- **Why:** the `Value` conversion is a large, behavior-sensitive refactor of the interpreter
+  core — it rewrites every construction AND every read site (`v.Struct`, `v.Map`, `v.Func`,
+  `v.Variant`, `v.Slice` field access) to `match` on the case, touching the hottest paths in
+  the evaluator. That is disproportionate to this cleanup PRD, which was scoped to the compiler
+  front-end's own omissions. Blanket-suppressing the code would hide genuine future footguns.
+  The interpreter `Value`-union refactor is left as a separate, deliberately-scoped decision
+  (agreed with the user); this entry records the boundary so it is explicit and enforceable
+  (the non-interpreter grep must stay empty).
+

@@ -91,7 +91,7 @@
         "The full self-host gate (task check-full) is green with FIXPOINT OK."
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Capstone: US-001..006 do the work; this asserts the aggregate and records the interpreter boundary decided with the user (interpreter Value union out of scope for this PRD)."
     }
   ]

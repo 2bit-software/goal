@@ -9154,3 +9154,27 @@ detour proved necessary.
     were still UNCOMMITTED in the working tree when US-006 started (prior workers committed
     code but not the bookkeeping); this commit sweeps them in.
 ---
+
+## 2026-07-04T22:40:00Z - US-007
+- Capstone: asserted zero non-interpreter [unsafe-zero] and documented the
+  interpreter boundary. `goal check ./internal` emits 434 [unsafe-zero], ALL
+  under internal/interp/; the non-interp grep is empty (US-001..006 did the
+  work). Added a dated DECISIONS.md entry recording that the remaining ~434 all
+  come from internal/interp/value.goal's `Value` hand-rolled tagged union
+  (Kind + mutually-exclusive pointer payloads), so every Value{Kind:..,X:..}
+  omits the other *T fields — structural, not per-site — and the Value->sum-type
+  refactor is deferred out of scope for this PRD (agreed with user).
+- Files changed: DECISIONS.md (one appended decision entry), prd.json
+  (US-007 passes:true).
+- Learnings for future iterations:
+  - The self-check-cleanup PRD's scope boundary is now enforceable by one
+    command: `goal check ./internal 2>&1 | grep '[unsafe-zero]' | grep -v
+    '^internal/interp/'` MUST stay empty. Any NEW non-interp unsafe-zero
+    regresses US-007.
+  - The remaining 434 are a REPRESENTATION artifact of interp/value.goal's
+    flat tagged-union `Value` struct — not something to "fix" per-literal;
+    silencing them means converting Value to a goal enum/sealed union, a
+    separate interpreter-core refactor.
+  - This story touched no .goal/.go source, so no `task generate` /
+    verify-generated churn — DECISIONS.md is a plain top-level ledger.
+---
