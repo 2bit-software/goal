@@ -60,6 +60,47 @@ func TestToolchainSectionListsEveryCommand(t *testing.T) {
 	}
 }
 
+// TestAIBaseIsSlim holds the base `goal ai` to its two-tier contract: it teaches the four
+// core features in full, advertises `goal fix` and the on-demand tiers, and omits the bulk
+// reference material that now lives behind `goal category` / `goal ai <section>`.
+func TestAIBaseIsSlim(t *testing.T) {
+	var out bytes.Buffer
+	if err := run([]string{"ai"}, &out, io.Discard); err != nil {
+		t.Fatalf("run ai: %v", err)
+	}
+	got := out.String()
+
+	if n := strings.Count(got, "\n") + 1; n >= 500 {
+		t.Errorf("slim base is %d lines; want under 500", n)
+	}
+
+	// The four core features are taught in full (heading + live result block).
+	for _, want := range []string{"### Enums", "### Match", "### Doctests", "### implements", "_transpiles to:_"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("slim base omits core-feature marker %q", want)
+		}
+	}
+
+	// The fix pointer names the in-place invocation, and the tiers pointer names both
+	// on-demand surfaces.
+	if !strings.Contains(got, "goal fix") || !strings.Contains(got, "-inplace") {
+		t.Error("slim base omits the `goal fix -inplace` pointer")
+	}
+	if !strings.Contains(got, "goal category") || !strings.Contains(got, "goal ai <section>") {
+		t.Error("slim base omits the tiers pointer naming `goal category` and `goal ai <section>`")
+	}
+
+	// The non-core features and the relocated sections must not appear in the base.
+	for _, absent := range []string{
+		"#### Option", "#### derive-convert", "## Checker diagnostics",
+		"## A complete starter program", "## Locked conventions", "## Deeper references",
+	} {
+		if strings.Contains(got, absent) {
+			t.Errorf("slim base leaks relocated content %q", absent)
+		}
+	}
+}
+
 // TestAIFeaturesUnchanged pins `goal ai features` to a golden captured before the guide
 // was re-tiered, so the shared per-feature renderer keeps producing the full features
 // section byte-for-byte. Regenerate with: go run ./cmd/goal ai features > cmd/goal/testdata/ai-features.golden
