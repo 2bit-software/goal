@@ -86,22 +86,22 @@ func resolvableConvField(pos token.Pos, tgtType, srcType string, f, sf Field, fa
 	/*line convert.goal:123*/ tf := strings.TrimSpace(f.Type)
 	/*line convert.goal:124*/ sfType := strings.TrimSpace(sf.Type)
 	/*line convert.goal:125*/ if sfType == tf {
-		/*line convert.goal:126*/ return Diagnostic{}, true
+		/*line convert.goal:126*/ return Diagnostic{Severity: Severity(Severity_Error{})}, true
 	}
 	/*line convert.goal:128*/ if e, ok := info.FromRegistry[[2]string{sfType, tf}]; ok {
 		/*line convert.goal:129*/ if e.Fallible && !fallible {
 			/*line convert.goal:130*/ return Diagnostic{Pos: pos, Severity: Severity(Severity_Error{}), Feature: "12-derive-convert", Code: "fallible-in-total-derive", Message: fmt.Sprintf("`derive func` target field `%s.%s` needs the fallible conversion `%s` (`%s`→`%s`), but this derive is total — declare it returning `(%s, error)`", tgtType, f.Name, e.Name, sfType, tf, tgtType)}, false
 		}
-		/*line convert.goal:139*/ return Diagnostic{}, true
+		/*line convert.goal:139*/ return Diagnostic{Severity: Severity(Severity_Error{})}, true
 	}
 	/*line convert.goal:142*/ if strings.HasPrefix(sfType, "[]") && strings.HasPrefix(tf, "[]") {
 		/*line convert.goal:143*/ a := strings.TrimSpace(sfType[2:])
 		/*line convert.goal:144*/ b := strings.TrimSpace(tf[2:])
 		/*line convert.goal:145*/ if a == b {
-			/*line convert.goal:146*/ return Diagnostic{}, true
+			/*line convert.goal:146*/ return Diagnostic{Severity: Severity(Severity_Error{})}, true
 		}
 		/*line convert.goal:148*/ if e, ok := info.FromRegistry[[2]string{a, b}]; ok && !e.Fallible {
-			/*line convert.goal:149*/ return Diagnostic{}, true
+			/*line convert.goal:149*/ return Diagnostic{Severity: Severity(Severity_Error{})}, true
 		}
 		/*line convert.goal:151*/ return deferConvField(pos, tgtType, srcType, f, sfType), false
 	}

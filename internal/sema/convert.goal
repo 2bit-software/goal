@@ -123,7 +123,7 @@ func resolvableConvField(pos token.Pos, tgtType, srcType string, f, sf Field, fa
 	tf := strings.TrimSpace(f.Type)
 	sfType := strings.TrimSpace(sf.Type)
 	if sfType == tf {
-		return Diagnostic{}, true // direct assignment
+		return Diagnostic{Severity: Severity.Error}, true // direct assignment
 	}
 	if e, ok := info.FromRegistry[[2]string{sfType, tf}]; ok {
 		if e.Fallible && !fallible {
@@ -136,17 +136,17 @@ func resolvableConvField(pos token.Pos, tgtType, srcType string, f, sf Field, fa
 					tgtType, f.Name, e.Name, sfType, tf, tgtType),
 			}, false
 		}
-		return Diagnostic{}, true // registry conversion
+		return Diagnostic{Severity: Severity.Error}, true // registry conversion
 	}
 	// Built-in slice recursion: []A -> []B when A -> B resolves totally.
 	if strings.HasPrefix(sfType, "[]") && strings.HasPrefix(tf, "[]") {
 		a := strings.TrimSpace(sfType[2:])
 		b := strings.TrimSpace(tf[2:])
 		if a == b {
-			return Diagnostic{}, true
+			return Diagnostic{Severity: Severity.Error}, true
 		}
 		if e, ok := info.FromRegistry[[2]string{a, b}]; ok && !e.Fallible {
-			return Diagnostic{}, true
+			return Diagnostic{Severity: Severity.Error}, true
 		}
 		return deferConvField(pos, tgtType, srcType, f, sfType), false
 	}

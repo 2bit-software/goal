@@ -404,7 +404,7 @@ func collectQuestionSites(body *ast.BlockStmt) []qsite {
 func resolveQuestionCallee(u *ast.UnwrapExpr, info *Info) (sig FuncSig, key string, known bool) {
 	/*line question.goal:417*/ call, ok := u.X.(*ast.CallExpr)
 	/*line question.goal:418*/ if !ok {
-		/*line question.goal:419*/ return FuncSig{}, "", false
+		/*line question.goal:419*/ return FuncSig{Mode: Mode(Mode_ModeNone{})}, "", false
 	}
 	/*line question.goal:421*/ switch v1 := call.Fun.(type) {
 	case *ast.Ident:
@@ -420,7 +420,7 @@ func resolveQuestionCallee(u *ast.UnwrapExpr, info *Info) (sig FuncSig, key stri
 		}
 	default:
 		{
-			/*line question.goal:438*/ return FuncSig{}, "", false
+			/*line question.goal:438*/ return FuncSig{Mode: Mode(Mode_ModeNone{})}, "", false
 		}
 	}
 }

@@ -81,11 +81,11 @@ func resultCallName(e ast.Expr, info *Info) (string, bool) {
 // an ordinary inspected-assign and is left alone.
 func underscoreDiscard(s *ast.AssignStmt, info *Info) (Diagnostic, bool) {
 	if len(s.Lhs) != 1 || len(s.Rhs) != 1 || !isBlank(s.Lhs[0]) {
-		return Diagnostic{}, false
+		return Diagnostic{Severity: Severity.Error}, false
 	}
 	name, ok := resultCallName(s.Rhs[0], info)
 	if !ok {
-		return Diagnostic{}, false
+		return Diagnostic{Severity: Severity.Error}, false
 	}
 	return Diagnostic{
 		Pos:      s.Rhs[0].Pos(),

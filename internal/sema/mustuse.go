@@ -56,11 +56,11 @@ func resultCallName(e ast.Expr, info *Info) (string, bool) {
 //line mustuse.goal:82
 func underscoreDiscard(s *ast.AssignStmt, info *Info) (Diagnostic, bool) {
 	/*line mustuse.goal:83*/ if len(s.Lhs) != 1 || len(s.Rhs) != 1 || !isBlank(s.Lhs[0]) {
-		/*line mustuse.goal:84*/ return Diagnostic{}, false
+		/*line mustuse.goal:84*/ return Diagnostic{Severity: Severity(Severity_Error{})}, false
 	}
 	/*line mustuse.goal:86*/ name, ok := resultCallName(s.Rhs[0], info)
 	/*line mustuse.goal:87*/ if !ok {
-		/*line mustuse.goal:88*/ return Diagnostic{}, false
+		/*line mustuse.goal:88*/ return Diagnostic{Severity: Severity(Severity_Error{})}, false
 	}
 	/*line mustuse.goal:90*/ return Diagnostic{Pos: s.Rhs[0].Pos(), Severity: Severity(Severity_Warning{}), Feature: "03-result", Code: "unresolved-result-discard", Message: fmt.Sprintf("cannot verify the `Result` from `%s(…)` is handled: it is discarded with `_ :=`, but the sanctioned explicit-discard surface for a `Result` is not yet defined — must-use deferred", name)}, true
 }

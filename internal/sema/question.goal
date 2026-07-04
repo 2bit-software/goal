@@ -416,7 +416,7 @@ func collectQuestionSites(body *ast.BlockStmt) []qsite {
 func resolveQuestionCallee(u *ast.UnwrapExpr, info *Info) (sig FuncSig, key string, known bool) {
 	call, ok := u.X.(*ast.CallExpr)
 	if !ok {
-		return FuncSig{}, "", false
+		return FuncSig{Mode: Mode.ModeNone}, "", false
 	}
 	match call.Fun {
 		*ast.Ident(f) => {
@@ -435,7 +435,7 @@ func resolveQuestionCallee(u *ast.UnwrapExpr, info *Info) (sig FuncSig, key stri
 			return s, key, ok
 		}
 		_ => {
-			return FuncSig{}, "", false
+			return FuncSig{Mode: Mode.ModeNone}, "", false
 		}
 	}
 }
