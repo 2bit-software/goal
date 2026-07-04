@@ -765,6 +765,14 @@
   NOT codes and need skipping: the `go-types` Feature label (all other feature
   labels start with a digit, so `^[a-z]...` excludes them) and the `some-addr` /
   `some-box` Option lowering kinds in backend/lower.
+- To clear a `[unsafe-zero]` on a GUARDED zero-value sentinel (a `T{}` returned
+  next to a bool/`ok`/`known` that tells callers to ignore it), just set the
+  offending field to any valid value in the literal — it is behavior-preserving
+  because the value is never read (found self-check-cleanup US-001: sum-type
+  sentinels `Diagnostic{Severity: Severity.Error}`, `FuncSig{Mode: Mode.ModeNone}`).
+  Enumerate the exact omitting sites with
+  `goal check ./internal | grep '\[unsafe-zero\]'`; a goal enum field lowers to
+  `EnumName(Variant_X{})` in the generated .go.
 
 ## [2026-06-30T19:30:00Z] - US-009 (self-host-flip PRD)
 - Ported the goal AI-bootstrap guide surface (internal/guide) to goal source under
@@ -8967,4 +8975,25 @@ detour proved necessary.
   - Pure-docs stories (spec/DECISIONS/STATUS, not by-example.md) do not touch
     any .goal, generated .go, or golden, so `task check` + `task fixpoint` pass
     without regeneration.
+---
+
+## 2026-07-04T20:56:00Z - US-001 (self-check-cleanup PRD)
+- NOTE: this PRD (ralph/self-check-cleanup) reuses the id US-001; the older
+  US-001..003 entries above belong to the prior safety-only PRD.
+- Set an explicit sum-type field on the 8 zero-value sentinel literals that
+  `goal check ./internal` flagged as [unsafe-zero]: 4 `Diagnostic{}` in
+  convert.goal + 2 in mustuse.goal now use `Diagnostic{Severity: Severity.Error}`;
+  2 `FuncSig{}` in question.goal now use `FuncSig{Mode: Mode.ModeNone}`.
+- Files changed: internal/sema/{convert,mustuse,question}.goal (+ regenerated
+  .go siblings via `task generate`). Commit 9e83a3a.
+- Verified: `goal check ./internal` has no `Severity Severity` / `Mode Mode`
+  unsafe-zero left; `task check-full` green with FIXPOINT OK.
+- Learnings for future iterations:
+  - These sentinels are ignored by callers (guarded by a paired bool / `known`
+    flag), so the enum variant chosen is immaterial — behavior-preserving. The
+    same "set field to any valid value" move clears any [unsafe-zero] on a
+    guarded zero-value sentinel (relevant to US-002..006).
+  - A goal enum field lowers to `EnumName(Variant_X{})` in the generated .go
+    (e.g. `Severity(Severity_Error{})`), and `Enum.Variant` is the surface
+    spelling in .goal — visible in the verify-generated diff.
 ---

@@ -1,51 +1,98 @@
 {
   "project": "goal",
-  "branchName": "ralph/safety-only-literals",
-  "description": "Revise feature 08 (no-zero-value) from completeness+safety to SAFETY-ONLY, per ZERO-SAFETY-MODEL-PLAN.md: an omitted struct/variant field defaults to its zero; only a field whose zero is UNSAFE (nil map/pointer/chan/func, method-bearing interface, or enum/sealed sum) must be set explicitly. `...defaults` stays valid-but-redundant so legacy code keeps compiling. SHARED FACTS: (1) internal/*/*.go are GENERATED from sibling .goal — edit the .goal, run `task generate`, or verify-generated fails. (2) NEVER hand-write *_test.go in emitted dirs; corpus check cases live in testdata/check/<feature>/ with inline `// want` markers; end-to-end tests go in cmd/goal/*_test.go or internal/corpus. (3) The safe/unsafe classifier already exists: `sema.ZeroSafety(typ, decls, info, depth)` returns \"\" if the zero is SAFE else a reason string (internal/sema/zerosafety.goal). (4) Codes: RETIRE `[missing-field]`; ADD `[unsafe-zero]` (plain omission of an unsafe field); KEEP `[unsafe-default]` UNCHANGED for the `...defaults` path (CheckUnsafeDefaults) — decided to minimize churn. New/removed codes need internal/guide/catalog.goal edits AND `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md` regen (gated by cmd/goal TestBootstrapGoldenMatches + TestAICommandEmitsGuide + the catalog-parity test). (5) SPIKE-PROVEN: the US-001 checker change was prototyped and reverted; `task fixpoint` stayed green (the change alters what the checker ACCEPTS, not what code MEANS — generate/build/fixpoint don't run the checker); safe omissions passed, unsafe emitted `[unsafe-zero]`, `...defaults` still emitted `[unsafe-default]`. The exact `task check` fallout was: testdata/check/08-no-zero-value/{incomplete_single,incomplete_struct,variant_incomplete} (TestSemaFieldsRunner + TestASTEngineWholeCorpusBehavioralGate), cmd/goal TestSuggestedFixMissingField, TestBootstrapGoldenMatches, TestAICommandEmitsGuide — nothing else (build-playground was NOT flagged). (6) cmd/goal and cmd/goalc are plain Go. (7) Append the decision to DECISIONS.md.",
+  "branchName": "ralph/self-check-cleanup",
+  "description": "Make the goal compiler follow its own no-unsafe-zero discipline by clearing every non-interpreter [unsafe-zero] error from `goal check ./internal` (475 -> ~434, all remaining being the interpreter's Value union, left as a separate decision).",
   "verifyCommands": [
-    "task check",
-    "task fixpoint"
+    "task check-full"
   ],
   "userStories": [
     {
       "id": "US-001",
-      "title": "Make the lexical field check safety-only",
-      "description": "As a goal author, I need an omitted SAFE-zero field to be accepted and only an omitted UNSAFE-zero field to error, so the lexical checker enforces safety without completeness ceremony.",
+      "title": "Set sum-type struct fields explicitly",
+      "description": "As a goal maintainer, I need every Diagnostic and FuncSig literal to set its sum-type field explicitly, so the compiler's own source stops omitting an enum field whose zero is unsafe.",
       "acceptanceCriteria": [
-        "`goalc` on a struct literal omitting only safe-zero fields (string/int/bool/nil-slice/Option) exits 0; omitting a field whose zero is unsafe (nil map/pointer) exits 1 with a located `[unsafe-zero]` error; a `...defaults` literal omitting an unsafe field still emits `[unsafe-default]` (unchanged). A cmd/goal or corpus test asserts all three.",
-        "internal/guide/catalog.goal no longer contains a `missing-field` entry and does contain an `unsafe-zero` entry; the catalog-parity test passes and AI-KNOWLEDGE-BOOTSTRAP.md is regenerated.",
-        "The three testdata/check/08-no-zero-value/{incomplete_single,incomplete_struct,variant_incomplete}.goal cases are rewritten to omit an UNSAFE field with `// want` markers for `[unsafe-zero]` (they still reject); no `// want [missing-field]` marker remains in testdata.",
-        "The missing-field suggested-fix path is resolved (cmd/goal TestSuggestedFixMissingField updated or removed); `grep -rl 'missing-field' internal/ cmd/ testdata/` returns nothing (the code is fully retired from the lexical stage; typed-stage generic/elided-missing-field remain for US-002)."
+        "`goal check ./internal` emits no `[unsafe-zero]` diagnostic whose message contains `Severity Severity` (the 6 Diagnostic.Severity omissions are gone).",
+        "`goal check ./internal` emits no `[unsafe-zero]` diagnostic whose message contains `Mode Mode` (the 2 FuncSig.Mode omissions are gone).",
+        "Every `Diagnostic{...}` and `FuncSig{...}` composite literal under internal/ sets its Severity / Mode field (no reliance on the zero value)."
       ],
       "priority": 1,
       "passes": true,
-      "notes": "SPIKE-PROVEN (prototype reverted; redo cleanly). FILES: internal/sema/fields.goal — CheckFields (build `decls := buildDeclKinds(file)` once, thread into both checks); checkStructLit (~64) and checkVariantLit (~168): replace the missing-field emit with a per-field loop mirroring checkUnsafeDefaults (~223): `for _, f := range fields { if present[f.Name] {continue}; reason := ZeroSafety(f.Type, decls, info, 0); if reason == \"\" {continue}; append Diagnostic{Code:\"unsafe-zero\", Message: fmt.Sprintf(\"struct literal `%s{…}` omits field `%s` of type `%s`: %s\", name, f.Name, f.Type, reason)} }`. checkStructLit keeps `if litHasSpread(lit) { return nil }` so the `...defaults` path stays CheckUnsafeDefaults' [unsafe-default] (leave CheckUnsafeDefaults UNTOUCHED). Variant message analogous. internal/guide/catalog.goal: remove the `missing-field` line (~59), add `{\"unsafe-zero\", \"08-no-zero-value\", \"error\", \"a struct or variant literal omits a field whose zero is unsafe …\"}`; keep generic/elided-missing-field (US-002). MIGRATION (spike's exact fallout — all must land in THIS story to keep the gate green): rewrite the 3 incomplete_* testdata cases to omit an unsafe field (e.g. add a `map[string]int` field and omit it) with `// want [unsafe-zero]`; delete/repurpose cmd/goal TestSuggestedFixMissingField (suggestedfix_test.go ~143) since unsafe-zero has no autofix in P1; `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`. `task generate` after .goal edits. Pinned corpus `check` count stays 66 (1:1 conversions — do NOT change generate_test.go). FIXPOINT: unaffected (spike: FIXPOINT OK). PITFALLS: missingFieldNames/missingFieldFix/fieldZeroLit/plural/pronoun/quoteJoin become unused (fine in Go, or delete); the ZeroSafety reason string already ends with actionable guidance — don't append a second 'set it explicitly'; verify docs/by-example.md 'Rejecting an incomplete literal' still rejects (it omits safe fields — if build-playground now fails, rewrite that example to omit an unsafe field here; spike did NOT flag build-playground, so likely fine)."
+      "notes": "Diagnostic.Severity omissions include the empty `Diagnostic{}` sentinels in convert.goal and mustuse.goal; give each a real Severity or restructure the sentinel. FuncSig.Mode is in internal/sema. Editing .goal requires `task generate`."
     },
     {
       "id": "US-002",
-      "title": "Make the typed depth field check safety-only",
-      "description": "As a goal author, I need the typed depth stage's elided/generic literal check to also flag only unsafe-zero omissions, so lexical and typed stages agree on the safety-only rule.",
+      "title": "Initialize sema.Info map fields",
+      "description": "As a goal maintainer, I need sema.Info's map fields initialized at construction, so `Info{}`/`New()` no longer produces a struct carrying nil maps that panic on write.",
       "acceptanceCriteria": [
-        "An elided literal (`[]Inner{{a: 1}}`) or generic literal (`Box[int]{val: 1}`) that omits only safe-zero fields checks clean; one that omits an unsafe-zero field errors; a cmd/goal or corpus test covers both.",
-        "internal/guide/catalog.goal no longer contains `generic-missing-field` or `elided-missing-field` (retired in favor of the safety-only rule using `unsafe-zero`, or repurposed); catalog-parity passes and AI-KNOWLEDGE-BOOTSTRAP.md is regenerated.",
-        "Any depth-stage 08 tests that asserted the retired completeness codes are updated to the safety-only behavior; the full suite passes."
+        "`goal check ./internal` emits no `[unsafe-zero]` diagnostic located on an `Info{...}` literal (all 10 map-field omissions are gone).",
+        "`sema.New()` returns an *Info whose Enums, Sealed, SealedImpls, Structs, Methods, Interfaces, EmbeddedIfaces, FuncSignatures, ForeignMethods, and FromRegistry maps are non-nil.",
+        "Read-only callers of New() still behave (the full test suite in the gate stays green)."
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "DEPENDS ON US-001 (shares the unsafe-zero code + semantics). FILES: internal/typecheck/nozero.goal — CheckNoZeroValue / litDiag (generic-missing-field ~113, elided-missing-field ~117): instead of flagging any omitted field, resolve each omitted field's go/types.Type and flag only if its zero is unsafe. Mirror sema.ZeroSafety's rules over go/types: *types.Pointer / *types.Map / *types.Chan / *types.Signature -> unsafe; *types.Interface with methods -> unsafe; a named type whose underlying resolves from a goal enum/sealed sum -> unsafe (detect via the marker method or the sema Info if threaded); *types.Slice / *types.Array / *types.Basic / bare interface{} / error -> safe. Emit code `unsafe-zero` (consistent with US-001) at the .goal-mapped position. catalog.goal: remove generic-missing-field + elided-missing-field. Re-baseline typed-stage 08 tests (cmd/goal/gotypeerror_test.go, main_test.go, internal/corpus) that expected those codes. PITFALLS: the go/types safety classifier MUST match sema.ZeroSafety exactly or the two stages disagree (a case clean at one stage, error at the other); confirm the enum/sealed detection over lowered Go (the §8.1 encoding's marker method) matches what sema treats as a sum type; regen bootstrap."
+      "passes": false,
+      "notes": "New() at internal/sema/sema.goal returns &Info{} deliberately with nil maps for read-only callers; initialize the maps in the literal (or via make) since a nil map is a genuine unsafe zero under the safety-only rule."
     },
     {
       "id": "US-003",
-      "title": "Revise spec and docs for safety-only",
-      "description": "As a maintainer, I need the spec, DECISIONS ledger, and STATUS doc to describe the safety-only model, so the guarantee's definition matches the checker.",
+      "title": "Initialize backend emitter map fields",
+      "description": "As a goal maintainer, I need the backend emitter's map fields set at construction, so the `emitter{...}` literal stops omitting nil maps.",
       "acceptanceCriteria": [
-        "goal-design-spec.md §3.5 describes feature 08 as safety-only (omitted fields default; only unsafe zeros must be named) and notes `...defaults` is now redundant-but-accepted; `grep -q 'unsafe-zero' goal-design-spec.md` and no stale 'must name every field' completeness claim remains for §3.5.",
-        "DECISIONS.md gains a dated §08-revision entry recording the choice (drop completeness, keep `...defaults` for compatibility, `[missing-field]` -> `[unsafe-zero]`) and the rejected alternatives (global bare-zero, `struct zero` opt-in) with why.",
-        "docs/STATUS.md's feature-08 line reflects safety-only; `grep -q 'safety-only' docs/STATUS.md` succeeds."
+        "`goal check ./internal` emits no `[unsafe-zero]` diagnostic located on an `emitter{...}` literal for a `map[...]` field (renames, armFields, taken, typeDecls, recvTypes, curParams).",
+        "The generated backend still transpiles the corpus identically (the corpus golden tests in the gate stay green)."
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "DEPENDS ON US-001/002 (docs describe the final behavior). Docs are not toolchain-verified (unlike docs/by-example.md, which build-playground checks), so these edits are low-risk for the gate. FILES: goal-design-spec.md §3.5; DECISIONS.md (append, do not rewrite history); docs/STATUS.md (the §(a)/(c) feature-08 rows). If docs/by-example.md's 'Rejecting an incomplete literal' example was NOT already rewritten in US-001, rewrite it here to omit an unsafe field and regen AI-KNOWLEDGE-BOOTSTRAP.md + features.json (that example IS build-playground-verified, so it must still reject). Keep prose consistent with the retired [missing-field] / new [unsafe-zero] naming."
+      "passes": false,
+      "notes": "In internal/backend/emit.goal, emitFileWith constructs `emitter{...}` then assigns some maps after; move all map fields into the literal (e.g. `renames: map[string]string{}`)."
+    },
+    {
+      "id": "US-004",
+      "title": "Fix LSP struct unsafe-zero fields",
+      "description": "As a goal maintainer, I need the LSP package's struct literals to set their unsafe-zero fields at construction, so internal/lsp is free of unsafe-zero omissions.",
+      "acceptanceCriteria": [
+        "`goal check ./internal` emits no `[unsafe-zero]` diagnostic on any file under internal/lsp/ (roleVisitor.roles map and packageEntry.open pointer are resolved).",
+        "The LSP end-to-end tests in the gate stay green."
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "roleVisitor.roles is a map[int]int (initialize it); packageEntry.open is a *openFile (make it Option[openFile] if genuinely optional, else set it explicitly)."
+    },
+    {
+      "id": "US-005",
+      "title": "Model optional pointer fields as Option",
+      "description": "As a goal maintainer, I need genuinely-optional pointer fields modeled as Option[T], so an absent value is a safe None instead of an unsafe nil pointer.",
+      "acceptanceCriteria": [
+        "`rpcResponse.Error` (and any other field that is nil in a valid state) is typed `Option[T]`, and `goal check ./internal` emits no `[unsafe-zero]` for those fields.",
+        "Every literal that omitted the field now type-checks (an omitted Option defaults to None), and consumers read it via `match` / `?`.",
+        "The `--json` / JSON-RPC wire is unchanged (Option[T] lowers to *T), verified by the LSP and cmd/goal tests in the gate."
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Pattern mirrors the completed Diagnostic.Fix -> Option[SuggestedFix] change (and relies on the statement-position Option-match backend fix already landed). rpcResponse.Error is in internal/lsp; a success response carries None. Only convert fields that are legitimately absent, not required ones (those are US-006)."
+    },
+    {
+      "id": "US-006",
+      "title": "Set required pointer fields explicitly",
+      "description": "As a goal maintainer, I need every required (never-nil) pointer field set at its construction site, so no remaining non-interpreter struct literal omits an unsafe pointer field.",
+      "acceptanceCriteria": [
+        "`goal check ./internal` emits no `[unsafe-zero]` diagnostic for plainFunc.fn, Package.Types, emitter.arity, or any other non-interpreter pointer field.",
+        "Each affected literal sets the pointer field explicitly at construction (no post-literal assignment relied upon for safety)."
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "plainFunc.fn (*ast.FuncDecl, internal/sema), Package.Types (*types.Package, internal/typecheck), emitter.arity (*arityResolver, internal/backend). These are always set immediately after construction today; move them into the literal."
+    },
+    {
+      "id": "US-007",
+      "title": "Assert zero non-interp unsafe-zero and document interpreter",
+      "description": "As a goal maintainer, I need the non-interpreter self-check to be clean and the remaining interpreter errors documented, so the scope boundary is explicit and enforced.",
+      "acceptanceCriteria": [
+        "`goal check ./internal 2>&1 | grep '\\[unsafe-zero\\]' | grep -v '^internal/interp/'` produces no output (zero non-interpreter unsafe-zero errors).",
+        "A dated note in DECISIONS.md (and/or docs/STATUS.md) records that the remaining ~434 `[unsafe-zero]` errors are the interpreter's Value tagged-union, with the rationale for deferring the Value->enum refactor.",
+        "The full self-host gate (task check-full) is green with FIXPOINT OK."
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Capstone: US-001..006 do the work; this asserts the aggregate and records the interpreter boundary decided with the user (interpreter Value union out of scope for this PRD)."
     }
   ]
 }
