@@ -41,7 +41,7 @@
         "The generated backend still transpiles the corpus identically (the corpus golden tests in the gate stay green)."
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "In internal/backend/emit.goal, emitFileWith constructs `emitter{...}` then assigns some maps after; move all map fields into the literal (e.g. `renames: map[string]string{}`)."
     },
     {

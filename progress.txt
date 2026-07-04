@@ -9019,3 +9019,27 @@ detour proved necessary.
     `task generate` to resync the committed .go; the hook's diff output even
     shows the exact emitted literal, a free preview that the emit matches intent.
 ---
+
+## 2026-07-04 - US-003
+- Set the backend emitter's map fields explicitly at construction so the two
+  `emitter{...}` literals in internal/backend/emit.goal no longer omit an unsafe
+  nil map. `emitFileWith`'s literal now sets renames/armFields/taken/typeDecls/
+  recvTypes/curParams (each an empty map of its declared type; typeDecls is still
+  reassigned via buildTypeDecls on the next line). The `exprText` sub-emitter
+  literal gained recvTypes/curParams. The `arity *arityResolver` pointer omission
+  is intentionally left for US-006.
+- Files changed: internal/backend/emit.goal (+ regenerated internal/backend/emit.go).
+- Learnings for future iterations:
+  - Byte-identical golden output is preserved because every read of an empty map
+    matches a nil-map read (same "not found"), and every write path either
+    lazy-inits (`if e.X == nil { e.X = map{} }`) or reassigns the field per
+    funcDecl / per match arm. So the "empty literal" move is safe even when the
+    field has nil-vs-empty guards (recvTypes/curParams `== nil` early-returns and
+    `!= nil` blocks all yield the same outcome on an empty map).
+  - `goal check ./internal` grep for the acceptance check:
+    `grep '\[unsafe-zero\]' | grep 'emitter{'` — after the fix only the two
+    `arity` (pointer) omissions remain on the emitter literals; all six map-field
+    omissions are gone.
+  - Single .goal file edit -> only its .go sibling changes after `task generate`
+    (task generate is deterministic), so the commit stays small.
+---

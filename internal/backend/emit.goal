@@ -114,7 +114,23 @@ type emitter struct {
 // name used for the per-statement /*line*/ directives (US-013); empty suppresses
 // them (single-file emit and the doctest sidecar pass "").
 func emitFileWith(f *ast.File, info *sema.Info, suppressPrelude bool, srcFile string) (src string, usedOption bool, warns []pipeline.Warning, err error) {
-	e := emitter{info: info, pointerRecv: pointerReceiverSet(f), fileIdents: fileIdentSet(f), suppressPrelude: suppressPrelude, srcFile: srcFile}
+	e := emitter{
+		info:            info,
+		pointerRecv:     pointerReceiverSet(f),
+		fileIdents:      fileIdentSet(f),
+		suppressPrelude: suppressPrelude,
+		srcFile:         srcFile,
+		// Map fields set explicitly at construction so the literal carries no
+		// unsafe nil map (a nil map panics on write). renames/armFields/taken/
+		// recvTypes/curParams start empty and are (re)seeded per funcDecl or per
+		// match arm; typeDecls is overwritten by buildTypeDecls on the next line.
+		renames:   map[string]string{},
+		armFields: map[string]bool{},
+		taken:     map[string]bool{},
+		typeDecls: map[string]string{},
+		recvTypes: map[string]string{},
+		curParams: map[string]string{},
+	}
 	e.arity = newArityResolver(f)
 	e.typeDecls = e.buildTypeDecls(f)
 	e.file(f)
@@ -1191,6 +1207,11 @@ func (e *emitter) exprText(x ast.Expr) string {
 		// with a parent temp. fnKind/closedT/closedE are intentionally NOT copied:
 		// exprText renders a value expression, not a function body.
 		taken: e.taken,
+		// recvTypes/curParams carry no receiver/parameter context into a value
+		// expression, but are set to empty maps so the literal omits no unsafe
+		// nil map; every lookup then reports "not found" exactly as nil would.
+		recvTypes: map[string]string{},
+		curParams: map[string]string{},
 	}
 	sub.expr(x)
 	// Mirror emitFileWith's contract: the sub-emitter produces a usedOption flag and
