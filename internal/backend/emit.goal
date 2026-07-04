@@ -619,22 +619,27 @@ func (e *emitter) field(f *ast.Field) {
 
 func (e *emitter) block(b *ast.BlockStmt) {
 	e.p("{\n")
+	e.blockInner(b)
+	e.p("}")
+}
+
+// blockInner emits a block's statements — each anchored to its true .goal line with an
+// inline `/*line file:N*/` directive (US-013) — WITHOUT the surrounding braces. A
+// goal-specific lowering (`?`, match, unwrap) expands one statement into several Go
+// lines, so the per-declaration //line directive alone reports a following panic / build
+// error off-by-N; the per-statement directive re-anchors every statement (and its
+// lowered lines) to its own source line. Only in package mode (srcFile set); the gofmt
+// step keeps the comment on the statement's line and the goal parser strips it as trivia,
+// so declSites' re-parse is unaffected. block wraps this in `{…}`; optionMatch reuses it
+// to inline a statement-position arm body (see optionArm).
+func (e *emitter) blockInner(b *ast.BlockStmt) {
 	for _, s := range b.List {
-		// Anchor each source statement to its true .goal line with an inline
-		// `/*line file:N*/` directive (US-013). A goal-specific lowering (`?`, match,
-		// unwrap) expands one statement into several Go lines, so the per-declaration
-		// //line directive alone reports a following panic / build error off-by-N;
-		// the per-statement directive re-anchors every statement (and its lowered
-		// lines) to its own source line. Only in package mode (srcFile set); the
-		// gofmt step keeps the comment on the statement's line and the goal parser
-		// strips it as trivia, so declSites' re-parse is unaffected.
 		if e.srcFile != "" && s.Pos().IsValid() {
 			e.p(fmt.Sprintf("/*line %s:%d*/", e.srcFile, s.Pos().Line))
 		}
 		e.stmt(s)
 		e.p("\n")
 	}
-	e.p("}")
 }
 
 func (e *emitter) stmt(s ast.Stmt) {
@@ -2709,10 +2714,26 @@ func (e *emitter) optionMatch(m *ast.MatchExpr, pos matchPos, name string) {
 	if b := bindingName(someArm.Pattern); b != "" && usesIdent(someArm.Body, b) {
 		e.p(b + " := *" + o + "\n")
 	}
-	e.armWrap(someArm.Body, pos, name)
+	e.optionArm(someArm.Body, pos, name)
 	e.p("\n} else {\n")
-	e.armWrap(noneArm.Body, pos, name)
+	e.optionArm(noneArm.Body, pos, name)
 	e.p("\n}")
+}
+
+// optionArm emits an Option-match arm body into the if/else split. In statement position
+// a block arm's statements are inlined rather than emitted as a nested `{…}`: the emitted
+// `binding := *o` immediately followed by a bare `{…}` would be misparsed as a composite
+// literal by declSites' re-parse (the goal parser does not terminate the statement at the
+// newline before a bare block). The if/else already scopes the arm, so inlining is safe.
+// Value-position arms (posReturn/posVar) and non-block bodies keep armWrap's behavior.
+func (e *emitter) optionArm(body ast.Node, pos matchPos, name string) {
+	if pos == posStmt {
+		if blk, ok := body.(*ast.BlockStmt); ok {
+			e.blockInner(blk)
+			return
+		}
+	}
+	e.armWrap(body, pos, name)
 }
 
 // armByVariant returns the arm whose variant-pattern tag is variant, or nil.

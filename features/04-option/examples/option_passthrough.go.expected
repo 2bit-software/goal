@@ -8,13 +8,11 @@ func mkOpt() *int {
 func passthrough() *int {
 	if o := mkOpt(); o != nil {
 		n := *o
-		{
-			some := n
-			return &some
-		}
+		some := n
+		return &some
+
 	} else {
-		{
-			return nil
-		}
+		return nil
+
 	}
 }
