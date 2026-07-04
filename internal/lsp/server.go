@@ -264,7 +264,7 @@ func (s *Server) replyNull(id *json.RawMessage) {
 
 //line server.goal:290
 func (s *Server) replyError(id *json.RawMessage, code int, msg string) {
-	/*line server.goal:291*/ s.write(rpcResponse{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: msg}})
+	/*line server.goal:291*/ s.write(rpcResponse{JSONRPC: "2.0", ID: id, Error: goalSome(rpcError{Code: code, Message: msg})})
 }
 
 //line server.goal:294
