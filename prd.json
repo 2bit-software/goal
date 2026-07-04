@@ -29,7 +29,7 @@
         "Read-only callers of New() still behave (the full test suite in the gate stays green)."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "New() at internal/sema/sema.goal returns &Info{} deliberately with nil maps for read-only callers; initialize the maps in the literal (or via make) since a nil map is a genuine unsafe zero under the safety-only rule."
     },
     {

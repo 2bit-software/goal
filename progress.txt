@@ -8997,3 +8997,25 @@ detour proved necessary.
     (e.g. `Severity(Severity_Error{})`), and `Enum.Variant` is the surface
     spelling in .goal — visible in the verify-generated diff.
 ---
+
+## 2026-07-04T21:14:00Z - US-002
+- Initialized all 10 sema.Info map fields in New() so the constructor returns
+  non-nil maps and `goal check ./internal` emits no [unsafe-zero] on the Info{}
+  literal (FuncSignatures, Enums, Sealed, SealedImpls, Structs, FromRegistry,
+  Methods, ForeignMethods, Interfaces, EmbeddedIfaces). Commit 572a76e.
+- Files changed: internal/sema/sema.goal (New() body + doc comment) and its
+  regenerated internal/sema/sema.go (via `task generate`).
+- Verified: `goal check ./internal | grep '[unsafe-zero]' | grep 'Info{'` is
+  empty; `task check-full` green with FIXPOINT OK.
+- Learnings for future iterations:
+  - A nil map is a genuine unsafe-zero under the safety-only rule, and the fix
+    is behavior-preserving: ranging an empty non-nil map == ranging nil, so
+    read-only callers (the plain-Go back-end path calling sema.New()) don't
+    regress. Same "set the field to an empty literal" move clears any
+    [unsafe-zero] on an omitted map field (applies to US-003 emitter maps,
+    US-004 lsp roleVisitor.roles, etc.).
+  - Confirmed the standard .goal edit workflow: the PostToolUse hook's full
+    `task check` fails on verify-generated (expected) until you run
+    `task generate` to resync the committed .go; the hook's diff output even
+    shows the exact emitted literal, a free preview that the emit matches intent.
+---
