@@ -94,6 +94,71 @@ func SectionKeys() []string {
 	return keys
 }
 
+// CategoryInfo is one row of the `goal category` list: a feature's name and one-liner.
+type CategoryInfo struct {
+	Name        string
+	Description string
+}
+
+// category joins a `goal category` name to its by-example feature (anchor) and its
+// diagnostic group (catalogKey, "" when the feature has no checker diagnostics).
+type category struct {
+	name        string
+	description string
+	anchor      string
+	catalogKey  string
+}
+
+// categories are the language features `goal category` exposes, in guide order. Each maps
+// to one by-example feature by Anchor and, where the checker guards it, one diagnostic
+// group by catalog key. Anchors and catalog keys use different schemes (NN-<heading-slug>
+// vs NN-<mnemonic>), so the mapping is explicit rather than derived.
+var categories = []category{
+	{"enums", "closed variant sets, enforced at construction and in match", "01-enums", "01-enums"},
+	{"match", "exhaustive pattern matching over enums and sealed interfaces", "02-match", "02-match"},
+	{"result", "open-error Result — must-use success/error, no silent drops", "03-result-open-e", "03-result"},
+	{"option", "Option — presence or absence with no nil", "04-option", ""},
+	{"question", "`?` propagation of errors and None out of fallible functions", "05-propagation", "05-question-prop"},
+	{"result-closed", "closed-error Result over a declared error enum, bridged by `from`", "06-result-closed-e", "06-error-e"},
+	{"implements", "compile-time interface conformance via `implements`", "07-implements", "07-implements"},
+	{"no-zero-value", "reject unsafe zero values in struct and variant literals", "08-no-zero-value", "08-no-zero-value"},
+	{"assert", "assert with statically-false and dead-true detection", "10-assert", "10-assert"},
+	{"doctests", "executable doc examples compiled into Go tests", "11-doctests", ""},
+	{"derive", "generated field conversions via `derive` and `from`", "12-derive-convert", "12-derive-convert"},
+}
+
+// coreCategoryNames are the features taught in full in the slim base `goal ai` — the ~90%
+// of the language's value over plain Go.
+var coreCategoryNames = []string{"enums", "match", "doctests", "implements"}
+
+// Categories returns the `goal category` list rows in guide order.
+func Categories() []CategoryInfo {
+	out := make([]CategoryInfo, len(categories))
+	for i, c := range categories {
+		out[i] = CategoryInfo{Name: c.name, Description: c.description}
+	}
+	return out
+}
+
+// CategoryNames returns the valid `goal category` names in guide order.
+func CategoryNames() []string {
+	names := make([]string, len(categories))
+	for i, c := range categories {
+		names[i] = c.name
+	}
+	return names
+}
+
+// lookupCategory finds a registry entry by name.
+func lookupCategory(name string) (category, bool) {
+	for _, c := range categories {
+		if c.name == name {
+			return c, true
+		}
+	}
+	return category{}, false
+}
+
 // Render writes the AI guide to w. With an empty section it writes the whole guide;
 // with a section key it writes only that part. An unknown section key is an error that
 // names the valid keys. cmds supplies the binary's commands for the toolchain listing.
@@ -207,16 +272,101 @@ func writeFeatures(b *strings.Builder) error {
 		fmt.Fprintf(b, "### %s\n\n", cat.Name)
 		for _, f := range cat.Features {
 			fmt.Fprintf(b, "#### %s\n\n", f.Title)
-			writeProse(b, f.DescriptionMD)
-			fmt.Fprintf(b, "```goal\n%s\n```\n\n", strings.TrimRight(f.Source, "\n"))
-
-			lowered, label, err := lower(f)
-			if err != nil {
-				return fmt.Errorf("feature %q: %w", f.Title, err)
+			if err := renderFeature(b, f, false, ""); err != nil {
+				return err
 			}
-			fmt.Fprintf(b, "_%s:_\n\n```%s\n%s\n```\n\n", label, fenceLang(f.OutputKind), strings.TrimRight(lowered, "\n"))
+		}
+	}
+	return nil
+}
 
-			writeProse(b, f.LoweringMD)
+// renderFeature writes one feature's body — prose, its `.goal` source, the live lowering
+// (Go, generated test, or located rejection via lower), and the "lowers to" prose. The
+// caller owns the heading, so the same body serves the full features section, the slim
+// base's core-features block, and `goal category`. With withDiagnostics it also appends
+// the feature's checker diagnostics (catalogKey), skipped when the feature has none.
+func renderFeature(b *strings.Builder, f byexample.Feature, withDiagnostics bool, catalogKey string) error {
+	writeProse(b, f.DescriptionMD)
+	fmt.Fprintf(b, "```goal\n%s\n```\n\n", strings.TrimRight(f.Source, "\n"))
+
+	lowered, label, err := lower(f)
+	if err != nil {
+		return fmt.Errorf("feature %q: %w", f.Title, err)
+	}
+	fmt.Fprintf(b, "_%s:_\n\n```%s\n%s\n```\n\n", label, fenceLang(f.OutputKind), strings.TrimRight(lowered, "\n"))
+
+	writeProse(b, f.LoweringMD)
+
+	if withDiagnostics {
+		codes := catalogCodesForFeature(catalogKey)
+		if len(codes) > 0 {
+			b.WriteString("**Diagnostics:**\n\n")
+			for _, d := range codes {
+				fmt.Fprintf(b, "- `[%s]` (%s) — %s\n", d.Code, d.Severity, d.Meaning)
+			}
+			b.WriteString("\n")
+		}
+	}
+	return nil
+}
+
+// featureByAnchor parses the by-example doc and returns the feature with the given anchor
+// (e.g. "01-enums"), or an error if none matches — which guards the category registry
+// against drift in the doc's headings.
+func featureByAnchor(anchor string) (byexample.Feature, error) {
+	raw, err := goal.Docs.ReadFile("docs/by-example.md")
+	if err != nil {
+		return byexample.Feature{}, fmt.Errorf("read by-example: %w", err)
+	}
+	doc, err := byexample.Parse(string(raw), "docs/by-example.md")
+	if err != nil {
+		return byexample.Feature{}, fmt.Errorf("parse by-example: %w", err)
+	}
+	for _, cat := range doc.Categories {
+		for _, f := range cat.Features {
+			if f.Anchor == anchor {
+				return f, nil
+			}
+		}
+	}
+	return byexample.Feature{}, fmt.Errorf("no by-example feature with anchor %q", anchor)
+}
+
+// RenderCategory writes one feature's full detail — heading, live-rendered body, and its
+// checker diagnostics — to w. An unknown name is an error that names the valid categories.
+func RenderCategory(w io.Writer, name string) error {
+	c, ok := lookupCategory(name)
+	if !ok {
+		return fmt.Errorf("unknown category %q (valid: %s)", name, strings.Join(CategoryNames(), ", "))
+	}
+	f, err := featureByAnchor(c.anchor)
+	if err != nil {
+		return err
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "## %s\n\n", f.Title)
+	if err := renderFeature(&b, f, true, c.catalogKey); err != nil {
+		return err
+	}
+	_, err = io.WriteString(w, b.String())
+	return err
+}
+
+// writeCoreFeatures renders the core-four features taught in the slim base `goal ai`,
+// each under its own heading, without diagnostics (the deep detail lives in `goal category`).
+func writeCoreFeatures(b *strings.Builder) error {
+	for _, name := range coreCategoryNames {
+		c, ok := lookupCategory(name)
+		if !ok {
+			return fmt.Errorf("core category %q not in registry", name)
+		}
+		f, err := featureByAnchor(c.anchor)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(b, "### %s\n\n", f.Title)
+		if err := renderFeature(b, f, false, ""); err != nil {
+			return err
 		}
 	}
 	return nil
