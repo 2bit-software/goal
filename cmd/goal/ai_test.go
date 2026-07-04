@@ -60,6 +60,24 @@ func TestToolchainSectionListsEveryCommand(t *testing.T) {
 	}
 }
 
+// TestAIFeaturesUnchanged pins `goal ai features` to a golden captured before the guide
+// was re-tiered, so the shared per-feature renderer keeps producing the full features
+// section byte-for-byte. Regenerate with: go run ./cmd/goal ai features > cmd/goal/testdata/ai-features.golden
+func TestAIFeaturesUnchanged(t *testing.T) {
+	golden, err := os.ReadFile("testdata/ai-features.golden")
+	if err != nil {
+		t.Fatalf("read features golden: %v", err)
+	}
+	var out bytes.Buffer
+	if err := run([]string{"ai", "features"}, &out, io.Discard); err != nil {
+		t.Fatalf("run ai features: %v", err)
+	}
+	if out.String() != string(golden) {
+		t.Errorf("`goal ai features` drifted from testdata/ai-features.golden; if intended, regenerate with:\n" +
+			"    go run ./cmd/goal ai features > cmd/goal/testdata/ai-features.golden")
+	}
+}
+
 // TestBootstrapGoldenMatches asserts the committed AI-KNOWLEDGE-BOOTSTRAP.md equals what
 // `goal ai` produces now. If this fails, the language changed and the committed copy is
 // stale — regenerate it with: go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md
