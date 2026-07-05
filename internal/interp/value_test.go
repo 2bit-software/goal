@@ -7,8 +7,9 @@ import (
 )
 
 // Tests for the Value payload accessors and predicates added in US-003. They
-// pin that each accessor returns the CURRENT flat-struct payload and that the
-// is-predicates agree with Kind (pointer-backed kinds also nil-check).
+// pin that each accessor returns its variant's payload and that the
+// is-predicates agree with kind() (pointer-backed kinds also nil-check). Since
+// US-005 Value is a sum type; the accessors/predicates dispatch by match.
 
 func TestValueAccessorsReturnPayload(t *testing.T) {
 	if got := IntVal(42).asInt(); got != 42 {
@@ -147,14 +148,16 @@ func TestValuePredicates(t *testing.T) {
 			t.Errorf("%s = %v, want %v", tc.name, got, tc.want)
 		}
 	}
-	// Pointer-backed predicates reject a mismatched-kind zero payload.
-	if (Value{Kind: KindStruct}).isStruct() {
-		t.Error("isStruct() should be false when Struct is nil")
+	// Pointer-backed predicates reject a variant whose payload pointer is nil.
+	// With the sum-type representation the constructors always allocate, so a
+	// nil-payload variant is only reachable via the raw generated variant struct.
+	if (Value_Struct{}).isStruct() {
+		t.Error("isStruct() should be false when the struct payload is nil")
 	}
-	if (Value{Kind: KindMap}).isMap() {
-		t.Error("isMap() should be false when Map is nil")
+	if (Value_Map{}).isMap() {
+		t.Error("isMap() should be false when the map payload is nil")
 	}
-	if (Value{Kind: KindVariant}).isVariant() {
-		t.Error("isVariant() should be false when Variant is nil")
+	if (Value_Variant{}).isVariant() {
+		t.Error("isVariant() should be false when the variant payload is nil")
 	}
 }

@@ -92,8 +92,8 @@ func (ip *Interp) evalMatch(m *ast.MatchExpr, scope *Env) (Value, error) {
 	if err != nil {
 		return NilVal(), err
 	}
-	if subj.Kind != KindVariant || subj.asVariant() == nil {
-		return NilVal(), fmt.Errorf("interp: match subject must be a variant, got %s", subj.Kind)
+	if subj.kind() != KindVariant || subj.asVariant() == nil {
+		return NilVal(), fmt.Errorf("interp: match subject must be a variant, got %s", subj.kind())
 	}
 	arm, vp := selectMatchArm(m, subj)
 	if arm == nil {
@@ -125,8 +125,8 @@ func (ip *Interp) evalUnwrap(u *ast.UnwrapExpr, scope *Env) (Value, error) {
 	if err != nil {
 		return NilVal(), err
 	}
-	if v.Kind != KindVariant || v.asVariant() == nil {
-		return NilVal(), fmt.Errorf("interp: %s: cannot use ? on %s (operand is not a Result or Option)", u.Question, v.Kind)
+	if v.kind() != KindVariant || v.asVariant() == nil {
+		return NilVal(), fmt.Errorf("interp: %s: cannot use ? on %s (operand is not a Result or Option)", u.Question, v.kind())
 	}
 	sig, _ := ip.curSig()
 	switch v.asVariant().TypeID {
@@ -203,10 +203,10 @@ func (ip *Interp) callConversion(name string, errVal Value, u *ast.UnwrapExpr) (
 	if err != nil {
 		return NilVal(), fmt.Errorf("interp: %s: from conversion %s is not callable: %w", u.Question, name, err)
 	}
-	if fn.Kind != KindFunc || fn.Func == nil {
+	if fn.kind() != KindFunc || fn.asFunc() == nil {
 		return NilVal(), fmt.Errorf("interp: %s: from conversion %s is not a function", u.Question, name)
 	}
-	out, err := ip.callFunc(fn.Func, []Value{errVal})
+	out, err := ip.callFunc(fn.asFunc(), []Value{errVal})
 	if err != nil {
 		return NilVal(), err
 	}
@@ -438,10 +438,10 @@ func (ip *Interp) evalSelector(s *ast.SelectorExpr, scope *Env) (Value, error) {
 	if err != nil {
 		return NilVal(), err
 	}
-	switch recv.Kind {
+	switch recv.kind() {
 	case KindStruct:
 		if recv.asStruct() == nil {
-			return NilVal(), fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
+			return NilVal(), fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.kind())
 		}
 		v, ok := recv.asStruct().Fields[s.Sel.Name]
 		if !ok {
@@ -452,7 +452,7 @@ func (ip *Interp) evalSelector(s *ast.SelectorExpr, scope *Env) (Value, error) {
 		// A match arm binds the whole variant value to its payload name, so a
 		// payload field is read as `binding.field` off the tagged union.
 		if recv.asVariant() == nil {
-			return NilVal(), fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
+			return NilVal(), fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.kind())
 		}
 		v, ok := recv.Field(s.Sel.Name)
 		if !ok {
@@ -460,7 +460,7 @@ func (ip *Interp) evalSelector(s *ast.SelectorExpr, scope *Env) (Value, error) {
 		}
 		return v, nil
 	default:
-		return NilVal(), fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
+		return NilVal(), fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.kind())
 	}
 }
 
@@ -602,10 +602,10 @@ func (ip *Interp) evalIndex(e *ast.IndexExpr, scope *Env) (Value, error) {
 	if err != nil {
 		return NilVal(), err
 	}
-	switch recv.Kind {
+	switch recv.kind() {
 	case KindSlice:
-		if idx.Kind != KindInt {
-			return NilVal(), fmt.Errorf("interp: slice index must be int, got %s", idx.Kind)
+		if idx.kind() != KindInt {
+			return NilVal(), fmt.Errorf("interp: slice index must be int, got %s", idx.kind())
 		}
 		if idx.asInt() < 0 || idx.asInt() >= int64(len(recv.asSlice())) {
 			return NilVal(), fmt.Errorf("interp: slice index %d out of range (len %d)", idx.asInt(), len(recv.asSlice()))
@@ -624,7 +624,7 @@ func (ip *Interp) evalIndex(e *ast.IndexExpr, scope *Env) (Value, error) {
 		}
 		return NilVal(), nil
 	default:
-		return NilVal(), fmt.Errorf("interp: cannot index %s", recv.Kind)
+		return NilVal(), fmt.Errorf("interp: cannot index %s", recv.kind())
 	}
 }
 
@@ -632,8 +632,8 @@ func (ip *Interp) evalIndex(e *ast.IndexExpr, scope *Env) (Value, error) {
 // key is a descriptive refusal; non-string map keys are deferred to a later
 // evaluation story.
 func mapKeyString(v Value) (string, error) {
-	if v.Kind != KindString {
-		return "", fmt.Errorf("interp: map key must be string, got %s", v.Kind)
+	if v.kind() != KindString {
+		return "", fmt.Errorf("interp: map key must be string, got %s", v.kind())
 	}
 	return v.asStr(), nil
 }
@@ -725,8 +725,8 @@ func (ip *Interp) evalCallMulti(call *ast.CallExpr, scope *Env) ([]Value, error)
 	if err != nil {
 		return nil, err
 	}
-	if callee.Kind != KindFunc || callee.Func == nil {
-		return nil, fmt.Errorf("interp: cannot call %s", callee.Kind)
+	if callee.kind() != KindFunc || callee.asFunc() == nil {
+		return nil, fmt.Errorf("interp: cannot call %s", callee.kind())
 	}
 	args := make([]Value, len(call.Args))
 	for i, a := range call.Args {
@@ -736,7 +736,7 @@ func (ip *Interp) evalCallMulti(call *ast.CallExpr, scope *Env) ([]Value, error)
 		}
 		args[i] = v
 	}
-	return ip.callFunc(callee.Func, args)
+	return ip.callFunc(callee.asFunc(), args)
 }
 
 // evalBasicLit decodes a basic literal token into a runtime Value. Integer
@@ -787,8 +787,8 @@ func (ip *Interp) evalBinary(b *ast.BinaryExpr, scope *Env) (Value, error) {
 		if err != nil {
 			return NilVal(), err
 		}
-		if left.Kind != KindBool {
-			return NilVal(), fmt.Errorf("interp: operator %s requires bool, got %s", b.Op, left.Kind)
+		if left.kind() != KindBool {
+			return NilVal(), fmt.Errorf("interp: operator %s requires bool, got %s", b.Op, left.kind())
 		}
 		// && short-circuits when left is false; || when left is true.
 		if b.Op == token.LAND && !left.asBool() {
@@ -801,8 +801,8 @@ func (ip *Interp) evalBinary(b *ast.BinaryExpr, scope *Env) (Value, error) {
 		if err != nil {
 			return NilVal(), err
 		}
-		if right.Kind != KindBool {
-			return NilVal(), fmt.Errorf("interp: operator %s requires bool, got %s", b.Op, right.Kind)
+		if right.kind() != KindBool {
+			return NilVal(), fmt.Errorf("interp: operator %s requires bool, got %s", b.Op, right.kind())
 		}
 		return BoolVal(right.asBool()), nil
 	}
@@ -828,11 +828,11 @@ func applyBinary(op token.Kind, left, right Value) (Value, error) {
 		return BoolVal(!left.Equal(right)), nil
 	}
 
-	if left.Kind != right.Kind {
-		return NilVal(), fmt.Errorf("interp: operator %s on mismatched kinds %s and %s", op, left.Kind, right.Kind)
+	if left.kind() != right.kind() {
+		return NilVal(), fmt.Errorf("interp: operator %s on mismatched kinds %s and %s", op, left.kind(), right.kind())
 	}
 
-	switch left.Kind {
+	switch left.kind() {
 	case KindInt:
 		return intBinary(op, left.asInt(), right.asInt())
 	case KindFloat:
@@ -840,7 +840,7 @@ func applyBinary(op token.Kind, left, right Value) (Value, error) {
 	case KindString:
 		return stringBinary(op, left.asStr(), right.asStr())
 	default:
-		return NilVal(), fmt.Errorf("interp: operator %s not supported on %s", op, left.Kind)
+		return NilVal(), fmt.Errorf("interp: operator %s not supported on %s", op, left.kind())
 	}
 }
 
@@ -924,24 +924,24 @@ func (ip *Interp) evalUnary(u *ast.UnaryExpr, scope *Env) (Value, error) {
 	}
 	switch u.Op {
 	case token.ADD:
-		switch x.Kind {
+		switch x.kind() {
 		case KindInt, KindFloat:
 			return x, nil
 		default:
-			return NilVal(), fmt.Errorf("interp: unary + requires numeric, got %s", x.Kind)
+			return NilVal(), fmt.Errorf("interp: unary + requires numeric, got %s", x.kind())
 		}
 	case token.SUB:
-		switch x.Kind {
+		switch x.kind() {
 		case KindInt:
 			return IntVal(-x.asInt()), nil
 		case KindFloat:
 			return FloatVal(-x.asFloat()), nil
 		default:
-			return NilVal(), fmt.Errorf("interp: unary - requires numeric, got %s", x.Kind)
+			return NilVal(), fmt.Errorf("interp: unary - requires numeric, got %s", x.kind())
 		}
 	case token.NOT:
-		if x.Kind != KindBool {
-			return NilVal(), fmt.Errorf("interp: unary ! requires bool, got %s", x.Kind)
+		if x.kind() != KindBool {
+			return NilVal(), fmt.Errorf("interp: unary ! requires bool, got %s", x.kind())
 		}
 		return BoolVal(!x.asBool()), nil
 	default:
@@ -1013,7 +1013,7 @@ func (ip *Interp) builtinLen(call *ast.CallExpr, scope *Env) ([]Value, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch v.Kind {
+	switch v.kind() {
 	case KindSlice:
 		return []Value{IntVal(int64(len(v.asSlice())))}, nil
 	case KindString:
@@ -1024,7 +1024,7 @@ func (ip *Interp) builtinLen(call *ast.CallExpr, scope *Env) ([]Value, error) {
 		}
 		return []Value{IntVal(int64(len(v.asMap().Entries)))}, nil
 	default:
-		return nil, fmt.Errorf("interp: len of %s is not defined", v.Kind)
+		return nil, fmt.Errorf("interp: len of %s is not defined", v.kind())
 	}
 }
 
@@ -1040,8 +1040,8 @@ func (ip *Interp) builtinAppend(call *ast.CallExpr, scope *Env) ([]Value, error)
 	if err != nil {
 		return nil, err
 	}
-	if base.Kind != KindSlice {
-		return nil, fmt.Errorf("interp: append of %s (first argument must be a slice)", base.Kind)
+	if base.kind() != KindSlice {
+		return nil, fmt.Errorf("interp: append of %s (first argument must be a slice)", base.kind())
 	}
 	out := make([]Value, len(base.asSlice()), len(base.asSlice())+len(call.Args)-1)
 	copy(out, base.asSlice())
@@ -1073,8 +1073,8 @@ func (ip *Interp) builtinMake(call *ast.CallExpr, scope *Env) ([]Value, error) {
 			if err != nil {
 				return nil, err
 			}
-			if sz.Kind != KindInt {
-				return nil, fmt.Errorf("interp: make length must be int, got %s", sz.Kind)
+			if sz.kind() != KindInt {
+				return nil, fmt.Errorf("interp: make length must be int, got %s", sz.kind())
 			}
 			if sz.asInt() < 0 {
 				return nil, fmt.Errorf("interp: make length %d is negative", sz.asInt())
@@ -1117,7 +1117,7 @@ func (ip *Interp) tryMethodCall(sel *ast.SelectorExpr, call *ast.CallExpr, scope
 	if rerr != nil {
 		return nil, false, nil
 	}
-	if recv.Kind != KindStruct || recv.asStruct() == nil {
+	if recv.kind() != KindStruct || recv.asStruct() == nil {
 		return nil, false, nil
 	}
 	byName := ip.methods[recv.asStruct().TypeID]
@@ -1145,7 +1145,7 @@ func (ip *Interp) tryMethodCall(sel *ast.SelectorExpr, call *ast.CallExpr, scope
 // value-receiver method's field writes do not leak to the caller. A non-struct
 // value is returned unchanged.
 func copyStructValue(v Value) Value {
-	if v.Kind != KindStruct || v.asStruct() == nil {
+	if v.kind() != KindStruct || v.asStruct() == nil {
 		return v
 	}
 	fields := make(map[string]Value, len(v.asStruct().Fields))

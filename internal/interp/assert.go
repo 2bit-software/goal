@@ -18,8 +18,8 @@ func (ip *Interp) execAssert(s *ast.AssertStmt, scope *Env) error {
 	/*line assert.goal:37*/ if err != nil {
 		/*line assert.goal:38*/ return err
 	}
-	/*line assert.goal:40*/ if cond.Kind != KindBool {
-		/*line assert.goal:41*/ return fmt.Errorf("interp: assert condition must be bool, got %s", cond.Kind)
+	/*line assert.goal:40*/ if cond.kind() != KindBool {
+		/*line assert.goal:41*/ return fmt.Errorf("interp: assert condition must be bool, got %s", cond.kind())
 	}
 	/*line assert.goal:43*/ if cond.asBool() {
 		/*line assert.goal:44*/ return nil
@@ -30,8 +30,8 @@ func (ip *Interp) execAssert(s *ast.AssertStmt, scope *Env) error {
 		/*line assert.goal:50*/ if err != nil {
 			/*line assert.goal:51*/ return err
 		}
-		/*line assert.goal:53*/ if format.Kind != KindString {
-			/*line assert.goal:54*/ return fmt.Errorf("interp: assert message must be a string, got %s", format.Kind)
+		/*line assert.goal:53*/ if format.kind() != KindString {
+			/*line assert.goal:54*/ return fmt.Errorf("interp: assert message must be a string, got %s", format.kind())
 		}
 		/*line assert.goal:56*/ args := make([]Value, len(s.Args))
 		/*line assert.goal:57*/ for i, a := range s.Args {

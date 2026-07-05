@@ -9320,3 +9320,56 @@ detour proved necessary.
     had to move to `make(...)` to reach 0.
   - No new Option was introduced, so no `goal_options.go` appeared — this story
     added no untracked generated file (contrast the first-Option-in-package gotcha).
+
+## 2026-07-05T04:30:00Z - US-005 (sum-type-methods PRD)
+- Flipped the interpreter's universal runtime Value from a flat multi-pointer
+  struct (Kind discriminant + Int/Float/Str/Bool/Struct/Slice/Map/Func/Variant
+  fields, all but one nil) to a real goal SUM TYPE: `enum Value { Nil; Int{n};
+  Float{f}; Str{s}; Bool{b}; Struct{sv:*StructValue}; Slice{xs:[]Value};
+  Map{mv:*MapValue}; Func{fv:*FuncValue}; Variant{vr:*Variant} }`. Now no Value
+  representation omits an unsafe zero pointer — each variant carries ONLY its own
+  payload. `./bin/goal check ./internal` elided-Value-literal diagnostics: 53 -> 0.
+- Kept the `Kind` int type + constants + Kind.String() (Kind is the discriminant,
+  not a Value). Re-expressed kind()/asX()/isX()/Field/Equal/String as annotated
+  `var x T = match v { ... }` methods on the enum (US-001 folds the ~23 methods
+  into the interface method set, so ALL call sites are unchanged). Constructors
+  build the matching variant. Added helpers renderStruct/Slice/Map/Func/Variant +
+  sliceEqual (extracted from the old inline Equal switch).
+- Migrated every remaining Value dispatch site: `.Kind` -> `.kind()` (all Value
+  receivers) and `.Func` -> `.asFunc()` (fn/callee), leaving token.Kind (type
+  annotations), lit.Kind (ast.BasicLit), and doctest Failure.Func (a string)
+  untouched. Fixed the one nil-interface hazard: `var tag Value` (execSwitch,
+  tagless path) -> `var tag Value = NilVal()`.
+- Files: internal/interp/value.goal (rewrite) + {assert,derive,eval,host,interp}.goal
+  (call-site migration) + regenerated .go twins; internal/interp/value_test.go
+  (the three `Value{Kind:...}` nil-payload predicate probes -> generated variant
+  structs Value_Struct{}/Value_Map{}/Value_Variant{}).
+- task check-full exit 0; task fixpoint FIXPOINT OK; criterion-3 Value-omit grep 0.
+- Learnings for future iterations:
+  - goal lowers an `enum` to a Go INTERFACE + one payload struct per variant
+    (Value_Int{N int64}, ...), so the zero value of a bare `var v Value` is a NIL
+    INTERFACE, not the Nil variant (contrast the old Value{}==KindNil). US-004 had
+    already routed the ~95 bare `Value{}` returns to NilVal(); the only other
+    hazards are `var x Value` decls (init to NilVal() unless assigned-before-read
+    on every path) and `make([]Value, n)` (safe only when immediately filled — the
+    interp's make-builtin already loops `elems[i] = zero`). Runtime map-miss reads
+    are caught by the corpus/interp behavioural suites, not the compiler.
+  - Enum-with-payload DECLARATION syntax is `Variant { field: type, ... }`; a
+    single-field payload match binds the WHOLE variant struct (`Value.Int(x) => x.n`,
+    like the enummethods fixture's `Shape.Circle(c) => c.r`), NOT the bare field.
+    Construction is `Value.Int(n: n)` (named) and data-less is a bare `Value.Nil`.
+  - A value-position `match` whose arms are comparisons/calls is NOT type-inferable
+    (US-001 learning generalises): wrap EVERY such match in `var x T = match v {...}`
+    with an explicit result-type annotation, even for accessors returning a plain
+    type. `nil`, `0`, `false`, `""` arms are fine under the annotation.
+  - Keeping the accessors/predicates/Field/Equal/String as value-receiver METHODS
+    on the enum (not free functions) is what lets US-001's buildEnumMethods fold
+    them into the interface and keep all `v.asInt()`/`v.Equal(o)` call sites
+    unchanged — ~23 methods x 10 variants of forwarders emit and self-host fine
+    (fixpoint holds). Tuple `(Value, bool)`, pointer, and slice method returns all
+    lower correctly.
+  - A hand-written in-package Go test that built a degenerate `Value{Kind:...}`
+    literal must switch to the GENERATED variant struct (`Value_Struct{}`, field
+    `Sv`) to exercise a nil-payload predicate; the constructors never produce one.
+    Confirm the generated field name (capitalised: sv -> Sv) in value.go first.
+---

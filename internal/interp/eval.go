@@ -62,8 +62,8 @@ func (ip *Interp) evalMatch(m *ast.MatchExpr, scope *Env) (Value, error) {
 	/*line eval.goal:92*/ if err != nil {
 		/*line eval.goal:93*/ return NilVal(), err
 	}
-	/*line eval.goal:95*/ if subj.Kind != KindVariant || subj.asVariant() == nil {
-		/*line eval.goal:96*/ return NilVal(), fmt.Errorf("interp: match subject must be a variant, got %s", subj.Kind)
+	/*line eval.goal:95*/ if subj.kind() != KindVariant || subj.asVariant() == nil {
+		/*line eval.goal:96*/ return NilVal(), fmt.Errorf("interp: match subject must be a variant, got %s", subj.kind())
 	}
 	/*line eval.goal:98*/ arm, vp := selectMatchArm(m, subj)
 	/*line eval.goal:99*/ if arm == nil {
@@ -86,8 +86,8 @@ func (ip *Interp) evalUnwrap(u *ast.UnwrapExpr, scope *Env) (Value, error) {
 	/*line eval.goal:125*/ if err != nil {
 		/*line eval.goal:126*/ return NilVal(), err
 	}
-	/*line eval.goal:128*/ if v.Kind != KindVariant || v.asVariant() == nil {
-		/*line eval.goal:129*/ return NilVal(), fmt.Errorf("interp: %s: cannot use ? on %s (operand is not a Result or Option)", u.Question, v.Kind)
+	/*line eval.goal:128*/ if v.kind() != KindVariant || v.asVariant() == nil {
+		/*line eval.goal:129*/ return NilVal(), fmt.Errorf("interp: %s: cannot use ? on %s (operand is not a Result or Option)", u.Question, v.kind())
 	}
 	/*line eval.goal:131*/ sig, _ := ip.curSig()
 	/*line eval.goal:132*/ switch v.asVariant().TypeID {
@@ -150,10 +150,10 @@ func (ip *Interp) callConversion(name string, errVal Value, u *ast.UnwrapExpr) (
 	/*line eval.goal:203*/ if err != nil {
 		/*line eval.goal:204*/ return NilVal(), fmt.Errorf("interp: %s: from conversion %s is not callable: %w", u.Question, name, err)
 	}
-	/*line eval.goal:206*/ if fn.Kind != KindFunc || fn.Func == nil {
+	/*line eval.goal:206*/ if fn.kind() != KindFunc || fn.asFunc() == nil {
 		/*line eval.goal:207*/ return NilVal(), fmt.Errorf("interp: %s: from conversion %s is not a function", u.Question, name)
 	}
-	/*line eval.goal:209*/ out, err := ip.callFunc(fn.Func, []Value{errVal})
+	/*line eval.goal:209*/ out, err := ip.callFunc(fn.asFunc(), []Value{errVal})
 	/*line eval.goal:210*/ if err != nil {
 		/*line eval.goal:211*/ return NilVal(), err
 	}
@@ -332,10 +332,10 @@ func (ip *Interp) evalSelector(s *ast.SelectorExpr, scope *Env) (Value, error) {
 	/*line eval.goal:438*/ if err != nil {
 		/*line eval.goal:439*/ return NilVal(), err
 	}
-	/*line eval.goal:441*/ switch recv.Kind {
+	/*line eval.goal:441*/ switch recv.kind() {
 	case KindStruct:
 		if recv.asStruct() == nil {
-			/*line eval.goal:444*/ return NilVal(), fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
+			/*line eval.goal:444*/ return NilVal(), fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.kind())
 		}
 		v, ok := recv.asStruct().Fields[s.Sel.Name]
 		if !ok {
@@ -344,7 +344,7 @@ func (ip *Interp) evalSelector(s *ast.SelectorExpr, scope *Env) (Value, error) {
 		return v, nil
 	case KindVariant:
 		if recv.asVariant() == nil {
-			/*line eval.goal:455*/ return NilVal(), fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
+			/*line eval.goal:455*/ return NilVal(), fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.kind())
 		}
 		v, ok := recv.Field(s.Sel.Name)
 		if !ok {
@@ -352,7 +352,7 @@ func (ip *Interp) evalSelector(s *ast.SelectorExpr, scope *Env) (Value, error) {
 		}
 		return v, nil
 	default:
-		return NilVal(), fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
+		return NilVal(), fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.kind())
 	}
 }
 
@@ -473,10 +473,10 @@ func (ip *Interp) evalIndex(e *ast.IndexExpr, scope *Env) (Value, error) {
 	/*line eval.goal:602*/ if err != nil {
 		/*line eval.goal:603*/ return NilVal(), err
 	}
-	/*line eval.goal:605*/ switch recv.Kind {
+	/*line eval.goal:605*/ switch recv.kind() {
 	case KindSlice:
-		if idx.Kind != KindInt {
-			/*line eval.goal:608*/ return NilVal(), fmt.Errorf("interp: slice index must be int, got %s", idx.Kind)
+		if idx.kind() != KindInt {
+			/*line eval.goal:608*/ return NilVal(), fmt.Errorf("interp: slice index must be int, got %s", idx.kind())
 		}
 		if idx.asInt() < 0 || idx.asInt() >= int64(len(recv.asSlice())) {
 			/*line eval.goal:611*/ return NilVal(), fmt.Errorf("interp: slice index %d out of range (len %d)", idx.asInt(), len(recv.asSlice()))
@@ -495,14 +495,14 @@ func (ip *Interp) evalIndex(e *ast.IndexExpr, scope *Env) (Value, error) {
 		}
 		return NilVal(), nil
 	default:
-		return NilVal(), fmt.Errorf("interp: cannot index %s", recv.Kind)
+		return NilVal(), fmt.Errorf("interp: cannot index %s", recv.kind())
 	}
 }
 
 //line eval.goal:634
 func mapKeyString(v Value) (string, error) {
-	/*line eval.goal:635*/ if v.Kind != KindString {
-		/*line eval.goal:636*/ return "", fmt.Errorf("interp: map key must be string, got %s", v.Kind)
+	/*line eval.goal:635*/ if v.kind() != KindString {
+		/*line eval.goal:636*/ return "", fmt.Errorf("interp: map key must be string, got %s", v.kind())
 	}
 	/*line eval.goal:638*/ return v.asStr(), nil
 }
@@ -563,8 +563,8 @@ func (ip *Interp) evalCallMulti(call *ast.CallExpr, scope *Env) ([]Value, error)
 	/*line eval.goal:725*/ if err != nil {
 		/*line eval.goal:726*/ return nil, err
 	}
-	/*line eval.goal:728*/ if callee.Kind != KindFunc || callee.Func == nil {
-		/*line eval.goal:729*/ return nil, fmt.Errorf("interp: cannot call %s", callee.Kind)
+	/*line eval.goal:728*/ if callee.kind() != KindFunc || callee.asFunc() == nil {
+		/*line eval.goal:729*/ return nil, fmt.Errorf("interp: cannot call %s", callee.kind())
 	}
 	/*line eval.goal:731*/ args := make([]Value, len(call.Args))
 	/*line eval.goal:732*/ for i, a := range call.Args {
@@ -574,7 +574,7 @@ func (ip *Interp) evalCallMulti(call *ast.CallExpr, scope *Env) ([]Value, error)
 		}
 		/*line eval.goal:737*/ args[i] = v
 	}
-	/*line eval.goal:739*/ return ip.callFunc(callee.Func, args)
+	/*line eval.goal:739*/ return ip.callFunc(callee.asFunc(), args)
 }
 
 //line eval.goal:745
@@ -620,8 +620,8 @@ func (ip *Interp) evalBinary(b *ast.BinaryExpr, scope *Env) (Value, error) {
 		/*line eval.goal:787*/ if err != nil {
 			/*line eval.goal:788*/ return NilVal(), err
 		}
-		/*line eval.goal:790*/ if left.Kind != KindBool {
-			/*line eval.goal:791*/ return NilVal(), fmt.Errorf("interp: operator %s requires bool, got %s", b.Op, left.Kind)
+		/*line eval.goal:790*/ if left.kind() != KindBool {
+			/*line eval.goal:791*/ return NilVal(), fmt.Errorf("interp: operator %s requires bool, got %s", b.Op, left.kind())
 		}
 		/*line eval.goal:794*/ if b.Op == token.LAND && !left.asBool() {
 			/*line eval.goal:795*/ return BoolVal(false), nil
@@ -633,8 +633,8 @@ func (ip *Interp) evalBinary(b *ast.BinaryExpr, scope *Env) (Value, error) {
 		/*line eval.goal:801*/ if err != nil {
 			/*line eval.goal:802*/ return NilVal(), err
 		}
-		/*line eval.goal:804*/ if right.Kind != KindBool {
-			/*line eval.goal:805*/ return NilVal(), fmt.Errorf("interp: operator %s requires bool, got %s", b.Op, right.Kind)
+		/*line eval.goal:804*/ if right.kind() != KindBool {
+			/*line eval.goal:805*/ return NilVal(), fmt.Errorf("interp: operator %s requires bool, got %s", b.Op, right.kind())
 		}
 		/*line eval.goal:807*/ return BoolVal(right.asBool()), nil
 	}
@@ -657,10 +657,10 @@ func applyBinary(op token.Kind, left, right Value) (Value, error) {
 	case token.NEQ:
 		return BoolVal(!left.Equal(right)), nil
 	}
-	/*line eval.goal:831*/ if left.Kind != right.Kind {
-		/*line eval.goal:832*/ return NilVal(), fmt.Errorf("interp: operator %s on mismatched kinds %s and %s", op, left.Kind, right.Kind)
+	/*line eval.goal:831*/ if left.kind() != right.kind() {
+		/*line eval.goal:832*/ return NilVal(), fmt.Errorf("interp: operator %s on mismatched kinds %s and %s", op, left.kind(), right.kind())
 	}
-	/*line eval.goal:835*/ switch left.Kind {
+	/*line eval.goal:835*/ switch left.kind() {
 	case KindInt:
 		return intBinary(op, left.asInt(), right.asInt())
 	case KindFloat:
@@ -668,7 +668,7 @@ func applyBinary(op token.Kind, left, right Value) (Value, error) {
 	case KindString:
 		return stringBinary(op, left.asStr(), right.asStr())
 	default:
-		return NilVal(), fmt.Errorf("interp: operator %s not supported on %s", op, left.Kind)
+		return NilVal(), fmt.Errorf("interp: operator %s not supported on %s", op, left.kind())
 	}
 }
 
@@ -754,24 +754,24 @@ func (ip *Interp) evalUnary(u *ast.UnaryExpr, scope *Env) (Value, error) {
 	}
 	/*line eval.goal:925*/ switch u.Op {
 	case token.ADD:
-		switch x.Kind {
+		switch x.kind() {
 		case KindInt, KindFloat:
 			return x, nil
 		default:
-			return NilVal(), fmt.Errorf("interp: unary + requires numeric, got %s", x.Kind)
+			return NilVal(), fmt.Errorf("interp: unary + requires numeric, got %s", x.kind())
 		}
 	case token.SUB:
-		switch x.Kind {
+		switch x.kind() {
 		case KindInt:
 			return IntVal(-x.asInt()), nil
 		case KindFloat:
 			return FloatVal(-x.asFloat()), nil
 		default:
-			return NilVal(), fmt.Errorf("interp: unary - requires numeric, got %s", x.Kind)
+			return NilVal(), fmt.Errorf("interp: unary - requires numeric, got %s", x.kind())
 		}
 	case token.NOT:
-		if x.Kind != KindBool {
-			/*line eval.goal:944*/ return NilVal(), fmt.Errorf("interp: unary ! requires bool, got %s", x.Kind)
+		if x.kind() != KindBool {
+			/*line eval.goal:944*/ return NilVal(), fmt.Errorf("interp: unary ! requires bool, got %s", x.kind())
 		}
 		return BoolVal(!x.asBool()), nil
 	default:
@@ -834,7 +834,7 @@ func (ip *Interp) builtinLen(call *ast.CallExpr, scope *Env) ([]Value, error) {
 	/*line eval.goal:1013*/ if err != nil {
 		/*line eval.goal:1014*/ return nil, err
 	}
-	/*line eval.goal:1016*/ switch v.Kind {
+	/*line eval.goal:1016*/ switch v.kind() {
 	case KindSlice:
 		return []Value{IntVal(int64(len(v.asSlice())))}, nil
 	case KindString:
@@ -845,7 +845,7 @@ func (ip *Interp) builtinLen(call *ast.CallExpr, scope *Env) ([]Value, error) {
 		}
 		return []Value{IntVal(int64(len(v.asMap().Entries)))}, nil
 	default:
-		return nil, fmt.Errorf("interp: len of %s is not defined", v.Kind)
+		return nil, fmt.Errorf("interp: len of %s is not defined", v.kind())
 	}
 }
 
@@ -858,8 +858,8 @@ func (ip *Interp) builtinAppend(call *ast.CallExpr, scope *Env) ([]Value, error)
 	/*line eval.goal:1040*/ if err != nil {
 		/*line eval.goal:1041*/ return nil, err
 	}
-	/*line eval.goal:1043*/ if base.Kind != KindSlice {
-		/*line eval.goal:1044*/ return nil, fmt.Errorf("interp: append of %s (first argument must be a slice)", base.Kind)
+	/*line eval.goal:1043*/ if base.kind() != KindSlice {
+		/*line eval.goal:1044*/ return nil, fmt.Errorf("interp: append of %s (first argument must be a slice)", base.kind())
 	}
 	/*line eval.goal:1046*/ out := make([]Value, len(base.asSlice()), len(base.asSlice())+len(call.Args)-1)
 	/*line eval.goal:1047*/ copy(out, base.asSlice())
@@ -888,8 +888,8 @@ func (ip *Interp) builtinMake(call *ast.CallExpr, scope *Env) ([]Value, error) {
 			/*line eval.goal:1073*/ if err != nil {
 				/*line eval.goal:1074*/ return nil, err
 			}
-			/*line eval.goal:1076*/ if sz.Kind != KindInt {
-				/*line eval.goal:1077*/ return nil, fmt.Errorf("interp: make length must be int, got %s", sz.Kind)
+			/*line eval.goal:1076*/ if sz.kind() != KindInt {
+				/*line eval.goal:1077*/ return nil, fmt.Errorf("interp: make length must be int, got %s", sz.kind())
 			}
 			/*line eval.goal:1079*/ if sz.asInt() < 0 {
 				/*line eval.goal:1080*/ return nil, fmt.Errorf("interp: make length %d is negative", sz.asInt())
@@ -925,7 +925,7 @@ func (ip *Interp) tryMethodCall(sel *ast.SelectorExpr, call *ast.CallExpr, scope
 	/*line eval.goal:1117*/ if rerr != nil {
 		/*line eval.goal:1118*/ return nil, false, nil
 	}
-	/*line eval.goal:1120*/ if recv.Kind != KindStruct || recv.asStruct() == nil {
+	/*line eval.goal:1120*/ if recv.kind() != KindStruct || recv.asStruct() == nil {
 		/*line eval.goal:1121*/ return nil, false, nil
 	}
 	/*line eval.goal:1123*/ byName := ip.methods[recv.asStruct().TypeID]
@@ -950,7 +950,7 @@ func (ip *Interp) tryMethodCall(sel *ast.SelectorExpr, call *ast.CallExpr, scope
 
 //line eval.goal:1147
 func copyStructValue(v Value) Value {
-	/*line eval.goal:1148*/ if v.Kind != KindStruct || v.asStruct() == nil {
+	/*line eval.goal:1148*/ if v.kind() != KindStruct || v.asStruct() == nil {
 		/*line eval.goal:1149*/ return v
 	}
 	/*line eval.goal:1151*/ fields := make(map[string]Value, len(v.asStruct().Fields))

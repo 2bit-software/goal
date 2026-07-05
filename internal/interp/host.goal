@@ -35,8 +35,8 @@ var hostFuncs = map[string]hostFunc{
 		if len(args) < 1 {
 			return nil, fmt.Errorf("interp: fmt.Sprintf expects at least 1 argument, got %d", len(args))
 		}
-		if args[0].Kind != KindString {
-			return nil, fmt.Errorf("interp: fmt.Sprintf format must be string, got %s", args[0].Kind)
+		if args[0].kind() != KindString {
+			return nil, fmt.Errorf("interp: fmt.Sprintf format must be string, got %s", args[0].kind())
 		}
 		return []Value{StrVal(fmt.Sprintf(args[0].asStr(), goArgs(args[1:])...))}, nil
 	},
@@ -50,8 +50,8 @@ var hostFuncs = map[string]hostFunc{
 		if len(args) < 1 {
 			return nil, fmt.Errorf("interp: fmt.Errorf expects at least 1 argument, got %d", len(args))
 		}
-		if args[0].Kind != KindString {
-			return nil, fmt.Errorf("interp: fmt.Errorf format must be string, got %s", args[0].Kind)
+		if args[0].kind() != KindString {
+			return nil, fmt.Errorf("interp: fmt.Errorf format must be string, got %s", args[0].kind())
 		}
 		return []Value{errVal(fmt.Errorf(args[0].asStr(), goArgs(args[1:])...).Error())}, nil
 	},
@@ -59,8 +59,8 @@ var hostFuncs = map[string]hostFunc{
 		if len(args) != 1 {
 			return nil, fmt.Errorf("interp: errors.New expects 1 argument, got %d", len(args))
 		}
-		if args[0].Kind != KindString {
-			return nil, fmt.Errorf("interp: errors.New argument must be string, got %s", args[0].Kind)
+		if args[0].kind() != KindString {
+			return nil, fmt.Errorf("interp: errors.New argument must be string, got %s", args[0].kind())
 		}
 		return []Value{errVal(args[0].asStr())}, nil
 	},
@@ -76,7 +76,7 @@ func errVal(msg string) Value {
 
 // isErrorValue reports whether v is the interpreter's error struct.
 func isErrorValue(v Value) bool {
-	return v.Kind == KindStruct && v.asStruct() != nil && v.asStruct().TypeID == "error"
+	return v.kind() == KindStruct && v.asStruct() != nil && v.asStruct().TypeID == "error"
 }
 
 // goArg converts a runtime Value into a Go value suitable for fmt formatting.
@@ -84,7 +84,7 @@ func isErrorValue(v Value) bool {
 // Go error (so %v/%s render the message and %w wraps correctly); any other
 // composite renders via Value.String().
 func goArg(v Value) any {
-	switch v.Kind {
+	switch v.kind() {
 	case KindNil:
 		return nil
 	case KindInt:

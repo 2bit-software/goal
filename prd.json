@@ -70,7 +70,7 @@
         "`task check-full` exits 0 and `task fixpoint` reports FIXPOINT OK (interpreter and corpus behavioural tests confirm behaviour is preserved)."
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-001 (and US-002 if any converted method returns Result/Option) and US-003/US-004. Because the payload fields no longer exist, any read/construction site missed earlier now fails to compile — this story owns migrating the remaining Value.Kind/Value.Func dispatch sites. Value is used only within internal/interp (no external importer), so the blast radius is one package."
     },
     {

@@ -484,8 +484,8 @@ func (ip *Interp) execIf(s *ast.IfStmt, scope *Env) error {
 	/*line interp.goal:638*/ if err != nil {
 		/*line interp.goal:639*/ return err
 	}
-	/*line interp.goal:641*/ if cond.Kind != KindBool {
-		/*line interp.goal:642*/ return fmt.Errorf("interp: if condition must be bool, got %s", cond.Kind)
+	/*line interp.goal:641*/ if cond.kind() != KindBool {
+		/*line interp.goal:642*/ return fmt.Errorf("interp: if condition must be bool, got %s", cond.kind())
 	}
 	/*line interp.goal:644*/ if cond.asBool() {
 		/*line interp.goal:645*/ return ip.execBlock(s.Body, ifScope.NewChild())
@@ -508,8 +508,8 @@ func (ip *Interp) execMatch(m *ast.MatchExpr, scope *Env) error {
 	/*line interp.goal:669*/ if err != nil {
 		/*line interp.goal:670*/ return err
 	}
-	/*line interp.goal:672*/ if subj.Kind != KindVariant || subj.asVariant() == nil {
-		/*line interp.goal:673*/ return fmt.Errorf("interp: match subject must be a variant, got %s", subj.Kind)
+	/*line interp.goal:672*/ if subj.kind() != KindVariant || subj.asVariant() == nil {
+		/*line interp.goal:673*/ return fmt.Errorf("interp: match subject must be a variant, got %s", subj.kind())
 	}
 	/*line interp.goal:675*/ arm, vp := selectMatchArm(m, subj)
 	/*line interp.goal:676*/ if arm == nil {
@@ -546,7 +546,7 @@ func armScopeFor(vp *ast.VariantPattern, subj Value, scope *Env) *Env {
 	/*line interp.goal:719*/ armScope := scope.NewChild()
 	/*line interp.goal:720*/ if vp != nil && vp.Binding != nil {
 		/*line interp.goal:721*/ bound := subj
-		/*line interp.goal:722*/ if subj.Kind == KindVariant && subj.asVariant() != nil && (subj.asVariant().TypeID == resultTypeID || subj.asVariant().TypeID == optionTypeID) {
+		/*line interp.goal:722*/ if subj.kind() == KindVariant && subj.asVariant() != nil && (subj.asVariant().TypeID == resultTypeID || subj.asVariant().TypeID == optionTypeID) {
 			/*line interp.goal:724*/ if pv, ok := payloadValue(subj.asVariant()); ok {
 				/*line interp.goal:725*/ bound = pv
 			}
@@ -704,10 +704,10 @@ func (ip *Interp) assignIndex(t *ast.IndexExpr, v Value, tok token.Kind, scope *
 	/*line interp.goal:909*/ if err != nil {
 		/*line interp.goal:910*/ return err
 	}
-	/*line interp.goal:912*/ switch recv.Kind {
+	/*line interp.goal:912*/ switch recv.kind() {
 	case KindSlice:
-		if idx.Kind != KindInt {
-			/*line interp.goal:915*/ return fmt.Errorf("interp: slice index must be int, got %s", idx.Kind)
+		if idx.kind() != KindInt {
+			/*line interp.goal:915*/ return fmt.Errorf("interp: slice index must be int, got %s", idx.kind())
 		}
 		if idx.asInt() < 0 || idx.asInt() >= int64(len(recv.asSlice())) {
 			/*line interp.goal:918*/ return fmt.Errorf("interp: slice index %d out of range (len %d)", idx.asInt(), len(recv.asSlice()))
@@ -743,7 +743,7 @@ func (ip *Interp) assignIndex(t *ast.IndexExpr, v Value, tok token.Kind, scope *
 		recv.asMap().Entries[key] = v
 		return nil
 	default:
-		return fmt.Errorf("interp: cannot index-assign %s", recv.Kind)
+		return fmt.Errorf("interp: cannot index-assign %s", recv.kind())
 	}
 }
 
@@ -756,8 +756,8 @@ func (ip *Interp) assignField(t *ast.SelectorExpr, v Value, tok token.Kind, scop
 	/*line interp.goal:965*/ if err != nil {
 		/*line interp.goal:966*/ return err
 	}
-	/*line interp.goal:968*/ if recv.Kind != KindStruct || recv.asStruct() == nil {
-		/*line interp.goal:969*/ return fmt.Errorf("interp: cannot assign field %s on %s", t.Sel.Name, recv.Kind)
+	/*line interp.goal:968*/ if recv.kind() != KindStruct || recv.asStruct() == nil {
+		/*line interp.goal:969*/ return fmt.Errorf("interp: cannot assign field %s on %s", t.Sel.Name, recv.kind())
 	}
 	/*line interp.goal:971*/ if tok != token.ASSIGN {
 		/*line interp.goal:972*/ cur, ok := recv.asStruct().Fields[t.Sel.Name]
@@ -788,8 +788,8 @@ func (ip *Interp) execFor(s *ast.ForStmt, scope *Env) error {
 			/*line interp.goal:1003*/ if err != nil {
 				/*line interp.goal:1004*/ return err
 			}
-			/*line interp.goal:1006*/ if cond.Kind != KindBool {
-				/*line interp.goal:1007*/ return fmt.Errorf("interp: for condition must be bool, got %s", cond.Kind)
+			/*line interp.goal:1006*/ if cond.kind() != KindBool {
+				/*line interp.goal:1007*/ return fmt.Errorf("interp: for condition must be bool, got %s", cond.kind())
 			}
 			/*line interp.goal:1009*/ if !cond.asBool() {
 				/*line interp.goal:1010*/ return nil
@@ -849,7 +849,7 @@ func (ip *Interp) execRange(s *ast.RangeStmt, scope *Env) error {
 		}
 		/*line interp.goal:1067*/ return false, nil
 	}
-	/*line interp.goal:1070*/ switch subject.Kind {
+	/*line interp.goal:1070*/ switch subject.kind() {
 	case KindSlice:
 		for i, elem := range subject.asSlice() {
 			/*line interp.goal:1073*/ stop, err := iterate(IntVal(int64(i)), elem)
@@ -881,7 +881,7 @@ func (ip *Interp) execRange(s *ast.RangeStmt, scope *Env) error {
 		}
 		return nil
 	default:
-		return fmt.Errorf("interp: cannot range over %s", subject.Kind)
+		return fmt.Errorf("interp: cannot range over %s", subject.kind())
 	}
 }
 
@@ -912,7 +912,7 @@ func (ip *Interp) execSwitch(s *ast.SwitchStmt, scope *Env) error {
 			/*line interp.goal:1139*/ return err
 		}
 	}
-	/*line interp.goal:1142*/ var tag Value
+	/*line interp.goal:1142*/ var tag Value = NilVal()
 
 	/*line interp.goal:1143*/
 	hasTag := s.Tag != nil
@@ -980,8 +980,8 @@ func (ip *Interp) caseMatches(cc *ast.CaseClause, hasTag bool, tag Value, scope 
 			}
 			/*line interp.goal:1203*/ continue
 		}
-		/*line interp.goal:1205*/ if v.Kind != KindBool {
-			/*line interp.goal:1206*/ return false, fmt.Errorf("interp: tagless switch case must be bool, got %s", v.Kind)
+		/*line interp.goal:1205*/ if v.kind() != KindBool {
+			/*line interp.goal:1206*/ return false, fmt.Errorf("interp: tagless switch case must be bool, got %s", v.kind())
 		}
 		/*line interp.goal:1208*/ if v.asBool() {
 			/*line interp.goal:1209*/ return true, nil
@@ -1025,13 +1025,13 @@ func (ip *Interp) execIncDec(s *ast.IncDecStmt, scope *Env) error {
 	/*line interp.goal:1254*/ var one Value
 
 	/*line interp.goal:1255*/
-	switch cur.Kind {
+	switch cur.kind() {
 	case KindInt:
 		one = IntVal(1)
 	case KindFloat:
 		one = FloatVal(1)
 	default:
-		return fmt.Errorf("interp: %s requires numeric operand, got %s", s.Tok, cur.Kind)
+		return fmt.Errorf("interp: %s requires numeric operand, got %s", s.Tok, cur.kind())
 	}
 	/*line interp.goal:1263*/ op := token.ADD
 	/*line interp.goal:1264*/ if s.Tok == token.DEC {

@@ -64,20 +64,23 @@ func (k Kind) String() string {
 	}
 }
 
-// Value is the uniform runtime value. Exactly one payload field is meaningful,
-// selected by Kind; the rest are zero.
-type Value struct {
-	Kind Kind
-
-	Int     int64
-	Float   float64
-	Str     string
-	Bool    bool
-	Struct  *StructValue // KindStruct
-	Slice   []Value      // KindSlice
-	Map     *MapValue    // KindMap
-	Func    *FuncValue   // KindFunc
-	Variant *Variant     // KindVariant
+// Value is the uniform runtime value, modelled as a real SUM TYPE (US-005): each
+// kind is its own variant carrying ONLY its payload, so no representation omits an
+// unsafe zero pointer. goal lowers this enum to a Go interface with one payload
+// struct per variant. Reads go through the accessors (kind/asInt/...) and
+// constructions through the constructors (IntVal/StructVal/...), so the
+// representation lives in this one file (US-003/US-004).
+enum Value {
+	Nil
+	Int { n: int64 }
+	Float { f: float64 }
+	Str { s: string }
+	Bool { b: bool }
+	Struct { sv: *StructValue }
+	Slice { xs: []Value }
+	Map { mv: *MapValue }
+	Func { fv: *FuncValue }
+	Variant { vr: *Variant }
 }
 
 // StructValue is an ordinary struct instance: a named type with named fields.
@@ -116,26 +119,26 @@ type Variant struct {
 }
 
 // IntVal constructs an int value.
-func IntVal(n int64) Value { return Value{Kind: KindInt, Int: n} }
+func IntVal(n int64) Value { return Value.Int(n: n) }
 
 // FloatVal constructs a float value.
-func FloatVal(f float64) Value { return Value{Kind: KindFloat, Float: f} }
+func FloatVal(f float64) Value { return Value.Float(f: f) }
 
 // StrVal constructs a string value.
-func StrVal(s string) Value { return Value{Kind: KindString, Str: s} }
+func StrVal(s string) Value { return Value.Str(s: s) }
 
 // BoolVal constructs a bool value.
-func BoolVal(b bool) Value { return Value{Kind: KindBool, Bool: b} }
+func BoolVal(b bool) Value { return Value.Bool(b: b) }
 
 // NilVal constructs the nil value.
-func NilVal() Value { return Value{Kind: KindNil} }
+func NilVal() Value { return Value.Nil }
 
 // StructVal constructs a struct value with the given type identity and fields.
 func StructVal(typeID string, fields map[string]Value) Value {
 	if fields == nil {
 		fields = map[string]Value{}
 	}
-	return Value{Kind: KindStruct, Struct: &StructValue{TypeID: typeID, Fields: fields}}
+	return Value.Struct(sv: &StructValue{TypeID: typeID, Fields: fields})
 }
 
 // SliceVal constructs a slice value from the given elements.
@@ -143,7 +146,7 @@ func SliceVal(elems ...Value) Value {
 	if elems == nil {
 		elems = []Value{}
 	}
-	return Value{Kind: KindSlice, Slice: elems}
+	return Value.Slice(xs: elems)
 }
 
 // MapVal constructs a map value from the given string-keyed entries.
@@ -151,14 +154,14 @@ func MapVal(entries map[string]Value) Value {
 	if entries == nil {
 		entries = map[string]Value{}
 	}
-	return Value{Kind: KindMap, Map: &MapValue{Entries: entries}}
+	return Value.Map(mv: &MapValue{Entries: entries})
 }
 
 // FuncVal constructs a name-only function value (no declaration). It is the
 // minimal carrier used where the function is not called (rendering, identity
 // equality); use FuncDeclVal to construct a callable function value.
 func FuncVal(name string) Value {
-	return Value{Kind: KindFunc, Func: &FuncValue{Name: name}}
+	return Value.Func(fv: &FuncValue{Name: name})
 }
 
 // FuncDeclVal constructs a callable function value over the given declaration and
@@ -169,7 +172,7 @@ func FuncDeclVal(decl *ast.FuncDecl, env *Env) Value {
 	if decl != nil && decl.Name != nil {
 		name = decl.Name.Name
 	}
-	return Value{Kind: KindFunc, Func: &FuncValue{Name: name, Decl: decl, Env: env}}
+	return Value.Func(fv: &FuncValue{Name: name, Decl: decl, Env: env})
 }
 
 // Canonical type identity and payload field names for the Result tagged union.
@@ -204,12 +207,12 @@ const (
 // whole variant.
 func payloadValue(v *Variant) (Value, bool) {
 	if v == nil || len(v.Fields) != 1 {
-		return Value{}, false
+		return NilVal(), false
 	}
 	for _, fv := range v.Fields {
 		return fv, true
 	}
-	return Value{}, false
+	return NilVal(), false
 }
 
 // VariantVal constructs a tagged-union value. It is the single constructor for
@@ -218,79 +221,207 @@ func VariantVal(typeID, tag string, fields map[string]Value) Value {
 	if fields == nil {
 		fields = map[string]Value{}
 	}
-	return Value{Kind: KindVariant, Variant: &Variant{TypeID: typeID, Tag: tag, Fields: fields}}
+	return Value.Variant(vr: &Variant{TypeID: typeID, Tag: tag, Fields: fields})
 }
 
 // --- Payload accessors -----------------------------------------------------
 //
 // Every read of a Value payload outside this file goes through one of these
-// accessors (US-003) so the representation can later change in ONE place
-// (US-005). They wrap the CURRENT flat struct verbatim: each returns the field
-// selected by Kind, so a mismatched-kind read yields that field's zero value —
-// exactly what a direct field read would have produced. Pointer- and
-// slice-backed accessors return the SAME backing (not a copy), so mutation
-// through them (e.g. asStruct().Fields[k] = v) is preserved.
+// accessors (US-003) so the representation lives in ONE place (US-005). Each
+// returns the payload of its matching variant, or that payload type's zero value
+// for any other variant — exactly what a direct field read on the former flat
+// struct produced. Pointer- and slice-backed accessors return the SAME backing
+// (not a copy), so mutation through them (e.g. asStruct().Fields[k] = v) is
+// preserved.
 
-// kind returns the value's dynamic kind. Named lowercase because the `Kind`
-// field name is taken; the discriminant accessor for the read gate.
-func (v Value) kind() Kind { return v.Kind }
+// kind returns the value's dynamic kind — the discriminant accessor for the read
+// gate, derived from the active variant.
+func (v Value) kind() Kind {
+	var k Kind = match v {
+		Value.Nil       => KindNil
+		Value.Int(x)    => KindInt
+		Value.Float(x)  => KindFloat
+		Value.Str(x)    => KindString
+		Value.Bool(x)   => KindBool
+		Value.Struct(x) => KindStruct
+		Value.Slice(x)  => KindSlice
+		Value.Map(x)    => KindMap
+		Value.Func(x)   => KindFunc
+		Value.Variant(x) => KindVariant
+	}
+	return k
+}
 
 // asInt returns the int payload (KindInt).
-func (v Value) asInt() int64 { return v.Int }
+func (v Value) asInt() int64 {
+	var n int64 = match v {
+		Value.Int(x) => x.n
+		_            => 0
+	}
+	return n
+}
 
 // asFloat returns the float payload (KindFloat).
-func (v Value) asFloat() float64 { return v.Float }
+func (v Value) asFloat() float64 {
+	var f float64 = match v {
+		Value.Float(x) => x.f
+		_              => 0
+	}
+	return f
+}
 
 // asStr returns the string payload (KindString).
-func (v Value) asStr() string { return v.Str }
+func (v Value) asStr() string {
+	var s string = match v {
+		Value.Str(x) => x.s
+		_            => ""
+	}
+	return s
+}
 
 // asBool returns the bool payload (KindBool).
-func (v Value) asBool() bool { return v.Bool }
+func (v Value) asBool() bool {
+	var b bool = match v {
+		Value.Bool(x) => x.b
+		_             => false
+	}
+	return b
+}
 
 // asStruct returns the struct payload (KindStruct); nil when absent.
-func (v Value) asStruct() *StructValue { return v.Struct }
+func (v Value) asStruct() *StructValue {
+	var s *StructValue = match v {
+		Value.Struct(x) => x.sv
+		_               => nil
+	}
+	return s
+}
 
 // asSlice returns the slice payload (KindSlice); the backing is shared.
-func (v Value) asSlice() []Value { return v.Slice }
+func (v Value) asSlice() []Value {
+	var xs []Value = match v {
+		Value.Slice(x) => x.xs
+		_              => nil
+	}
+	return xs
+}
 
 // asMap returns the map payload (KindMap); nil when absent.
-func (v Value) asMap() *MapValue { return v.Map }
+func (v Value) asMap() *MapValue {
+	var m *MapValue = match v {
+		Value.Map(x) => x.mv
+		_            => nil
+	}
+	return m
+}
 
 // asFunc returns the function payload (KindFunc); nil when absent.
-func (v Value) asFunc() *FuncValue { return v.Func }
+func (v Value) asFunc() *FuncValue {
+	var f *FuncValue = match v {
+		Value.Func(x) => x.fv
+		_             => nil
+	}
+	return f
+}
 
 // asVariant returns the tagged-union payload (KindVariant); nil when absent.
-func (v Value) asVariant() *Variant { return v.Variant }
+func (v Value) asVariant() *Variant {
+	var vr *Variant = match v {
+		Value.Variant(x) => x.vr
+		_                => nil
+	}
+	return vr
+}
 
 // isNil reports whether v is the nil value.
-func (v Value) isNil() bool { return v.Kind == KindNil }
+func (v Value) isNil() bool {
+	var ok bool = match v {
+		Value.Nil => true
+		_         => false
+	}
+	return ok
+}
 
 // isInt reports whether v carries an int payload.
-func (v Value) isInt() bool { return v.Kind == KindInt }
+func (v Value) isInt() bool {
+	var ok bool = match v {
+		Value.Int(x) => true
+		_            => false
+	}
+	return ok
+}
 
 // isFloat reports whether v carries a float payload.
-func (v Value) isFloat() bool { return v.Kind == KindFloat }
+func (v Value) isFloat() bool {
+	var ok bool = match v {
+		Value.Float(x) => true
+		_              => false
+	}
+	return ok
+}
 
 // isStr reports whether v carries a string payload.
-func (v Value) isStr() bool { return v.Kind == KindString }
+func (v Value) isStr() bool {
+	var ok bool = match v {
+		Value.Str(x) => true
+		_            => false
+	}
+	return ok
+}
 
 // isBool reports whether v carries a bool payload.
-func (v Value) isBool() bool { return v.Kind == KindBool }
+func (v Value) isBool() bool {
+	var ok bool = match v {
+		Value.Bool(x) => true
+		_             => false
+	}
+	return ok
+}
 
 // isStruct reports whether v is a non-nil struct value.
-func (v Value) isStruct() bool { return v.Kind == KindStruct && v.Struct != nil }
+func (v Value) isStruct() bool {
+	var ok bool = match v {
+		Value.Struct(x) => x.sv != nil
+		_               => false
+	}
+	return ok
+}
 
 // isSlice reports whether v carries a slice payload.
-func (v Value) isSlice() bool { return v.Kind == KindSlice }
+func (v Value) isSlice() bool {
+	var ok bool = match v {
+		Value.Slice(x) => true
+		_              => false
+	}
+	return ok
+}
 
 // isMap reports whether v is a non-nil map value.
-func (v Value) isMap() bool { return v.Kind == KindMap && v.Map != nil }
+func (v Value) isMap() bool {
+	var ok bool = match v {
+		Value.Map(x) => x.mv != nil
+		_            => false
+	}
+	return ok
+}
 
 // isFunc reports whether v carries a function payload.
-func (v Value) isFunc() bool { return v.Kind == KindFunc }
+func (v Value) isFunc() bool {
+	var ok bool = match v {
+		Value.Func(x) => true
+		_             => false
+	}
+	return ok
+}
 
 // isVariant reports whether v is a non-nil tagged-union value.
-func (v Value) isVariant() bool { return v.Kind == KindVariant && v.Variant != nil }
+func (v Value) isVariant() bool {
+	var ok bool = match v {
+		Value.Variant(x) => x.vr != nil
+		_                => false
+	}
+	return ok
+}
 
 // variantPatternTag returns a match arm's VariantPattern tag name and true, or
 // ("", false) when the pattern carries no tag. It lives here (not in the match
@@ -316,10 +447,11 @@ func variantLitTag(vl *ast.VariantLit) (string, bool) {
 // Field reads a tagged-union payload field by name. ok is false when v is not a
 // variant or the field is absent (a not-present read, never a panic).
 func (v Value) Field(name string) (Value, bool) {
-	if v.Kind != KindVariant || v.Variant == nil {
-		return Value{}, false
+	vr := v.asVariant()
+	if vr == nil {
+		return NilVal(), false
 	}
-	f, ok := v.Variant.Fields[name]
+	f, ok := vr.Fields[name]
 	return f, ok
 }
 
@@ -327,41 +459,34 @@ func (v Value) Field(name string) (Value, bool) {
 // maps, and variants compare by content; function values compare by identity
 // (same *FuncValue pointer).
 func (v Value) Equal(other Value) bool {
-	if v.Kind != other.Kind {
+	if v.kind() != other.kind() {
 		return false
 	}
-	switch v.Kind {
-	case KindNil:
-		return true
-	case KindInt:
-		return v.Int == other.Int
-	case KindFloat:
-		return v.Float == other.Float
-	case KindString:
-		return v.Str == other.Str
-	case KindBool:
-		return v.Bool == other.Bool
-	case KindStruct:
-		return structEqual(v.Struct, other.Struct)
-	case KindSlice:
-		if len(v.Slice) != len(other.Slice) {
+	var eq bool = match v {
+		Value.Nil       => true
+		Value.Int(x)    => x.n == other.asInt()
+		Value.Float(x)  => x.f == other.asFloat()
+		Value.Str(x)    => x.s == other.asStr()
+		Value.Bool(x)   => x.b == other.asBool()
+		Value.Struct(x) => structEqual(x.sv, other.asStruct())
+		Value.Slice(x)  => sliceEqual(x.xs, other.asSlice())
+		Value.Map(x)    => mapEqual(x.mv, other.asMap())
+		Value.Func(x)   => x.fv == other.asFunc()
+		Value.Variant(x) => variantEqual(x.vr, other.asVariant())
+	}
+	return eq
+}
+
+func sliceEqual(a, b []Value) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !a[i].Equal(b[i]) {
 			return false
 		}
-		for i := range v.Slice {
-			if !v.Slice[i].Equal(other.Slice[i]) {
-				return false
-			}
-		}
-		return true
-	case KindMap:
-		return mapEqual(v.Map, other.Map)
-	case KindFunc:
-		return v.Func == other.Func
-	case KindVariant:
-		return variantEqual(v.Variant, other.Variant)
-	default:
-		return false
 	}
+	return true
 }
 
 func fieldsEqual(a, b map[string]Value) bool {
@@ -400,51 +525,65 @@ func variantEqual(a, b *Variant) bool {
 
 // String renders a value to a readable, deterministic form.
 func (v Value) String() string {
-	switch v.Kind {
-	case KindNil:
-		return "nil"
-	case KindInt:
-		return strconv.FormatInt(v.Int, 10)
-	case KindFloat:
-		return strconv.FormatFloat(v.Float, 'g', -1, 64)
-	case KindString:
-		return strconv.Quote(v.Str)
-	case KindBool:
-		return strconv.FormatBool(v.Bool)
-	case KindStruct:
-		if v.Struct == nil {
-			return "struct{}"
-		}
-		return v.Struct.TypeID + "{" + renderFields(v.Struct.Fields) + "}"
-	case KindSlice:
-		parts := make([]string, len(v.Slice))
-		for i, e := range v.Slice {
-			parts[i] = e.String()
-		}
-		return "[" + strings.Join(parts, " ") + "]"
-	case KindMap:
-		if v.Map == nil {
-			return "map[]"
-		}
-		return "map[" + renderFields(v.Map.Entries) + "]"
-	case KindFunc:
-		name := ""
-		if v.Func != nil {
-			name = v.Func.Name
-		}
-		return "func " + name
-	case KindVariant:
-		if v.Variant == nil {
-			return "<variant>"
-		}
-		s := v.Variant.TypeID + "." + v.Variant.Tag
-		if len(v.Variant.Fields) > 0 {
-			s += "(" + renderFields(v.Variant.Fields) + ")"
-		}
-		return s
-	default:
-		return "<" + v.Kind.String() + ">"
+	var s string = match v {
+		Value.Nil       => "nil"
+		Value.Int(x)    => strconv.FormatInt(x.n, 10)
+		Value.Float(x)  => strconv.FormatFloat(x.f, 'g', -1, 64)
+		Value.Str(x)    => strconv.Quote(x.s)
+		Value.Bool(x)   => strconv.FormatBool(x.b)
+		Value.Struct(x) => renderStruct(x.sv)
+		Value.Slice(x)  => renderSlice(x.xs)
+		Value.Map(x)    => renderMap(x.mv)
+		Value.Func(x)   => renderFunc(x.fv)
+		Value.Variant(x) => renderVariant(x.vr)
 	}
+	return s
+}
+
+// renderStruct renders a struct payload to its readable form.
+func renderStruct(sv *StructValue) string {
+	if sv == nil {
+		return "struct{}"
+	}
+	return sv.TypeID + "{" + renderFields(sv.Fields) + "}"
+}
+
+// renderSlice renders a slice payload to its readable form.
+func renderSlice(xs []Value) string {
+	parts := make([]string, len(xs))
+	for i, e := range xs {
+		parts[i] = e.String()
+	}
+	return "[" + strings.Join(parts, " ") + "]"
+}
+
+// renderMap renders a map payload to its readable form.
+func renderMap(mv *MapValue) string {
+	if mv == nil {
+		return "map[]"
+	}
+	return "map[" + renderFields(mv.Entries) + "]"
+}
+
+// renderFunc renders a function payload to its readable form.
+func renderFunc(fv *FuncValue) string {
+	name := ""
+	if fv != nil {
+		name = fv.Name
+	}
+	return "func " + name
+}
+
+// renderVariant renders a tagged-union payload to its readable form.
+func renderVariant(vr *Variant) string {
+	if vr == nil {
+		return "<variant>"
+	}
+	s := vr.TypeID + "." + vr.Tag
+	if len(vr.Fields) > 0 {
+		s += "(" + renderFields(vr.Fields) + ")"
+	}
+	return s
 }
 
 // renderFields renders a name->Value map with keys sorted for determinism.
