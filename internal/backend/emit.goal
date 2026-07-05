@@ -32,6 +32,12 @@ type emitter struct {
 	// pointerRecv is the set of type names with a pointer-receiver method, used to
 	// address an `implements` assertion as `(*T)(nil)` rather than `T{}`.
 	pointerRecv map[string]bool
+	// enumMethods groups the receiver methods declared on each enum, keyed by the
+	// enum's name, in source order. It drives the sum-type method lowering: enumDecl
+	// folds each method's signature into the enum interface, and funcDecl lowers each
+	// method to one shared free function plus one per-variant forwarder. Empty when no
+	// enum in the file carries a receiver method (so ordinary enums are unaffected).
+	enumMethods map[string][]*ast.FuncDecl
 	// fnKind is the enclosing function's Result/Option kind, so a `return
 	// Result.Ok/Err` / `return Option.Some/None` constructor lowers to the native
 	// (T, error) pair / pointer form. roNone outside a Result/Option function.
@@ -117,6 +123,7 @@ func emitFileWith(f *ast.File, info *sema.Info, suppressPrelude bool, srcFile st
 	e := emitter{
 		info:            info,
 		pointerRecv:     pointerReceiverSet(f),
+		enumMethods:     buildEnumMethods(f, info),
 		fileIdents:      fileIdentSet(f),
 		suppressPrelude: suppressPrelude,
 		srcFile:         srcFile,
@@ -270,7 +277,28 @@ func (e *emitter) enumDecl(d *ast.EnumDecl) {
 		e.fail("enum %s not resolved", d.Name.Name)
 		return
 	}
-	e.p(genEnum(en))
+	methods := e.enumMethods[en.Name]
+	if len(methods) == 0 {
+		// No receiver methods: emit the byte-identical marker-only encoding so the
+		// self-host fixpoint over existing enums is unaffected.
+		e.p(genEnum(en))
+		return
+	}
+	// Fold each method's signature into the enum's Go interface (mirror
+	// sealedInterfaceDecl), then emit the variant structs and marker methods. The
+	// shared free function and per-variant forwarders are emitted by funcDecl.
+	e.p("type " + en.Name + " interface {\n")
+	for _, m := range methods {
+		if m.Name == nil {
+			e.fail("enum %s has a receiver method with no name", en.Name)
+			return
+		}
+		e.p(m.Name.Name)
+		e.funcSig(m.Type)
+		e.p("\n")
+	}
+	e.p("is" + en.Name + "()\n}\n\n")
+	e.p(genEnumVariants(en))
 }
 
 // sealedInterfaceDecl lowers `sealed interface Name { methods }` to a Go interface
@@ -469,6 +497,17 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 		e.curParams = prevCurParams
 	}()
 
+	// A value-receiver method on an enum (sum type) cannot lower to a Go method —
+	// the enum's Go type is an interface, and Go rejects a method with an interface
+	// receiver. Route it to enumMethodDecl, which emits a shared free function
+	// (holding the body) plus one forwarding method per variant. The scope setup
+	// above (recvTypes/curParams/gensym) already covers the free function's body.
+	if d.Recv != nil && len(d.Recv.List) > 0 {
+		if en := enumOf(e.info, recvBaseType(d.Recv.List[0].Type)); en != nil {
+			e.enumMethodDecl(d, en)
+			return
+		}
+	}
 	e.p("func ")
 	if d.Recv != nil {
 		e.fieldList(d.Recv, "(", ")")
@@ -482,6 +521,89 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 		e.p(" ")
 		e.block(d.Body)
 	}
+}
+
+// enumMethodDecl lowers a value-receiver method on an enum to (1) a shared free
+// function `E_M(recv E, params...) results { body }` — the receiver becomes the
+// first parameter, so the body copies over verbatim — and (2) one forwarding
+// method per variant `func (recv E_V) M(params...) results { return E_M(recv,
+// args...) }`. The interface method signature itself is folded into the enum's
+// Go interface by enumDecl, so all three agree. Value receivers only (a pointer
+// receiver on an enum is diagnosed by a later story).
+func (e *emitter) enumMethodDecl(d *ast.FuncDecl, en *sema.Enum) {
+	if d.Name == nil {
+		e.fail("enum %s has a receiver method with no name", en.Name)
+		return
+	}
+	if d.Body == nil {
+		e.fail("enum method %s.%s has no body", en.Name, d.Name.Name)
+		return
+	}
+	recvField := d.Recv.List[0]
+	// The receiver name binds the body's `recv.field` accesses; synthesize one when
+	// the source left the receiver unnamed (then the body cannot reference it, so any
+	// fresh name is safe) or named it `_`.
+	recvName := ""
+	if len(recvField.Names) > 0 && recvField.Names[0] != nil && recvField.Names[0].Name != "_" {
+		recvName = recvField.Names[0].Name
+	}
+	if recvName == "" {
+		recvName = e.gensym("recv")
+	}
+	free := en.Name + "_" + d.Name.Name
+	// (1) shared free function: receiver-as-first-parameter, then the method's params.
+	e.p("func " + free + "(" + recvName + " ")
+	e.expr(recvField.Type)
+	if d.Type != nil && d.Type.Params != nil {
+		for _, f := range d.Type.Params.List {
+			e.p(", ")
+			e.field(f)
+		}
+	}
+	e.p(")")
+	e.funcResults(d.Type)
+	e.p(" ")
+	e.block(d.Body)
+	// (2) one forwarding method per variant that delegates to the free function.
+	hasResults := d.Type != nil && d.Type.Results != nil && len(d.Type.Results.List) > 0
+	args := enumMethodArgNames(d.Type)
+	for _, v := range en.Variants {
+		e.p("\n\n")
+		e.p("func (" + recvName + " " + en.Name + "_" + v.Name + ") " + d.Name.Name)
+		e.funcSig(d.Type)
+		e.p(" {\n")
+		if hasResults {
+			e.p("return ")
+		}
+		e.p(free + "(" + recvName)
+		for _, a := range args {
+			e.p(", " + a)
+		}
+		e.p(")\n}")
+	}
+}
+
+// enumMethodArgNames returns the call arguments a forwarder passes to the shared
+// free function: the method's parameter names in order, with a trailing `...` on a
+// variadic final parameter so the spread is preserved.
+func enumMethodArgNames(t *ast.FuncType) []string {
+	if t == nil || t.Params == nil {
+		return nil
+	}
+	var out []string
+	n := len(t.Params.List)
+	for i, f := range t.Params.List {
+		spread := ""
+		if _, isVariadic := f.Type.(*ast.Ellipsis); isVariadic && i == n-1 {
+			spread = "..."
+		}
+		for _, id := range f.Names {
+			if id != nil && id.Name != "" {
+				out = append(out, id.Name+spread)
+			}
+		}
+	}
+	return out
 }
 
 // closedResultTE reports the T and E type texts of a closed-E Result[T, E] return
@@ -523,6 +645,14 @@ func (e *emitter) funcSig(t *ast.FuncType) {
 		e.fieldList(t.TypeParams, "[", "]")
 	}
 	e.fieldList(t.Params, "(", ")")
+	e.funcResults(t)
+}
+
+// funcResults emits the result-list segment of a signature (a leading space then
+// the results), or nothing when the signature has no results. Split out of funcSig
+// so an enum-method free function can pair the shared result rendering with its own
+// receiver-prepended parameter list.
+func (e *emitter) funcResults(t *ast.FuncType) {
 	if t.Results != nil && len(t.Results.List) > 0 {
 		e.p(" ")
 		// An open-E Result[T, error] return lowers to native named Go returns

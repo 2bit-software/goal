@@ -335,6 +335,17 @@ func genEnum(e *sema.Enum) string {
 	marker := "is" + e.Name
 	var b strings.Builder
 	fmt.Fprintf(&b, "type %s interface{ %s() }\n\n", e.Name, marker)
+	b.WriteString(genEnumVariants(e))
+	return b.String()
+}
+
+// genEnumVariants emits the variant-carrying half of the §8.1 encoding: one struct
+// per variant followed by one marker method per variant. It is split out of genEnum
+// so the methods-on-sum-types path (enumDecl) can reuse the variant structs and
+// markers after emitting a folded interface in place of the marker-only interface.
+func genEnumVariants(e *sema.Enum) string {
+	marker := "is" + e.Name
+	var b strings.Builder
 	for _, v := range e.Variants {
 		if len(v.Fields) == 0 {
 			fmt.Fprintf(&b, "type %s_%s struct{}\n", e.Name, v.Name)
@@ -688,4 +699,30 @@ func pointerReceiverSet(f *ast.File) map[string]bool {
 		}
 	}
 	return set
+}
+
+// buildEnumMethods groups every enum-receiver method in f by the enum's name, in
+// source order. enumDecl folds each method's signature into the enum interface, and
+// funcDecl lowers each method to a shared free function plus one per-variant
+// forwarder. A method whose receiver base type is not an enum (a struct or sealed
+// interface) is ignored, so ordinary methods keep their direct lowering; the
+// returned map is empty for a file with no enum methods, so existing enums emit
+// byte-identical Go. Nil-safe on both arguments.
+func buildEnumMethods(f *ast.File, info *sema.Info) map[string][]*ast.FuncDecl {
+	out := map[string][]*ast.FuncDecl{}
+	if f == nil {
+		return out
+	}
+	for _, d := range f.Decls {
+		fd, ok := d.(*ast.FuncDecl)
+		if !ok || fd.Recv == nil || len(fd.Recv.List) == 0 {
+			continue
+		}
+		base := recvBaseType(fd.Recv.List[0].Type)
+		if base == "" || enumOf(info, base) == nil {
+			continue
+		}
+		out[base] = append(out[base], fd)
+	}
+	return out
 }

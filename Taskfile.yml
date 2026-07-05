@@ -129,7 +129,7 @@ tasks:
           set -e
           for entry in _bootstrap/verify/internal/*; do
             name="$(basename "$entry")"
-            diff -r -x '*.goal' "internal/$name" "$entry"
+            diff -r -x '*.goal' -x testdata "internal/$name" "$entry"
           done
       - rm -rf _bootstrap/verify
       - cmd: echo "generated Go is up to date"

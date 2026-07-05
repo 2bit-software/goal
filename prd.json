@@ -1,98 +1,116 @@
 {
   "project": "goal",
-  "branchName": "ralph/self-check-cleanup",
-  "description": "Make the goal compiler follow its own no-unsafe-zero discipline by clearing every non-interpreter [unsafe-zero] error from `goal check ./internal` (475 -> ~434, all remaining being the interpreter's Value union, left as a separate decision).",
+  "branchName": "ralph/sum-type-methods",
+  "description": "Add methods-on-sum-types to the goal compiler, then convert the interpreter's Value union to a real sum type so no literal omits an unsafe pointer.",
   "verifyCommands": [
     "task check-full"
   ],
   "userStories": [
     {
       "id": "US-001",
-      "title": "Set sum-type struct fields explicitly",
-      "description": "As a goal maintainer, I need every Diagnostic and FuncSig literal to set its sum-type field explicitly, so the compiler's own source stops omitting an enum field whose zero is unsafe.",
+      "title": "Lower sum-type receiver methods",
+      "description": "As a goal author, I need a method whose receiver is an enum (or sealed interface) to compile, so that a sum type can carry behaviour instead of only free functions.",
       "acceptanceCriteria": [
-        "`goal check ./internal` emits no `[unsafe-zero]` diagnostic whose message contains `Severity Severity` (the 6 Diagnostic.Severity omissions are gone).",
-        "`goal check ./internal` emits no `[unsafe-zero]` diagnostic whose message contains `Mode Mode` (the 2 FuncSig.Mode omissions are gone).",
-        "Every `Diagnostic{...}` and `FuncSig{...}` composite literal under internal/ sets its Severity / Mode field (no reliance on the zero value)."
+        "A fixture package under internal/backend/testdata/ declares an `enum` with at least two value-receiver methods — one taking a parameter and one returning two values (e.g. `(Value, bool)`) — plus a caller that invokes them as `v.M(...)`; `task build` then `./bin/goal check <fixture>` and `./bin/goal build <fixture>` all exit 0 with no `[go-type-error] invalid receiver type` diagnostic.",
+        "The emitted Go folds each method's signature into the enum's interface method set and, for each method, emits one shared free function holding the body plus one forwarding method per variant that delegates to it — asserted by a backend test that inspects the lowered source.",
+        "A backend test builds and runs the fixture and asserts its output equals a reference implementation written with a hand-authored Go type switch.",
+        "`task check-full` exits 0, and `task fixpoint` reports FIXPOINT OK (existing enums, which have no receiver methods, emit byte-identical Go)."
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Diagnostic.Severity omissions include the empty `Diagnostic{}` sentinels in convert.goal and mustuse.goal; give each a real Severity or restructure the sentinel. FuncSig.Mode is in internal/sema. Editing .goal requires `task generate`."
+      "notes": "Feature lives in internal/backend/{emit,lower}.goal (mirror the sealed-interface path: a buildEnumMethods pre-pass like pointerReceiverSet; split genEnum so enumDecl can inject method sigs; route in funcDecl when recvBaseType is an enum). Reuse the receiver Field as the free function's first param so the body copies verbatim. Additive: the new path fires only when an enum has receiver methods, so the fixpoint holds. Always `task generate` before the verify-generated gate. When checking with goal, use the freshly built ./bin/goal, never a stale installed binary."
     },
     {
       "id": "US-002",
-      "title": "Initialize sema.Info map fields",
-      "description": "As a goal maintainer, I need sema.Info's map fields initialized at construction, so `Info{}`/`New()` no longer produces a struct carrying nil maps that panic on write.",
+      "title": "Lower Result/Option-returning sum-type methods",
+      "description": "As a goal author, I need a sum-type method that returns Result[T,error] or Option[T] to lower correctly, so error-carrying behaviour can live on a sum type.",
       "acceptanceCriteria": [
-        "`goal check ./internal` emits no `[unsafe-zero]` diagnostic located on an `Info{...}` literal (all 10 map-field omissions are gone).",
-        "`sema.New()` returns an *Info whose Enums, Sealed, SealedImpls, Structs, Methods, Interfaces, EmbeddedIfaces, FuncSignatures, ForeignMethods, and FromRegistry maps are non-nil.",
-        "Read-only callers of New() still behave (the full test suite in the gate stays green)."
+        "A fixture enum method returning `Option[T]` and another returning `Result[T, error]` build and run; the generated free function and its per-variant forwarders agree on the lowered signature (open-E Result lowers to the native named `(ok T, err error)` returns, Option to `*T`).",
+        "A backend test builds and runs the fixture against a reference implementation and asserts identical behaviour, including the error/None path.",
+        "`task check-full` exits 0 and `task fixpoint` reports FIXPOINT OK."
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "New() at internal/sema/sema.goal returns &Info{} deliberately with nil maps for read-only callers; initialize the maps in the literal (or via make) since a nil map is a genuine unsafe zero under the safety-only rule."
+      "passes": false,
+      "notes": "Depends on US-001. The forwarder must reproduce funcSig's Result/Option special-casing; verify the free function and forwarder emit the same return shape."
     },
     {
       "id": "US-003",
-      "title": "Initialize backend emitter map fields",
-      "description": "As a goal maintainer, I need the backend emitter's map fields set at construction, so the `emitter{...}` literal stops omitting nil maps.",
+      "title": "Migrate interpreter Value payload reads to accessors",
+      "description": "As a maintainer, I need every read of a Value payload to go through an accessor, so the representation can later change in one place.",
       "acceptanceCriteria": [
-        "`goal check ./internal` emits no `[unsafe-zero]` diagnostic located on an `emitter{...}` literal for a `map[...]` field (renames, armFields, taken, typeDecls, recvTypes, curParams).",
-        "The generated backend still transpiles the corpus identically (the corpus golden tests in the gate stay green)."
+        "internal/interp/value.goal defines accessor methods/functions covering every Value payload and the discriminant (e.g. kind(), asInt(), asStruct(), asSlice(), asMap(), asFunc(), asVariant(), plus is-predicates), each with test coverage.",
+        "`grep -rEn '\\.(Int|Float|Str|Bool|Slice|Variant|Struct|Map)\\b' internal/interp --include='*.goal' | grep -v '/value.goal' | wc -l` prints 0 (no direct Value payload field read remains outside value.goal).",
+        "`task check-full` exits 0 (behaviour-preserving refactor; all interpreter and corpus behavioural tests still pass)."
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "In internal/backend/emit.goal, emitFileWith constructs `emitter{...}` then assigns some maps after; move all map fields into the literal (e.g. `renames: map[string]string{}`)."
+      "passes": false,
+      "notes": "Behaviour-preserving: accessors wrap the CURRENT flat struct; the representation does not change in this story. `.Kind` and `.Func` reads are intentionally NOT gated here (they collide with token.Kind/ast.BasicLit.Kind and the doctest Func field); the representation flip (US-005) forces the remaining Value.Kind/Value.Func sites via compile failure."
     },
     {
       "id": "US-004",
-      "title": "Fix LSP struct unsafe-zero fields",
-      "description": "As a goal maintainer, I need the LSP package's struct literals to set their unsafe-zero fields at construction, so internal/lsp is free of unsafe-zero omissions.",
+      "title": "Route interpreter Value constructions through constructors",
+      "description": "As a maintainer, I need every Value to be built through a constructor, so the representation can later change in one place.",
       "acceptanceCriteria": [
-        "`goal check ./internal` emits no `[unsafe-zero]` diagnostic on any file under internal/lsp/ (roleVisitor.roles map and packageEntry.open pointer are resolved).",
-        "The LSP end-to-end tests in the gate stay green."
+        "internal/interp/value.goal defines a constructor for each Value kind (e.g. newInt, newFloat, newStr, newBool, newStruct, newSlice, newMap, newFunc, newVariant, nilValue), each with test coverage.",
+        "`grep -rEn 'Value\\{(Kind|\\})' internal/interp --include='*.goal' | grep -v '/value.goal' | wc -l` prints 0 (no tagged-union or zero Value literal is built outside value.goal; `[]Value{...}` slice literals are unaffected).",
+        "`task check-full` exits 0 (behaviour-preserving refactor; all tests pass)."
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "roleVisitor.roles is a map[int]int (initialize it); packageEntry.open is a *openFile (make it Option[openFile] if genuinely optional, else set it explicitly)."
+      "passes": false,
+      "notes": "Behaviour-preserving: constructors wrap the CURRENT flat struct. Shares the value.goal edit surface with US-003."
     },
     {
       "id": "US-005",
-      "title": "Model optional pointer fields as Option",
-      "description": "As a goal maintainer, I need genuinely-optional pointer fields modeled as Option[T], so an absent value is a safe None instead of an unsafe nil pointer.",
+      "title": "Flip Value to a sum type",
+      "description": "As a maintainer, I need Value represented as a real sum type so that no literal omits an unsafe zero pointer.",
       "acceptanceCriteria": [
-        "`rpcResponse.Error` (and any other field that is nil in a valid state) is typed `Option[T]`, and `goal check ./internal` emits no `[unsafe-zero]` for those fields.",
-        "Every literal that omitted the field now type-checks (an omitted Option defaults to None), and consumers read it via `match` / `?`.",
-        "The `--json` / JSON-RPC wire is unchanged (Option[T] lowers to *T), verified by the LSP and cmd/goal tests in the gate."
+        "Value is declared as a sum type (an `enum` or `sealed interface` with one payload struct per kind) in internal/interp/value.goal; the flat multi-pointer struct and its Kind discriminant field are gone.",
+        "The former union methods (Field, Equal, String) are defined on the sum type — via per-variant methods and/or the enum-receiver-method feature from US-001 — and the accessors/constructors from US-003/US-004 are re-expressed against the new representation with their call sites unchanged.",
+        "`task build` then `./bin/goal check ./internal 2>&1 | grep '\\[unsafe-zero\\]' | grep -c 'of .Value. omits'` prints 0 (no elided-Value-literal diagnostic remains).",
+        "`task check-full` exits 0 and `task fixpoint` reports FIXPOINT OK (interpreter and corpus behavioural tests confirm behaviour is preserved)."
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Pattern mirrors the completed Diagnostic.Fix -> Option[SuggestedFix] change (and relies on the statement-position Option-match backend fix already landed). rpcResponse.Error is in internal/lsp; a success response carries None. Only convert fields that are legitimately absent, not required ones (those are US-006)."
+      "passes": false,
+      "notes": "Depends on US-001 (and US-002 if any converted method returns Result/Option) and US-003/US-004. Because the payload fields no longer exist, any read/construction site missed earlier now fails to compile — this story owns migrating the remaining Value.Kind/Value.Func dispatch sites. Value is used only within internal/interp (no external importer), so the blast radius is one package."
     },
     {
       "id": "US-006",
-      "title": "Set required pointer fields explicitly",
-      "description": "As a goal maintainer, I need every required (never-nil) pointer field set at its construction site, so no remaining non-interpreter struct literal omits an unsafe pointer field.",
+      "title": "Assert interpreter self-check is clean",
+      "description": "As a maintainer, I need the interpreter's unsafe-zero self-check to reach zero and be recorded, so the boundary that was documented as structural is now enforceable.",
       "acceptanceCriteria": [
-        "`goal check ./internal` emits no `[unsafe-zero]` diagnostic for plainFunc.fn, Package.Types, emitter.arity, or any other non-interpreter pointer field.",
-        "Each affected literal sets the pointer field explicitly at construction (no post-literal assignment relied upon for safety)."
+        "`task build` then `./bin/goal check ./internal 2>&1 | grep '\\[unsafe-zero\\]' | grep -c '^internal/interp/'` prints 0 (any residual helper-struct omissions — StructValue/MapValue/Variant/FuncValue/Env — are fixed by setting the field explicitly or modelling it as Option[T]).",
+        "A dated DECISIONS.md entry records the Value sum-type conversion, supersedes the earlier 'defer the Value refactor' decision, and states the whole-repo invariant that `goal check ./internal` now emits zero `[unsafe-zero]` diagnostics.",
+        "`task check-full` exits 0 and `task fixpoint` reports FIXPOINT OK."
       ],
       "priority": 6,
-      "passes": true,
-      "notes": "plainFunc.fn (*ast.FuncDecl, internal/sema), Package.Types (*types.Package, internal/typecheck), emitter.arity (*arityResolver, internal/backend). These are always set immediately after construction today; move them into the literal."
+      "passes": false,
+      "notes": "Depends on US-005. If US-005 already drove internal/interp to 0, this story is the assertion plus the ledger entry; otherwise it clears the last non-Value helper-struct omissions first."
     },
     {
       "id": "US-007",
-      "title": "Assert zero non-interp unsafe-zero and document interpreter",
-      "description": "As a goal maintainer, I need the non-interpreter self-check to be clean and the remaining interpreter errors documented, so the scope boundary is explicit and enforced.",
+      "title": "Diagnose unsupported sum-type receivers",
+      "description": "As a goal author, I need a clear compiler error when I write an unsupported receiver form on a sum type, so I get a located goal diagnostic instead of a raw Go type error.",
       "acceptanceCriteria": [
-        "`goal check ./internal 2>&1 | grep '\\[unsafe-zero\\]' | grep -v '^internal/interp/'` produces no output (zero non-interpreter unsafe-zero errors).",
-        "A dated note in DECISIONS.md (and/or docs/STATUS.md) records that the remaining ~434 `[unsafe-zero]` errors are the interpreter's Value tagged-union, with the rationale for deferring the Value->enum refactor.",
-        "The full self-host gate (task check-full) is green with FIXPOINT OK."
+        "`./bin/goal check` on a fixture with a pointer receiver on an enum (`func (v *SomeEnum) m()`) reports a specific, source-located goal diagnostic that names the unsupported receiver form — not a raw `[go-type-error]`.",
+        "The new diagnostic code is registered in the guide catalog (internal/guide) and a sema/backend test pins the diagnostic message and location.",
+        "`task check-full` exits 0 and `task fixpoint` reports FIXPOINT OK."
       ],
       "priority": 7,
-      "passes": true,
-      "notes": "Capstone: US-001..006 do the work; this asserts the aggregate and records the interpreter boundary decided with the user (interpreter Value union out of scope for this PRD)."
+      "passes": false,
+      "notes": "Feature hardening; not required by the Value conversion (Value's methods are value-receiver). Depends on US-001."
+    },
+    {
+      "id": "US-008",
+      "title": "Document methods on sum types",
+      "description": "As a goal user, I need the new methods-on-sum-types capability documented and exercised, so the feature is discoverable and pinned against drift.",
+      "acceptanceCriteria": [
+        "A committed example or doctest fixture demonstrates a sum type carrying a method and is covered by an existing round-trip/doctest test that runs under `task test`.",
+        "The capability is described in the guide (internal/guide) and AI-KNOWLEDGE-BOOTSTRAP.md is regenerated with no drift, verified by the guide/knowledge golden test passing.",
+        "`task check-full` exits 0."
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Depends on US-001/US-002. If US-007 added a diagnostic, cross-reference it from the docs."
     }
   ]
 }

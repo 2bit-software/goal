@@ -1,6 +1,12 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- A `testdata/` fixture dir under an EMITTED package (any dir with `*.goal`, e.g.
+  internal/backend) breaks `task verify-generated`, which does
+  `diff -r internal/<pkg> _bootstrap/verify/internal/<pkg>`; the emit never
+  produces testdata so diff fails with "Only in ...: testdata". The Taskfile diff
+  now passes `-x testdata` (found US-001). Test-only packages (internal/backendtest,
+  no `*.goal`) are not emitted, so their testdata was always safe.
 - The no-unsafe-zero self-check runs TWO stages that must agree (found US-006 self-check):
   the LEXICAL stage (internal/sema/fields.goal via sema.ZeroSafety) classifies a rendered
   goal TYPE STRING and treats `Option[T]` as a SAFE zero (a None); the DEPTH stage
@@ -9177,4 +9183,37 @@ detour proved necessary.
     separate interpreter-core refactor.
   - This story touched no .goal/.go source, so no `task generate` /
     verify-generated churn — DECISIONS.md is a plain top-level ledger.
+---
+
+## 2026-07-04T00:00:00Z - US-001
+- Lowered methods on sum types (enum receivers). A value-receiver method on an
+  enum now compiles: its signature folds into the enum's Go interface, its body
+  lives in one shared free function `<Enum>_<Method>(recv <Enum>, params...)`, and
+  each variant gets a forwarding method `func (recv <Enum>_<V>) M(...) { return
+  <Enum>_<Method>(recv, args...) }`. Method-to-method calls (`s.Area()` inside
+  `Scaled`) resolve through the folded interface method set.
+- Files changed: internal/backend/emit.goal (emitter.enumMethods field +
+  buildEnumMethods seed; enumDecl folds method sigs; funcDecl routes enum-receiver
+  methods to new enumMethodDecl; funcSig split into funcSig+funcResults;
+  enumMethodArgNames helper), internal/backend/lower.goal (genEnum split into
+  genEnum+genEnumVariants; new buildEnumMethods pre-pass), their .go twins via
+  `task generate`, Taskfile.yml (verify-generated diff now `-x testdata`),
+  internal/backend/testdata/enummethods/main.goal (fixture),
+  internal/backendtest/enum_method_test.go (lowered-source + build-and-run tests).
+- Learnings for future iterations:
+  - Value-position enum `match` needs an inferable result type: literal `true`/
+    `false` arms infer bool, but a COMPARISON arm (`v.r < 0`) does NOT — annotate
+    with `var x bool = match ...` or the depth stage errors "needs an inferable
+    result type". (armBodyType only recognizes literals/enum tags/strings/bools.)
+  - Adding a `testdata/` dir under an EMITTED package (internal/backend has
+    emit.goal/lower.goal) breaks `task verify-generated`: it runs
+    `diff -r internal/backend _bootstrap/verify/internal/backend`, and the emit
+    never produces testdata, so diff reports "Only in internal/backend: testdata".
+    Fix: exclude it in the Taskfile diff (`diff -r -x '*.goal' -x testdata ...`).
+    Test-only packages (internal/backendtest) are not emitted, so their testdata
+    is already safe.
+  - The additive-path discipline (new lowering fires only when
+    `buildEnumMethods` finds an enum method) keeps `task fixpoint` green: the
+    compiler's own enums have no receiver methods, so its self-emit is
+    byte-identical.
 ---
