@@ -1,6 +1,10 @@
 package interp
 
-import "testing"
+import (
+	"testing"
+
+	"goal/internal/ast"
+)
 
 // Tests for the Value payload accessors and predicates added in US-003. They
 // pin that each accessor returns the CURRENT flat-struct payload and that the
@@ -82,6 +86,25 @@ func TestValueFuncAccessor(t *testing.T) {
 	}
 	if IntVal(1).asFunc() != nil {
 		t.Error("asFunc() on int should be nil")
+	}
+}
+
+func TestFuncDeclValConstructor(t *testing.T) {
+	// A name-only carrier (Decl == nil) and a callable carrier both build a
+	// KindFunc Value; FuncDeclVal derives Name from the declaration.
+	decl := &ast.FuncDecl{Name: &ast.Ident{Name: "g"}}
+	env := &Env{}
+	fv := FuncDeclVal(decl, env)
+	if fv.kind() != KindFunc {
+		t.Fatalf("FuncDeclVal kind = %v, want KindFunc", fv.kind())
+	}
+	f := fv.asFunc()
+	if f == nil || f.Name != "g" || f.Decl != decl || f.Env != env {
+		t.Fatalf("FuncDeclVal payload = %+v, want Name g with decl/env wired", f)
+	}
+	// A nil declaration yields an empty name and no panic.
+	if got := FuncDeclVal(nil, nil).asFunc(); got == nil || got.Name != "" {
+		t.Fatalf("FuncDeclVal(nil, nil) = %+v, want empty-name carrier", got)
 	}
 }
 

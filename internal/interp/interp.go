@@ -686,7 +686,7 @@ func (ip *Interp) assignTarget(lhs ast.Expr, v Value, tok token.Kind, scope *Env
 func (ip *Interp) compoundApply(tok token.Kind, cur, rhs Value) (Value, error) {
 	/*line interp.goal:889*/ op, ok := compoundBinOp(tok)
 	/*line interp.goal:890*/ if !ok {
-		/*line interp.goal:891*/ return Value{}, fmt.Errorf("interp: unsupported assignment operator %s", tok)
+		/*line interp.goal:891*/ return NilVal(), fmt.Errorf("interp: unsupported assignment operator %s", tok)
 	}
 	/*line interp.goal:893*/ return applyBinary(op, cur, rhs)
 }

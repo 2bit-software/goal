@@ -9290,3 +9290,33 @@ detour proved necessary.
     gated field (used a concrete 'Status.Active' example).
   - zsh does NOT word-split unquoted $VARS — pass perl file lists as explicit
     args, not a single $FILES variable, or perl sees one giant filename.
+
+## 2026-07-05T02:10:00Z - US-004
+- Routed every Value construction outside internal/interp/value.goal through a
+  constructor so US-005 can flip Value's representation in one file. The 95 bare
+  `Value{}` zero-value error-return placeholders became `NilVal()` (NilVal() ==
+  Value{Kind:KindNil} == Value{}, and the Value is discarded on the error path, so
+  behaviour is identical). The 3 `map[string]Value{}` empty-map literals in
+  env.goal became `make(map[string]Value)` — not Value constructions, but the
+  read-gate regex `Value\{(Kind|\})` matches the trailing `Value{}` substring, so
+  `make(...)` dodges it with no semantic change (both empty non-nil maps).
+- No `Value{Kind: ...}` payload construction sites existed outside value.goal —
+  earlier stories already routed those through IntVal/StructVal/etc. Constructors
+  (IntVal/FloatVal/StrVal/BoolVal/NilVal/StructVal/SliceVal/MapVal/FuncVal/
+  FuncDeclVal/VariantVal) already existed with test coverage; added
+  TestFuncDeclValConstructor to value_test.go to complete per-constructor coverage
+  (FuncDeclVal was the one untested constructor).
+- Files changed: internal/interp/{derive,env,eval,interp}.goal (+ regenerated .go),
+  internal/interp/value_test.go.
+- Read gate `grep -rEn 'Value\{(Kind|\})' internal/interp --include='*.goal' |
+  grep -v '/value.goal' | wc -l` = 0; task check-full exit 0; FIXPOINT OK.
+- Learnings for future iterations:
+  - The US-004 write-gate regex `Value\{(Kind|\})` matches the `Value{}` substring
+    of ANY `XxxValue{}` literal (map[string]Value{}, and would catch StructValue{}
+    /MapValue{}/FuncValue{} empty literals too). Guard a bulk `\bValue\{\}`->NilVal()
+    perl pass by first grepping for `(Struct|Map|Func)Value\{\}` — there were none
+    here. `\bValue` does NOT match inside `StructValue` (no word boundary), so the
+    swap is safe, but the GATE still counts those substrings, so the map literals
+    had to move to `make(...)` to reach 0.
+  - No new Option was introduced, so no `goal_options.go` appeared — this story
+    added no untracked generated file (contrast the first-Option-in-package gotcha).

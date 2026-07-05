@@ -56,7 +56,7 @@
         "`task check-full` exits 0 (behaviour-preserving refactor; all tests pass)."
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Behaviour-preserving: constructors wrap the CURRENT flat struct. Shares the value.goal edit surface with US-003."
     },
     {

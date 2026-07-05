@@ -20,18 +20,18 @@ type Env struct {
 
 //line env.goal:27
 func NewEnv() *Env {
-	/*line env.goal:28*/ return &Env{vars: map[string]Value{}}
+	/*line env.goal:28*/ return &Env{vars: make(map[string]Value)}
 }
 
 //line env.goal:34
 func (e *Env) NewChild() *Env {
-	/*line env.goal:35*/ return &Env{vars: map[string]Value{}, parent: e}
+	/*line env.goal:35*/ return &Env{vars: make(map[string]Value), parent: e}
 }
 
 //line env.goal:40
 func (e *Env) Define(name string, v Value) {
 	/*line env.goal:41*/ if e.vars == nil {
-		/*line env.goal:42*/ e.vars = map[string]Value{}
+		/*line env.goal:42*/ e.vars = make(map[string]Value)
 	}
 	/*line env.goal:44*/ e.vars[name] = v
 }
@@ -43,7 +43,7 @@ func (e *Env) Lookup(name string) (Value, error) {
 			/*line env.goal:54*/ return v, nil
 		}
 	}
-	/*line env.goal:57*/ return Value{}, &NotFoundError{Name: name}
+	/*line env.goal:57*/ return NilVal(), &NotFoundError{Name: name}
 }
 
 //line env.goal:67
