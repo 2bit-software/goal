@@ -68,9 +68,13 @@ in (d) — not another depth check.
   design nod.
 - **Nested `Result.Err(variant)` match patterns**: rejected at parse; the design says
   compose a nested `match`. Revisit only as a deliberate surface decision.
-- **Value-position `x := match` with non-inferable arm types**: rejected
-  (`internal/backend/emit.goal:1860`) — asks for `var x T = match …`. Correct without arm-type
-  inference; closing it needs inferred types the backend doesn't hold pre-lowering.
+- **Value-position `x := match` with non-inferable arm types**: partially closed. The
+  syntactic boolean subset is now inferred — arms that are comparison (`==`, `!=`, `<`,
+  `<=`, `>`, `>=`), logical (`&&`, `||`), or `!` expressions are provably `bool` with no
+  type info, so `x := match …` over those lowers to `var x bool` + a switch instead of
+  asking for `var x T = match …` (`armBodyType` in `internal/backend/emit.goal`). The
+  remaining open part is arms whose type needs resolution the backend lacks pre-lowering
+  (e.g. function-call results returning user types); that full close is still deferred.
 - **Importer swap** `importer.Default()` → `importer.ForCompiler(…, "source", …)`
   (`DECISIONS.md` DEPTH-TODO, open): would let the depth stage see sibling packages and
   surface cross-package Go type errors. Cross-cutting; spike before committing.

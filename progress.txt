@@ -9509,3 +9509,11 @@ omitted the new enumMethods field (added to emitter for sum-type-methods). Added
 reference (matching typeDecls/arity), clearing the [unsafe-zero] regression.
 Regenerated emit.go via `task generate`; check-full/fixpoint/build all green.
 ---
+
+[match bool-arm inference] internal/backend/emit.goal armBodyType: widened
+value-position `x := match` inference to the syntactic boolean subset — comparison
+(EQL/NEQ/LSS/LEQ/GTR/GEQ), logical (LAND/LOR), and `!` (NOT) arms now infer `bool`
+(lowering to `var x bool` + switch) instead of being refused; arithmetic/bitwise
+arms still fall through. Fixture testdata/match_infer_value.goal + cmd/goal tests;
+check-full/fixpoint/build all green, no existing generated Go changed.
+---

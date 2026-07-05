@@ -2065,10 +2065,12 @@ func (e *emitter) inferMatchType(m *ast.MatchExpr) (string, bool) {
 }
 
 // armBodyType classifies one match arm body into a result type, for the inferable
-// shapes only: a lone string literal -> "string", a lone true/false -> "bool", and
-// a whole-body enum construction (`Enum.Variant` SelectorExpr or `Enum.Variant(…)`
-// VariantLit of a resolved enum) -> the enum's name. Any other body (numeric,
-// identifier, call, compound expression) is not inferable.
+// shapes only: a lone string literal -> "string", a lone true/false -> "bool", a
+// syntactically boolean-valued expression (a comparison/logical BinaryExpr, a `!`
+// UnaryExpr, or a ParenExpr wrapping one) -> "bool", and a whole-body enum
+// construction (`Enum.Variant` SelectorExpr or `Enum.Variant(…)` VariantLit of a
+// resolved enum) -> the enum's name. Any other body (numeric, identifier, call,
+// arithmetic/bitwise expression) is not inferable.
 func (e *emitter) armBodyType(body ast.Node) (string, bool) {
 	match body {
 		*ast.BasicLit(b) => {
@@ -2078,6 +2080,26 @@ func (e *emitter) armBodyType(body ast.Node) (string, bool) {
 		}
 		*ast.Ident(b) => {
 			if b.Name == "true" || b.Name == "false" {
+				return "bool", true
+			}
+		}
+		*ast.ParenExpr(b) => {
+			// `(a == b)` infers exactly as its inner expression does.
+			return e.armBodyType(b.X)
+		}
+		*ast.UnaryExpr(b) => {
+			// `!x` is boolean; other unary ops (-, *, &, <-, unwrap) are not
+			// syntactically typed.
+			if b.Op == token.NOT {
+				return "bool", true
+			}
+		}
+		*ast.BinaryExpr(b) => {
+			// Comparison and logical operators yield bool regardless of operand
+			// types; arithmetic/bitwise operators fall through (their result type
+			// is not syntactically known).
+			switch b.Op {
+			case token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ, token.LAND, token.LOR:
 				return "bool", true
 			}
 		}

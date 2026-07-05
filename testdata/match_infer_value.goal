@@ -25,3 +25,14 @@ func name(c Color) string {
     }
     return s
 }
+
+// warm infers `bool` for a value-position `x := match` whose arms are
+// boolean-valued expressions (comparison / logical `&&` / `!`), which
+// previously needed an explicit `var x bool = match ...` annotation.
+func warm(c Color, a int, b int) bool {
+    x := match c {
+        Color.Red => a == b
+        Color.Green => a < b && !(b > a)
+    }
+    return x
+}

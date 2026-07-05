@@ -41,3 +41,16 @@ func name(c Color) string {
 	}
 	return s
 }
+
+func warm(c Color, a int, b int) bool {
+	var x bool
+	switch c.(type) {
+	case Color_Red:
+		x = a == b
+	case Color_Green:
+		x = a < b && !(b > a)
+	default:
+		panic("unreachable: non-exhaustive Color (compiler invariant violated)")
+	}
+	return x
+}

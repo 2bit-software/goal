@@ -1049,3 +1049,82 @@ func TestCheckDepthGenericMissingFieldClean(t *testing.T) {
 		t.Errorf("want ok, got stdout=%q stderr=%q", out.String(), errOut.String())
 	}
 }
+
+// boolArmMatchGoal exercises a value-position `x := match` whose arms are
+// boolean-valued expressions (a comparison, and a logical `&&` combined with a
+// `!`). This shape previously needed an explicit `var x bool = match ...`
+// annotation; the emitter now infers `bool` from the syntactically boolean arm
+// bodies and lowers to `var x bool` + a type switch.
+const boolArmMatchGoal = `package main
+
+import "fmt"
+
+enum Color {
+    Red
+    Green
+}
+
+func warm(c Color, a int, b int) bool {
+    x := match c {
+        Color.Red => a == b
+        Color.Green => a < b && !(b > a)
+    }
+    return x
+}
+
+func main() {
+    fmt.Println(warm(Color.Green, 1, 2))
+}
+`
+
+// TestRunValueMatchInfersBoolArms proves an `x := match` over boolean-valued
+// arms now builds and runs, printing the arm's evaluated bool.
+func TestRunValueMatchInfersBoolArms(t *testing.T) {
+	dir := goalModule(t, map[string]string{"main.goal": boolArmMatchGoal})
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"run", dir}, &out, &errOut); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, errOut.String())
+	}
+	// warm(Green, 1, 2) == (1 < 2 && !(2 > 1)) == (true && !true) == false.
+	if got := strings.TrimSpace(out.String()); got != "false" {
+		t.Errorf("program output = %q, want false\nstderr: %s", got, errOut.String())
+	}
+}
+
+// arithmeticArmMatchGoal is a value-position `x := match` whose arms are
+// arithmetic expressions, whose result type is NOT syntactically known. The
+// emitter must still refuse to infer it (unchanged behaviour) rather than guess.
+const arithmeticArmMatchGoal = `package main
+
+enum Color {
+    Red
+    Green
+}
+
+func total(c Color, a int, b int) int {
+    x := match c {
+        Color.Red => a + b
+        Color.Green => a - b
+    }
+    return x
+}
+`
+
+// TestBuildRefusesArithmeticArmValueMatch pins the negative case: an
+// arithmetic-arm value-position match is still rejected with the
+// inferable-result-type diagnostic, so the boolean widening did not leak into
+// operators whose result type is not syntactically recoverable.
+func TestBuildRefusesArithmeticArmValueMatch(t *testing.T) {
+	dir := goalModule(t, map[string]string{"x.goal": arithmeticArmMatchGoal})
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"build", dir}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("expected build to refuse the arithmetic-arm value-position match\nstdout: %s\nstderr: %s", out.String(), errOut.String())
+	}
+	msg := err.Error() + errOut.String()
+	if !strings.Contains(msg, "needs an inferable result type") {
+		t.Errorf("refusal diagnostic not surfaced:\nerr: %v\nstderr: %s", err, errOut.String())
+	}
+}
