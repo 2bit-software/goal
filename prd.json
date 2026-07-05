@@ -109,7 +109,7 @@
         "`task check-full` exits 0."
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-001/US-002. If US-007 added a diagnostic, cross-reference it from the docs."
     }
   ]

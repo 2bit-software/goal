@@ -122,6 +122,7 @@ var categories = []category{
 	{"result-closed", "closed-error Result over a declared error enum, bridged by `from`", "06-result-closed-e", "06-error-e"},
 	{"implements", "compile-time interface conformance via `implements`", "07-implements", "07-implements"},
 	{"no-zero-value", "reject unsafe zero values in struct and variant literals", "08-no-zero-value", "08-no-zero-value"},
+	{"sum-type-methods", "value-receiver methods on an enum, dispatched by match", "09-methods-on-sum-types", ""},
 	{"assert", "assert with statically-false and dead-true detection", "10-assert", "10-assert"},
 	{"doctests", "executable doc examples compiled into Go tests", "11-doctests", ""},
 	{"derive", "generated field conversions via `derive` and `from`", "12-derive-convert", "12-derive-convert"},

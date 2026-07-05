@@ -87,90 +87,90 @@ type category struct {
 }
 
 //line guide.goal:116
-var categories = []category{{"enums", "closed variant sets, enforced at construction and in match", "01-enums", "01-enums"}, {"match", "exhaustive pattern matching over enums and sealed interfaces", "02-match", "02-match"}, {"result", "open-error Result — must-use success/error, no silent drops", "03-result-open-e", "03-result"}, {"option", "Option — presence or absence with no nil", "04-option", ""}, {"question", "`?` propagation of errors and None out of fallible functions", "05-propagation", "05-question-prop"}, {"result-closed", "closed-error Result over a declared error enum, bridged by `from`", "06-result-closed-e", "06-error-e"}, {"implements", "compile-time interface conformance via `implements`", "07-implements", "07-implements"}, {"no-zero-value", "reject unsafe zero values in struct and variant literals", "08-no-zero-value", "08-no-zero-value"}, {"assert", "assert with statically-false and dead-true detection", "10-assert", "10-assert"}, {"doctests", "executable doc examples compiled into Go tests", "11-doctests", ""}, {"derive", "generated field conversions via `derive` and `from`", "12-derive-convert", "12-derive-convert"}}
+var categories = []category{{"enums", "closed variant sets, enforced at construction and in match", "01-enums", "01-enums"}, {"match", "exhaustive pattern matching over enums and sealed interfaces", "02-match", "02-match"}, {"result", "open-error Result — must-use success/error, no silent drops", "03-result-open-e", "03-result"}, {"option", "Option — presence or absence with no nil", "04-option", ""}, {"question", "`?` propagation of errors and None out of fallible functions", "05-propagation", "05-question-prop"}, {"result-closed", "closed-error Result over a declared error enum, bridged by `from`", "06-result-closed-e", "06-error-e"}, {"implements", "compile-time interface conformance via `implements`", "07-implements", "07-implements"}, {"no-zero-value", "reject unsafe zero values in struct and variant literals", "08-no-zero-value", "08-no-zero-value"}, {"sum-type-methods", "value-receiver methods on an enum, dispatched by match", "09-methods-on-sum-types", ""}, {"assert", "assert with statically-false and dead-true detection", "10-assert", "10-assert"}, {"doctests", "executable doc examples compiled into Go tests", "11-doctests", ""}, {"derive", "generated field conversions via `derive` and `from`", "12-derive-convert", "12-derive-convert"}}
 
-//line guide.goal:132
+//line guide.goal:133
 var coreCategoryNames = []string{"enums", "match", "doctests", "implements"}
 
-//line guide.goal:135
+//line guide.goal:136
 func Categories() []CategoryInfo {
-	/*line guide.goal:136*/ out := make([]CategoryInfo, len(categories))
-	/*line guide.goal:137*/ for i, c := range categories {
-		/*line guide.goal:138*/ out[i] = CategoryInfo{Name: c.name, Description: c.description}
+	/*line guide.goal:137*/ out := make([]CategoryInfo, len(categories))
+	/*line guide.goal:138*/ for i, c := range categories {
+		/*line guide.goal:139*/ out[i] = CategoryInfo{Name: c.name, Description: c.description}
 	}
-	/*line guide.goal:140*/ return out
+	/*line guide.goal:141*/ return out
 }
 
-//line guide.goal:144
+//line guide.goal:145
 func CategoryNames() []string {
-	/*line guide.goal:145*/ names := make([]string, len(categories))
-	/*line guide.goal:146*/ for i, c := range categories {
-		/*line guide.goal:147*/ names[i] = c.name
+	/*line guide.goal:146*/ names := make([]string, len(categories))
+	/*line guide.goal:147*/ for i, c := range categories {
+		/*line guide.goal:148*/ names[i] = c.name
 	}
-	/*line guide.goal:149*/ return names
+	/*line guide.goal:150*/ return names
 }
 
-//line guide.goal:153
+//line guide.goal:154
 func lookupCategory(name string) (category, bool) {
-	/*line guide.goal:154*/ for _, c := range categories {
-		/*line guide.goal:155*/ if c.name == name {
-			/*line guide.goal:156*/ return c, true
+	/*line guide.goal:155*/ for _, c := range categories {
+		/*line guide.goal:156*/ if c.name == name {
+			/*line guide.goal:157*/ return c, true
 		}
 	}
-	/*line guide.goal:159*/ return category{}, false
+	/*line guide.goal:160*/ return category{}, false
 }
 
-//line guide.goal:165
+//line guide.goal:166
 func Render(w io.Writer, sectionKey string, cmds []Command) error {
-	/*line guide.goal:166*/ if sectionKey != "" {
-		/*line guide.goal:167*/ for _, s := range sections {
-			/*line guide.goal:168*/ if s.key == sectionKey {
-				/*line guide.goal:169*/ body, err := renderSection(s, cmds)
-				/*line guide.goal:170*/ if err != nil {
-					/*line guide.goal:171*/ return err
+	/*line guide.goal:167*/ if sectionKey != "" {
+		/*line guide.goal:168*/ for _, s := range sections {
+			/*line guide.goal:169*/ if s.key == sectionKey {
+				/*line guide.goal:170*/ body, err := renderSection(s, cmds)
+				/*line guide.goal:171*/ if err != nil {
+					/*line guide.goal:172*/ return err
 				}
-				/*line guide.goal:173*/ _, err = io.WriteString(w, body)
-				/*line guide.goal:174*/ return err
+				/*line guide.goal:174*/ _, err = io.WriteString(w, body)
+				/*line guide.goal:175*/ return err
 			}
 		}
-		/*line guide.goal:177*/ return fmt.Errorf("unknown section %q (valid: %s)", sectionKey, strings.Join(SectionKeys(), ", "))
+		/*line guide.goal:178*/ return fmt.Errorf("unknown section %q (valid: %s)", sectionKey, strings.Join(SectionKeys(), ", "))
 	}
-	/*line guide.goal:180*/ var b strings.Builder
+	/*line guide.goal:181*/ var b strings.Builder
 
-	/*line guide.goal:181*/
+	/*line guide.goal:182*/
 	b.WriteString("# goal — AI bootstrap guide\n\n")
-	/*line guide.goal:182*/ b.WriteString("_Generated by `goal ai` — do not edit by hand. " + "Regenerate the committed copy with `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`. " + "Every example below is transpiled live by this binary, so it cannot go stale._\n\n")
-	/*line guide.goal:190*/ baseSections := []string{"intro", "toolchain"}
-	/*line guide.goal:191*/ for _, key := range baseSections {
-		/*line guide.goal:192*/ for _, s := range sections {
-			/*line guide.goal:193*/ if s.key == key {
-				/*line guide.goal:194*/ body, err := renderSection(s, cmds)
-				/*line guide.goal:195*/ if err != nil {
-					/*line guide.goal:196*/ return err
+	/*line guide.goal:183*/ b.WriteString("_Generated by `goal ai` — do not edit by hand. " + "Regenerate the committed copy with `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`. " + "Every example below is transpiled live by this binary, so it cannot go stale._\n\n")
+	/*line guide.goal:191*/ baseSections := []string{"intro", "toolchain"}
+	/*line guide.goal:192*/ for _, key := range baseSections {
+		/*line guide.goal:193*/ for _, s := range sections {
+			/*line guide.goal:194*/ if s.key == key {
+				/*line guide.goal:195*/ body, err := renderSection(s, cmds)
+				/*line guide.goal:196*/ if err != nil {
+					/*line guide.goal:197*/ return err
 				}
-				/*line guide.goal:198*/ b.WriteString(body)
+				/*line guide.goal:199*/ b.WriteString(body)
 			}
 		}
 	}
-	/*line guide.goal:203*/ b.WriteString("`goal fix [-inplace] [path]` rewrites plain-Go patterns into idiomatic " + "goal (`Result` + `?`); add `-inplace` to edit files in place instead of printing.\n\n")
-	/*line guide.goal:206*/ b.WriteString("## The core features\n\n")
-	/*line guide.goal:207*/ if err := writeCoreFeatures(&b); err != nil {
-		/*line guide.goal:208*/ return err
+	/*line guide.goal:204*/ b.WriteString("`goal fix [-inplace] [path]` rewrites plain-Go patterns into idiomatic " + "goal (`Result` + `?`); add `-inplace` to edit files in place instead of printing.\n\n")
+	/*line guide.goal:207*/ b.WriteString("## The core features\n\n")
+	/*line guide.goal:208*/ if err := writeCoreFeatures(&b); err != nil {
+		/*line guide.goal:209*/ return err
 	}
-	/*line guide.goal:210*/ b.WriteString("\n")
-	/*line guide.goal:212*/ b.WriteString("## Getting the rest of the guide\n\n")
-	/*line guide.goal:213*/ writeFragment(&b, "tiers.md")
-	/*line guide.goal:215*/ _, err := io.WriteString(w, b.String())
-	/*line guide.goal:216*/ return err
+	/*line guide.goal:211*/ b.WriteString("\n")
+	/*line guide.goal:213*/ b.WriteString("## Getting the rest of the guide\n\n")
+	/*line guide.goal:214*/ writeFragment(&b, "tiers.md")
+	/*line guide.goal:216*/ _, err := io.WriteString(w, b.String())
+	/*line guide.goal:217*/ return err
 }
 
-//line guide.goal:220
+//line guide.goal:221
 func renderSection(s section, cmds []Command) (string, error) {
-	/*line guide.goal:221*/ var b strings.Builder
+	/*line guide.goal:222*/ var b strings.Builder
 
-	/*line guide.goal:222*/
+	/*line guide.goal:223*/
 	fmt.Fprintf(&b, "## %s\n\n", s.title)
-	/*line guide.goal:223*/ switch s.key {
+	/*line guide.goal:224*/ switch s.key {
 	case "intro":
 		writeFragment(&b, "intro.md")
 	case "toolchain":
@@ -181,18 +181,18 @@ func renderSection(s section, cmds []Command) (string, error) {
 		writeFragment(&b, "toolchain-contract.md")
 	case "features":
 		if err := writeFeatures(&b); err != nil {
-			/*line guide.goal:234*/ return "", err
+			/*line guide.goal:235*/ return "", err
 		}
 	case "diagnostics":
 		writeFragment(&b, "diagnostics.md")
 		b.WriteString("\n")
 		writeCatalog(&b)
 		if err := writeFeedbackSample(&b); err != nil {
-			/*line guide.goal:241*/ return "", err
+			/*line guide.goal:242*/ return "", err
 		}
 	case "starter":
 		if err := writeStarter(&b); err != nil {
-			/*line guide.goal:245*/ return "", err
+			/*line guide.goal:246*/ return "", err
 		}
 	case "conventions":
 		writeFragment(&b, "conventions.md")
@@ -201,258 +201,258 @@ func renderSection(s section, cmds []Command) (string, error) {
 	case "pointers":
 		writeFragment(&b, "pointers.md")
 	}
-	/*line guide.goal:254*/ b.WriteString("\n")
-	/*line guide.goal:255*/ return b.String(), nil
+	/*line guide.goal:255*/ b.WriteString("\n")
+	/*line guide.goal:256*/ return b.String(), nil
 }
 
-//line guide.goal:259
+//line guide.goal:260
 func writeFragment(b *strings.Builder, name string) {
-	/*line guide.goal:260*/ data, err := goal.Docs.ReadFile("docs/ai/" + name)
-	/*line guide.goal:261*/ if err != nil {
-		/*line guide.goal:263*/ fmt.Fprintf(b, "_(missing fragment %s: %v)_\n", name, err)
-		/*line guide.goal:264*/ return
+	/*line guide.goal:261*/ data, err := goal.Docs.ReadFile("docs/ai/" + name)
+	/*line guide.goal:262*/ if err != nil {
+		/*line guide.goal:264*/ fmt.Fprintf(b, "_(missing fragment %s: %v)_\n", name, err)
+		/*line guide.goal:265*/ return
 	}
-	/*line guide.goal:266*/ b.Write(data)
-	/*line guide.goal:267*/ if !strings.HasSuffix(string(data), "\n") {
-		/*line guide.goal:268*/ b.WriteString("\n")
+	/*line guide.goal:267*/ b.Write(data)
+	/*line guide.goal:268*/ if !strings.HasSuffix(string(data), "\n") {
+		/*line guide.goal:269*/ b.WriteString("\n")
 	}
 }
 
-//line guide.goal:273
+//line guide.goal:274
 func writeCommands(b *strings.Builder, cmds []Command) {
-	/*line guide.goal:274*/ b.WriteString("**Commands:**\n\n")
-	/*line guide.goal:275*/ for _, c := range cmds {
-		/*line guide.goal:276*/ fmt.Fprintf(b, "- `%s` — %s\n", c.Usage, c.Summary)
-		/*line guide.goal:277*/ for _, f := range c.Flags {
-			/*line guide.goal:278*/ fmt.Fprintf(b, "    - `%s` — %s\n", f.Name, f.Summary)
+	/*line guide.goal:275*/ b.WriteString("**Commands:**\n\n")
+	/*line guide.goal:276*/ for _, c := range cmds {
+		/*line guide.goal:277*/ fmt.Fprintf(b, "- `%s` — %s\n", c.Usage, c.Summary)
+		/*line guide.goal:278*/ for _, f := range c.Flags {
+			/*line guide.goal:279*/ fmt.Fprintf(b, "    - `%s` — %s\n", f.Name, f.Summary)
 		}
 	}
 }
 
-//line guide.goal:285
+//line guide.goal:286
 func writeFeatures(b *strings.Builder) error {
-	/*line guide.goal:286*/ raw, err := goal.Docs.ReadFile("docs/by-example.md")
-	/*line guide.goal:287*/ if err != nil {
-		/*line guide.goal:288*/ return fmt.Errorf("read by-example: %w", err)
+	/*line guide.goal:287*/ raw, err := goal.Docs.ReadFile("docs/by-example.md")
+	/*line guide.goal:288*/ if err != nil {
+		/*line guide.goal:289*/ return fmt.Errorf("read by-example: %w", err)
 	}
-	/*line guide.goal:290*/ doc, err := byexample.Parse(string(raw), "docs/by-example.md")
-	/*line guide.goal:291*/ if err != nil {
-		/*line guide.goal:292*/ return fmt.Errorf("parse by-example: %w", err)
+	/*line guide.goal:291*/ doc, err := byexample.Parse(string(raw), "docs/by-example.md")
+	/*line guide.goal:292*/ if err != nil {
+		/*line guide.goal:293*/ return fmt.Errorf("parse by-example: %w", err)
 	}
-	/*line guide.goal:294*/ for _, cat := range doc.Categories {
-		/*line guide.goal:295*/ fmt.Fprintf(b, "### %s\n\n", cat.Name)
-		/*line guide.goal:296*/ for _, f := range cat.Features {
-			/*line guide.goal:297*/ fmt.Fprintf(b, "#### %s\n\n", f.Title)
-			/*line guide.goal:298*/ if err := renderFeature(b, f, false, ""); err != nil {
-				/*line guide.goal:299*/ return err
+	/*line guide.goal:295*/ for _, cat := range doc.Categories {
+		/*line guide.goal:296*/ fmt.Fprintf(b, "### %s\n\n", cat.Name)
+		/*line guide.goal:297*/ for _, f := range cat.Features {
+			/*line guide.goal:298*/ fmt.Fprintf(b, "#### %s\n\n", f.Title)
+			/*line guide.goal:299*/ if err := renderFeature(b, f, false, ""); err != nil {
+				/*line guide.goal:300*/ return err
 			}
 		}
 	}
-	/*line guide.goal:303*/ return nil
+	/*line guide.goal:304*/ return nil
 }
 
-//line guide.goal:311
+//line guide.goal:312
 func renderFeature(b *strings.Builder, f byexample.Feature, withDiagnostics bool, catalogKey string) error {
-	/*line guide.goal:312*/ writeProse(b, f.DescriptionMD)
-	/*line guide.goal:313*/ fmt.Fprintf(b, "```goal\n%s\n```\n\n", strings.TrimRight(f.Source, "\n"))
-	/*line guide.goal:315*/ lowered, label, err := lower(f)
-	/*line guide.goal:316*/ if err != nil {
-		/*line guide.goal:317*/ return fmt.Errorf("feature %q: %w", f.Title, err)
+	/*line guide.goal:313*/ writeProse(b, f.DescriptionMD)
+	/*line guide.goal:314*/ fmt.Fprintf(b, "```goal\n%s\n```\n\n", strings.TrimRight(f.Source, "\n"))
+	/*line guide.goal:316*/ lowered, label, err := lower(f)
+	/*line guide.goal:317*/ if err != nil {
+		/*line guide.goal:318*/ return fmt.Errorf("feature %q: %w", f.Title, err)
 	}
-	/*line guide.goal:319*/ fmt.Fprintf(b, "_%s:_\n\n```%s\n%s\n```\n\n", label, fenceLang(f.OutputKind), strings.TrimRight(lowered, "\n"))
-	/*line guide.goal:321*/ writeProse(b, f.LoweringMD)
-	/*line guide.goal:323*/ if withDiagnostics {
-		/*line guide.goal:324*/ codes := catalogCodesForFeature(catalogKey)
-		/*line guide.goal:325*/ if len(codes) > 0 {
-			/*line guide.goal:326*/ b.WriteString("**Diagnostics:**\n\n")
-			/*line guide.goal:327*/ for _, d := range codes {
-				/*line guide.goal:328*/ fmt.Fprintf(b, "- `[%s]` (%s) — %s\n", d.Code, d.Severity, d.Meaning)
+	/*line guide.goal:320*/ fmt.Fprintf(b, "_%s:_\n\n```%s\n%s\n```\n\n", label, fenceLang(f.OutputKind), strings.TrimRight(lowered, "\n"))
+	/*line guide.goal:322*/ writeProse(b, f.LoweringMD)
+	/*line guide.goal:324*/ if withDiagnostics {
+		/*line guide.goal:325*/ codes := catalogCodesForFeature(catalogKey)
+		/*line guide.goal:326*/ if len(codes) > 0 {
+			/*line guide.goal:327*/ b.WriteString("**Diagnostics:**\n\n")
+			/*line guide.goal:328*/ for _, d := range codes {
+				/*line guide.goal:329*/ fmt.Fprintf(b, "- `[%s]` (%s) — %s\n", d.Code, d.Severity, d.Meaning)
 			}
-			/*line guide.goal:330*/ b.WriteString("\n")
+			/*line guide.goal:331*/ b.WriteString("\n")
 		}
 	}
-	/*line guide.goal:333*/ return nil
+	/*line guide.goal:334*/ return nil
 }
 
-//line guide.goal:339
+//line guide.goal:340
 func featureByAnchor(anchor string) (byexample.Feature, error) {
-	/*line guide.goal:340*/ raw, err := goal.Docs.ReadFile("docs/by-example.md")
-	/*line guide.goal:341*/ if err != nil {
-		/*line guide.goal:342*/ return byexample.Feature{}, fmt.Errorf("read by-example: %w", err)
+	/*line guide.goal:341*/ raw, err := goal.Docs.ReadFile("docs/by-example.md")
+	/*line guide.goal:342*/ if err != nil {
+		/*line guide.goal:343*/ return byexample.Feature{}, fmt.Errorf("read by-example: %w", err)
 	}
-	/*line guide.goal:344*/ doc, err := byexample.Parse(string(raw), "docs/by-example.md")
-	/*line guide.goal:345*/ if err != nil {
-		/*line guide.goal:346*/ return byexample.Feature{}, fmt.Errorf("parse by-example: %w", err)
+	/*line guide.goal:345*/ doc, err := byexample.Parse(string(raw), "docs/by-example.md")
+	/*line guide.goal:346*/ if err != nil {
+		/*line guide.goal:347*/ return byexample.Feature{}, fmt.Errorf("parse by-example: %w", err)
 	}
-	/*line guide.goal:348*/ for _, cat := range doc.Categories {
-		/*line guide.goal:349*/ for _, f := range cat.Features {
-			/*line guide.goal:350*/ if f.Anchor == anchor {
-				/*line guide.goal:351*/ return f, nil
+	/*line guide.goal:349*/ for _, cat := range doc.Categories {
+		/*line guide.goal:350*/ for _, f := range cat.Features {
+			/*line guide.goal:351*/ if f.Anchor == anchor {
+				/*line guide.goal:352*/ return f, nil
 			}
 		}
 	}
-	/*line guide.goal:355*/ return byexample.Feature{}, fmt.Errorf("no by-example feature with anchor %q", anchor)
+	/*line guide.goal:356*/ return byexample.Feature{}, fmt.Errorf("no by-example feature with anchor %q", anchor)
 }
 
-//line guide.goal:360
+//line guide.goal:361
 func RenderCategory(w io.Writer, name string) error {
-	/*line guide.goal:361*/ c, ok := lookupCategory(name)
-	/*line guide.goal:362*/ if !ok {
-		/*line guide.goal:363*/ return fmt.Errorf("unknown category %q (valid: %s)", name, strings.Join(CategoryNames(), ", "))
+	/*line guide.goal:362*/ c, ok := lookupCategory(name)
+	/*line guide.goal:363*/ if !ok {
+		/*line guide.goal:364*/ return fmt.Errorf("unknown category %q (valid: %s)", name, strings.Join(CategoryNames(), ", "))
 	}
-	/*line guide.goal:365*/ f, err := featureByAnchor(c.anchor)
-	/*line guide.goal:366*/ if err != nil {
-		/*line guide.goal:367*/ return err
+	/*line guide.goal:366*/ f, err := featureByAnchor(c.anchor)
+	/*line guide.goal:367*/ if err != nil {
+		/*line guide.goal:368*/ return err
 	}
-	/*line guide.goal:369*/ var b strings.Builder
+	/*line guide.goal:370*/ var b strings.Builder
 
-	/*line guide.goal:370*/
+	/*line guide.goal:371*/
 	fmt.Fprintf(&b, "## %s\n\n", f.Title)
-	/*line guide.goal:371*/ if err := renderFeature(&b, f, true, c.catalogKey); err != nil {
-		/*line guide.goal:372*/ return err
+	/*line guide.goal:372*/ if err := renderFeature(&b, f, true, c.catalogKey); err != nil {
+		/*line guide.goal:373*/ return err
 	}
-	/*line guide.goal:374*/ _, err = io.WriteString(w, b.String())
-	/*line guide.goal:375*/ return err
+	/*line guide.goal:375*/ _, err = io.WriteString(w, b.String())
+	/*line guide.goal:376*/ return err
 }
 
-//line guide.goal:380
+//line guide.goal:381
 func writeCoreFeatures(b *strings.Builder) error {
-	/*line guide.goal:381*/ for _, name := range coreCategoryNames {
-		/*line guide.goal:382*/ c, ok := lookupCategory(name)
-		/*line guide.goal:383*/ if !ok {
-			/*line guide.goal:384*/ return fmt.Errorf("core category %q not in registry", name)
+	/*line guide.goal:382*/ for _, name := range coreCategoryNames {
+		/*line guide.goal:383*/ c, ok := lookupCategory(name)
+		/*line guide.goal:384*/ if !ok {
+			/*line guide.goal:385*/ return fmt.Errorf("core category %q not in registry", name)
 		}
-		/*line guide.goal:386*/ f, err := featureByAnchor(c.anchor)
-		/*line guide.goal:387*/ if err != nil {
-			/*line guide.goal:388*/ return err
+		/*line guide.goal:387*/ f, err := featureByAnchor(c.anchor)
+		/*line guide.goal:388*/ if err != nil {
+			/*line guide.goal:389*/ return err
 		}
-		/*line guide.goal:390*/ fmt.Fprintf(b, "### %s\n\n", f.Title)
-		/*line guide.goal:391*/ if err := renderFeature(b, f, false, ""); err != nil {
-			/*line guide.goal:392*/ return err
+		/*line guide.goal:391*/ fmt.Fprintf(b, "### %s\n\n", f.Title)
+		/*line guide.goal:392*/ if err := renderFeature(b, f, false, ""); err != nil {
+			/*line guide.goal:393*/ return err
 		}
 	}
-	/*line guide.goal:395*/ return nil
+	/*line guide.goal:396*/ return nil
 }
 
-//line guide.goal:401
+//line guide.goal:402
 func lower(f byexample.Feature) (out, label string, err error) {
-	/*line guide.goal:406*/ if f.OutputKind == "error" && isCheckerDiagnostic(f.LockedExpected, f.SourceName) {
-		/*line guide.goal:407*/ diags, aerr := sema.Analyze(f.Source)
-		/*line guide.goal:408*/ if aerr != nil {
-			/*line guide.goal:409*/ return "", "", fmt.Errorf("checker failed to analyze source: %w", aerr)
+	/*line guide.goal:407*/ if f.OutputKind == "error" && isCheckerDiagnostic(f.LockedExpected, f.SourceName) {
+		/*line guide.goal:408*/ diags, aerr := sema.Analyze(f.Source)
+		/*line guide.goal:409*/ if aerr != nil {
+			/*line guide.goal:410*/ return "", "", fmt.Errorf("checker failed to analyze source: %w", aerr)
 		}
-		/*line guide.goal:411*/ for _, d := range diags {
-			/*line guide.goal:412*/ if sema.HasErrors([]sema.Diagnostic{d}) {
-				/*line guide.goal:413*/ return strings.TrimRight(d.Render(f.SourceName), "\n"), "rejected with", nil
+		/*line guide.goal:412*/ for _, d := range diags {
+			/*line guide.goal:413*/ if sema.HasErrors([]sema.Diagnostic{d}) {
+				/*line guide.goal:414*/ return strings.TrimRight(d.Render(f.SourceName), "\n"), "rejected with", nil
 			}
 		}
-		/*line guide.goal:416*/ return "", "", fmt.Errorf("expected a checker error diagnostic, but the checker reported none")
+		/*line guide.goal:417*/ return "", "", fmt.Errorf("expected a checker error diagnostic, but the checker reported none")
 	}
-	/*line guide.goal:418*/ res, terr := backend.Transpile(f.Source)
-	/*line guide.goal:419*/ switch f.OutputKind {
+	/*line guide.goal:419*/ res, terr := backend.Transpile(f.Source)
+	/*line guide.goal:420*/ switch f.OutputKind {
 	case "error":
 		if terr == nil {
-			/*line guide.goal:422*/ return "", "", fmt.Errorf("expected rejection, but transpile succeeded")
+			/*line guide.goal:423*/ return "", "", fmt.Errorf("expected rejection, but transpile succeeded")
 		}
 		return strings.TrimRight(terr.Error(), "\n"), "rejected with", nil
 	case "test":
 		if terr != nil {
-			/*line guide.goal:427*/ return "", "", fmt.Errorf("live transpile failed: %w", terr)
+			/*line guide.goal:428*/ return "", "", fmt.Errorf("live transpile failed: %w", terr)
 		}
 		return res.Test, "generated _test.go", nil
 	default:
 		if terr != nil {
-			/*line guide.goal:432*/ return "", "", fmt.Errorf("live transpile failed: %w", terr)
+			/*line guide.goal:433*/ return "", "", fmt.Errorf("live transpile failed: %w", terr)
 		}
 		return res.Go, "transpiles to", nil
 	}
 }
 
-//line guide.goal:439
+//line guide.goal:440
 func fenceLang(kind string) string {
-	/*line guide.goal:440*/ if kind == "error" {
-		/*line guide.goal:441*/ return "text"
+	/*line guide.goal:441*/ if kind == "error" {
+		/*line guide.goal:442*/ return "text"
 	}
-	/*line guide.goal:443*/ return "go"
+	/*line guide.goal:444*/ return "go"
 }
 
-//line guide.goal:450
+//line guide.goal:451
 func isCheckerDiagnostic(expected, sourceName string) bool {
-	/*line guide.goal:451*/ if sourceName == "" {
-		/*line guide.goal:452*/ return false
+	/*line guide.goal:452*/ if sourceName == "" {
+		/*line guide.goal:453*/ return false
 	}
-	/*line guide.goal:454*/ first := strings.TrimLeft(expected, "\n")
-	/*line guide.goal:455*/ if i := strings.IndexByte(first, '\n'); i >= 0 {
-		/*line guide.goal:456*/ first = first[:i]
+	/*line guide.goal:455*/ first := strings.TrimLeft(expected, "\n")
+	/*line guide.goal:456*/ if i := strings.IndexByte(first, '\n'); i >= 0 {
+		/*line guide.goal:457*/ first = first[:i]
 	}
-	/*line guide.goal:458*/ return strings.HasPrefix(first, sourceName+":")
+	/*line guide.goal:459*/ return strings.HasPrefix(first, sourceName+":")
 }
 
-//line guide.goal:462
+//line guide.goal:463
 func writeCatalog(b *strings.Builder) {
-	/*line guide.goal:463*/ for _, g := range catalogByFeature() {
-		/*line guide.goal:464*/ fmt.Fprintf(b, "**%s**\n\n", g.Feature)
-		/*line guide.goal:465*/ for _, d := range g.Codes {
-			/*line guide.goal:466*/ fmt.Fprintf(b, "- `[%s]` (%s) — %s\n", d.Code, d.Severity, d.Meaning)
+	/*line guide.goal:464*/ for _, g := range catalogByFeature() {
+		/*line guide.goal:465*/ fmt.Fprintf(b, "**%s**\n\n", g.Feature)
+		/*line guide.goal:466*/ for _, d := range g.Codes {
+			/*line guide.goal:467*/ fmt.Fprintf(b, "- `[%s]` (%s) — %s\n", d.Code, d.Severity, d.Meaning)
 		}
-		/*line guide.goal:468*/ b.WriteString("\n")
+		/*line guide.goal:469*/ b.WriteString("\n")
 	}
 }
 
-//line guide.goal:474
+//line guide.goal:475
 func writeFeedbackSample(b *strings.Builder) error {
-	/*line guide.goal:475*/ b.WriteString("**What the feedback looks like.** Running the checker on this program:\n\n")
-	/*line guide.goal:476*/ fmt.Fprintf(b, "```goal\n%s\n```\n\n", strings.TrimRight(feedbackSample, "\n"))
-	/*line guide.goal:477*/ perFile, err := sema.AnalyzePackageInDir([]string{feedbackSample}, ".")
-	/*line guide.goal:478*/ if err != nil {
-		/*line guide.goal:479*/ return fmt.Errorf("analyze feedback sample: %w", err)
+	/*line guide.goal:476*/ b.WriteString("**What the feedback looks like.** Running the checker on this program:\n\n")
+	/*line guide.goal:477*/ fmt.Fprintf(b, "```goal\n%s\n```\n\n", strings.TrimRight(feedbackSample, "\n"))
+	/*line guide.goal:478*/ perFile, err := sema.AnalyzePackageInDir([]string{feedbackSample}, ".")
+	/*line guide.goal:479*/ if err != nil {
+		/*line guide.goal:480*/ return fmt.Errorf("analyze feedback sample: %w", err)
 	}
-	/*line guide.goal:481*/ var lines []string
+	/*line guide.goal:482*/ var lines []string
 
-	/*line guide.goal:482*/
+	/*line guide.goal:483*/
 	for _, diags := range perFile {
-		/*line guide.goal:483*/ for _, d := range diags {
-			/*line guide.goal:484*/ lines = append(lines, fmt.Sprintf("sample.goal:%d:%d: %s: [%s] %s", d.Pos.Line, d.Pos.Col, sema.SeverityLabel(d.Severity), d.Code, d.Message))
+		/*line guide.goal:484*/ for _, d := range diags {
+			/*line guide.goal:485*/ lines = append(lines, fmt.Sprintf("sample.goal:%d:%d: %s: [%s] %s", d.Pos.Line, d.Pos.Col, sema.SeverityLabel(d.Severity), d.Code, d.Message))
 		}
 	}
-	/*line guide.goal:488*/ sort.Strings(lines)
-	/*line guide.goal:489*/ b.WriteString("produces:\n\n```text\n")
-	/*line guide.goal:490*/ for _, ln := range lines {
-		/*line guide.goal:491*/ b.WriteString(ln)
-		/*line guide.goal:492*/ b.WriteString("\n")
+	/*line guide.goal:489*/ sort.Strings(lines)
+	/*line guide.goal:490*/ b.WriteString("produces:\n\n```text\n")
+	/*line guide.goal:491*/ for _, ln := range lines {
+		/*line guide.goal:492*/ b.WriteString(ln)
+		/*line guide.goal:493*/ b.WriteString("\n")
 	}
-	/*line guide.goal:494*/ b.WriteString("```\n")
-	/*line guide.goal:495*/ return nil
+	/*line guide.goal:495*/ b.WriteString("```\n")
+	/*line guide.goal:496*/ return nil
 }
 
-//line guide.goal:500
+//line guide.goal:501
 func writeStarter(b *strings.Builder) error {
-	/*line guide.goal:501*/ src, err := goal.Docs.ReadFile("docs/ai/starter.goal")
-	/*line guide.goal:502*/ if err != nil {
-		/*line guide.goal:503*/ return fmt.Errorf("read starter: %w", err)
+	/*line guide.goal:502*/ src, err := goal.Docs.ReadFile("docs/ai/starter.goal")
+	/*line guide.goal:503*/ if err != nil {
+		/*line guide.goal:504*/ return fmt.Errorf("read starter: %w", err)
 	}
-	/*line guide.goal:505*/ b.WriteString("Layout (inside a Go module): `myapp/go.mod` + `myapp/app/main.goal`.\n\n")
-	/*line guide.goal:506*/ fmt.Fprintf(b, "```goal\n%s\n```\n\n", strings.TrimRight(string(src), "\n"))
-	/*line guide.goal:508*/ res, terr := backend.Transpile(string(src))
-	/*line guide.goal:509*/ if terr != nil {
-		/*line guide.goal:510*/ return fmt.Errorf("transpile starter: %w", terr)
+	/*line guide.goal:506*/ b.WriteString("Layout (inside a Go module): `myapp/go.mod` + `myapp/app/main.goal`.\n\n")
+	/*line guide.goal:507*/ fmt.Fprintf(b, "```goal\n%s\n```\n\n", strings.TrimRight(string(src), "\n"))
+	/*line guide.goal:509*/ res, terr := backend.Transpile(string(src))
+	/*line guide.goal:510*/ if terr != nil {
+		/*line guide.goal:511*/ return fmt.Errorf("transpile starter: %w", terr)
 	}
-	/*line guide.goal:512*/ fmt.Fprintf(b, "_transpiles to:_\n\n```go\n%s\n```\n\n", strings.TrimRight(res.Go, "\n"))
-	/*line guide.goal:513*/ b.WriteString("Drive it:\n\n")
-	/*line guide.goal:514*/ b.WriteString("```bash\n")
-	/*line guide.goal:515*/ b.WriteString("goal check ./app                                  # located correctness feedback\n")
-	/*line guide.goal:516*/ b.WriteString("goal run   ./app                                  # -> hello, Ada\n")
-	/*line guide.goal:517*/ b.WriteString("goal build --emit ./app && go test -count=1 ./app/...   # doctest passes\n")
-	/*line guide.goal:518*/ b.WriteString("```\n")
-	/*line guide.goal:519*/ return nil
+	/*line guide.goal:513*/ fmt.Fprintf(b, "_transpiles to:_\n\n```go\n%s\n```\n\n", strings.TrimRight(res.Go, "\n"))
+	/*line guide.goal:514*/ b.WriteString("Drive it:\n\n")
+	/*line guide.goal:515*/ b.WriteString("```bash\n")
+	/*line guide.goal:516*/ b.WriteString("goal check ./app                                  # located correctness feedback\n")
+	/*line guide.goal:517*/ b.WriteString("goal run   ./app                                  # -> hello, Ada\n")
+	/*line guide.goal:518*/ b.WriteString("goal build --emit ./app && go test -count=1 ./app/...   # doctest passes\n")
+	/*line guide.goal:519*/ b.WriteString("```\n")
+	/*line guide.goal:520*/ return nil
 }
 
-//line guide.goal:524
+//line guide.goal:525
 func writeProse(b *strings.Builder, lines []string) {
-	/*line guide.goal:525*/ text := strings.TrimSpace(strings.Join(lines, "\n"))
-	/*line guide.goal:526*/ if text == "" {
-		/*line guide.goal:527*/ return
+	/*line guide.goal:526*/ text := strings.TrimSpace(strings.Join(lines, "\n"))
+	/*line guide.goal:527*/ if text == "" {
+		/*line guide.goal:528*/ return
 	}
-	/*line guide.goal:529*/ b.WriteString(text)
-	/*line guide.goal:530*/ b.WriteString("\n\n")
+	/*line guide.goal:530*/ b.WriteString(text)
+	/*line guide.goal:531*/ b.WriteString("\n\n")
 }

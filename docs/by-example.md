@@ -44,7 +44,7 @@ goal→Go pair ready to drop into an editor.
 - **Errors & absence:** [Result (open-E)](#03-result-open-e) · [Option](#04-option) ·
   [`?` propagation](#05--propagation) · [Result (closed-E)](#06-result-closed-e)
 - **Contracts on types:** [implements](#07-implements) ·
-  [No zero value](#08-no-zero-value)
+  [No zero value](#08-no-zero-value) · [Methods on sum types](#09-methods-on-sum-types)
 - **Runtime & test feedback:** [assert](#10-assert) · [Doctests](#11-doctests) ·
   [derive-convert](#12-derive-convert)
 - **Composition:** [All eleven in one file](#composition-all-eleven-in-one-file)
@@ -59,6 +59,7 @@ goal→Go pair ready to drop into an editor.
 | 06 | [Result (closed-E)](#06-result-closed-e) | `Result[T, MyErr]` | generic sum `Ok[T,E]`/`Err[T,E]` + From-conversion |
 | 07 | [implements](#07-implements) | `type T struct implements I { … }` | compile-time assertion `var _ I = T{}` |
 | 08 | [no-zero-value](#08-no-zero-value) | `T{a: x, ...defaults}` | explicit per-field zero expansion |
+| 09 | [methods-on-sum-types](#09-methods-on-sum-types) | `func (s E) m() { match s { … } }` | interface method + shared body + per-variant forwarders |
 | 10 | [assert](#10-assert) | `assert cond, "msg", args` | runtime `if !(cond) { panic(...) }` |
 | 11 | [doctests](#11-doctests) | `/// >>> f(2)` / `/// 4` | a generated `_test.go` |
 | 12 | [derive-convert](#12-derive-convert) | `derive func g(s S) T` | field-by-field conversion via a `from func` registry |
@@ -990,6 +991,105 @@ incomplete.goal:14:9: error: [unsafe-zero] struct literal `User{…}` omits fiel
 panics the moment anything writes to it — the exact footgun this feature closes. `email`
 and `admin` read back as `""`/`false`, which are harmless, so goal lets them default; only
 the unsafe `perms` zero is turned into a checker error at the construction site.
+
+## 09. Methods on sum types
+
+A sum type is not limited to free functions: an `enum` can carry behaviour through
+value-receiver methods, so the data and the operations on it live together. The method
+body dispatches on the variant with `match` (feature 02), exactly as a free function
+would.
+
+```goal
+func (s Shape) Area() float64 { return match s { … } }   // a method whose receiver is an enum
+```
+
+**Unlocks:** behaviour on a closed set. Because the variant set is frozen (feature 01),
+the method's `match` is checked for exhaustiveness like any other — add a variant and
+every method that dispatches on it must handle the new case or fail to compile.
+
+**Goal:** let a sum type own its operations (`s.Area()`) instead of scattering them as
+free functions, while keeping the exhaustiveness guarantee that makes `enum` safe.
+
+```goal name=shape_area.goal
+package main
+
+import "fmt"
+
+enum Shape {
+    Circle { r: float64 }
+    Rect { w: float64, h: float64 }
+}
+
+func (s Shape) Area() float64 {
+    return match s {
+        Shape.Circle(c) => 3.14 * c.r * c.r
+        Shape.Rect(r) => r.w * r.h
+    }
+}
+
+func main() {
+    shapes := []Shape{Shape.Circle(r: 2), Shape.Rect(w: 3, h: 4)}
+    for _, s := range shapes {
+        fmt.Printf("%.2f\n", s.Area())
+    }
+}
+```
+
+Transpiles to:
+
+```go
+package main
+
+import "fmt"
+
+type Shape interface {
+	Area() float64
+	isShape()
+}
+
+type Shape_Circle struct {
+	R float64
+}
+type Shape_Rect struct {
+	W float64
+	H float64
+}
+
+func (Shape_Circle) isShape() {}
+func (Shape_Rect) isShape()   {}
+
+func Shape_Area(s Shape) float64 {
+	switch v := s.(type) {
+	case Shape_Circle:
+		return 3.14 * v.R * v.R
+	case Shape_Rect:
+		return v.W * v.H
+	default:
+		panic("unreachable: non-exhaustive Shape (compiler invariant violated)")
+	}
+}
+
+func (s Shape_Circle) Area() float64 {
+	return Shape_Area(s)
+}
+
+func (s Shape_Rect) Area() float64 {
+	return Shape_Area(s)
+}
+
+func main() {
+	shapes := []Shape{Shape(Shape_Circle{R: 2}), Shape(Shape_Rect{W: 3, H: 4})}
+	for _, s := range shapes {
+		fmt.Printf("%.2f\n", s.Area())
+	}
+}
+```
+
+**Lowers to:** the method signature is folded into the enum's interface method set, one
+shared free function (`Shape_Area`) holds the body, and each variant gets a forwarding
+method that delegates to it — so `s.Area()` resolves through the interface regardless of
+which variant `s` holds. Pointer receivers on an enum are rejected at the declaration
+(the receiver form has no single owning variant); use a value receiver.
 
 # Runtime & test feedback
 

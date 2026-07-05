@@ -53,6 +53,20 @@
   (TestBootstrapGoldenMatches guards it). Regenerate the bootstrap AFTER the last
   doc edit. Separately, `task e2e` checks goal.wasm reproduces those host seeds;
   the WASM entrypoint currently lags the checker (see US-035 latent-bug note).
+- Adding a by-example PRIMARY feature (a numbered `## NN. Title` with a
+  name-tagged goal block, anchor starts with a digit) has three coupled edits
+  (found US-008): (1) the feature section in docs/by-example.md + its Contents
+  bullet + table row; (2) a matching row in internal/guide/guide.goal `categories`
+  ({name, description, anchor, catalogKey}; catalogKey "" when the feature owns no
+  checker-diagnostic group) or guidetest.TestCategoryCoverage fails "category
+  count N != primary feature count"; (3) regenerate BOTH goldens (`goal ai
+  features > cmd/goal/testdata/ai-features.golden`, `goal ai > AI-KNOWLEDGE-
+  BOOTSTRAP.md`). The bootstrap is the SLIM base guide (only core features
+  enums/match/doctests/implements), so a NON-core feature leaves it byte-identical
+  — the full list lives in ai-features.golden. The "Transpiles to" block is
+  rendered LIVE by backend.Transpile, so produce it with `go run ./cmd/goalc
+  <file.goal>` rather than hand-writing. The feature numbering has GAPS (08 -> 10),
+  so reuse a gap number to insert in document order with zero renumbering.
 - Consuming a `Result`-returning call in `.goal` without propagating (found US-031):
   you CANNOT single-bind it (`x := f()` -> "1 variable but 2 values") and you
   CANNOT `match f() {...}` directly (the emitter binds the scrutinee to one temp,
@@ -9457,4 +9471,34 @@ detour proved necessary.
   - AI-KNOWLEDGE-BOOTSTRAP.md and cmd/goal/testdata/ai-features.golden do NOT enumerate
     the diagnostic catalog (only a live feedback sample references one code), so adding a
     catalog entry does not drift either golden — no regeneration needed.
+---
+
+## 2026-07-04T00:00:00Z - US-008
+- Documented the methods-on-sum-types capability (US-001/US-002) as a new
+  by-example feature so it is discoverable and pinned against drift.
+- Added by-example feature "09. Methods on sum types" (an `enum Shape` carrying a
+  value-receiver `Area()` method that dispatches by `match`) with its live
+  "Transpiles to" block showing the interface method-set fold + shared free
+  function `Shape_Area` + per-variant forwarders; cross-referenced US-007's
+  pointer-receiver rejection in the prose.
+- Files changed: docs/by-example.md (new feature 09 + Contents bullet + table row),
+  internal/guide/guide.goal + guide.go (new `sum-type-methods` category registry
+  entry so goal category covers it), cmd/goal/testdata/ai-features.golden
+  (regenerated — now lists feature 09). AI-KNOWLEDGE-BOOTSTRAP.md regenerated with
+  ZERO drift (it is the SLIM base guide — only core features enums/match/doctests/
+  implements — so a new non-core feature legitimately does not appear there).
+- Learnings for future iterations:
+  - by-example feature numbering has a GAP at 09 (jumps 08 -> 10), so a new feature
+    can reuse 09 in document order with ZERO renumbering and no `(feature NN)`
+    cross-reference churn. Pick a free/gap number before inserting-and-renumbering.
+  - Adding a by-example primary feature (anchor starts with a digit) REQUIRES a
+    matching entry in internal/guide/guide.goal `categories` or
+    guidetest.TestCategoryCoverage fails ("category count N != primary feature
+    count N+1"). The category struct is {name, description, anchor, catalogKey};
+    catalogKey is "" when the feature has no OWN checker-diagnostic group.
+  - The guide/bootstrap render features LIVE via backend.Transpile (guide.goal
+    lower()), so the exact "Transpiles to" block is whatever `go run ./cmd/goalc
+    <file.goal>` prints (same path) — generate it, don't hand-write it. Regenerate
+    both goldens: `go run ./cmd/goal ai features > cmd/goal/testdata/ai-features.golden`
+    and `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`.
 ---
