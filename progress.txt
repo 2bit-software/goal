@@ -9502,3 +9502,10 @@ detour proved necessary.
     both goldens: `go run ./cmd/goal ai features > cmd/goal/testdata/ai-features.golden`
     and `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`.
 ---
+
+[unsafe-zero fix] internal/backend/emit.goal: the exprText sub-emitter literal
+omitted the new enumMethods field (added to emitter for sum-type-methods). Added
+`enumMethods: e.enumMethods` so the sub-emitter inherits the parent's map by
+reference (matching typeDecls/arity), clearing the [unsafe-zero] regression.
+Regenerated emit.go via `task generate`; check-full/fixpoint/build all green.
+---
