@@ -83,7 +83,7 @@
         "`task check-full` exits 0 and `task fixpoint` reports FIXPOINT OK."
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-005. If US-005 already drove internal/interp to 0, this story is the assertion plus the ledger entry; otherwise it clears the last non-Value helper-struct omissions first."
     },
     {

@@ -12,47 +12,59 @@ func (e *NotFoundError) Error() string {
 	/*line env.goal:17*/ return "undefined: " + e.Name
 }
 
-//line env.goal:21
+//line env.goal:22
 type Env struct {
 	vars   map[string]Value
-	parent *Env
+	parent **Env
 }
 
-//line env.goal:27
+//line env.goal:28
 func NewEnv() *Env {
-	/*line env.goal:28*/ return &Env{vars: make(map[string]Value)}
+	/*line env.goal:29*/ return &Env{vars: make(map[string]Value)}
 }
 
-//line env.goal:34
+//line env.goal:35
 func (e *Env) NewChild() *Env {
-	/*line env.goal:35*/ return &Env{vars: make(map[string]Value), parent: e}
+	/*line env.goal:36*/ return &Env{vars: make(map[string]Value), parent: goalSome(e)}
 }
 
-//line env.goal:40
-func (e *Env) Define(name string, v Value) {
-	/*line env.goal:41*/ if e.vars == nil {
-		/*line env.goal:42*/ e.vars = make(map[string]Value)
+//line env.goal:41
+func (e *Env) parentPtr() *Env {
+	/*line env.goal:42*/ var p *Env
+	if o := e.parent; o != nil {
+		x := *o
+		p = x
+	} else {
+		p = nil
 	}
-	/*line env.goal:44*/ e.vars[name] = v
+	/*line env.goal:46*/ return p
 }
 
 //line env.goal:51
-func (e *Env) Lookup(name string) (Value, error) {
-	/*line env.goal:52*/ for s := e; s != nil; s = s.parent {
-		/*line env.goal:53*/ if v, ok := s.vars[name]; ok {
-			/*line env.goal:54*/ return v, nil
-		}
+func (e *Env) Define(name string, v Value) {
+	/*line env.goal:52*/ if e.vars == nil {
+		/*line env.goal:53*/ e.vars = make(map[string]Value)
 	}
-	/*line env.goal:57*/ return NilVal(), &NotFoundError{Name: name}
+	/*line env.goal:55*/ e.vars[name] = v
 }
 
-//line env.goal:67
-func (e *Env) Assign(name string, v Value) error {
-	/*line env.goal:68*/ for s := e; s != nil; s = s.parent {
-		/*line env.goal:69*/ if _, ok := s.vars[name]; ok {
-			/*line env.goal:70*/ s.vars[name] = v
-			/*line env.goal:71*/ return nil
+//line env.goal:62
+func (e *Env) Lookup(name string) (Value, error) {
+	/*line env.goal:63*/ for s := e; s != nil; s = s.parentPtr() {
+		/*line env.goal:64*/ if v, ok := s.vars[name]; ok {
+			/*line env.goal:65*/ return v, nil
 		}
 	}
-	/*line env.goal:74*/ return &NotFoundError{Name: name}
+	/*line env.goal:68*/ return NilVal(), &NotFoundError{Name: name}
+}
+
+//line env.goal:78
+func (e *Env) Assign(name string, v Value) error {
+	/*line env.goal:79*/ for s := e; s != nil; s = s.parentPtr() {
+		/*line env.goal:80*/ if _, ok := s.vars[name]; ok {
+			/*line env.goal:81*/ s.vars[name] = v
+			/*line env.goal:82*/ return nil
+		}
+	}
+	/*line env.goal:85*/ return &NotFoundError{Name: name}
 }

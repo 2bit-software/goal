@@ -3715,3 +3715,26 @@ stay as history; this is the current state.
   (agreed with the user); this entry records the boundary so it is explicit and enforceable
   (the non-interpreter grep must stay empty).
 
+### 2026-07-05 — Interpreter `Value` converted to a sum type; `goal check ./internal` unsafe-zero clean (US-005/US-006)
+- **Kind:** decision. **Supersedes** the 2026-07-04 "Interpreter `Value` tagged-union left as the
+  sole `[unsafe-zero]` source" entry above — the deferral it recorded is now discharged.
+- **Context:** the `ralph/sum-type-methods` PRD added methods-on-sum-types to the compiler
+  (US-001/US-002) and then used that feature to convert the interpreter's runtime `Value` from the
+  hand-rolled flat multi-pointer tagged union into a real goal `enum` sum type (US-005): each kind
+  is its own variant carrying ONLY its payload, read through `match`-based accessors
+  (`kind`/`asInt`/`asStruct`/…) and built through constructors (`IntVal`/`StructVal`/…), all localized
+  to `internal/interp/value.goal` (US-003/US-004).
+- **Chose:** finish the job to zero. As of this entry
+  `./bin/goal check ./internal 2>&1 | grep '[unsafe-zero]' | grep -c '^internal/interp/'` is **0** —
+  no elided-`Value`-literal diagnostic and no residual helper-struct omission remains under
+  `internal/interp/`. The last three residual omissions (`Env.parent`, `FuncValue.Decl`,
+  `FuncValue.Env` — each a genuinely-optional pointer) were modelled as `Option[T]`, so an omitted
+  field is a safe `Option.None` zero; the chain-walking loops and `callFunc` unwrap the Option back
+  to a plain pointer at the boundary via small accessors (`parentPtr`/`declPtr`/`envPtr`).
+- **Over:** leaving the interpreter as the standing exception, or blanket-suppressing `[unsafe-zero]`
+  under `internal/interp/` (the alternatives the superseded entry weighed).
+- **Whole-repo invariant (now enforceable):** `goal check ./internal` emits **zero** `[unsafe-zero]`
+  diagnostics — the boundary that the 2026-07-04 entry documented as merely structural is now a
+  clean, checkable property of the whole `./internal` tree. Behaviour is preserved: the interpreter
+  and corpus behavioural gates pass and `task fixpoint` reports FIXPOINT OK.
+

@@ -363,7 +363,7 @@ func (ip *Interp) Run() error {
 	if main == nil {
 		return ErrNoMain
 	}
-	_, err := ip.callFunc(&FuncValue{Name: "main", Decl: main, Env: ip.root}, nil)
+	_, err := ip.callFunc(&FuncValue{Name: "main", Decl: Option.Some(main), Env: Option.Some(ip.root)}, nil)
 	return err
 }
 
@@ -396,18 +396,19 @@ func (ip *Interp) gate() error {
 // error). A genuine error from the body propagates. An argument-count mismatch
 // is a descriptive, named refusal.
 func (ip *Interp) callFunc(fn *FuncValue, args []Value) ([]Value, error) {
-	if fn == nil || fn.Decl == nil {
+	decl := fn.declPtr()
+	if fn == nil || decl == nil {
 		name := ""
 		if fn != nil {
 			name = fn.Name
 		}
 		return nil, fmt.Errorf("interp: call of non-callable function value %q", name)
 	}
-	params := flattenParams(fn.Decl.Type)
+	params := flattenParams(decl.Type)
 	if len(args) != len(params) {
 		return nil, fmt.Errorf("interp: %s expects %d args, got %d", fn.Name, len(params), len(args))
 	}
-	defScope := fn.Env
+	defScope := fn.envPtr()
 	if defScope == nil {
 		defScope = ip.root
 	}
@@ -419,7 +420,7 @@ func (ip *Interp) callFunc(fn *FuncValue, args []Value) ([]Value, error) {
 	// error-propagation shape; pop via defer so any unwind still balances.
 	ip.fnStack = append(ip.fnStack, ip.sigFor(fn.Name))
 	defer func() { ip.fnStack = ip.fnStack[:len(ip.fnStack)-1] }()
-	if err := ip.execBlock(fn.Decl.Body, scope); err != nil {
+	if err := ip.execBlock(decl.Body, scope); err != nil {
 		var ret returnSignal
 		if errors.As(err, &ret) {
 			return ret.vals, nil

@@ -98,12 +98,34 @@ type MapValue struct {
 // FuncValue is the runtime representation of a function value. It carries the
 // declaration it closes over (Decl) and the lexical scope in which it was
 // defined (Env) so a call can bind parameters in a fresh child of that scope and
-// run the body. Name is retained for rendering. A name-only carrier (Decl == nil)
-// is still valid for tests/diagnostics that do not call the function.
+// run the body. Name is retained for rendering. A name-only carrier (Decl is
+// Option.None) is still valid for tests/diagnostics that do not call the
+// function. Decl and Env are modelled as Option[T] so a name-only carrier omits
+// them safely — a bare nil pointer has no safe zero (US-006).
 type FuncValue struct {
 	Name string
-	Decl *ast.FuncDecl // the function declaration; nil for a name-only carrier
-	Env  *Env          // the lexical scope the function closes over; nil for a name-only carrier
+	Decl Option[*ast.FuncDecl] // the function declaration; None for a name-only carrier
+	Env  Option[*Env]          // the lexical scope the function closes over; None for a name-only carrier
+}
+
+// declPtr unwraps the optional declaration, returning nil for a name-only
+// carrier so callers keep the historical `decl == nil` guard unchanged.
+func (f *FuncValue) declPtr() *ast.FuncDecl {
+	var d *ast.FuncDecl = match f.Decl {
+		Option.None    => nil
+		Option.Some(x) => x
+	}
+	return d
+}
+
+// envPtr unwraps the optional defining scope, returning nil when the carrier
+// closed over no scope so callers keep the historical `env == nil` guard.
+func (f *FuncValue) envPtr() *Env {
+	var e *Env = match f.Env {
+		Option.None    => nil
+		Option.Some(x) => x
+	}
+	return e
 }
 
 // Variant is the UNIVERSAL tagged union. It backs every sum type uniformly:
@@ -172,7 +194,7 @@ func FuncDeclVal(decl *ast.FuncDecl, env *Env) Value {
 	if decl != nil && decl.Name != nil {
 		name = decl.Name.Name
 	}
-	return Value.Func(fv: &FuncValue{Name: name, Decl: decl, Env: env})
+	return Value.Func(fv: &FuncValue{Name: name, Decl: Option.Some(decl), Env: Option.Some(env)})
 }
 
 // Canonical type identity and payload field names for the Result tagged union.

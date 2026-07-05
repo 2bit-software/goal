@@ -154,84 +154,108 @@ type MapValue struct {
 	Entries map[string]Value
 }
 
-//line value.goal:103
+//line value.goal:105
 type FuncValue struct {
 	Name string
-	Decl *ast.FuncDecl
-	Env  *Env
+	Decl **ast.FuncDecl
+	Env  **Env
 }
 
-//line value.goal:115
+//line value.goal:113
+func (f *FuncValue) declPtr() *ast.FuncDecl {
+	/*line value.goal:114*/ var d *ast.FuncDecl
+	if o := f.Decl; o != nil {
+		x := *o
+		d = x
+	} else {
+		d = nil
+	}
+	/*line value.goal:118*/ return d
+}
+
+//line value.goal:123
+func (f *FuncValue) envPtr() *Env {
+	/*line value.goal:124*/ var e *Env
+	if o := f.Env; o != nil {
+		x := *o
+		e = x
+	} else {
+		e = nil
+	}
+	/*line value.goal:128*/ return e
+}
+
+//line value.goal:137
 type Variant struct {
 	TypeID string
 	Tag    string
 	Fields map[string]Value
 }
 
-//line value.goal:122
+//line value.goal:144
 func IntVal(n int64) Value {
-	/*line value.goal:122*/ return Value(Value_Int{N: n})
+	/*line value.goal:144*/ return Value(Value_Int{N: n})
 }
 
-//line value.goal:125
+//line value.goal:147
 func FloatVal(f float64) Value {
-	/*line value.goal:125*/ return Value(Value_Float{F: f})
+	/*line value.goal:147*/ return Value(Value_Float{F: f})
 }
 
-//line value.goal:128
+//line value.goal:150
 func StrVal(s string) Value {
-	/*line value.goal:128*/ return Value(Value_Str{S: s})
-}
-
-//line value.goal:131
-func BoolVal(b bool) Value {
-	/*line value.goal:131*/ return Value(Value_Bool{B: b})
-}
-
-//line value.goal:134
-func NilVal() Value {
-	/*line value.goal:134*/ return Value(Value_Nil{})
-}
-
-//line value.goal:137
-func StructVal(typeID string, fields map[string]Value) Value {
-	/*line value.goal:138*/ if fields == nil {
-		/*line value.goal:139*/ fields = map[string]Value{}
-	}
-	/*line value.goal:141*/ return Value(Value_Struct{Sv: &StructValue{TypeID: typeID, Fields: fields}})
-}
-
-//line value.goal:145
-func SliceVal(elems ...Value) Value {
-	/*line value.goal:146*/ if elems == nil {
-		/*line value.goal:147*/ elems = []Value{}
-	}
-	/*line value.goal:149*/ return Value(Value_Slice{Xs: elems})
+	/*line value.goal:150*/ return Value(Value_Str{S: s})
 }
 
 //line value.goal:153
+func BoolVal(b bool) Value {
+	/*line value.goal:153*/ return Value(Value_Bool{B: b})
+}
+
+//line value.goal:156
+func NilVal() Value {
+	/*line value.goal:156*/ return Value(Value_Nil{})
+}
+
+//line value.goal:159
+func StructVal(typeID string, fields map[string]Value) Value {
+	/*line value.goal:160*/ if fields == nil {
+		/*line value.goal:161*/ fields = map[string]Value{}
+	}
+	/*line value.goal:163*/ return Value(Value_Struct{Sv: &StructValue{TypeID: typeID, Fields: fields}})
+}
+
+//line value.goal:167
+func SliceVal(elems ...Value) Value {
+	/*line value.goal:168*/ if elems == nil {
+		/*line value.goal:169*/ elems = []Value{}
+	}
+	/*line value.goal:171*/ return Value(Value_Slice{Xs: elems})
+}
+
+//line value.goal:175
 func MapVal(entries map[string]Value) Value {
-	/*line value.goal:154*/ if entries == nil {
-		/*line value.goal:155*/ entries = map[string]Value{}
+	/*line value.goal:176*/ if entries == nil {
+		/*line value.goal:177*/ entries = map[string]Value{}
 	}
-	/*line value.goal:157*/ return Value(Value_Map{Mv: &MapValue{Entries: entries}})
+	/*line value.goal:179*/ return Value(Value_Map{Mv: &MapValue{Entries: entries}})
 }
 
-//line value.goal:163
+//line value.goal:185
 func FuncVal(name string) Value {
-	/*line value.goal:164*/ return Value(Value_Func{Fv: &FuncValue{Name: name}})
+	/*line value.goal:186*/ return Value(Value_Func{Fv: &FuncValue{Name: name}})
 }
 
-//line value.goal:170
+//line value.goal:192
 func FuncDeclVal(decl *ast.FuncDecl, env *Env) Value {
-	/*line value.goal:171*/ name := ""
-	/*line value.goal:172*/ if decl != nil && decl.Name != nil {
-		/*line value.goal:173*/ name = decl.Name.Name
+	/*line value.goal:193*/ name := ""
+	/*line value.goal:194*/ if decl != nil && decl.Name != nil {
+		/*line value.goal:195*/ name = decl.Name.Name
 	}
-	/*line value.goal:175*/ return Value(Value_Func{Fv: &FuncValue{Name: name, Decl: decl, Env: env}})
+	/*line value.goal:197*/ return Value(Value_Func{Fv: &FuncValue{Name: name, Decl: goalSome(decl), Env: goalSome(env)}})
 }
 
-//line value.go:233
+//line value.go:257
 const (
 	resultTypeID   = "Result"
 	resultOkTag    = "Ok"
@@ -240,7 +264,7 @@ const (
 	resultErrField = "error"
 )
 
-//line value.go:242
+//line value.go:266
 const (
 	optionTypeID    = "Option"
 	optionSomeTag   = "Some"
@@ -248,28 +272,28 @@ const (
 	optionSomeField = "value"
 )
 
-//line value.goal:208
+//line value.goal:230
 func payloadValue(v *Variant) (Value, bool) {
-	/*line value.goal:209*/ if v == nil || len(v.Fields) != 1 {
-		/*line value.goal:210*/ return NilVal(), false
+	/*line value.goal:231*/ if v == nil || len(v.Fields) != 1 {
+		/*line value.goal:232*/ return NilVal(), false
 	}
-	/*line value.goal:212*/ for _, fv := range v.Fields {
-		/*line value.goal:213*/ return fv, true
+	/*line value.goal:234*/ for _, fv := range v.Fields {
+		/*line value.goal:235*/ return fv, true
 	}
-	/*line value.goal:215*/ return NilVal(), false
+	/*line value.goal:237*/ return NilVal(), false
 }
 
-//line value.goal:220
+//line value.goal:242
 func VariantVal(typeID, tag string, fields map[string]Value) Value {
-	/*line value.goal:221*/ if fields == nil {
-		/*line value.goal:222*/ fields = map[string]Value{}
+	/*line value.goal:243*/ if fields == nil {
+		/*line value.goal:244*/ fields = map[string]Value{}
 	}
-	/*line value.goal:224*/ return Value(Value_Variant{Vr: &Variant{TypeID: typeID, Tag: tag, Fields: fields}})
+	/*line value.goal:246*/ return Value(Value_Variant{Vr: &Variant{TypeID: typeID, Tag: tag, Fields: fields}})
 }
 
-//line value.go:269
+//line value.go:293
 func Value_kind(v Value) Kind {
-	/*line value.goal:240*/ var k Kind
+	/*line value.goal:262*/ var k Kind
 	switch v.(type) {
 	case Value_Nil:
 		k = KindNil
@@ -294,1319 +318,1319 @@ func Value_kind(v Value) Kind {
 	default:
 		panic("unreachable: non-exhaustive Value (compiler invariant violated)")
 	}
-	/*line value.goal:252*/ return k
+	/*line value.goal:274*/ return k
 }
 
-//line value.go:299
+//line value.go:323
 func (v Value_Nil) kind() Kind {
 	return Value_kind(v)
 }
 
-//line value.go:304
+//line value.go:328
 func (v Value_Int) kind() Kind {
 	return Value_kind(v)
 }
 
-//line value.go:309
+//line value.go:333
 func (v Value_Float) kind() Kind {
 	return Value_kind(v)
 }
 
-//line value.go:314
+//line value.go:338
 func (v Value_Str) kind() Kind {
 	return Value_kind(v)
 }
 
-//line value.go:319
+//line value.go:343
 func (v Value_Bool) kind() Kind {
 	return Value_kind(v)
 }
 
-//line value.go:324
+//line value.go:348
 func (v Value_Struct) kind() Kind {
 	return Value_kind(v)
 }
 
-//line value.go:329
+//line value.go:353
 func (v Value_Slice) kind() Kind {
 	return Value_kind(v)
 }
 
-//line value.go:334
+//line value.go:358
 func (v Value_Map) kind() Kind {
 	return Value_kind(v)
 }
 
-//line value.go:339
+//line value.go:363
 func (v Value_Func) kind() Kind {
 	return Value_kind(v)
 }
 
-//line value.go:344
+//line value.go:368
 func (v Value_Variant) kind() Kind {
 	return Value_kind(v)
 }
 
-//line value.go:349
+//line value.go:373
 func Value_asInt(v Value) int64 {
-	/*line value.goal:257*/ var n int64
+	/*line value.goal:279*/ var n int64
 	switch v1 := v.(type) {
 	case Value_Int:
 		n = v1.N
 	default:
 		n = 0
 	}
-	/*line value.goal:261*/ return n
+	/*line value.goal:283*/ return n
 }
 
-//line value.go:361
+//line value.go:385
 func (v Value_Nil) asInt() int64 {
 	return Value_asInt(v)
 }
 
-//line value.go:366
+//line value.go:390
 func (v Value_Int) asInt() int64 {
 	return Value_asInt(v)
 }
 
-//line value.go:371
+//line value.go:395
 func (v Value_Float) asInt() int64 {
 	return Value_asInt(v)
 }
 
-//line value.go:376
+//line value.go:400
 func (v Value_Str) asInt() int64 {
 	return Value_asInt(v)
 }
 
-//line value.go:381
+//line value.go:405
 func (v Value_Bool) asInt() int64 {
 	return Value_asInt(v)
 }
 
-//line value.go:386
+//line value.go:410
 func (v Value_Struct) asInt() int64 {
 	return Value_asInt(v)
 }
 
-//line value.go:391
+//line value.go:415
 func (v Value_Slice) asInt() int64 {
 	return Value_asInt(v)
 }
 
-//line value.go:396
+//line value.go:420
 func (v Value_Map) asInt() int64 {
 	return Value_asInt(v)
 }
 
-//line value.go:401
+//line value.go:425
 func (v Value_Func) asInt() int64 {
 	return Value_asInt(v)
 }
 
-//line value.go:406
+//line value.go:430
 func (v Value_Variant) asInt() int64 {
 	return Value_asInt(v)
 }
 
-//line value.go:411
+//line value.go:435
 func Value_asFloat(v Value) float64 {
-	/*line value.goal:266*/ var f float64
+	/*line value.goal:288*/ var f float64
 	switch v1 := v.(type) {
 	case Value_Float:
 		f = v1.F
 	default:
 		f = 0
 	}
-	/*line value.goal:270*/ return f
+	/*line value.goal:292*/ return f
 }
 
-//line value.go:423
+//line value.go:447
 func (v Value_Nil) asFloat() float64 {
 	return Value_asFloat(v)
 }
 
-//line value.go:428
+//line value.go:452
 func (v Value_Int) asFloat() float64 {
 	return Value_asFloat(v)
 }
 
-//line value.go:433
+//line value.go:457
 func (v Value_Float) asFloat() float64 {
 	return Value_asFloat(v)
 }
 
-//line value.go:438
+//line value.go:462
 func (v Value_Str) asFloat() float64 {
 	return Value_asFloat(v)
 }
 
-//line value.go:443
+//line value.go:467
 func (v Value_Bool) asFloat() float64 {
 	return Value_asFloat(v)
 }
 
-//line value.go:448
+//line value.go:472
 func (v Value_Struct) asFloat() float64 {
 	return Value_asFloat(v)
 }
 
-//line value.go:453
+//line value.go:477
 func (v Value_Slice) asFloat() float64 {
 	return Value_asFloat(v)
 }
 
-//line value.go:458
+//line value.go:482
 func (v Value_Map) asFloat() float64 {
 	return Value_asFloat(v)
 }
 
-//line value.go:463
+//line value.go:487
 func (v Value_Func) asFloat() float64 {
 	return Value_asFloat(v)
 }
 
-//line value.go:468
+//line value.go:492
 func (v Value_Variant) asFloat() float64 {
 	return Value_asFloat(v)
 }
 
-//line value.go:473
+//line value.go:497
 func Value_asStr(v Value) string {
-	/*line value.goal:275*/ var s string
+	/*line value.goal:297*/ var s string
 	switch v1 := v.(type) {
 	case Value_Str:
 		s = v1.S
 	default:
 		s = ""
 	}
-	/*line value.goal:279*/ return s
+	/*line value.goal:301*/ return s
 }
 
-//line value.go:485
+//line value.go:509
 func (v Value_Nil) asStr() string {
 	return Value_asStr(v)
 }
 
-//line value.go:490
+//line value.go:514
 func (v Value_Int) asStr() string {
 	return Value_asStr(v)
 }
 
-//line value.go:495
+//line value.go:519
 func (v Value_Float) asStr() string {
 	return Value_asStr(v)
 }
 
-//line value.go:500
+//line value.go:524
 func (v Value_Str) asStr() string {
 	return Value_asStr(v)
 }
 
-//line value.go:505
+//line value.go:529
 func (v Value_Bool) asStr() string {
 	return Value_asStr(v)
 }
 
-//line value.go:510
+//line value.go:534
 func (v Value_Struct) asStr() string {
 	return Value_asStr(v)
 }
 
-//line value.go:515
+//line value.go:539
 func (v Value_Slice) asStr() string {
 	return Value_asStr(v)
 }
 
-//line value.go:520
+//line value.go:544
 func (v Value_Map) asStr() string {
 	return Value_asStr(v)
 }
 
-//line value.go:525
+//line value.go:549
 func (v Value_Func) asStr() string {
 	return Value_asStr(v)
 }
 
-//line value.go:530
+//line value.go:554
 func (v Value_Variant) asStr() string {
 	return Value_asStr(v)
 }
 
-//line value.go:535
+//line value.go:559
 func Value_asBool(v Value) bool {
-	/*line value.goal:284*/ var b bool
+	/*line value.goal:306*/ var b bool
 	switch v1 := v.(type) {
 	case Value_Bool:
 		b = v1.B
 	default:
 		b = false
 	}
-	/*line value.goal:288*/ return b
+	/*line value.goal:310*/ return b
 }
 
-//line value.go:547
+//line value.go:571
 func (v Value_Nil) asBool() bool {
 	return Value_asBool(v)
 }
 
-//line value.go:552
+//line value.go:576
 func (v Value_Int) asBool() bool {
 	return Value_asBool(v)
 }
 
-//line value.go:557
+//line value.go:581
 func (v Value_Float) asBool() bool {
 	return Value_asBool(v)
 }
 
-//line value.go:562
+//line value.go:586
 func (v Value_Str) asBool() bool {
 	return Value_asBool(v)
 }
 
-//line value.go:567
+//line value.go:591
 func (v Value_Bool) asBool() bool {
 	return Value_asBool(v)
 }
 
-//line value.go:572
+//line value.go:596
 func (v Value_Struct) asBool() bool {
 	return Value_asBool(v)
 }
 
-//line value.go:577
+//line value.go:601
 func (v Value_Slice) asBool() bool {
 	return Value_asBool(v)
 }
 
-//line value.go:582
+//line value.go:606
 func (v Value_Map) asBool() bool {
 	return Value_asBool(v)
 }
 
-//line value.go:587
+//line value.go:611
 func (v Value_Func) asBool() bool {
 	return Value_asBool(v)
 }
 
-//line value.go:592
+//line value.go:616
 func (v Value_Variant) asBool() bool {
 	return Value_asBool(v)
 }
 
-//line value.go:597
+//line value.go:621
 func Value_asStruct(v Value) *StructValue {
-	/*line value.goal:293*/ var s *StructValue
+	/*line value.goal:315*/ var s *StructValue
 	switch v1 := v.(type) {
 	case Value_Struct:
 		s = v1.Sv
 	default:
 		s = nil
 	}
-	/*line value.goal:297*/ return s
+	/*line value.goal:319*/ return s
 }
 
-//line value.go:609
+//line value.go:633
 func (v Value_Nil) asStruct() *StructValue {
 	return Value_asStruct(v)
 }
 
-//line value.go:614
+//line value.go:638
 func (v Value_Int) asStruct() *StructValue {
 	return Value_asStruct(v)
 }
 
-//line value.go:619
+//line value.go:643
 func (v Value_Float) asStruct() *StructValue {
 	return Value_asStruct(v)
 }
 
-//line value.go:624
+//line value.go:648
 func (v Value_Str) asStruct() *StructValue {
 	return Value_asStruct(v)
 }
 
-//line value.go:629
+//line value.go:653
 func (v Value_Bool) asStruct() *StructValue {
 	return Value_asStruct(v)
 }
 
-//line value.go:634
+//line value.go:658
 func (v Value_Struct) asStruct() *StructValue {
 	return Value_asStruct(v)
 }
 
-//line value.go:639
+//line value.go:663
 func (v Value_Slice) asStruct() *StructValue {
 	return Value_asStruct(v)
 }
 
-//line value.go:644
+//line value.go:668
 func (v Value_Map) asStruct() *StructValue {
 	return Value_asStruct(v)
 }
 
-//line value.go:649
+//line value.go:673
 func (v Value_Func) asStruct() *StructValue {
 	return Value_asStruct(v)
 }
 
-//line value.go:654
+//line value.go:678
 func (v Value_Variant) asStruct() *StructValue {
 	return Value_asStruct(v)
 }
 
-//line value.go:659
+//line value.go:683
 func Value_asSlice(v Value) []Value {
-	/*line value.goal:302*/ var xs []Value
+	/*line value.goal:324*/ var xs []Value
 	switch v1 := v.(type) {
 	case Value_Slice:
 		xs = v1.Xs
 	default:
 		xs = nil
 	}
-	/*line value.goal:306*/ return xs
+	/*line value.goal:328*/ return xs
 }
 
-//line value.go:671
+//line value.go:695
 func (v Value_Nil) asSlice() []Value {
 	return Value_asSlice(v)
 }
 
-//line value.go:676
+//line value.go:700
 func (v Value_Int) asSlice() []Value {
 	return Value_asSlice(v)
 }
 
-//line value.go:681
+//line value.go:705
 func (v Value_Float) asSlice() []Value {
 	return Value_asSlice(v)
 }
 
-//line value.go:686
+//line value.go:710
 func (v Value_Str) asSlice() []Value {
 	return Value_asSlice(v)
 }
 
-//line value.go:691
+//line value.go:715
 func (v Value_Bool) asSlice() []Value {
 	return Value_asSlice(v)
 }
 
-//line value.go:696
+//line value.go:720
 func (v Value_Struct) asSlice() []Value {
 	return Value_asSlice(v)
 }
 
-//line value.go:701
+//line value.go:725
 func (v Value_Slice) asSlice() []Value {
 	return Value_asSlice(v)
 }
 
-//line value.go:706
+//line value.go:730
 func (v Value_Map) asSlice() []Value {
 	return Value_asSlice(v)
 }
 
-//line value.go:711
+//line value.go:735
 func (v Value_Func) asSlice() []Value {
 	return Value_asSlice(v)
 }
 
-//line value.go:716
+//line value.go:740
 func (v Value_Variant) asSlice() []Value {
 	return Value_asSlice(v)
 }
 
-//line value.go:721
+//line value.go:745
 func Value_asMap(v Value) *MapValue {
-	/*line value.goal:311*/ var m *MapValue
+	/*line value.goal:333*/ var m *MapValue
 	switch v1 := v.(type) {
 	case Value_Map:
 		m = v1.Mv
 	default:
 		m = nil
 	}
-	/*line value.goal:315*/ return m
+	/*line value.goal:337*/ return m
 }
 
-//line value.go:733
+//line value.go:757
 func (v Value_Nil) asMap() *MapValue {
 	return Value_asMap(v)
 }
 
-//line value.go:738
+//line value.go:762
 func (v Value_Int) asMap() *MapValue {
 	return Value_asMap(v)
 }
 
-//line value.go:743
+//line value.go:767
 func (v Value_Float) asMap() *MapValue {
 	return Value_asMap(v)
 }
 
-//line value.go:748
+//line value.go:772
 func (v Value_Str) asMap() *MapValue {
 	return Value_asMap(v)
 }
 
-//line value.go:753
+//line value.go:777
 func (v Value_Bool) asMap() *MapValue {
 	return Value_asMap(v)
 }
 
-//line value.go:758
+//line value.go:782
 func (v Value_Struct) asMap() *MapValue {
 	return Value_asMap(v)
 }
 
-//line value.go:763
+//line value.go:787
 func (v Value_Slice) asMap() *MapValue {
 	return Value_asMap(v)
 }
 
-//line value.go:768
+//line value.go:792
 func (v Value_Map) asMap() *MapValue {
 	return Value_asMap(v)
 }
 
-//line value.go:773
+//line value.go:797
 func (v Value_Func) asMap() *MapValue {
 	return Value_asMap(v)
 }
 
-//line value.go:778
+//line value.go:802
 func (v Value_Variant) asMap() *MapValue {
 	return Value_asMap(v)
 }
 
-//line value.go:783
+//line value.go:807
 func Value_asFunc(v Value) *FuncValue {
-	/*line value.goal:320*/ var f *FuncValue
+	/*line value.goal:342*/ var f *FuncValue
 	switch v1 := v.(type) {
 	case Value_Func:
 		f = v1.Fv
 	default:
 		f = nil
 	}
-	/*line value.goal:324*/ return f
+	/*line value.goal:346*/ return f
 }
 
-//line value.go:795
+//line value.go:819
 func (v Value_Nil) asFunc() *FuncValue {
 	return Value_asFunc(v)
 }
 
-//line value.go:800
+//line value.go:824
 func (v Value_Int) asFunc() *FuncValue {
 	return Value_asFunc(v)
 }
 
-//line value.go:805
+//line value.go:829
 func (v Value_Float) asFunc() *FuncValue {
 	return Value_asFunc(v)
 }
 
-//line value.go:810
+//line value.go:834
 func (v Value_Str) asFunc() *FuncValue {
 	return Value_asFunc(v)
 }
 
-//line value.go:815
+//line value.go:839
 func (v Value_Bool) asFunc() *FuncValue {
 	return Value_asFunc(v)
 }
 
-//line value.go:820
+//line value.go:844
 func (v Value_Struct) asFunc() *FuncValue {
 	return Value_asFunc(v)
 }
 
-//line value.go:825
+//line value.go:849
 func (v Value_Slice) asFunc() *FuncValue {
 	return Value_asFunc(v)
 }
 
-//line value.go:830
+//line value.go:854
 func (v Value_Map) asFunc() *FuncValue {
 	return Value_asFunc(v)
 }
 
-//line value.go:835
+//line value.go:859
 func (v Value_Func) asFunc() *FuncValue {
 	return Value_asFunc(v)
 }
 
-//line value.go:840
+//line value.go:864
 func (v Value_Variant) asFunc() *FuncValue {
 	return Value_asFunc(v)
 }
 
-//line value.go:845
+//line value.go:869
 func Value_asVariant(v Value) *Variant {
-	/*line value.goal:329*/ var vr *Variant
+	/*line value.goal:351*/ var vr *Variant
 	switch v1 := v.(type) {
 	case Value_Variant:
 		vr = v1.Vr
 	default:
 		vr = nil
 	}
-	/*line value.goal:333*/ return vr
+	/*line value.goal:355*/ return vr
 }
 
-//line value.go:857
+//line value.go:881
 func (v Value_Nil) asVariant() *Variant {
 	return Value_asVariant(v)
 }
 
-//line value.go:862
+//line value.go:886
 func (v Value_Int) asVariant() *Variant {
 	return Value_asVariant(v)
 }
 
-//line value.go:867
+//line value.go:891
 func (v Value_Float) asVariant() *Variant {
 	return Value_asVariant(v)
 }
 
-//line value.go:872
+//line value.go:896
 func (v Value_Str) asVariant() *Variant {
 	return Value_asVariant(v)
 }
 
-//line value.go:877
+//line value.go:901
 func (v Value_Bool) asVariant() *Variant {
 	return Value_asVariant(v)
 }
 
-//line value.go:882
+//line value.go:906
 func (v Value_Struct) asVariant() *Variant {
 	return Value_asVariant(v)
 }
 
-//line value.go:887
+//line value.go:911
 func (v Value_Slice) asVariant() *Variant {
 	return Value_asVariant(v)
 }
 
-//line value.go:892
+//line value.go:916
 func (v Value_Map) asVariant() *Variant {
 	return Value_asVariant(v)
 }
 
-//line value.go:897
+//line value.go:921
 func (v Value_Func) asVariant() *Variant {
 	return Value_asVariant(v)
 }
 
-//line value.go:902
+//line value.go:926
 func (v Value_Variant) asVariant() *Variant {
 	return Value_asVariant(v)
 }
 
-//line value.go:907
+//line value.go:931
 func Value_isNil(v Value) bool {
-	/*line value.goal:338*/ var ok bool
+	/*line value.goal:360*/ var ok bool
 	switch v.(type) {
 	case Value_Nil:
 		ok = true
 	default:
 		ok = false
 	}
-	/*line value.goal:342*/ return ok
+	/*line value.goal:364*/ return ok
 }
 
-//line value.go:919
+//line value.go:943
 func (v Value_Nil) isNil() bool {
 	return Value_isNil(v)
 }
 
-//line value.go:924
+//line value.go:948
 func (v Value_Int) isNil() bool {
 	return Value_isNil(v)
 }
 
-//line value.go:929
+//line value.go:953
 func (v Value_Float) isNil() bool {
 	return Value_isNil(v)
 }
 
-//line value.go:934
+//line value.go:958
 func (v Value_Str) isNil() bool {
 	return Value_isNil(v)
 }
 
-//line value.go:939
+//line value.go:963
 func (v Value_Bool) isNil() bool {
 	return Value_isNil(v)
 }
 
-//line value.go:944
+//line value.go:968
 func (v Value_Struct) isNil() bool {
 	return Value_isNil(v)
 }
 
-//line value.go:949
+//line value.go:973
 func (v Value_Slice) isNil() bool {
 	return Value_isNil(v)
 }
 
-//line value.go:954
+//line value.go:978
 func (v Value_Map) isNil() bool {
 	return Value_isNil(v)
 }
 
-//line value.go:959
+//line value.go:983
 func (v Value_Func) isNil() bool {
 	return Value_isNil(v)
 }
 
-//line value.go:964
+//line value.go:988
 func (v Value_Variant) isNil() bool {
 	return Value_isNil(v)
 }
 
-//line value.go:969
+//line value.go:993
 func Value_isInt(v Value) bool {
-	/*line value.goal:347*/ var ok bool
+	/*line value.goal:369*/ var ok bool
 	switch v.(type) {
 	case Value_Int:
 		ok = true
 	default:
 		ok = false
 	}
-	/*line value.goal:351*/ return ok
+	/*line value.goal:373*/ return ok
 }
 
-//line value.go:981
+//line value.go:1005
 func (v Value_Nil) isInt() bool {
 	return Value_isInt(v)
 }
 
-//line value.go:986
+//line value.go:1010
 func (v Value_Int) isInt() bool {
 	return Value_isInt(v)
 }
 
-//line value.go:991
+//line value.go:1015
 func (v Value_Float) isInt() bool {
 	return Value_isInt(v)
 }
 
-//line value.go:996
+//line value.go:1020
 func (v Value_Str) isInt() bool {
 	return Value_isInt(v)
 }
 
-//line value.go:1001
+//line value.go:1025
 func (v Value_Bool) isInt() bool {
 	return Value_isInt(v)
 }
 
-//line value.go:1006
+//line value.go:1030
 func (v Value_Struct) isInt() bool {
 	return Value_isInt(v)
 }
 
-//line value.go:1011
+//line value.go:1035
 func (v Value_Slice) isInt() bool {
 	return Value_isInt(v)
 }
 
-//line value.go:1016
+//line value.go:1040
 func (v Value_Map) isInt() bool {
 	return Value_isInt(v)
 }
 
-//line value.go:1021
+//line value.go:1045
 func (v Value_Func) isInt() bool {
 	return Value_isInt(v)
 }
 
-//line value.go:1026
+//line value.go:1050
 func (v Value_Variant) isInt() bool {
 	return Value_isInt(v)
 }
 
-//line value.go:1031
+//line value.go:1055
 func Value_isFloat(v Value) bool {
-	/*line value.goal:356*/ var ok bool
+	/*line value.goal:378*/ var ok bool
 	switch v.(type) {
 	case Value_Float:
 		ok = true
 	default:
 		ok = false
 	}
-	/*line value.goal:360*/ return ok
+	/*line value.goal:382*/ return ok
 }
 
-//line value.go:1043
+//line value.go:1067
 func (v Value_Nil) isFloat() bool {
 	return Value_isFloat(v)
 }
 
-//line value.go:1048
+//line value.go:1072
 func (v Value_Int) isFloat() bool {
 	return Value_isFloat(v)
 }
 
-//line value.go:1053
+//line value.go:1077
 func (v Value_Float) isFloat() bool {
 	return Value_isFloat(v)
 }
 
-//line value.go:1058
+//line value.go:1082
 func (v Value_Str) isFloat() bool {
 	return Value_isFloat(v)
 }
 
-//line value.go:1063
+//line value.go:1087
 func (v Value_Bool) isFloat() bool {
 	return Value_isFloat(v)
 }
 
-//line value.go:1068
+//line value.go:1092
 func (v Value_Struct) isFloat() bool {
 	return Value_isFloat(v)
 }
 
-//line value.go:1073
+//line value.go:1097
 func (v Value_Slice) isFloat() bool {
 	return Value_isFloat(v)
 }
 
-//line value.go:1078
+//line value.go:1102
 func (v Value_Map) isFloat() bool {
 	return Value_isFloat(v)
 }
 
-//line value.go:1083
+//line value.go:1107
 func (v Value_Func) isFloat() bool {
 	return Value_isFloat(v)
 }
 
-//line value.go:1088
+//line value.go:1112
 func (v Value_Variant) isFloat() bool {
 	return Value_isFloat(v)
 }
 
-//line value.go:1093
+//line value.go:1117
 func Value_isStr(v Value) bool {
-	/*line value.goal:365*/ var ok bool
+	/*line value.goal:387*/ var ok bool
 	switch v.(type) {
 	case Value_Str:
 		ok = true
 	default:
 		ok = false
 	}
-	/*line value.goal:369*/ return ok
+	/*line value.goal:391*/ return ok
 }
 
-//line value.go:1105
+//line value.go:1129
 func (v Value_Nil) isStr() bool {
 	return Value_isStr(v)
 }
 
-//line value.go:1110
+//line value.go:1134
 func (v Value_Int) isStr() bool {
 	return Value_isStr(v)
 }
 
-//line value.go:1115
+//line value.go:1139
 func (v Value_Float) isStr() bool {
 	return Value_isStr(v)
 }
 
-//line value.go:1120
+//line value.go:1144
 func (v Value_Str) isStr() bool {
 	return Value_isStr(v)
 }
 
-//line value.go:1125
+//line value.go:1149
 func (v Value_Bool) isStr() bool {
 	return Value_isStr(v)
 }
 
-//line value.go:1130
+//line value.go:1154
 func (v Value_Struct) isStr() bool {
 	return Value_isStr(v)
 }
 
-//line value.go:1135
+//line value.go:1159
 func (v Value_Slice) isStr() bool {
 	return Value_isStr(v)
 }
 
-//line value.go:1140
+//line value.go:1164
 func (v Value_Map) isStr() bool {
 	return Value_isStr(v)
 }
 
-//line value.go:1145
+//line value.go:1169
 func (v Value_Func) isStr() bool {
 	return Value_isStr(v)
 }
 
-//line value.go:1150
+//line value.go:1174
 func (v Value_Variant) isStr() bool {
 	return Value_isStr(v)
 }
 
-//line value.go:1155
+//line value.go:1179
 func Value_isBool(v Value) bool {
-	/*line value.goal:374*/ var ok bool
+	/*line value.goal:396*/ var ok bool
 	switch v.(type) {
 	case Value_Bool:
 		ok = true
 	default:
 		ok = false
 	}
-	/*line value.goal:378*/ return ok
+	/*line value.goal:400*/ return ok
 }
 
-//line value.go:1167
+//line value.go:1191
 func (v Value_Nil) isBool() bool {
 	return Value_isBool(v)
 }
 
-//line value.go:1172
+//line value.go:1196
 func (v Value_Int) isBool() bool {
 	return Value_isBool(v)
 }
 
-//line value.go:1177
+//line value.go:1201
 func (v Value_Float) isBool() bool {
 	return Value_isBool(v)
 }
 
-//line value.go:1182
+//line value.go:1206
 func (v Value_Str) isBool() bool {
 	return Value_isBool(v)
 }
 
-//line value.go:1187
+//line value.go:1211
 func (v Value_Bool) isBool() bool {
 	return Value_isBool(v)
 }
 
-//line value.go:1192
+//line value.go:1216
 func (v Value_Struct) isBool() bool {
 	return Value_isBool(v)
 }
 
-//line value.go:1197
+//line value.go:1221
 func (v Value_Slice) isBool() bool {
 	return Value_isBool(v)
 }
 
-//line value.go:1202
+//line value.go:1226
 func (v Value_Map) isBool() bool {
 	return Value_isBool(v)
 }
 
-//line value.go:1207
+//line value.go:1231
 func (v Value_Func) isBool() bool {
 	return Value_isBool(v)
 }
 
-//line value.go:1212
+//line value.go:1236
 func (v Value_Variant) isBool() bool {
 	return Value_isBool(v)
 }
 
-//line value.go:1217
+//line value.go:1241
 func Value_isStruct(v Value) bool {
-	/*line value.goal:383*/ var ok bool
+	/*line value.goal:405*/ var ok bool
 	switch v1 := v.(type) {
 	case Value_Struct:
 		ok = v1.Sv != nil
 	default:
 		ok = false
 	}
-	/*line value.goal:387*/ return ok
+	/*line value.goal:409*/ return ok
 }
 
-//line value.go:1229
+//line value.go:1253
 func (v Value_Nil) isStruct() bool {
 	return Value_isStruct(v)
 }
 
-//line value.go:1234
+//line value.go:1258
 func (v Value_Int) isStruct() bool {
 	return Value_isStruct(v)
 }
 
-//line value.go:1239
+//line value.go:1263
 func (v Value_Float) isStruct() bool {
 	return Value_isStruct(v)
 }
 
-//line value.go:1244
+//line value.go:1268
 func (v Value_Str) isStruct() bool {
 	return Value_isStruct(v)
 }
 
-//line value.go:1249
+//line value.go:1273
 func (v Value_Bool) isStruct() bool {
 	return Value_isStruct(v)
 }
 
-//line value.go:1254
+//line value.go:1278
 func (v Value_Struct) isStruct() bool {
 	return Value_isStruct(v)
 }
 
-//line value.go:1259
+//line value.go:1283
 func (v Value_Slice) isStruct() bool {
 	return Value_isStruct(v)
 }
 
-//line value.go:1264
+//line value.go:1288
 func (v Value_Map) isStruct() bool {
 	return Value_isStruct(v)
 }
 
-//line value.go:1269
+//line value.go:1293
 func (v Value_Func) isStruct() bool {
 	return Value_isStruct(v)
 }
 
-//line value.go:1274
+//line value.go:1298
 func (v Value_Variant) isStruct() bool {
 	return Value_isStruct(v)
 }
 
-//line value.go:1279
+//line value.go:1303
 func Value_isSlice(v Value) bool {
-	/*line value.goal:392*/ var ok bool
+	/*line value.goal:414*/ var ok bool
 	switch v.(type) {
 	case Value_Slice:
 		ok = true
 	default:
 		ok = false
 	}
-	/*line value.goal:396*/ return ok
+	/*line value.goal:418*/ return ok
 }
 
-//line value.go:1291
+//line value.go:1315
 func (v Value_Nil) isSlice() bool {
 	return Value_isSlice(v)
 }
 
-//line value.go:1296
+//line value.go:1320
 func (v Value_Int) isSlice() bool {
 	return Value_isSlice(v)
 }
 
-//line value.go:1301
+//line value.go:1325
 func (v Value_Float) isSlice() bool {
 	return Value_isSlice(v)
 }
 
-//line value.go:1306
+//line value.go:1330
 func (v Value_Str) isSlice() bool {
 	return Value_isSlice(v)
 }
 
-//line value.go:1311
+//line value.go:1335
 func (v Value_Bool) isSlice() bool {
 	return Value_isSlice(v)
 }
 
-//line value.go:1316
+//line value.go:1340
 func (v Value_Struct) isSlice() bool {
 	return Value_isSlice(v)
 }
 
-//line value.go:1321
+//line value.go:1345
 func (v Value_Slice) isSlice() bool {
 	return Value_isSlice(v)
 }
 
-//line value.go:1326
+//line value.go:1350
 func (v Value_Map) isSlice() bool {
 	return Value_isSlice(v)
 }
 
-//line value.go:1331
+//line value.go:1355
 func (v Value_Func) isSlice() bool {
 	return Value_isSlice(v)
 }
 
-//line value.go:1336
+//line value.go:1360
 func (v Value_Variant) isSlice() bool {
 	return Value_isSlice(v)
 }
 
-//line value.go:1341
+//line value.go:1365
 func Value_isMap(v Value) bool {
-	/*line value.goal:401*/ var ok bool
+	/*line value.goal:423*/ var ok bool
 	switch v1 := v.(type) {
 	case Value_Map:
 		ok = v1.Mv != nil
 	default:
 		ok = false
 	}
-	/*line value.goal:405*/ return ok
+	/*line value.goal:427*/ return ok
 }
 
-//line value.go:1353
+//line value.go:1377
 func (v Value_Nil) isMap() bool {
 	return Value_isMap(v)
 }
 
-//line value.go:1358
+//line value.go:1382
 func (v Value_Int) isMap() bool {
 	return Value_isMap(v)
 }
 
-//line value.go:1363
+//line value.go:1387
 func (v Value_Float) isMap() bool {
 	return Value_isMap(v)
 }
 
-//line value.go:1368
+//line value.go:1392
 func (v Value_Str) isMap() bool {
 	return Value_isMap(v)
 }
 
-//line value.go:1373
+//line value.go:1397
 func (v Value_Bool) isMap() bool {
 	return Value_isMap(v)
 }
 
-//line value.go:1378
+//line value.go:1402
 func (v Value_Struct) isMap() bool {
 	return Value_isMap(v)
 }
 
-//line value.go:1383
+//line value.go:1407
 func (v Value_Slice) isMap() bool {
 	return Value_isMap(v)
 }
 
-//line value.go:1388
+//line value.go:1412
 func (v Value_Map) isMap() bool {
 	return Value_isMap(v)
 }
 
-//line value.go:1393
+//line value.go:1417
 func (v Value_Func) isMap() bool {
 	return Value_isMap(v)
 }
 
-//line value.go:1398
+//line value.go:1422
 func (v Value_Variant) isMap() bool {
 	return Value_isMap(v)
 }
 
-//line value.go:1403
+//line value.go:1427
 func Value_isFunc(v Value) bool {
-	/*line value.goal:410*/ var ok bool
+	/*line value.goal:432*/ var ok bool
 	switch v.(type) {
 	case Value_Func:
 		ok = true
 	default:
 		ok = false
 	}
-	/*line value.goal:414*/ return ok
+	/*line value.goal:436*/ return ok
 }
 
-//line value.go:1415
+//line value.go:1439
 func (v Value_Nil) isFunc() bool {
 	return Value_isFunc(v)
 }
 
-//line value.go:1420
+//line value.go:1444
 func (v Value_Int) isFunc() bool {
 	return Value_isFunc(v)
 }
 
-//line value.go:1425
+//line value.go:1449
 func (v Value_Float) isFunc() bool {
 	return Value_isFunc(v)
 }
 
-//line value.go:1430
+//line value.go:1454
 func (v Value_Str) isFunc() bool {
 	return Value_isFunc(v)
 }
 
-//line value.go:1435
+//line value.go:1459
 func (v Value_Bool) isFunc() bool {
 	return Value_isFunc(v)
 }
 
-//line value.go:1440
+//line value.go:1464
 func (v Value_Struct) isFunc() bool {
 	return Value_isFunc(v)
 }
 
-//line value.go:1445
+//line value.go:1469
 func (v Value_Slice) isFunc() bool {
 	return Value_isFunc(v)
 }
 
-//line value.go:1450
+//line value.go:1474
 func (v Value_Map) isFunc() bool {
 	return Value_isFunc(v)
 }
 
-//line value.go:1455
+//line value.go:1479
 func (v Value_Func) isFunc() bool {
 	return Value_isFunc(v)
 }
 
-//line value.go:1460
+//line value.go:1484
 func (v Value_Variant) isFunc() bool {
 	return Value_isFunc(v)
 }
 
-//line value.go:1465
+//line value.go:1489
 func Value_isVariant(v Value) bool {
-	/*line value.goal:419*/ var ok bool
+	/*line value.goal:441*/ var ok bool
 	switch v1 := v.(type) {
 	case Value_Variant:
 		ok = v1.Vr != nil
 	default:
 		ok = false
 	}
-	/*line value.goal:423*/ return ok
+	/*line value.goal:445*/ return ok
 }
 
-//line value.go:1477
+//line value.go:1501
 func (v Value_Nil) isVariant() bool {
 	return Value_isVariant(v)
 }
 
-//line value.go:1482
+//line value.go:1506
 func (v Value_Int) isVariant() bool {
 	return Value_isVariant(v)
 }
 
-//line value.go:1487
+//line value.go:1511
 func (v Value_Float) isVariant() bool {
 	return Value_isVariant(v)
 }
 
-//line value.go:1492
+//line value.go:1516
 func (v Value_Str) isVariant() bool {
 	return Value_isVariant(v)
 }
 
-//line value.go:1497
+//line value.go:1521
 func (v Value_Bool) isVariant() bool {
 	return Value_isVariant(v)
 }
 
-//line value.go:1502
+//line value.go:1526
 func (v Value_Struct) isVariant() bool {
 	return Value_isVariant(v)
 }
 
-//line value.go:1507
+//line value.go:1531
 func (v Value_Slice) isVariant() bool {
 	return Value_isVariant(v)
 }
 
-//line value.go:1512
+//line value.go:1536
 func (v Value_Map) isVariant() bool {
 	return Value_isVariant(v)
 }
 
-//line value.go:1517
+//line value.go:1541
 func (v Value_Func) isVariant() bool {
 	return Value_isVariant(v)
 }
 
-//line value.go:1522
+//line value.go:1546
 func (v Value_Variant) isVariant() bool {
 	return Value_isVariant(v)
 }
 
-//line value.goal:430
+//line value.goal:452
 func variantPatternTag(p *ast.VariantPattern) (string, bool) {
-	/*line value.goal:431*/ if p == nil || p.Variant == nil {
-		/*line value.goal:432*/ return "", false
+	/*line value.goal:453*/ if p == nil || p.Variant == nil {
+		/*line value.goal:454*/ return "", false
 	}
-	/*line value.goal:434*/ return p.Variant.Name, true
+	/*line value.goal:456*/ return p.Variant.Name, true
 }
 
-//line value.goal:440
+//line value.goal:462
 func variantLitTag(vl *ast.VariantLit) (string, bool) {
-	/*line value.goal:441*/ if vl == nil || vl.Variant == nil {
-		/*line value.goal:442*/ return "", false
+	/*line value.goal:463*/ if vl == nil || vl.Variant == nil {
+		/*line value.goal:464*/ return "", false
 	}
-	/*line value.goal:444*/ return vl.Variant.Name, true
+	/*line value.goal:466*/ return vl.Variant.Name, true
 }
 
-//line value.go:1543
+//line value.go:1567
 func Value_Field(v Value, name string) (Value, bool) {
-	/*line value.goal:450*/ vr := v.asVariant()
-	/*line value.goal:451*/ if vr == nil {
-		/*line value.goal:452*/ return NilVal(), false
+	/*line value.goal:472*/ vr := v.asVariant()
+	/*line value.goal:473*/ if vr == nil {
+		/*line value.goal:474*/ return NilVal(), false
 	}
-	/*line value.goal:454*/ f, ok := vr.Fields[name]
-	/*line value.goal:455*/ return f, ok
+	/*line value.goal:476*/ f, ok := vr.Fields[name]
+	/*line value.goal:477*/ return f, ok
 }
 
-//line value.go:1553
+//line value.go:1577
 func (v Value_Nil) Field(name string) (Value, bool) {
 	return Value_Field(v, name)
 }
 
-//line value.go:1558
+//line value.go:1582
 func (v Value_Int) Field(name string) (Value, bool) {
 	return Value_Field(v, name)
 }
 
-//line value.go:1563
+//line value.go:1587
 func (v Value_Float) Field(name string) (Value, bool) {
 	return Value_Field(v, name)
 }
 
-//line value.go:1568
+//line value.go:1592
 func (v Value_Str) Field(name string) (Value, bool) {
 	return Value_Field(v, name)
 }
 
-//line value.go:1573
+//line value.go:1597
 func (v Value_Bool) Field(name string) (Value, bool) {
 	return Value_Field(v, name)
 }
 
-//line value.go:1578
+//line value.go:1602
 func (v Value_Struct) Field(name string) (Value, bool) {
 	return Value_Field(v, name)
 }
 
-//line value.go:1583
+//line value.go:1607
 func (v Value_Slice) Field(name string) (Value, bool) {
 	return Value_Field(v, name)
 }
 
-//line value.go:1588
+//line value.go:1612
 func (v Value_Map) Field(name string) (Value, bool) {
 	return Value_Field(v, name)
 }
 
-//line value.go:1593
+//line value.go:1617
 func (v Value_Func) Field(name string) (Value, bool) {
 	return Value_Field(v, name)
 }
 
-//line value.go:1598
+//line value.go:1622
 func (v Value_Variant) Field(name string) (Value, bool) {
 	return Value_Field(v, name)
 }
 
-//line value.go:1603
+//line value.go:1627
 func Value_Equal(v Value, other Value) bool {
-	/*line value.goal:462*/ if v.kind() != other.kind() {
-		/*line value.goal:463*/ return false
+	/*line value.goal:484*/ if v.kind() != other.kind() {
+		/*line value.goal:485*/ return false
 	}
-	/*line value.goal:465*/ var eq bool
+	/*line value.goal:487*/ var eq bool
 	switch v1 := v.(type) {
 	case Value_Nil:
 		eq = true
@@ -1631,113 +1655,113 @@ func Value_Equal(v Value, other Value) bool {
 	default:
 		panic("unreachable: non-exhaustive Value (compiler invariant violated)")
 	}
-	/*line value.goal:477*/ return eq
+	/*line value.goal:499*/ return eq
 }
 
-//line value.go:1636
+//line value.go:1660
 func (v Value_Nil) Equal(other Value) bool {
 	return Value_Equal(v, other)
 }
 
-//line value.go:1641
+//line value.go:1665
 func (v Value_Int) Equal(other Value) bool {
 	return Value_Equal(v, other)
 }
 
-//line value.go:1646
+//line value.go:1670
 func (v Value_Float) Equal(other Value) bool {
 	return Value_Equal(v, other)
 }
 
-//line value.go:1651
+//line value.go:1675
 func (v Value_Str) Equal(other Value) bool {
 	return Value_Equal(v, other)
 }
 
-//line value.go:1656
+//line value.go:1680
 func (v Value_Bool) Equal(other Value) bool {
 	return Value_Equal(v, other)
 }
 
-//line value.go:1661
+//line value.go:1685
 func (v Value_Struct) Equal(other Value) bool {
 	return Value_Equal(v, other)
 }
 
-//line value.go:1666
+//line value.go:1690
 func (v Value_Slice) Equal(other Value) bool {
 	return Value_Equal(v, other)
 }
 
-//line value.go:1671
+//line value.go:1695
 func (v Value_Map) Equal(other Value) bool {
 	return Value_Equal(v, other)
 }
 
-//line value.go:1676
+//line value.go:1700
 func (v Value_Func) Equal(other Value) bool {
 	return Value_Equal(v, other)
 }
 
-//line value.go:1681
+//line value.go:1705
 func (v Value_Variant) Equal(other Value) bool {
 	return Value_Equal(v, other)
 }
 
-//line value.goal:480
+//line value.goal:502
 func sliceEqual(a, b []Value) bool {
-	/*line value.goal:481*/ if len(a) != len(b) {
-		/*line value.goal:482*/ return false
+	/*line value.goal:503*/ if len(a) != len(b) {
+		/*line value.goal:504*/ return false
 	}
-	/*line value.goal:484*/ for i := range a {
-		/*line value.goal:485*/ if !a[i].Equal(b[i]) {
-			/*line value.goal:486*/ return false
+	/*line value.goal:506*/ for i := range a {
+		/*line value.goal:507*/ if !a[i].Equal(b[i]) {
+			/*line value.goal:508*/ return false
 		}
 	}
-	/*line value.goal:489*/ return true
+	/*line value.goal:511*/ return true
 }
 
-//line value.goal:492
+//line value.goal:514
 func fieldsEqual(a, b map[string]Value) bool {
-	/*line value.goal:493*/ if len(a) != len(b) {
-		/*line value.goal:494*/ return false
+	/*line value.goal:515*/ if len(a) != len(b) {
+		/*line value.goal:516*/ return false
 	}
-	/*line value.goal:496*/ for k, av := range a {
-		/*line value.goal:497*/ bv, ok := b[k]
-		/*line value.goal:498*/ if !ok || !av.Equal(bv) {
-			/*line value.goal:499*/ return false
+	/*line value.goal:518*/ for k, av := range a {
+		/*line value.goal:519*/ bv, ok := b[k]
+		/*line value.goal:520*/ if !ok || !av.Equal(bv) {
+			/*line value.goal:521*/ return false
 		}
 	}
-	/*line value.goal:502*/ return true
+	/*line value.goal:524*/ return true
 }
 
-//line value.goal:505
+//line value.goal:527
 func structEqual(a, b *StructValue) bool {
-	/*line value.goal:506*/ if a == nil || b == nil {
-		/*line value.goal:507*/ return a == b
+	/*line value.goal:528*/ if a == nil || b == nil {
+		/*line value.goal:529*/ return a == b
 	}
-	/*line value.goal:509*/ return a.TypeID == b.TypeID && fieldsEqual(a.Fields, b.Fields)
+	/*line value.goal:531*/ return a.TypeID == b.TypeID && fieldsEqual(a.Fields, b.Fields)
 }
 
-//line value.goal:512
+//line value.goal:534
 func mapEqual(a, b *MapValue) bool {
-	/*line value.goal:513*/ if a == nil || b == nil {
-		/*line value.goal:514*/ return a == b
+	/*line value.goal:535*/ if a == nil || b == nil {
+		/*line value.goal:536*/ return a == b
 	}
-	/*line value.goal:516*/ return fieldsEqual(a.Entries, b.Entries)
+	/*line value.goal:538*/ return fieldsEqual(a.Entries, b.Entries)
 }
 
-//line value.goal:519
+//line value.goal:541
 func variantEqual(a, b *Variant) bool {
-	/*line value.goal:520*/ if a == nil || b == nil {
-		/*line value.goal:521*/ return a == b
+	/*line value.goal:542*/ if a == nil || b == nil {
+		/*line value.goal:543*/ return a == b
 	}
-	/*line value.goal:523*/ return a.TypeID == b.TypeID && a.Tag == b.Tag && fieldsEqual(a.Fields, b.Fields)
+	/*line value.goal:545*/ return a.TypeID == b.TypeID && a.Tag == b.Tag && fieldsEqual(a.Fields, b.Fields)
 }
 
-//line value.go:1737
+//line value.go:1761
 func Value_String(v Value) string {
-	/*line value.goal:528*/ var s string
+	/*line value.goal:550*/ var s string
 	switch v1 := v.(type) {
 	case Value_Nil:
 		s = "nil"
@@ -1762,115 +1786,115 @@ func Value_String(v Value) string {
 	default:
 		panic("unreachable: non-exhaustive Value (compiler invariant violated)")
 	}
-	/*line value.goal:540*/ return s
+	/*line value.goal:562*/ return s
 }
 
-//line value.go:1767
+//line value.go:1791
 func (v Value_Nil) String() string {
 	return Value_String(v)
 }
 
-//line value.go:1772
+//line value.go:1796
 func (v Value_Int) String() string {
 	return Value_String(v)
 }
 
-//line value.go:1777
+//line value.go:1801
 func (v Value_Float) String() string {
 	return Value_String(v)
 }
 
-//line value.go:1782
+//line value.go:1806
 func (v Value_Str) String() string {
 	return Value_String(v)
 }
 
-//line value.go:1787
+//line value.go:1811
 func (v Value_Bool) String() string {
 	return Value_String(v)
 }
 
-//line value.go:1792
+//line value.go:1816
 func (v Value_Struct) String() string {
 	return Value_String(v)
 }
 
-//line value.go:1797
+//line value.go:1821
 func (v Value_Slice) String() string {
 	return Value_String(v)
 }
 
-//line value.go:1802
+//line value.go:1826
 func (v Value_Map) String() string {
 	return Value_String(v)
 }
 
-//line value.go:1807
+//line value.go:1831
 func (v Value_Func) String() string {
 	return Value_String(v)
 }
 
-//line value.go:1812
+//line value.go:1836
 func (v Value_Variant) String() string {
 	return Value_String(v)
 }
 
-//line value.goal:544
+//line value.goal:566
 func renderStruct(sv *StructValue) string {
-	/*line value.goal:545*/ if sv == nil {
-		/*line value.goal:546*/ return "struct{}"
+	/*line value.goal:567*/ if sv == nil {
+		/*line value.goal:568*/ return "struct{}"
 	}
-	/*line value.goal:548*/ return sv.TypeID + "{" + renderFields(sv.Fields) + "}"
+	/*line value.goal:570*/ return sv.TypeID + "{" + renderFields(sv.Fields) + "}"
 }
 
-//line value.goal:552
+//line value.goal:574
 func renderSlice(xs []Value) string {
-	/*line value.goal:553*/ parts := make([]string, len(xs))
-	/*line value.goal:554*/ for i, e := range xs {
-		/*line value.goal:555*/ parts[i] = e.String()
+	/*line value.goal:575*/ parts := make([]string, len(xs))
+	/*line value.goal:576*/ for i, e := range xs {
+		/*line value.goal:577*/ parts[i] = e.String()
 	}
-	/*line value.goal:557*/ return "[" + strings.Join(parts, " ") + "]"
+	/*line value.goal:579*/ return "[" + strings.Join(parts, " ") + "]"
 }
 
-//line value.goal:561
+//line value.goal:583
 func renderMap(mv *MapValue) string {
-	/*line value.goal:562*/ if mv == nil {
-		/*line value.goal:563*/ return "map[]"
+	/*line value.goal:584*/ if mv == nil {
+		/*line value.goal:585*/ return "map[]"
 	}
-	/*line value.goal:565*/ return "map[" + renderFields(mv.Entries) + "]"
+	/*line value.goal:587*/ return "map[" + renderFields(mv.Entries) + "]"
 }
 
-//line value.goal:569
+//line value.goal:591
 func renderFunc(fv *FuncValue) string {
-	/*line value.goal:570*/ name := ""
-	/*line value.goal:571*/ if fv != nil {
-		/*line value.goal:572*/ name = fv.Name
+	/*line value.goal:592*/ name := ""
+	/*line value.goal:593*/ if fv != nil {
+		/*line value.goal:594*/ name = fv.Name
 	}
-	/*line value.goal:574*/ return "func " + name
+	/*line value.goal:596*/ return "func " + name
 }
 
-//line value.goal:578
+//line value.goal:600
 func renderVariant(vr *Variant) string {
-	/*line value.goal:579*/ if vr == nil {
-		/*line value.goal:580*/ return "<variant>"
+	/*line value.goal:601*/ if vr == nil {
+		/*line value.goal:602*/ return "<variant>"
 	}
-	/*line value.goal:582*/ s := vr.TypeID + "." + vr.Tag
-	/*line value.goal:583*/ if len(vr.Fields) > 0 {
-		/*line value.goal:584*/ s += "(" + renderFields(vr.Fields) + ")"
+	/*line value.goal:604*/ s := vr.TypeID + "." + vr.Tag
+	/*line value.goal:605*/ if len(vr.Fields) > 0 {
+		/*line value.goal:606*/ s += "(" + renderFields(vr.Fields) + ")"
 	}
-	/*line value.goal:586*/ return s
+	/*line value.goal:608*/ return s
 }
 
-//line value.goal:590
+//line value.goal:612
 func renderFields(m map[string]Value) string {
-	/*line value.goal:591*/ keys := make([]string, 0, len(m))
-	/*line value.goal:592*/ for k := range m {
-		/*line value.goal:593*/ keys = append(keys, k)
+	/*line value.goal:613*/ keys := make([]string, 0, len(m))
+	/*line value.goal:614*/ for k := range m {
+		/*line value.goal:615*/ keys = append(keys, k)
 	}
-	/*line value.goal:595*/ sort.Strings(keys)
-	/*line value.goal:596*/ parts := make([]string, len(keys))
-	/*line value.goal:597*/ for i, k := range keys {
-		/*line value.goal:598*/ parts[i] = k + ": " + m[k].String()
+	/*line value.goal:617*/ sort.Strings(keys)
+	/*line value.goal:618*/ parts := make([]string, len(keys))
+	/*line value.goal:619*/ for i, k := range keys {
+		/*line value.goal:620*/ parts[i] = k + ": " + m[k].String()
 	}
-	/*line value.goal:600*/ return strings.Join(parts, ", ")
+	/*line value.goal:622*/ return strings.Join(parts, ", ")
 }

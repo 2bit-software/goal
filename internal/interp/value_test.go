@@ -100,7 +100,7 @@ func TestFuncDeclValConstructor(t *testing.T) {
 		t.Fatalf("FuncDeclVal kind = %v, want KindFunc", fv.kind())
 	}
 	f := fv.asFunc()
-	if f == nil || f.Name != "g" || f.Decl != decl || f.Env != env {
+	if f == nil || f.Name != "g" || f.declPtr() != decl || f.envPtr() != env {
 		t.Fatalf("FuncDeclVal payload = %+v, want Name g with decl/env wired", f)
 	}
 	// A nil declaration yields an empty name and no panic.
