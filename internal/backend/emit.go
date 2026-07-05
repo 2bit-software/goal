@@ -371,103 +371,110 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 		/*line emit.goal:497*/ e.curParams = prevCurParams
 	}()
 	/*line emit.goal:505*/ if d.Recv != nil && len(d.Recv.List) > 0 {
-		/*line emit.goal:506*/ if en := enumOf(e.info, recvBaseType(d.Recv.List[0].Type)); en != nil {
-			/*line emit.goal:507*/ e.enumMethodDecl(d, en)
-			/*line emit.goal:508*/ return
+		/*line emit.goal:506*/ recvType := d.Recv.List[0].Type
+		/*line emit.goal:513*/ if _, isPtr := recvType.(*ast.StarExpr); isPtr {
+			/*line emit.goal:514*/ if en := enumOf(e.info, recvBaseType(recvType)); en != nil {
+				/*line emit.goal:515*/ e.fail("method on sum type %s has a pointer receiver, which is not supported: a sum type lowers to a Go interface and cannot carry a pointer receiver; use a value receiver", en.Name)
+				/*line emit.goal:516*/ return
+			}
+		}
+		/*line emit.goal:519*/ if en := enumOf(e.info, recvBaseType(recvType)); en != nil {
+			/*line emit.goal:520*/ e.enumMethodDecl(d, en)
+			/*line emit.goal:521*/ return
 		}
 	}
-	/*line emit.goal:511*/ e.p("func ")
-	/*line emit.goal:512*/ if d.Recv != nil {
-		/*line emit.goal:513*/ e.fieldList(d.Recv, "(", ")")
-		/*line emit.goal:514*/ e.p(" ")
+	/*line emit.goal:524*/ e.p("func ")
+	/*line emit.goal:525*/ if d.Recv != nil {
+		/*line emit.goal:526*/ e.fieldList(d.Recv, "(", ")")
+		/*line emit.goal:527*/ e.p(" ")
 	}
-	/*line emit.goal:516*/ if d.Name != nil {
-		/*line emit.goal:517*/ e.p(d.Name.Name)
+	/*line emit.goal:529*/ if d.Name != nil {
+		/*line emit.goal:530*/ e.p(d.Name.Name)
 	}
-	/*line emit.goal:519*/ e.funcSig(d.Type)
-	/*line emit.goal:520*/ if d.Body != nil {
-		/*line emit.goal:521*/ e.p(" ")
-		/*line emit.goal:522*/ e.block(d.Body)
+	/*line emit.goal:532*/ e.funcSig(d.Type)
+	/*line emit.goal:533*/ if d.Body != nil {
+		/*line emit.goal:534*/ e.p(" ")
+		/*line emit.goal:535*/ e.block(d.Body)
 	}
 }
 
-//line emit.goal:533
+//line emit.goal:546
 func (e *emitter) enumMethodDecl(d *ast.FuncDecl, en *sema.Enum) {
-	/*line emit.goal:534*/ if d.Name == nil {
-		/*line emit.goal:535*/ e.fail("enum %s has a receiver method with no name", en.Name)
-		/*line emit.goal:536*/ return
+	/*line emit.goal:547*/ if d.Name == nil {
+		/*line emit.goal:548*/ e.fail("enum %s has a receiver method with no name", en.Name)
+		/*line emit.goal:549*/ return
 	}
-	/*line emit.goal:538*/ if d.Body == nil {
-		/*line emit.goal:539*/ e.fail("enum method %s.%s has no body", en.Name, d.Name.Name)
-		/*line emit.goal:540*/ return
+	/*line emit.goal:551*/ if d.Body == nil {
+		/*line emit.goal:552*/ e.fail("enum method %s.%s has no body", en.Name, d.Name.Name)
+		/*line emit.goal:553*/ return
 	}
-	/*line emit.goal:542*/ recvField := d.Recv.List[0]
-	/*line emit.goal:546*/ recvName := ""
-	/*line emit.goal:547*/ if len(recvField.Names) > 0 && recvField.Names[0] != nil && recvField.Names[0].Name != "_" {
-		/*line emit.goal:548*/ recvName = recvField.Names[0].Name
+	/*line emit.goal:555*/ recvField := d.Recv.List[0]
+	/*line emit.goal:559*/ recvName := ""
+	/*line emit.goal:560*/ if len(recvField.Names) > 0 && recvField.Names[0] != nil && recvField.Names[0].Name != "_" {
+		/*line emit.goal:561*/ recvName = recvField.Names[0].Name
 	}
-	/*line emit.goal:550*/ if recvName == "" {
-		/*line emit.goal:551*/ recvName = e.gensym("recv")
+	/*line emit.goal:563*/ if recvName == "" {
+		/*line emit.goal:564*/ recvName = e.gensym("recv")
 	}
-	/*line emit.goal:553*/ free := en.Name + "_" + d.Name.Name
-	/*line emit.goal:555*/ e.p("func " + free + "(" + recvName + " ")
-	/*line emit.goal:556*/ e.expr(recvField.Type)
-	/*line emit.goal:557*/ if d.Type != nil && d.Type.Params != nil {
-		/*line emit.goal:558*/ for _, f := range d.Type.Params.List {
-			/*line emit.goal:559*/ e.p(", ")
-			/*line emit.goal:560*/ e.field(f)
+	/*line emit.goal:566*/ free := en.Name + "_" + d.Name.Name
+	/*line emit.goal:568*/ e.p("func " + free + "(" + recvName + " ")
+	/*line emit.goal:569*/ e.expr(recvField.Type)
+	/*line emit.goal:570*/ if d.Type != nil && d.Type.Params != nil {
+		/*line emit.goal:571*/ for _, f := range d.Type.Params.List {
+			/*line emit.goal:572*/ e.p(", ")
+			/*line emit.goal:573*/ e.field(f)
 		}
 	}
-	/*line emit.goal:563*/ e.p(")")
-	/*line emit.goal:564*/ e.funcResults(d.Type)
-	/*line emit.goal:565*/ e.p(" ")
-	/*line emit.goal:566*/ e.block(d.Body)
-	/*line emit.goal:568*/ hasResults := d.Type != nil && d.Type.Results != nil && len(d.Type.Results.List) > 0
-	/*line emit.goal:569*/ args := enumMethodArgNames(d.Type)
-	/*line emit.goal:570*/ for _, v := range en.Variants {
-		/*line emit.goal:571*/ e.p("\n\n")
-		/*line emit.goal:572*/ e.p("func (" + recvName + " " + en.Name + "_" + v.Name + ") " + d.Name.Name)
-		/*line emit.goal:573*/ e.funcSig(d.Type)
-		/*line emit.goal:574*/ e.p(" {\n")
-		/*line emit.goal:575*/ if hasResults {
-			/*line emit.goal:576*/ e.p("return ")
+	/*line emit.goal:576*/ e.p(")")
+	/*line emit.goal:577*/ e.funcResults(d.Type)
+	/*line emit.goal:578*/ e.p(" ")
+	/*line emit.goal:579*/ e.block(d.Body)
+	/*line emit.goal:581*/ hasResults := d.Type != nil && d.Type.Results != nil && len(d.Type.Results.List) > 0
+	/*line emit.goal:582*/ args := enumMethodArgNames(d.Type)
+	/*line emit.goal:583*/ for _, v := range en.Variants {
+		/*line emit.goal:584*/ e.p("\n\n")
+		/*line emit.goal:585*/ e.p("func (" + recvName + " " + en.Name + "_" + v.Name + ") " + d.Name.Name)
+		/*line emit.goal:586*/ e.funcSig(d.Type)
+		/*line emit.goal:587*/ e.p(" {\n")
+		/*line emit.goal:588*/ if hasResults {
+			/*line emit.goal:589*/ e.p("return ")
 		}
-		/*line emit.goal:578*/ e.p(free + "(" + recvName)
-		/*line emit.goal:579*/ for _, a := range args {
-			/*line emit.goal:580*/ e.p(", " + a)
+		/*line emit.goal:591*/ e.p(free + "(" + recvName)
+		/*line emit.goal:592*/ for _, a := range args {
+			/*line emit.goal:593*/ e.p(", " + a)
 		}
-		/*line emit.goal:582*/ e.p(")\n}")
+		/*line emit.goal:595*/ e.p(")\n}")
 	}
 }
 
-//line emit.goal:589
+//line emit.goal:602
 func enumMethodArgNames(t *ast.FuncType) []string {
-	/*line emit.goal:590*/ if t == nil || t.Params == nil {
-		/*line emit.goal:591*/ return nil
+	/*line emit.goal:603*/ if t == nil || t.Params == nil {
+		/*line emit.goal:604*/ return nil
 	}
-	/*line emit.goal:593*/ var out []string
+	/*line emit.goal:606*/ var out []string
 
-	/*line emit.goal:594*/
+	/*line emit.goal:607*/
 	n := len(t.Params.List)
-	/*line emit.goal:595*/ for i, f := range t.Params.List {
-		/*line emit.goal:596*/ spread := ""
-		/*line emit.goal:597*/ if _, isVariadic := f.Type.(*ast.Ellipsis); isVariadic && i == n-1 {
-			/*line emit.goal:598*/ spread = "..."
+	/*line emit.goal:608*/ for i, f := range t.Params.List {
+		/*line emit.goal:609*/ spread := ""
+		/*line emit.goal:610*/ if _, isVariadic := f.Type.(*ast.Ellipsis); isVariadic && i == n-1 {
+			/*line emit.goal:611*/ spread = "..."
 		}
-		/*line emit.goal:600*/ for _, id := range f.Names {
-			/*line emit.goal:601*/ if id != nil && id.Name != "" {
-				/*line emit.goal:602*/ out = append(out, id.Name+spread)
+		/*line emit.goal:613*/ for _, id := range f.Names {
+			/*line emit.goal:614*/ if id != nil && id.Name != "" {
+				/*line emit.goal:615*/ out = append(out, id.Name+spread)
 			}
 		}
 	}
-	/*line emit.goal:606*/ return out
+	/*line emit.goal:619*/ return out
 }
 
-//line emit.goal:614
+//line emit.goal:627
 func (e *emitter) closedResultTE(d *ast.FuncDecl) (t, eType string, ok bool) {
-	/*line emit.goal:615*/ if d.Name != nil && e.info != nil && e.info.FuncSignatures != nil {
-		/*line emit.goal:616*/ if sig, found := e.info.FuncSignatures[d.Name.Name]; found {
-			/*line emit.goal:617*/ var isClosed bool
+	/*line emit.goal:628*/ if d.Name != nil && e.info != nil && e.info.FuncSignatures != nil {
+		/*line emit.goal:629*/ if sig, found := e.info.FuncSignatures[d.Name.Name]; found {
+			/*line emit.goal:630*/ var isClosed bool
 			switch sig.Mode.(type) {
 			case sema.Mode_ModeResultClosed:
 				isClosed = true
@@ -480,1069 +487,1069 @@ func (e *emitter) closedResultTE(d *ast.FuncDecl) (t, eType string, ok bool) {
 			default:
 				panic("unreachable: non-exhaustive sema.Mode (compiler invariant violated)")
 			}
-			/*line emit.goal:623*/ if isClosed {
-				/*line emit.goal:624*/ return sig.T, sig.E, true
+			/*line emit.goal:636*/ if isClosed {
+				/*line emit.goal:637*/ return sig.T, sig.E, true
 			}
 		}
 	}
-	/*line emit.goal:628*/ il, isList := closedResultType(d.Type)
-	/*line emit.goal:629*/ if !isList {
-		/*line emit.goal:630*/ return "", "", false
+	/*line emit.goal:641*/ il, isList := closedResultType(d.Type)
+	/*line emit.goal:642*/ if !isList {
+		/*line emit.goal:643*/ return "", "", false
 	}
-	/*line emit.goal:632*/ return e.exprText(il.Indices[0]), e.exprText(il.Indices[1]), true
+	/*line emit.goal:645*/ return e.exprText(il.Indices[0]), e.exprText(il.Indices[1]), true
 }
 
-//line emit.goal:636
+//line emit.goal:649
 func (e *emitter) funcSig(t *ast.FuncType) {
-	/*line emit.goal:637*/ if t == nil {
-		/*line emit.goal:638*/ e.fail("function has no signature")
-		/*line emit.goal:639*/ return
+	/*line emit.goal:650*/ if t == nil {
+		/*line emit.goal:651*/ e.fail("function has no signature")
+		/*line emit.goal:652*/ return
 	}
-	/*line emit.goal:644*/ if t.TypeParams != nil {
-		/*line emit.goal:645*/ e.fieldList(t.TypeParams, "[", "]")
+	/*line emit.goal:657*/ if t.TypeParams != nil {
+		/*line emit.goal:658*/ e.fieldList(t.TypeParams, "[", "]")
 	}
-	/*line emit.goal:647*/ e.fieldList(t.Params, "(", ")")
-	/*line emit.goal:648*/ e.funcResults(t)
+	/*line emit.goal:660*/ e.fieldList(t.Params, "(", ")")
+	/*line emit.goal:661*/ e.funcResults(t)
 }
 
-//line emit.goal:655
+//line emit.goal:668
 func (e *emitter) funcResults(t *ast.FuncType) {
-	/*line emit.goal:656*/ if t.Results != nil && len(t.Results.List) > 0 {
-		/*line emit.goal:657*/ e.p(" ")
-		/*line emit.goal:663*/ if kind, success := resultOptionKind(t); kind == roResultOpen {
-			/*line emit.goal:667*/ ok, errn := e.okName, e.errName
-			/*line emit.goal:668*/ if ok == "" {
-				/*line emit.goal:669*/ ok = "ok"
+	/*line emit.goal:669*/ if t.Results != nil && len(t.Results.List) > 0 {
+		/*line emit.goal:670*/ e.p(" ")
+		/*line emit.goal:676*/ if kind, success := resultOptionKind(t); kind == roResultOpen {
+			/*line emit.goal:680*/ ok, errn := e.okName, e.errName
+			/*line emit.goal:681*/ if ok == "" {
+				/*line emit.goal:682*/ ok = "ok"
 			}
-			/*line emit.goal:671*/ if errn == "" {
-				/*line emit.goal:672*/ errn = "err"
+			/*line emit.goal:684*/ if errn == "" {
+				/*line emit.goal:685*/ errn = "err"
 			}
-			/*line emit.goal:674*/ e.p("(" + ok + " ")
-			/*line emit.goal:675*/ e.expr(success)
-			/*line emit.goal:676*/ e.p(", " + errn + " error)")
-			/*line emit.goal:677*/ return
+			/*line emit.goal:687*/ e.p("(" + ok + " ")
+			/*line emit.goal:688*/ e.expr(success)
+			/*line emit.goal:689*/ e.p(", " + errn + " error)")
+			/*line emit.goal:690*/ return
 		}
-		/*line emit.goal:682*/ if len(t.Results.List) > 1 || len(t.Results.List[0].Names) > 0 {
-			/*line emit.goal:683*/ e.fieldList(t.Results, "(", ")")
+		/*line emit.goal:695*/ if len(t.Results.List) > 1 || len(t.Results.List[0].Names) > 0 {
+			/*line emit.goal:696*/ e.fieldList(t.Results, "(", ")")
 		} else {
-			/*line emit.goal:685*/ e.expr(t.Results.List[0].Type)
+			/*line emit.goal:698*/ e.expr(t.Results.List[0].Type)
 		}
 	}
 }
 
-//line emit.goal:694
+//line emit.goal:707
 func (e *emitter) fieldList(fl *ast.FieldList, open, close string) {
-	/*line emit.goal:695*/ e.p(open)
-	/*line emit.goal:696*/ if fl != nil {
-		/*line emit.goal:697*/ for i, f := range fl.List {
-			/*line emit.goal:698*/ if i > 0 {
-				/*line emit.goal:699*/ e.p(", ")
+	/*line emit.goal:708*/ e.p(open)
+	/*line emit.goal:709*/ if fl != nil {
+		/*line emit.goal:710*/ for i, f := range fl.List {
+			/*line emit.goal:711*/ if i > 0 {
+				/*line emit.goal:712*/ e.p(", ")
 			}
-			/*line emit.goal:701*/ e.field(f)
+			/*line emit.goal:714*/ e.field(f)
 		}
 	}
-	/*line emit.goal:704*/ e.p(close)
+	/*line emit.goal:717*/ e.p(close)
 }
 
-//line emit.goal:712
+//line emit.goal:725
 func (e *emitter) structType(x *ast.StructType) {
-	/*line emit.goal:713*/ e.p("struct {\n")
-	/*line emit.goal:714*/ if x.Fields != nil {
-		/*line emit.goal:715*/ for _, f := range x.Fields.List {
-			/*line emit.goal:716*/ e.field(f)
-			/*line emit.goal:717*/ e.p("\n")
+	/*line emit.goal:726*/ e.p("struct {\n")
+	/*line emit.goal:727*/ if x.Fields != nil {
+		/*line emit.goal:728*/ for _, f := range x.Fields.List {
+			/*line emit.goal:729*/ e.field(f)
+			/*line emit.goal:730*/ e.p("\n")
 		}
 	}
-	/*line emit.goal:720*/ e.p("}")
+	/*line emit.goal:733*/ e.p("}")
 }
 
-//line emit.goal:726
+//line emit.goal:739
 func (e *emitter) interfaceType(x *ast.InterfaceType) {
-	/*line emit.goal:727*/ e.p("interface {\n")
-	/*line emit.goal:728*/ if x.Methods != nil {
-		/*line emit.goal:729*/ for _, m := range x.Methods.List {
-			/*line emit.goal:730*/ e.interfaceMethod(m)
-			/*line emit.goal:731*/ e.p("\n")
+	/*line emit.goal:740*/ e.p("interface {\n")
+	/*line emit.goal:741*/ if x.Methods != nil {
+		/*line emit.goal:742*/ for _, m := range x.Methods.List {
+			/*line emit.goal:743*/ e.interfaceMethod(m)
+			/*line emit.goal:744*/ e.p("\n")
 		}
 	}
-	/*line emit.goal:734*/ e.p("}")
+	/*line emit.goal:747*/ e.p("}")
 }
 
-//line emit.goal:740
+//line emit.goal:753
 func (e *emitter) interfaceMethod(m *ast.Field) {
-	/*line emit.goal:741*/ if len(m.Names) > 0 {
-		/*line emit.goal:742*/ e.identList(m.Names)
-		/*line emit.goal:743*/ if ft, ok := m.Type.(*ast.FuncType); ok {
-			/*line emit.goal:744*/ e.funcSig(ft)
+	/*line emit.goal:754*/ if len(m.Names) > 0 {
+		/*line emit.goal:755*/ e.identList(m.Names)
+		/*line emit.goal:756*/ if ft, ok := m.Type.(*ast.FuncType); ok {
+			/*line emit.goal:757*/ e.funcSig(ft)
 		} else if m.Type != nil {
-			/*line emit.goal:746*/ e.p(" ")
-			/*line emit.goal:747*/ e.expr(m.Type)
+			/*line emit.goal:759*/ e.p(" ")
+			/*line emit.goal:760*/ e.expr(m.Type)
 		}
 	} else if m.Type != nil {
-		/*line emit.goal:750*/ e.expr(m.Type)
+		/*line emit.goal:763*/ e.expr(m.Type)
 	}
 }
 
-//line emit.goal:754
+//line emit.goal:767
 func (e *emitter) field(f *ast.Field) {
-	/*line emit.goal:755*/ if len(f.Names) > 0 {
-		/*line emit.goal:756*/ e.identList(f.Names)
-		/*line emit.goal:757*/ e.p(" ")
+	/*line emit.goal:768*/ if len(f.Names) > 0 {
+		/*line emit.goal:769*/ e.identList(f.Names)
+		/*line emit.goal:770*/ e.p(" ")
 	}
-	/*line emit.goal:759*/ if f.Type != nil {
-		/*line emit.goal:760*/ e.expr(f.Type)
+	/*line emit.goal:772*/ if f.Type != nil {
+		/*line emit.goal:773*/ e.expr(f.Type)
 	}
-	/*line emit.goal:762*/ if f.Tag != nil {
-		/*line emit.goal:763*/ e.p(" ")
-		/*line emit.goal:764*/ e.p(f.Tag.Value)
+	/*line emit.goal:775*/ if f.Tag != nil {
+		/*line emit.goal:776*/ e.p(" ")
+		/*line emit.goal:777*/ e.p(f.Tag.Value)
 	}
 }
 
-//line emit.goal:768
+//line emit.goal:781
 func (e *emitter) block(b *ast.BlockStmt) {
-	/*line emit.goal:769*/ e.p("{\n")
-	/*line emit.goal:770*/ e.blockInner(b)
-	/*line emit.goal:771*/ e.p("}")
+	/*line emit.goal:782*/ e.p("{\n")
+	/*line emit.goal:783*/ e.blockInner(b)
+	/*line emit.goal:784*/ e.p("}")
 }
 
-//line emit.goal:783
+//line emit.goal:796
 func (e *emitter) blockInner(b *ast.BlockStmt) {
-	/*line emit.goal:784*/ for _, s := range b.List {
-		/*line emit.goal:785*/ if e.srcFile != "" && s.Pos().IsValid() {
-			/*line emit.goal:786*/ e.p(fmt.Sprintf("/*line %s:%d*/", e.srcFile, s.Pos().Line))
+	/*line emit.goal:797*/ for _, s := range b.List {
+		/*line emit.goal:798*/ if e.srcFile != "" && s.Pos().IsValid() {
+			/*line emit.goal:799*/ e.p(fmt.Sprintf("/*line %s:%d*/", e.srcFile, s.Pos().Line))
 		}
-		/*line emit.goal:788*/ e.stmt(s)
-		/*line emit.goal:789*/ e.p("\n")
+		/*line emit.goal:801*/ e.stmt(s)
+		/*line emit.goal:802*/ e.p("\n")
 	}
 }
 
-//line emit.goal:793
+//line emit.goal:806
 func (e *emitter) stmt(s ast.Stmt) {
-	/*line emit.goal:794*/ switch v1 := s.(type) {
+	/*line emit.goal:807*/ switch v1 := s.(type) {
 	case *ast.BlockStmt:
 		{
-			/*line emit.goal:796*/ e.block(v1)
+			/*line emit.goal:809*/ e.block(v1)
 		}
 	case *ast.ExprStmt:
 		{
-			/*line emit.goal:802*/ switch v2 := v1.X.(type) {
+			/*line emit.goal:815*/ switch v2 := v1.X.(type) {
 			case *ast.MatchExpr:
 				{
-					/*line emit.goal:804*/ e.matchStmt(v2)
+					/*line emit.goal:817*/ e.matchStmt(v2)
 				}
 			case *ast.UnwrapExpr:
 				{
-					/*line emit.goal:807*/ e.unwrap("_", v2, true, ":=")
+					/*line emit.goal:820*/ e.unwrap("_", v2, true, ":=")
 				}
 			default:
 				{
-					/*line emit.goal:810*/ e.expr(v1.X)
+					/*line emit.goal:823*/ e.expr(v1.X)
 				}
 			}
 		}
 	case *ast.AssignStmt:
 		{
-			/*line emit.goal:819*/ if e.tryAssignMatch(v1) {
-				/*line emit.goal:820*/ return
+			/*line emit.goal:832*/ if e.tryAssignMatch(v1) {
+				/*line emit.goal:833*/ return
 			}
-			/*line emit.goal:824*/ if len(v1.Rhs) == 1 {
-				/*line emit.goal:825*/ if u, ok := v1.Rhs[0].(*ast.UnwrapExpr); ok {
-					/*line emit.goal:832*/ if len(v1.Lhs) != 1 {
-						/*line emit.goal:833*/ e.fail("`?` at assignment position binds a single value; a multi-value left-hand side is not supported — assign to one variable")
-						/*line emit.goal:834*/ return
+			/*line emit.goal:837*/ if len(v1.Rhs) == 1 {
+				/*line emit.goal:838*/ if u, ok := v1.Rhs[0].(*ast.UnwrapExpr); ok {
+					/*line emit.goal:845*/ if len(v1.Lhs) != 1 {
+						/*line emit.goal:846*/ e.fail("`?` at assignment position binds a single value; a multi-value left-hand side is not supported — assign to one variable")
+						/*line emit.goal:847*/ return
 					}
-					/*line emit.goal:836*/ id, ok := v1.Lhs[0].(*ast.Ident)
-					/*line emit.goal:837*/ if !ok {
-						/*line emit.goal:838*/ e.fail("`?` can only assign to a simple variable or `_`; assigning through this left-hand side is not supported")
-						/*line emit.goal:839*/ return
+					/*line emit.goal:849*/ id, ok := v1.Lhs[0].(*ast.Ident)
+					/*line emit.goal:850*/ if !ok {
+						/*line emit.goal:851*/ e.fail("`?` can only assign to a simple variable or `_`; assigning through this left-hand side is not supported")
+						/*line emit.goal:852*/ return
 					}
-					/*line emit.goal:841*/ e.unwrap(id.Name, u, id.Name == "_", v1.Tok.String())
-					/*line emit.goal:842*/ return
+					/*line emit.goal:854*/ e.unwrap(id.Name, u, id.Name == "_", v1.Tok.String())
+					/*line emit.goal:855*/ return
 				}
 			}
-			/*line emit.goal:845*/ e.exprList(v1.Lhs)
-			/*line emit.goal:846*/ e.p(" ")
-			/*line emit.goal:847*/ e.p(v1.Tok.String())
-			/*line emit.goal:848*/ e.p(" ")
-			/*line emit.goal:849*/ e.exprList(v1.Rhs)
+			/*line emit.goal:858*/ e.exprList(v1.Lhs)
+			/*line emit.goal:859*/ e.p(" ")
+			/*line emit.goal:860*/ e.p(v1.Tok.String())
+			/*line emit.goal:861*/ e.p(" ")
+			/*line emit.goal:862*/ e.exprList(v1.Rhs)
 		}
 	case *ast.IncDecStmt:
 		{
-			/*line emit.goal:852*/ e.expr(v1.X)
-			/*line emit.goal:853*/ e.p(v1.Tok.String())
+			/*line emit.goal:865*/ e.expr(v1.X)
+			/*line emit.goal:866*/ e.p(v1.Tok.String())
 		}
 	case *ast.ReturnStmt:
 		{
-			/*line emit.goal:856*/ e.returnStmt(v1)
+			/*line emit.goal:869*/ e.returnStmt(v1)
 		}
 	case *ast.IfStmt:
 		{
-			/*line emit.goal:859*/ e.ifStmt(v1)
+			/*line emit.goal:872*/ e.ifStmt(v1)
 		}
 	case *ast.ForStmt:
 		{
-			/*line emit.goal:862*/ e.forStmt(v1)
+			/*line emit.goal:875*/ e.forStmt(v1)
 		}
 	case *ast.RangeStmt:
 		{
-			/*line emit.goal:865*/ e.rangeStmt(v1)
+			/*line emit.goal:878*/ e.rangeStmt(v1)
 		}
 	case *ast.SwitchStmt:
 		{
-			/*line emit.goal:868*/ e.switchStmt(v1)
+			/*line emit.goal:881*/ e.switchStmt(v1)
 		}
 	case *ast.TypeSwitchStmt:
 		{
-			/*line emit.goal:871*/ e.typeSwitchStmt(v1)
+			/*line emit.goal:884*/ e.typeSwitchStmt(v1)
 		}
 	case *ast.SelectStmt:
 		{
-			/*line emit.goal:874*/ e.selectStmt(v1)
+			/*line emit.goal:887*/ e.selectStmt(v1)
 		}
 	case *ast.SendStmt:
 		{
-			/*line emit.goal:877*/ e.expr(v1.Chan)
-			/*line emit.goal:878*/ e.p(" <- ")
-			/*line emit.goal:879*/ e.expr(v1.Value)
+			/*line emit.goal:890*/ e.expr(v1.Chan)
+			/*line emit.goal:891*/ e.p(" <- ")
+			/*line emit.goal:892*/ e.expr(v1.Value)
 		}
 	case *ast.LabeledStmt:
 		{
-			/*line emit.goal:882*/ e.p(v1.Label.Name)
-			/*line emit.goal:883*/ e.p(":\n")
-			/*line emit.goal:884*/ e.stmt(v1.Stmt)
+			/*line emit.goal:895*/ e.p(v1.Label.Name)
+			/*line emit.goal:896*/ e.p(":\n")
+			/*line emit.goal:897*/ e.stmt(v1.Stmt)
 		}
 	case *ast.DeclStmt:
 		{
-			/*line emit.goal:889*/ if e.tryVarMatch(v1.Decl) {
-				/*line emit.goal:890*/ return
+			/*line emit.goal:902*/ if e.tryVarMatch(v1.Decl) {
+				/*line emit.goal:903*/ return
 			}
-			/*line emit.goal:892*/ e.decl(v1.Decl)
+			/*line emit.goal:905*/ e.decl(v1.Decl)
 		}
 	case *ast.DeferStmt:
 		{
-			/*line emit.goal:895*/ e.p("defer ")
-			/*line emit.goal:896*/ e.expr(v1.Call)
+			/*line emit.goal:908*/ e.p("defer ")
+			/*line emit.goal:909*/ e.expr(v1.Call)
 		}
 	case *ast.GoStmt:
 		{
-			/*line emit.goal:899*/ e.p("go ")
-			/*line emit.goal:900*/ e.expr(v1.Call)
+			/*line emit.goal:912*/ e.p("go ")
+			/*line emit.goal:913*/ e.expr(v1.Call)
 		}
 	case *ast.BranchStmt:
 		{
-			/*line emit.goal:903*/ e.p(v1.Tok.String())
-			/*line emit.goal:904*/ if v1.Label != nil {
-				/*line emit.goal:905*/ e.p(" ")
-				/*line emit.goal:906*/ e.p(v1.Label.Name)
+			/*line emit.goal:916*/ e.p(v1.Tok.String())
+			/*line emit.goal:917*/ if v1.Label != nil {
+				/*line emit.goal:918*/ e.p(" ")
+				/*line emit.goal:919*/ e.p(v1.Label.Name)
 			}
 		}
 	case *ast.AssertStmt:
 		{
-			/*line emit.goal:910*/ e.assertStmt(v1)
+			/*line emit.goal:923*/ e.assertStmt(v1)
 		}
 	case *ast.EmptyStmt:
 		{
 		}
 	default:
 		{
-			/*line emit.goal:916*/ e.fail("unsupported statement %T", s)
+			/*line emit.goal:929*/ e.fail("unsupported statement %T", s)
 		}
 	}
 }
 
-//line emit.goal:927
+//line emit.goal:940
 func (e *emitter) assertStmt(s *ast.AssertStmt) {
-	/*line emit.goal:928*/ if s.Cond == nil {
-		/*line emit.goal:929*/ e.fail("assert statement has no condition")
-		/*line emit.goal:930*/ return
+	/*line emit.goal:941*/ if s.Cond == nil {
+		/*line emit.goal:942*/ e.fail("assert statement has no condition")
+		/*line emit.goal:943*/ return
 	}
-	/*line emit.goal:932*/ condText := e.exprText(s.Cond)
-	/*line emit.goal:933*/ e.p("if !(")
-	/*line emit.goal:934*/ e.expr(s.Cond)
-	/*line emit.goal:935*/ e.p(") { panic(")
-	/*line emit.goal:936*/ if s.Msg == nil {
-		/*line emit.goal:937*/ e.p(strconv.Quote("assertion failed: " + condText))
+	/*line emit.goal:945*/ condText := e.exprText(s.Cond)
+	/*line emit.goal:946*/ e.p("if !(")
+	/*line emit.goal:947*/ e.expr(s.Cond)
+	/*line emit.goal:948*/ e.p(") { panic(")
+	/*line emit.goal:949*/ if s.Msg == nil {
+		/*line emit.goal:950*/ e.p(strconv.Quote("assertion failed: " + condText))
 	} else {
-		/*line emit.goal:939*/ e.p(strconv.Quote("assertion failed: " + condText + ": "))
-		/*line emit.goal:940*/ e.p(" + fmt.Sprintf(")
-		/*line emit.goal:941*/ e.expr(s.Msg)
-		/*line emit.goal:942*/ for _, a := range s.Args {
-			/*line emit.goal:943*/ e.p(", ")
-			/*line emit.goal:944*/ e.expr(a)
+		/*line emit.goal:952*/ e.p(strconv.Quote("assertion failed: " + condText + ": "))
+		/*line emit.goal:953*/ e.p(" + fmt.Sprintf(")
+		/*line emit.goal:954*/ e.expr(s.Msg)
+		/*line emit.goal:955*/ for _, a := range s.Args {
+			/*line emit.goal:956*/ e.p(", ")
+			/*line emit.goal:957*/ e.expr(a)
 		}
-		/*line emit.goal:946*/ e.p(")")
+		/*line emit.goal:959*/ e.p(")")
 	}
-	/*line emit.goal:948*/ e.p(") }")
+	/*line emit.goal:961*/ e.p(") }")
 }
 
-//line emit.goal:951
+//line emit.goal:964
 func (e *emitter) ifStmt(s *ast.IfStmt) {
-	/*line emit.goal:952*/ e.p("if ")
-	/*line emit.goal:953*/ if s.Init != nil {
-		/*line emit.goal:954*/ e.stmt(s.Init)
-		/*line emit.goal:955*/ e.p("; ")
+	/*line emit.goal:965*/ e.p("if ")
+	/*line emit.goal:966*/ if s.Init != nil {
+		/*line emit.goal:967*/ e.stmt(s.Init)
+		/*line emit.goal:968*/ e.p("; ")
 	}
-	/*line emit.goal:957*/ e.expr(s.Cond)
-	/*line emit.goal:958*/ e.p(" ")
-	/*line emit.goal:959*/ e.block(s.Body)
-	/*line emit.goal:960*/ if s.Else != nil {
-		/*line emit.goal:961*/ e.p(" else ")
-		/*line emit.goal:962*/ e.stmt(s.Else)
+	/*line emit.goal:970*/ e.expr(s.Cond)
+	/*line emit.goal:971*/ e.p(" ")
+	/*line emit.goal:972*/ e.block(s.Body)
+	/*line emit.goal:973*/ if s.Else != nil {
+		/*line emit.goal:974*/ e.p(" else ")
+		/*line emit.goal:975*/ e.stmt(s.Else)
 	}
 }
 
-//line emit.goal:966
+//line emit.goal:979
 func (e *emitter) forStmt(s *ast.ForStmt) {
-	/*line emit.goal:967*/ e.p("for ")
-	/*line emit.goal:968*/ if s.Init != nil || s.Post != nil {
-		/*line emit.goal:969*/ if s.Init != nil {
-			/*line emit.goal:970*/ e.stmt(s.Init)
+	/*line emit.goal:980*/ e.p("for ")
+	/*line emit.goal:981*/ if s.Init != nil || s.Post != nil {
+		/*line emit.goal:982*/ if s.Init != nil {
+			/*line emit.goal:983*/ e.stmt(s.Init)
 		}
-		/*line emit.goal:972*/ e.p("; ")
-		/*line emit.goal:973*/ if s.Cond != nil {
-			/*line emit.goal:974*/ e.expr(s.Cond)
+		/*line emit.goal:985*/ e.p("; ")
+		/*line emit.goal:986*/ if s.Cond != nil {
+			/*line emit.goal:987*/ e.expr(s.Cond)
 		}
-		/*line emit.goal:976*/ e.p("; ")
-		/*line emit.goal:977*/ if s.Post != nil {
-			/*line emit.goal:978*/ e.stmt(s.Post)
+		/*line emit.goal:989*/ e.p("; ")
+		/*line emit.goal:990*/ if s.Post != nil {
+			/*line emit.goal:991*/ e.stmt(s.Post)
 		}
-		/*line emit.goal:980*/ e.p(" ")
+		/*line emit.goal:993*/ e.p(" ")
 	} else if s.Cond != nil {
-		/*line emit.goal:982*/ e.expr(s.Cond)
-		/*line emit.goal:983*/ e.p(" ")
+		/*line emit.goal:995*/ e.expr(s.Cond)
+		/*line emit.goal:996*/ e.p(" ")
 	}
-	/*line emit.goal:985*/ e.block(s.Body)
+	/*line emit.goal:998*/ e.block(s.Body)
 }
 
-//line emit.goal:992
+//line emit.goal:1005
 func (e *emitter) switchStmt(s *ast.SwitchStmt) {
-	/*line emit.goal:993*/ e.p("switch ")
-	/*line emit.goal:994*/ if s.Init != nil {
-		/*line emit.goal:995*/ e.stmt(s.Init)
-		/*line emit.goal:996*/ e.p("; ")
+	/*line emit.goal:1006*/ e.p("switch ")
+	/*line emit.goal:1007*/ if s.Init != nil {
+		/*line emit.goal:1008*/ e.stmt(s.Init)
+		/*line emit.goal:1009*/ e.p("; ")
 	}
-	/*line emit.goal:998*/ if s.Tag != nil {
-		/*line emit.goal:999*/ e.expr(s.Tag)
-		/*line emit.goal:1000*/ e.p(" ")
+	/*line emit.goal:1011*/ if s.Tag != nil {
+		/*line emit.goal:1012*/ e.expr(s.Tag)
+		/*line emit.goal:1013*/ e.p(" ")
 	}
-	/*line emit.goal:1002*/ e.p("{\n")
-	/*line emit.goal:1003*/ if s.Body != nil {
-		/*line emit.goal:1004*/ for _, c := range s.Body.List {
-			/*line emit.goal:1005*/ cc, ok := c.(*ast.CaseClause)
-			/*line emit.goal:1006*/ if !ok {
-				/*line emit.goal:1007*/ e.fail("unsupported switch body element %T (expected case clause)", c)
-				/*line emit.goal:1008*/ return
+	/*line emit.goal:1015*/ e.p("{\n")
+	/*line emit.goal:1016*/ if s.Body != nil {
+		/*line emit.goal:1017*/ for _, c := range s.Body.List {
+			/*line emit.goal:1018*/ cc, ok := c.(*ast.CaseClause)
+			/*line emit.goal:1019*/ if !ok {
+				/*line emit.goal:1020*/ e.fail("unsupported switch body element %T (expected case clause)", c)
+				/*line emit.goal:1021*/ return
 			}
-			/*line emit.goal:1010*/ e.caseClause(cc)
+			/*line emit.goal:1023*/ e.caseClause(cc)
 		}
 	}
-	/*line emit.goal:1013*/ e.p("}")
+	/*line emit.goal:1026*/ e.p("}")
 }
 
-//line emit.goal:1019
+//line emit.goal:1032
 func (e *emitter) caseClause(c *ast.CaseClause) {
-	/*line emit.goal:1020*/ if len(c.List) > 0 {
-		/*line emit.goal:1021*/ e.p("case ")
-		/*line emit.goal:1022*/ e.exprList(c.List)
-		/*line emit.goal:1023*/ e.p(":\n")
+	/*line emit.goal:1033*/ if len(c.List) > 0 {
+		/*line emit.goal:1034*/ e.p("case ")
+		/*line emit.goal:1035*/ e.exprList(c.List)
+		/*line emit.goal:1036*/ e.p(":\n")
 	} else {
-		/*line emit.goal:1025*/ e.p("default:\n")
+		/*line emit.goal:1038*/ e.p("default:\n")
 	}
-	/*line emit.goal:1027*/ for _, s := range c.Body {
-		/*line emit.goal:1028*/ e.stmt(s)
-		/*line emit.goal:1029*/ e.p("\n")
+	/*line emit.goal:1040*/ for _, s := range c.Body {
+		/*line emit.goal:1041*/ e.stmt(s)
+		/*line emit.goal:1042*/ e.p("\n")
 	}
 }
 
-//line emit.goal:1037
+//line emit.goal:1050
 func (e *emitter) typeSwitchStmt(s *ast.TypeSwitchStmt) {
-	/*line emit.goal:1038*/ e.p("switch ")
-	/*line emit.goal:1039*/ if s.Init != nil {
-		/*line emit.goal:1040*/ e.stmt(s.Init)
-		/*line emit.goal:1041*/ e.p("; ")
+	/*line emit.goal:1051*/ e.p("switch ")
+	/*line emit.goal:1052*/ if s.Init != nil {
+		/*line emit.goal:1053*/ e.stmt(s.Init)
+		/*line emit.goal:1054*/ e.p("; ")
 	}
-	/*line emit.goal:1043*/ e.stmt(s.Assign)
-	/*line emit.goal:1044*/ e.p(" {\n")
-	/*line emit.goal:1045*/ if s.Body != nil {
-		/*line emit.goal:1046*/ for _, c := range s.Body.List {
-			/*line emit.goal:1047*/ cc, ok := c.(*ast.CaseClause)
-			/*line emit.goal:1048*/ if !ok {
-				/*line emit.goal:1049*/ e.fail("unsupported type-switch body element %T (expected case clause)", c)
-				/*line emit.goal:1050*/ return
+	/*line emit.goal:1056*/ e.stmt(s.Assign)
+	/*line emit.goal:1057*/ e.p(" {\n")
+	/*line emit.goal:1058*/ if s.Body != nil {
+		/*line emit.goal:1059*/ for _, c := range s.Body.List {
+			/*line emit.goal:1060*/ cc, ok := c.(*ast.CaseClause)
+			/*line emit.goal:1061*/ if !ok {
+				/*line emit.goal:1062*/ e.fail("unsupported type-switch body element %T (expected case clause)", c)
+				/*line emit.goal:1063*/ return
 			}
-			/*line emit.goal:1052*/ e.caseClause(cc)
+			/*line emit.goal:1065*/ e.caseClause(cc)
 		}
 	}
-	/*line emit.goal:1055*/ e.p("}")
+	/*line emit.goal:1068*/ e.p("}")
 }
 
-//line emit.goal:1059
+//line emit.goal:1072
 func (e *emitter) selectStmt(s *ast.SelectStmt) {
-	/*line emit.goal:1060*/ e.p("select {\n")
-	/*line emit.goal:1061*/ if s.Body != nil {
-		/*line emit.goal:1062*/ for _, c := range s.Body.List {
-			/*line emit.goal:1063*/ cc, ok := c.(*ast.CommClause)
-			/*line emit.goal:1064*/ if !ok {
-				/*line emit.goal:1065*/ e.fail("unsupported select body element %T (expected comm clause)", c)
-				/*line emit.goal:1066*/ return
+	/*line emit.goal:1073*/ e.p("select {\n")
+	/*line emit.goal:1074*/ if s.Body != nil {
+		/*line emit.goal:1075*/ for _, c := range s.Body.List {
+			/*line emit.goal:1076*/ cc, ok := c.(*ast.CommClause)
+			/*line emit.goal:1077*/ if !ok {
+				/*line emit.goal:1078*/ e.fail("unsupported select body element %T (expected comm clause)", c)
+				/*line emit.goal:1079*/ return
 			}
-			/*line emit.goal:1068*/ e.commClause(cc)
+			/*line emit.goal:1081*/ e.commClause(cc)
 		}
 	}
-	/*line emit.goal:1071*/ e.p("}")
+	/*line emit.goal:1084*/ e.p("}")
 }
 
-//line emit.goal:1076
+//line emit.goal:1089
 func (e *emitter) commClause(c *ast.CommClause) {
-	/*line emit.goal:1077*/ if c.Comm != nil {
-		/*line emit.goal:1078*/ e.p("case ")
-		/*line emit.goal:1079*/ e.stmt(c.Comm)
-		/*line emit.goal:1080*/ e.p(":\n")
+	/*line emit.goal:1090*/ if c.Comm != nil {
+		/*line emit.goal:1091*/ e.p("case ")
+		/*line emit.goal:1092*/ e.stmt(c.Comm)
+		/*line emit.goal:1093*/ e.p(":\n")
 	} else {
-		/*line emit.goal:1082*/ e.p("default:\n")
+		/*line emit.goal:1095*/ e.p("default:\n")
 	}
-	/*line emit.goal:1084*/ for _, s := range c.Body {
-		/*line emit.goal:1085*/ e.stmt(s)
-		/*line emit.goal:1086*/ e.p("\n")
+	/*line emit.goal:1097*/ for _, s := range c.Body {
+		/*line emit.goal:1098*/ e.stmt(s)
+		/*line emit.goal:1099*/ e.p("\n")
 	}
 }
 
-//line emit.goal:1090
+//line emit.goal:1103
 func (e *emitter) rangeStmt(s *ast.RangeStmt) {
-	/*line emit.goal:1091*/ e.p("for ")
-	/*line emit.goal:1092*/ if s.Key != nil {
-		/*line emit.goal:1093*/ e.expr(s.Key)
-		/*line emit.goal:1094*/ if s.Value != nil {
-			/*line emit.goal:1095*/ e.p(", ")
-			/*line emit.goal:1096*/ e.expr(s.Value)
+	/*line emit.goal:1104*/ e.p("for ")
+	/*line emit.goal:1105*/ if s.Key != nil {
+		/*line emit.goal:1106*/ e.expr(s.Key)
+		/*line emit.goal:1107*/ if s.Value != nil {
+			/*line emit.goal:1108*/ e.p(", ")
+			/*line emit.goal:1109*/ e.expr(s.Value)
 		}
-		/*line emit.goal:1098*/ e.p(" ")
-		/*line emit.goal:1099*/ e.p(s.Tok.String())
-		/*line emit.goal:1100*/ e.p(" ")
+		/*line emit.goal:1111*/ e.p(" ")
+		/*line emit.goal:1112*/ e.p(s.Tok.String())
+		/*line emit.goal:1113*/ e.p(" ")
 	}
-	/*line emit.goal:1102*/ e.p("range ")
-	/*line emit.goal:1103*/ e.expr(s.X)
-	/*line emit.goal:1104*/ e.p(" ")
-	/*line emit.goal:1105*/ e.block(s.Body)
+	/*line emit.goal:1115*/ e.p("range ")
+	/*line emit.goal:1116*/ e.expr(s.X)
+	/*line emit.goal:1117*/ e.p(" ")
+	/*line emit.goal:1118*/ e.block(s.Body)
 }
 
-//line emit.goal:1108
+//line emit.goal:1121
 func (e *emitter) expr(x ast.Expr) {
-	/*line emit.goal:1113*/ if e.tryOptionValue(x) {
-		/*line emit.goal:1114*/ return
+	/*line emit.goal:1126*/ if e.tryOptionValue(x) {
+		/*line emit.goal:1127*/ return
 	}
-	/*line emit.goal:1116*/ switch v1 := x.(type) {
+	/*line emit.goal:1129*/ switch v1 := x.(type) {
 	case *ast.Ident:
 		{
-			/*line emit.goal:1120*/ if r, ok := e.renames[v1.Name]; ok {
-				/*line emit.goal:1121*/ e.p(r)
+			/*line emit.goal:1133*/ if r, ok := e.renames[v1.Name]; ok {
+				/*line emit.goal:1134*/ e.p(r)
 			} else {
-				/*line emit.goal:1123*/ e.p(v1.Name)
+				/*line emit.goal:1136*/ e.p(v1.Name)
 			}
 		}
 	case *ast.BasicLit:
 		{
-			/*line emit.goal:1127*/ e.p(v1.Value)
+			/*line emit.goal:1140*/ e.p(v1.Value)
 		}
 	case *ast.ParenExpr:
 		{
-			/*line emit.goal:1130*/ e.p("(")
-			/*line emit.goal:1131*/ e.expr(v1.X)
-			/*line emit.goal:1132*/ e.p(")")
+			/*line emit.goal:1143*/ e.p("(")
+			/*line emit.goal:1144*/ e.expr(v1.X)
+			/*line emit.goal:1145*/ e.p(")")
 		}
 	case *ast.UnaryExpr:
 		{
-			/*line emit.goal:1135*/ e.p(v1.Op.String())
-			/*line emit.goal:1136*/ e.expr(v1.X)
+			/*line emit.goal:1148*/ e.p(v1.Op.String())
+			/*line emit.goal:1149*/ e.expr(v1.X)
 		}
 	case *ast.BinaryExpr:
 		{
-			/*line emit.goal:1139*/ e.expr(v1.X)
-			/*line emit.goal:1140*/ e.p(" ")
-			/*line emit.goal:1141*/ e.p(v1.Op.String())
-			/*line emit.goal:1142*/ e.p(" ")
-			/*line emit.goal:1143*/ e.expr(v1.Y)
+			/*line emit.goal:1152*/ e.expr(v1.X)
+			/*line emit.goal:1153*/ e.p(" ")
+			/*line emit.goal:1154*/ e.p(v1.Op.String())
+			/*line emit.goal:1155*/ e.p(" ")
+			/*line emit.goal:1156*/ e.expr(v1.Y)
 		}
 	case *ast.SelectorExpr:
 		{
-			/*line emit.goal:1146*/ e.selectorExpr(v1)
+			/*line emit.goal:1159*/ e.selectorExpr(v1)
 		}
 	case *ast.VariantLit:
 		{
-			/*line emit.goal:1149*/ e.variantLit(v1)
+			/*line emit.goal:1162*/ e.variantLit(v1)
 		}
 	case *ast.StarExpr:
 		{
-			/*line emit.goal:1152*/ e.p("*")
-			/*line emit.goal:1153*/ e.expr(v1.X)
+			/*line emit.goal:1165*/ e.p("*")
+			/*line emit.goal:1166*/ e.expr(v1.X)
 		}
 	case *ast.IndexExpr:
 		{
-			/*line emit.goal:1156*/ e.indexExpr(v1)
+			/*line emit.goal:1169*/ e.indexExpr(v1)
 		}
 	case *ast.IndexListExpr:
 		{
-			/*line emit.goal:1159*/ e.expr(v1.X)
-			/*line emit.goal:1160*/ e.p("[")
-			/*line emit.goal:1161*/ e.exprList(v1.Indices)
-			/*line emit.goal:1162*/ e.p("]")
+			/*line emit.goal:1172*/ e.expr(v1.X)
+			/*line emit.goal:1173*/ e.p("[")
+			/*line emit.goal:1174*/ e.exprList(v1.Indices)
+			/*line emit.goal:1175*/ e.p("]")
 		}
 	case *ast.SliceExpr:
 		{
-			/*line emit.goal:1165*/ e.sliceExpr(v1)
+			/*line emit.goal:1178*/ e.sliceExpr(v1)
 		}
 	case *ast.CallExpr:
 		{
-			/*line emit.goal:1168*/ e.expr(v1.Fun)
-			/*line emit.goal:1169*/ e.p("(")
-			/*line emit.goal:1170*/ e.exprList(v1.Args)
-			/*line emit.goal:1171*/ if v1.Ellipsis.IsValid() {
-				/*line emit.goal:1172*/ e.p("...")
+			/*line emit.goal:1181*/ e.expr(v1.Fun)
+			/*line emit.goal:1182*/ e.p("(")
+			/*line emit.goal:1183*/ e.exprList(v1.Args)
+			/*line emit.goal:1184*/ if v1.Ellipsis.IsValid() {
+				/*line emit.goal:1185*/ e.p("...")
 			}
-			/*line emit.goal:1174*/ e.p(")")
+			/*line emit.goal:1187*/ e.p(")")
 		}
 	case *ast.TypeAssertExpr:
 		{
-			/*line emit.goal:1177*/ e.expr(v1.X)
-			/*line emit.goal:1178*/ e.p(".(")
-			/*line emit.goal:1179*/ if v1.Type == nil {
-				/*line emit.goal:1180*/ e.p("type")
+			/*line emit.goal:1190*/ e.expr(v1.X)
+			/*line emit.goal:1191*/ e.p(".(")
+			/*line emit.goal:1192*/ if v1.Type == nil {
+				/*line emit.goal:1193*/ e.p("type")
 			} else {
-				/*line emit.goal:1182*/ e.expr(v1.Type)
+				/*line emit.goal:1195*/ e.expr(v1.Type)
 			}
-			/*line emit.goal:1184*/ e.p(")")
+			/*line emit.goal:1197*/ e.p(")")
 		}
 	case *ast.KeyValueExpr:
 		{
-			/*line emit.goal:1187*/ e.expr(v1.Key)
-			/*line emit.goal:1188*/ e.p(": ")
-			/*line emit.goal:1189*/ e.expr(v1.Value)
+			/*line emit.goal:1200*/ e.expr(v1.Key)
+			/*line emit.goal:1201*/ e.p(": ")
+			/*line emit.goal:1202*/ e.expr(v1.Value)
 		}
 	case *ast.CompositeLit:
 		{
-			/*line emit.goal:1192*/ e.compositeLit(v1)
+			/*line emit.goal:1205*/ e.compositeLit(v1)
 		}
 	case *ast.FuncLit:
 		{
-			/*line emit.goal:1203*/ litKind, _ := resultOptionKind(v1.Type)
-			/*line emit.goal:1204*/ var litClosedT, litClosedE string
+			/*line emit.goal:1216*/ litKind, _ := resultOptionKind(v1.Type)
+			/*line emit.goal:1217*/ var litClosedT, litClosedE string
 
-			/*line emit.goal:1205*/
+			/*line emit.goal:1218*/
 			if il, isList := closedResultType(v1.Type); isList {
-				/*line emit.goal:1206*/ litKind, litClosedT, litClosedE = roResultClosed, e.exprText(il.Indices[0]), e.exprText(il.Indices[1])
+				/*line emit.goal:1219*/ litKind, litClosedT, litClosedE = roResultClosed, e.exprText(il.Indices[0]), e.exprText(il.Indices[1])
 			}
-			/*line emit.goal:1208*/ prevKind, prevOk, prevErr, prevTaken := e.fnKind, e.okName, e.errName, e.taken
-			/*line emit.goal:1209*/ prevClosedT, prevClosedE := e.closedT, e.closedE
-			/*line emit.goal:1210*/ e.fnKind, e.taken, e.okName, e.errName = litKind, e.newScope(), "", ""
-			/*line emit.goal:1211*/ e.closedT, e.closedE = litClosedT, litClosedE
-			/*line emit.goal:1212*/ if litKind == roResultOpen {
-				/*line emit.goal:1213*/ e.okName = e.gensym("ok")
-				/*line emit.goal:1214*/ e.errName = e.gensym("err")
+			/*line emit.goal:1221*/ prevKind, prevOk, prevErr, prevTaken := e.fnKind, e.okName, e.errName, e.taken
+			/*line emit.goal:1222*/ prevClosedT, prevClosedE := e.closedT, e.closedE
+			/*line emit.goal:1223*/ e.fnKind, e.taken, e.okName, e.errName = litKind, e.newScope(), "", ""
+			/*line emit.goal:1224*/ e.closedT, e.closedE = litClosedT, litClosedE
+			/*line emit.goal:1225*/ if litKind == roResultOpen {
+				/*line emit.goal:1226*/ e.okName = e.gensym("ok")
+				/*line emit.goal:1227*/ e.errName = e.gensym("err")
 			}
-			/*line emit.goal:1216*/ e.p("func")
-			/*line emit.goal:1217*/ e.funcSig(v1.Type)
-			/*line emit.goal:1218*/ e.p(" ")
-			/*line emit.goal:1219*/ e.block(v1.Body)
-			/*line emit.goal:1220*/ e.fnKind, e.okName, e.errName, e.taken = prevKind, prevOk, prevErr, prevTaken
-			/*line emit.goal:1221*/ e.closedT, e.closedE = prevClosedT, prevClosedE
+			/*line emit.goal:1229*/ e.p("func")
+			/*line emit.goal:1230*/ e.funcSig(v1.Type)
+			/*line emit.goal:1231*/ e.p(" ")
+			/*line emit.goal:1232*/ e.block(v1.Body)
+			/*line emit.goal:1233*/ e.fnKind, e.okName, e.errName, e.taken = prevKind, prevOk, prevErr, prevTaken
+			/*line emit.goal:1234*/ e.closedT, e.closedE = prevClosedT, prevClosedE
 		}
 	case *ast.ArrayType:
 		{
-			/*line emit.goal:1225*/ e.p("[")
-			/*line emit.goal:1226*/ if v1.Len != nil {
-				/*line emit.goal:1227*/ e.expr(v1.Len)
+			/*line emit.goal:1238*/ e.p("[")
+			/*line emit.goal:1239*/ if v1.Len != nil {
+				/*line emit.goal:1240*/ e.expr(v1.Len)
 			}
-			/*line emit.goal:1229*/ e.p("]")
-			/*line emit.goal:1230*/ e.expr(v1.Elt)
+			/*line emit.goal:1242*/ e.p("]")
+			/*line emit.goal:1243*/ e.expr(v1.Elt)
 		}
 	case *ast.MapType:
 		{
-			/*line emit.goal:1233*/ e.p("map[")
-			/*line emit.goal:1234*/ e.expr(v1.Key)
-			/*line emit.goal:1235*/ e.p("]")
-			/*line emit.goal:1236*/ e.expr(v1.Value)
+			/*line emit.goal:1246*/ e.p("map[")
+			/*line emit.goal:1247*/ e.expr(v1.Key)
+			/*line emit.goal:1248*/ e.p("]")
+			/*line emit.goal:1249*/ e.expr(v1.Value)
 		}
 	case *ast.StructType:
 		{
-			/*line emit.goal:1239*/ e.structType(v1)
+			/*line emit.goal:1252*/ e.structType(v1)
 		}
 	case *ast.InterfaceType:
 		{
-			/*line emit.goal:1242*/ e.interfaceType(v1)
+			/*line emit.goal:1255*/ e.interfaceType(v1)
 		}
 	case *ast.FuncType:
 		{
-			/*line emit.goal:1245*/ e.p("func")
-			/*line emit.goal:1246*/ e.funcSig(v1)
+			/*line emit.goal:1258*/ e.p("func")
+			/*line emit.goal:1259*/ e.funcSig(v1)
 		}
 	case *ast.ChanType:
 		{
-			/*line emit.goal:1249*/ e.chanType(v1)
+			/*line emit.goal:1262*/ e.chanType(v1)
 		}
 	case *ast.Ellipsis:
 		{
-			/*line emit.goal:1252*/ e.p("...")
-			/*line emit.goal:1253*/ if v1.Elt != nil {
-				/*line emit.goal:1254*/ e.expr(v1.Elt)
+			/*line emit.goal:1265*/ e.p("...")
+			/*line emit.goal:1266*/ if v1.Elt != nil {
+				/*line emit.goal:1267*/ e.expr(v1.Elt)
 			}
 		}
 	default:
 		{
-			/*line emit.goal:1258*/ e.fail("unsupported expression %T", x)
+			/*line emit.goal:1271*/ e.fail("unsupported expression %T", x)
 		}
 	}
 }
 
-//line emit.goal:1268
+//line emit.goal:1281
 func (e *emitter) selectorExpr(x *ast.SelectorExpr) {
-	/*line emit.goal:1269*/ if key, ok := enumRef(x.X); ok && x.Sel != nil {
-		/*line emit.goal:1272*/ if en := enumOf(e.info, key); en != nil && en.VSet[x.Sel.Name] {
-			/*line emit.goal:1273*/ e.p(fmt.Sprintf("%s(%s_%s{})", key, key, x.Sel.Name))
-			/*line emit.goal:1274*/ return
+	/*line emit.goal:1282*/ if key, ok := enumRef(x.X); ok && x.Sel != nil {
+		/*line emit.goal:1285*/ if en := enumOf(e.info, key); en != nil && en.VSet[x.Sel.Name] {
+			/*line emit.goal:1286*/ e.p(fmt.Sprintf("%s(%s_%s{})", key, key, x.Sel.Name))
+			/*line emit.goal:1287*/ return
 		}
 	}
-	/*line emit.goal:1277*/ e.expr(x.X)
-	/*line emit.goal:1278*/ e.p(".")
-	/*line emit.goal:1279*/ if x.Sel != nil {
-		/*line emit.goal:1283*/ if id, ok := x.X.(*ast.Ident); ok && id.Name == e.armBinding && e.armFields[x.Sel.Name] {
-			/*line emit.goal:1284*/ e.p(exported(x.Sel.Name))
-			/*line emit.goal:1285*/ return
+	/*line emit.goal:1290*/ e.expr(x.X)
+	/*line emit.goal:1291*/ e.p(".")
+	/*line emit.goal:1292*/ if x.Sel != nil {
+		/*line emit.goal:1296*/ if id, ok := x.X.(*ast.Ident); ok && id.Name == e.armBinding && e.armFields[x.Sel.Name] {
+			/*line emit.goal:1297*/ e.p(exported(x.Sel.Name))
+			/*line emit.goal:1298*/ return
 		}
-		/*line emit.goal:1287*/ e.p(x.Sel.Name)
+		/*line emit.goal:1300*/ e.p(x.Sel.Name)
 	}
 }
 
-//line emit.goal:1294
+//line emit.goal:1307
 func (e *emitter) variantLit(x *ast.VariantLit) {
-	/*line emit.goal:1295*/ key, ok := enumRef(x.Enum)
-	/*line emit.goal:1296*/ if !ok || enumOf(e.info, key) == nil {
-		/*line emit.goal:1297*/ e.fail("unsupported variant construction (enum not resolved): %T", x.Enum)
-		/*line emit.goal:1298*/ return
+	/*line emit.goal:1308*/ key, ok := enumRef(x.Enum)
+	/*line emit.goal:1309*/ if !ok || enumOf(e.info, key) == nil {
+		/*line emit.goal:1310*/ e.fail("unsupported variant construction (enum not resolved): %T", x.Enum)
+		/*line emit.goal:1311*/ return
 	}
-	/*line emit.goal:1300*/ if x.Variant == nil {
-		/*line emit.goal:1301*/ e.fail("variant construction has no variant tag")
-		/*line emit.goal:1302*/ return
+	/*line emit.goal:1313*/ if x.Variant == nil {
+		/*line emit.goal:1314*/ e.fail("variant construction has no variant tag")
+		/*line emit.goal:1315*/ return
 	}
-	/*line emit.goal:1304*/ e.p(fmt.Sprintf("%s(%s_%s{", key, key, x.Variant.Name))
-	/*line emit.goal:1305*/ for i, a := range x.Args {
-		/*line emit.goal:1306*/ if i > 0 {
-			/*line emit.goal:1307*/ e.p(", ")
+	/*line emit.goal:1317*/ e.p(fmt.Sprintf("%s(%s_%s{", key, key, x.Variant.Name))
+	/*line emit.goal:1318*/ for i, a := range x.Args {
+		/*line emit.goal:1319*/ if i > 0 {
+			/*line emit.goal:1320*/ e.p(", ")
 		}
-		/*line emit.goal:1309*/ la, ok := a.(*ast.LabeledArg)
-		/*line emit.goal:1310*/ if !ok {
-			/*line emit.goal:1311*/ e.fail("unsupported non-labeled variant argument %T", a)
-			/*line emit.goal:1312*/ return
+		/*line emit.goal:1322*/ la, ok := a.(*ast.LabeledArg)
+		/*line emit.goal:1323*/ if !ok {
+			/*line emit.goal:1324*/ e.fail("unsupported non-labeled variant argument %T", a)
+			/*line emit.goal:1325*/ return
 		}
-		/*line emit.goal:1314*/ if la.Label != nil {
-			/*line emit.goal:1315*/ e.p(exported(la.Label.Name))
-			/*line emit.goal:1316*/ e.p(": ")
+		/*line emit.goal:1327*/ if la.Label != nil {
+			/*line emit.goal:1328*/ e.p(exported(la.Label.Name))
+			/*line emit.goal:1329*/ e.p(": ")
 		}
-		/*line emit.goal:1318*/ e.expr(la.Value)
+		/*line emit.goal:1331*/ e.expr(la.Value)
 	}
-	/*line emit.goal:1320*/ e.p("})")
+	/*line emit.goal:1333*/ e.p("})")
 }
 
-//line emit.goal:1328
+//line emit.goal:1341
 func (e *emitter) exprText(x ast.Expr) string {
-	/*line emit.goal:1329*/ sub := &emitter{info: e.info, pointerRecv: e.pointerRecv, renames: e.renames, armBinding: e.armBinding, armFields: e.armFields, fileIdents: e.fileIdents, typeDecls: e.typeDecls, taken: e.taken, arity: e.arity, recvTypes: map[string]string{}, curParams: map[string]string{}}
-	/*line emit.goal:1352*/ sub.expr(x)
-	/*line emit.goal:1357*/ e.usedOptionHelper = e.usedOptionHelper || sub.usedOptionHelper
-	/*line emit.goal:1358*/ if e.err == nil {
-		/*line emit.goal:1359*/ e.err = sub.err
+	/*line emit.goal:1342*/ sub := &emitter{info: e.info, pointerRecv: e.pointerRecv, renames: e.renames, armBinding: e.armBinding, armFields: e.armFields, fileIdents: e.fileIdents, typeDecls: e.typeDecls, taken: e.taken, arity: e.arity, recvTypes: map[string]string{}, curParams: map[string]string{}}
+	/*line emit.goal:1365*/ sub.expr(x)
+	/*line emit.goal:1370*/ e.usedOptionHelper = e.usedOptionHelper || sub.usedOptionHelper
+	/*line emit.goal:1371*/ if e.err == nil {
+		/*line emit.goal:1372*/ e.err = sub.err
 	}
-	/*line emit.goal:1361*/ return sub.b.String()
+	/*line emit.goal:1374*/ return sub.b.String()
 }
 
-//line emit.goal:1368
+//line emit.goal:1381
 func (e *emitter) buildTypeDecls(f *ast.File) map[string]string {
-	/*line emit.goal:1369*/ m := map[string]string{}
-	/*line emit.goal:1370*/ if f == nil {
-		/*line emit.goal:1371*/ return m
+	/*line emit.goal:1382*/ m := map[string]string{}
+	/*line emit.goal:1383*/ if f == nil {
+		/*line emit.goal:1384*/ return m
 	}
-	/*line emit.goal:1373*/ for _, d := range f.Decls {
-		/*line emit.goal:1374*/ gd, ok := d.(*ast.GenDecl)
-		/*line emit.goal:1375*/ if !ok || gd.Tok.String() != "type" {
-			/*line emit.goal:1376*/ continue
+	/*line emit.goal:1386*/ for _, d := range f.Decls {
+		/*line emit.goal:1387*/ gd, ok := d.(*ast.GenDecl)
+		/*line emit.goal:1388*/ if !ok || gd.Tok.String() != "type" {
+			/*line emit.goal:1389*/ continue
 		}
-		/*line emit.goal:1378*/ for _, s := range gd.Specs {
-			/*line emit.goal:1379*/ ts, ok := s.(*ast.TypeSpec)
-			/*line emit.goal:1380*/ if !ok || ts.Name == nil {
-				/*line emit.goal:1381*/ continue
+		/*line emit.goal:1391*/ for _, s := range gd.Specs {
+			/*line emit.goal:1392*/ ts, ok := s.(*ast.TypeSpec)
+			/*line emit.goal:1393*/ if !ok || ts.Name == nil {
+				/*line emit.goal:1394*/ continue
 			}
-			/*line emit.goal:1383*/ switch ts.Type.(type) {
+			/*line emit.goal:1396*/ switch ts.Type.(type) {
 			case *ast.StructType:
 				{
-					/*line emit.goal:1385*/ m[ts.Name.Name] = "struct"
+					/*line emit.goal:1398*/ m[ts.Name.Name] = "struct"
 				}
 			case *ast.InterfaceType:
 				{
-					/*line emit.goal:1388*/ m[ts.Name.Name] = "interface"
+					/*line emit.goal:1401*/ m[ts.Name.Name] = "interface"
 				}
 			default:
 				{
-					/*line emit.goal:1391*/ m[ts.Name.Name] = e.exprText(ts.Type)
+					/*line emit.goal:1404*/ m[ts.Name.Name] = e.exprText(ts.Type)
 				}
 			}
 		}
 	}
-	/*line emit.goal:1396*/ return m
+	/*line emit.goal:1409*/ return m
 }
 
-//line emit.goal:1404
+//line emit.goal:1417
 func (e *emitter) compositeLit(x *ast.CompositeLit) {
-	/*line emit.goal:1405*/ if x.Type != nil {
-		/*line emit.goal:1406*/ e.expr(x.Type)
+	/*line emit.goal:1418*/ if x.Type != nil {
+		/*line emit.goal:1419*/ e.expr(x.Type)
 	}
-	/*line emit.goal:1408*/ e.p("{")
-	/*line emit.goal:1409*/ first := true
-	/*line emit.goal:1410*/ sep := func() {
-		/*line emit.goal:1411*/ if !first {
-			/*line emit.goal:1412*/ e.p(", ")
+	/*line emit.goal:1421*/ e.p("{")
+	/*line emit.goal:1422*/ first := true
+	/*line emit.goal:1423*/ sep := func() {
+		/*line emit.goal:1424*/ if !first {
+			/*line emit.goal:1425*/ e.p(", ")
 		}
-		/*line emit.goal:1414*/ first = false
+		/*line emit.goal:1427*/ first = false
 	}
-	/*line emit.goal:1416*/ for _, el := range x.Elts {
-		/*line emit.goal:1417*/ if sp, ok := el.(*ast.SpreadElement); ok {
-			/*line emit.goal:1418*/ id, ok := sp.X.(*ast.Ident)
-			/*line emit.goal:1419*/ if !ok || id.Name != "defaults" {
-				/*line emit.goal:1420*/ if isDeriveSpread(sp) {
-					/*line emit.goal:1421*/ e.fail("`...derive` at %s is only supported in a return; use a `derive func`", sp.Pos())
+	/*line emit.goal:1429*/ for _, el := range x.Elts {
+		/*line emit.goal:1430*/ if sp, ok := el.(*ast.SpreadElement); ok {
+			/*line emit.goal:1431*/ id, ok := sp.X.(*ast.Ident)
+			/*line emit.goal:1432*/ if !ok || id.Name != "defaults" {
+				/*line emit.goal:1433*/ if isDeriveSpread(sp) {
+					/*line emit.goal:1434*/ e.fail("`...derive` at %s is only supported in a return; use a `derive func`", sp.Pos())
 				} else {
-					/*line emit.goal:1423*/ e.fail("`...defaults` at %s: unsupported spread element (only `...defaults` and a return-position `...derive(src)` are lowered)", sp.Pos())
+					/*line emit.goal:1436*/ e.fail("`...defaults` at %s: unsupported spread element (only `...defaults` and a return-position `...derive(src)` are lowered)", sp.Pos())
 				}
-				/*line emit.goal:1425*/ return
+				/*line emit.goal:1438*/ return
 			}
-			/*line emit.goal:1427*/ for _, entry := range e.defaultEntries(x, sp.Pos()) {
-				/*line emit.goal:1428*/ sep()
-				/*line emit.goal:1429*/ e.p(entry)
+			/*line emit.goal:1440*/ for _, entry := range e.defaultEntries(x, sp.Pos()) {
+				/*line emit.goal:1441*/ sep()
+				/*line emit.goal:1442*/ e.p(entry)
 			}
-			/*line emit.goal:1431*/ continue
+			/*line emit.goal:1444*/ continue
 		}
-		/*line emit.goal:1433*/ sep()
-		/*line emit.goal:1434*/ e.expr(el)
+		/*line emit.goal:1446*/ sep()
+		/*line emit.goal:1447*/ e.expr(el)
 	}
-	/*line emit.goal:1436*/ e.p("}")
+	/*line emit.goal:1449*/ e.p("}")
 }
 
-//line emit.goal:1444
+//line emit.goal:1457
 func (e *emitter) defaultEntries(x *ast.CompositeLit, pos token.Pos) []string {
-	/*line emit.goal:1445*/ id, ok := x.Type.(*ast.Ident)
-	/*line emit.goal:1446*/ if !ok {
-		/*line emit.goal:1447*/ e.fail("`...defaults` is not inside a named struct literal")
-		/*line emit.goal:1448*/ return nil
+	/*line emit.goal:1458*/ id, ok := x.Type.(*ast.Ident)
+	/*line emit.goal:1459*/ if !ok {
+		/*line emit.goal:1460*/ e.fail("`...defaults` is not inside a named struct literal")
+		/*line emit.goal:1461*/ return nil
 	}
-	/*line emit.goal:1450*/ fields, ok := structFieldsOf(e.info, id.Name)
-	/*line emit.goal:1451*/ if !ok {
-		/*line emit.goal:1452*/ e.fail("`...defaults` for unknown struct type %q (no `type %s struct{…}` in this file)", id.Name, id.Name)
-		/*line emit.goal:1453*/ return nil
+	/*line emit.goal:1463*/ fields, ok := structFieldsOf(e.info, id.Name)
+	/*line emit.goal:1464*/ if !ok {
+		/*line emit.goal:1465*/ e.fail("`...defaults` for unknown struct type %q (no `type %s struct{…}` in this file)", id.Name, id.Name)
+		/*line emit.goal:1466*/ return nil
 	}
-	/*line emit.goal:1455*/ present := presentFieldNames(x.Elts)
-	/*line emit.goal:1456*/ var entries []string
+	/*line emit.goal:1468*/ present := presentFieldNames(x.Elts)
+	/*line emit.goal:1469*/ var entries []string
 
-	/*line emit.goal:1457*/
+	/*line emit.goal:1470*/
 	for _, f := range fields {
-		/*line emit.goal:1458*/ if present[f.Name] {
-			/*line emit.goal:1459*/ continue
+		/*line emit.goal:1471*/ if present[f.Name] {
+			/*line emit.goal:1472*/ continue
 		}
-		/*line emit.goal:1461*/ if reason := sema.ZeroSafety(f.Type, e.typeDecls, e.info, 0); reason != "" {
-			/*line emit.goal:1462*/ e.fail("`...defaults` at %s cannot default field `%s` of type `%s`: %s", pos, f.Name, f.Type, reason)
-			/*line emit.goal:1463*/ return nil
+		/*line emit.goal:1474*/ if reason := sema.ZeroSafety(f.Type, e.typeDecls, e.info, 0); reason != "" {
+			/*line emit.goal:1475*/ e.fail("`...defaults` at %s cannot default field `%s` of type `%s`: %s", pos, f.Name, f.Type, reason)
+			/*line emit.goal:1476*/ return nil
 		}
-		/*line emit.goal:1465*/ entries = append(entries, fmt.Sprintf("%s: %s", f.Name, zeroLit(f.Type, e.typeDecls, 0)))
+		/*line emit.goal:1478*/ entries = append(entries, fmt.Sprintf("%s: %s", f.Name, zeroLit(f.Type, e.typeDecls, 0)))
 	}
-	/*line emit.goal:1467*/ return entries
+	/*line emit.goal:1480*/ return entries
 }
 
-//line emit.goal:1473
+//line emit.goal:1486
 type deriveOverride struct {
 	Name  string
 	Skip  bool
 	Value ast.Expr
 }
 
-//line emit.goal:1486
+//line emit.goal:1499
 func (e *emitter) deriveDecl(d *ast.FuncDecl) {
-	/*line emit.goal:1487*/ if d.Name == nil || d.Type == nil {
-		/*line emit.goal:1488*/ e.fail("derive func has no name or signature")
-		/*line emit.goal:1489*/ return
+	/*line emit.goal:1500*/ if d.Name == nil || d.Type == nil {
+		/*line emit.goal:1501*/ e.fail("derive func has no name or signature")
+		/*line emit.goal:1502*/ return
 	}
-	/*line emit.goal:1491*/ if d.Type.Params == nil || len(d.Type.Params.List) == 0 || len(d.Type.Params.List[0].Names) == 0 {
-		/*line emit.goal:1493*/ e.fail("derive %s: needs a single named source parameter", d.Name.Name)
-		/*line emit.goal:1494*/ return
+	/*line emit.goal:1504*/ if d.Type.Params == nil || len(d.Type.Params.List) == 0 || len(d.Type.Params.List[0].Names) == 0 {
+		/*line emit.goal:1506*/ e.fail("derive %s: needs a single named source parameter", d.Name.Name)
+		/*line emit.goal:1507*/ return
 	}
-	/*line emit.goal:1496*/ srcName := d.Type.Params.List[0].Names[0].Name
-	/*line emit.goal:1497*/ srcType := typeExprString(d.Type.Params.List[0].Type)
-	/*line emit.goal:1498*/ tgtType, fallible, ok := deriveTarget(d.Type.Results)
-	/*line emit.goal:1499*/ if !ok {
-		/*line emit.goal:1500*/ e.fail("derive %s: cannot determine target type from result list", d.Name.Name)
-		/*line emit.goal:1501*/ return
+	/*line emit.goal:1509*/ srcName := d.Type.Params.List[0].Names[0].Name
+	/*line emit.goal:1510*/ srcType := typeExprString(d.Type.Params.List[0].Type)
+	/*line emit.goal:1511*/ tgtType, fallible, ok := deriveTarget(d.Type.Results)
+	/*line emit.goal:1512*/ if !ok {
+		/*line emit.goal:1513*/ e.fail("derive %s: cannot determine target type from result list", d.Name.Name)
+		/*line emit.goal:1514*/ return
 	}
-	/*line emit.goal:1503*/ overrides := e.deriveOverrides(d.Body)
-	/*line emit.goal:1509*/ prevTaken := e.taken
-	/*line emit.goal:1510*/ e.taken = e.newScope()
-	/*line emit.goal:1511*/ defer func() {
-		/*line emit.goal:1511*/ e.taken = prevTaken
+	/*line emit.goal:1516*/ overrides := e.deriveOverrides(d.Body)
+	/*line emit.goal:1522*/ prevTaken := e.taken
+	/*line emit.goal:1523*/ e.taken = e.newScope()
+	/*line emit.goal:1524*/ defer func() {
+		/*line emit.goal:1524*/ e.taken = prevTaken
 	}()
-	/*line emit.goal:1512*/ e.genConversion(d.Name.Name, srcName, srcType, tgtType, fallible, overrides)
+	/*line emit.goal:1525*/ e.genConversion(d.Name.Name, srcName, srcType, tgtType, fallible, overrides)
 }
 
-//line emit.goal:1518
+//line emit.goal:1531
 func (e *emitter) deriveOverrides(body *ast.BlockStmt) []deriveOverride {
-	/*line emit.goal:1519*/ if body == nil {
-		/*line emit.goal:1520*/ return nil
+	/*line emit.goal:1532*/ if body == nil {
+		/*line emit.goal:1533*/ return nil
 	}
-	/*line emit.goal:1522*/ for _, s := range body.List {
-		/*line emit.goal:1523*/ ret, ok := s.(*ast.ReturnStmt)
-		/*line emit.goal:1524*/ if !ok || len(ret.Results) != 1 {
-			/*line emit.goal:1525*/ continue
+	/*line emit.goal:1535*/ for _, s := range body.List {
+		/*line emit.goal:1536*/ ret, ok := s.(*ast.ReturnStmt)
+		/*line emit.goal:1537*/ if !ok || len(ret.Results) != 1 {
+			/*line emit.goal:1538*/ continue
 		}
-		/*line emit.goal:1527*/ cl, ok := ret.Results[0].(*ast.CompositeLit)
-		/*line emit.goal:1528*/ if !ok {
-			/*line emit.goal:1529*/ continue
+		/*line emit.goal:1540*/ cl, ok := ret.Results[0].(*ast.CompositeLit)
+		/*line emit.goal:1541*/ if !ok {
+			/*line emit.goal:1542*/ continue
 		}
-		/*line emit.goal:1531*/ return overridesFromLit(cl)
+		/*line emit.goal:1544*/ return overridesFromLit(cl)
 	}
-	/*line emit.goal:1533*/ return nil
+	/*line emit.goal:1546*/ return nil
 }
 
-//line emit.goal:1540
+//line emit.goal:1553
 func overridesFromLit(cl *ast.CompositeLit) []deriveOverride {
-	/*line emit.goal:1541*/ var out []deriveOverride
+	/*line emit.goal:1554*/ var out []deriveOverride
 
-	/*line emit.goal:1542*/
+	/*line emit.goal:1555*/
 	for _, el := range cl.Elts {
-		/*line emit.goal:1543*/ kv, ok := el.(*ast.KeyValueExpr)
-		/*line emit.goal:1544*/ if !ok {
-			/*line emit.goal:1545*/ continue
+		/*line emit.goal:1556*/ kv, ok := el.(*ast.KeyValueExpr)
+		/*line emit.goal:1557*/ if !ok {
+			/*line emit.goal:1558*/ continue
 		}
-		/*line emit.goal:1547*/ key, ok := kv.Key.(*ast.Ident)
-		/*line emit.goal:1548*/ if !ok {
-			/*line emit.goal:1549*/ continue
+		/*line emit.goal:1560*/ key, ok := kv.Key.(*ast.Ident)
+		/*line emit.goal:1561*/ if !ok {
+			/*line emit.goal:1562*/ continue
 		}
-		/*line emit.goal:1551*/ if id, ok := kv.Value.(*ast.Ident); ok && id.Name == "_" {
-			/*line emit.goal:1552*/ out = append(out, deriveOverride{Name: key.Name, Skip: true})
-			/*line emit.goal:1553*/ continue
+		/*line emit.goal:1564*/ if id, ok := kv.Value.(*ast.Ident); ok && id.Name == "_" {
+			/*line emit.goal:1565*/ out = append(out, deriveOverride{Name: key.Name, Skip: true})
+			/*line emit.goal:1566*/ continue
 		}
-		/*line emit.goal:1555*/ out = append(out, deriveOverride{Name: key.Name, Value: kv.Value})
+		/*line emit.goal:1568*/ out = append(out, deriveOverride{Name: key.Name, Value: kv.Value})
 	}
-	/*line emit.goal:1557*/ return out
+	/*line emit.goal:1570*/ return out
 }
 
-//line emit.goal:1567
+//line emit.goal:1580
 func (e *emitter) genConversion(name, srcName, srcType, tgtType string, fallible bool, overrides []deriveOverride) {
-	/*line emit.goal:1568*/ tgtVal := derefType(tgtType)
-	/*line emit.goal:1569*/ if _, ok := structFieldsOf(e.info, tgtVal); !ok {
-		/*line emit.goal:1570*/ e.fail("derive %s: unknown target struct %q (no `type %s struct{…}` in this file)", name, tgtType, tgtVal)
-		/*line emit.goal:1571*/ return
+	/*line emit.goal:1581*/ tgtVal := derefType(tgtType)
+	/*line emit.goal:1582*/ if _, ok := structFieldsOf(e.info, tgtVal); !ok {
+		/*line emit.goal:1583*/ e.fail("derive %s: unknown target struct %q (no `type %s struct{…}` in this file)", name, tgtType, tgtVal)
+		/*line emit.goal:1584*/ return
 	}
-	/*line emit.goal:1575*/ e.p("func " + name + "(" + srcName + " " + srcType + ") ")
-	/*line emit.goal:1576*/ if fallible {
-		/*line emit.goal:1577*/ e.p("(" + tgtType + ", error)")
+	/*line emit.goal:1588*/ e.p("func " + name + "(" + srcName + " " + srcType + ") ")
+	/*line emit.goal:1589*/ if fallible {
+		/*line emit.goal:1590*/ e.p("(" + tgtType + ", error)")
 	} else {
-		/*line emit.goal:1579*/ e.p(tgtType)
+		/*line emit.goal:1592*/ e.p(tgtType)
 	}
-	/*line emit.goal:1581*/ e.p(" {\n")
-	/*line emit.goal:1582*/ e.emitConversionBody(name, srcName, srcType, tgtType, fallible, overrides, token.Pos{})
-	/*line emit.goal:1583*/ e.p("}")
+	/*line emit.goal:1594*/ e.p(" {\n")
+	/*line emit.goal:1595*/ e.emitConversionBody(name, srcName, srcType, tgtType, fallible, overrides, token.Pos{})
+	/*line emit.goal:1596*/ e.p("}")
 }
 
-//line emit.goal:1593
+//line emit.goal:1606
 func (e *emitter) emitConversionBody(name, srcName, srcType, tgtType string, fallible bool, overrides []deriveOverride, pos token.Pos) {
-	/*line emit.goal:1594*/ tgtVal := derefType(tgtType)
-	/*line emit.goal:1595*/ tgtFields, _ := structFieldsOf(e.info, tgtVal)
-	/*line emit.goal:1596*/ srcFields, _ := structFieldsOf(e.info, derefType(srcType))
-	/*line emit.goal:1598*/ overridden := map[string]bool{}
-	/*line emit.goal:1599*/ for _, o := range overrides {
-		/*line emit.goal:1600*/ overridden[o.Name] = true
+	/*line emit.goal:1607*/ tgtVal := derefType(tgtType)
+	/*line emit.goal:1608*/ tgtFields, _ := structFieldsOf(e.info, tgtVal)
+	/*line emit.goal:1609*/ srcFields, _ := structFieldsOf(e.info, derefType(srcType))
+	/*line emit.goal:1611*/ overridden := map[string]bool{}
+	/*line emit.goal:1612*/ for _, o := range overrides {
+		/*line emit.goal:1613*/ overridden[o.Name] = true
 	}
-	/*line emit.goal:1608*/ outVar := e.gensym("out")
-	/*line emit.goal:1609*/ retVar := outVar
-	/*line emit.goal:1610*/ if strings.HasPrefix(strings.TrimSpace(tgtType), "*") {
-		/*line emit.goal:1611*/ retVar = "&" + outVar
+	/*line emit.goal:1621*/ outVar := e.gensym("out")
+	/*line emit.goal:1622*/ retVar := outVar
+	/*line emit.goal:1623*/ if strings.HasPrefix(strings.TrimSpace(tgtType), "*") {
+		/*line emit.goal:1624*/ retVar = "&" + outVar
 	}
-	/*line emit.goal:1613*/ returnStmt := "return " + retVar
-	/*line emit.goal:1614*/ if fallible {
-		/*line emit.goal:1615*/ returnStmt = "return " + retVar + ", nil"
+	/*line emit.goal:1626*/ returnStmt := "return " + retVar
+	/*line emit.goal:1627*/ if fallible {
+		/*line emit.goal:1628*/ returnStmt = "return " + retVar + ", nil"
 	}
-	/*line emit.goal:1618*/ e.p("var " + outVar + " " + tgtVal + "\n")
-	/*line emit.goal:1622*/ if strings.HasPrefix(strings.TrimSpace(srcType), "*") {
-		/*line emit.goal:1623*/ e.p("if " + srcName + " == nil {\n" + returnStmt + "\n}\n")
+	/*line emit.goal:1631*/ e.p("var " + outVar + " " + tgtVal + "\n")
+	/*line emit.goal:1635*/ if strings.HasPrefix(strings.TrimSpace(srcType), "*") {
+		/*line emit.goal:1636*/ e.p("if " + srcName + " == nil {\n" + returnStmt + "\n}\n")
 	}
-	/*line emit.goal:1629*/ errName := ""
-	/*line emit.goal:1630*/ if fallible {
-		/*line emit.goal:1631*/ errName = e.gensym("err")
+	/*line emit.goal:1642*/ errName := ""
+	/*line emit.goal:1643*/ if fallible {
+		/*line emit.goal:1644*/ errName = e.gensym("err")
 	}
-	/*line emit.goal:1635*/ for _, o := range overrides {
-		/*line emit.goal:1636*/ if o.Skip {
-			/*line emit.goal:1637*/ continue
+	/*line emit.goal:1648*/ for _, o := range overrides {
+		/*line emit.goal:1649*/ if o.Skip {
+			/*line emit.goal:1650*/ continue
 		}
-		/*line emit.goal:1639*/ e.p(outVar + "." + o.Name + " = " + e.exprText(o.Value) + "\n")
+		/*line emit.goal:1652*/ e.p(outVar + "." + o.Name + " = " + e.exprText(o.Value) + "\n")
 	}
-	/*line emit.goal:1643*/ for _, f := range tgtFields {
-		/*line emit.goal:1644*/ if overridden[f.Name] {
-			/*line emit.goal:1645*/ continue
+	/*line emit.goal:1656*/ for _, f := range tgtFields {
+		/*line emit.goal:1657*/ if overridden[f.Name] {
+			/*line emit.goal:1658*/ continue
 		}
-		/*line emit.goal:1647*/ sf, found := findSemaField(srcFields, f.Name)
-		/*line emit.goal:1648*/ if !found {
-			/*line emit.goal:1649*/ if pos.IsValid() {
-				/*line emit.goal:1650*/ e.fail("`...derive` at %s cannot fill field `%s` of `%s`: no same-named field on `%s` — add an explicit `%s: …`", pos, f.Name, tgtType, srcType, f.Name)
+		/*line emit.goal:1660*/ sf, found := findSemaField(srcFields, f.Name)
+		/*line emit.goal:1661*/ if !found {
+			/*line emit.goal:1662*/ if pos.IsValid() {
+				/*line emit.goal:1663*/ e.fail("`...derive` at %s cannot fill field `%s` of `%s`: no same-named field on `%s` — add an explicit `%s: …`", pos, f.Name, tgtType, srcType, f.Name)
 			} else {
-				/*line emit.goal:1652*/ e.fail("derive %s: target field %q of %s is not sourced from %s (add an explicit `%s: …` or a `from func`)", name, f.Name, tgtType, srcType, f.Name)
+				/*line emit.goal:1665*/ e.fail("derive %s: target field %q of %s is not sourced from %s (add an explicit `%s: …` or a `from func`)", name, f.Name, tgtType, srcType, f.Name)
 			}
-			/*line emit.goal:1654*/ return
+			/*line emit.goal:1667*/ return
 		}
-		/*line emit.goal:1658*/ v1, err1 := e.resolveField(outVar+"."+f.Name, srcName+"."+sf.Name, sf.Type, f.Type, fallible, errName, outVar)
+		/*line emit.goal:1671*/ v1, err1 := e.resolveField(outVar+"."+f.Name, srcName+"."+sf.Name, sf.Type, f.Type, fallible, errName, outVar)
 		if err1 != nil {
 			{
-				/*line emit.goal:1665*/ if pos.IsValid() {
-					/*line emit.goal:1666*/ e.fail("`...derive` at %s cannot fill field `%s`: %v", pos, f.Name, err1)
+				/*line emit.goal:1678*/ if pos.IsValid() {
+					/*line emit.goal:1679*/ e.fail("`...derive` at %s cannot fill field `%s`: %v", pos, f.Name, err1)
 				} else {
-					/*line emit.goal:1668*/ e.fail("derive %s, field %q: %v", name, f.Name, err1)
+					/*line emit.goal:1681*/ e.fail("derive %s, field %q: %v", name, f.Name, err1)
 				}
-				/*line emit.goal:1670*/ return
+				/*line emit.goal:1683*/ return
 			}
 		} else {
 			{
-				/*line emit.goal:1660*/ for _, s := range v1 {
-					/*line emit.goal:1661*/ e.p(s + "\n")
+				/*line emit.goal:1673*/ for _, s := range v1 {
+					/*line emit.goal:1674*/ e.p(s + "\n")
 				}
 			}
 		}
 	}
-	/*line emit.goal:1675*/ e.p(returnStmt + "\n")
+	/*line emit.goal:1688*/ e.p(returnStmt + "\n")
 }
 
-//line emit.goal:1685
+//line emit.goal:1698
 func (e *emitter) resolveField(dst, srcExpr, sf, tf string, fallibleOK bool, errName, outVar string) (ok1 []string, err1 error) {
-	/*line emit.goal:1686*/ reg := e.info.FromRegistry
-	/*line emit.goal:1687*/ sf, tf = strings.TrimSpace(sf), strings.TrimSpace(tf)
-	/*line emit.goal:1688*/ if sf == tf {
-		/*line emit.goal:1689*/ return []string{fmt.Sprintf("%s = %s", dst, srcExpr)}, nil
+	/*line emit.goal:1699*/ reg := e.info.FromRegistry
+	/*line emit.goal:1700*/ sf, tf = strings.TrimSpace(sf), strings.TrimSpace(tf)
+	/*line emit.goal:1701*/ if sf == tf {
+		/*line emit.goal:1702*/ return []string{fmt.Sprintf("%s = %s", dst, srcExpr)}, nil
 	}
-	/*line emit.goal:1691*/ if entry, ok := reg[[2]string{sf, tf}]; ok {
-		/*line emit.goal:1692*/ if !entry.Fallible {
-			/*line emit.goal:1693*/ return []string{fmt.Sprintf("%s = %s(%s)", dst, entry.Name, srcExpr)}, nil
+	/*line emit.goal:1704*/ if entry, ok := reg[[2]string{sf, tf}]; ok {
+		/*line emit.goal:1705*/ if !entry.Fallible {
+			/*line emit.goal:1706*/ return []string{fmt.Sprintf("%s = %s(%s)", dst, entry.Name, srcExpr)}, nil
 		}
-		/*line emit.goal:1695*/ if !fallibleOK {
-			/*line emit.goal:1696*/ return ok1, fmt.Errorf("conversion %s->%s is fallible; declare the derive func returning (T, error)", sf, tf)
+		/*line emit.goal:1708*/ if !fallibleOK {
+			/*line emit.goal:1709*/ return ok1, fmt.Errorf("conversion %s->%s is fallible; declare the derive func returning (T, error)", sf, tf)
 		}
-		/*line emit.goal:1698*/ v := e.gensym("v")
-		/*line emit.goal:1699*/ return []string{fmt.Sprintf("%s, %s := %s(%s)", v, errName, entry.Name, srcExpr), fmt.Sprintf("if %s != nil {\nreturn %s, %s\n}", errName, outVar, errName), fmt.Sprintf("%s = %s", dst, v)}, nil
+		/*line emit.goal:1711*/ v := e.gensym("v")
+		/*line emit.goal:1712*/ return []string{fmt.Sprintf("%s, %s := %s(%s)", v, errName, entry.Name, srcExpr), fmt.Sprintf("if %s != nil {\nreturn %s, %s\n}", errName, outVar, errName), fmt.Sprintf("%s = %s", dst, v)}, nil
 	}
-	/*line emit.goal:1708*/ if si, ok := ptrInner(sf); ok {
-		/*line emit.goal:1709*/ ti, ok := ptrInner(tf)
-		/*line emit.goal:1710*/ if !ok {
-			/*line emit.goal:1711*/ return ok1, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+	/*line emit.goal:1721*/ if si, ok := ptrInner(sf); ok {
+		/*line emit.goal:1722*/ ti, ok := ptrInner(tf)
+		/*line emit.goal:1723*/ if !ok {
+			/*line emit.goal:1724*/ return ok1, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
 		}
-		/*line emit.goal:1713*/ elem, err1 := elemConv(si, ti, reg)
+		/*line emit.goal:1726*/ elem, err1 := elemConv(si, ti, reg)
 		if err1 != nil {
 			return ok1, err1
 		}
-		/*line emit.goal:1714*/ v := e.gensym("p")
-		/*line emit.goal:1715*/ return []string{fmt.Sprintf("if %s != nil {\n%s := %s\n%s = &%s\n}", srcExpr, v, elem("*"+srcExpr), dst, v)}, nil
+		/*line emit.goal:1727*/ v := e.gensym("p")
+		/*line emit.goal:1728*/ return []string{fmt.Sprintf("if %s != nil {\n%s := %s\n%s = &%s\n}", srcExpr, v, elem("*"+srcExpr), dst, v)}, nil
 	}
-	/*line emit.goal:1720*/ if strings.HasPrefix(sf, "[]") && strings.HasPrefix(tf, "[]") {
-		/*line emit.goal:1721*/ elem, err1 := elemConv(sf[2:], tf[2:], reg)
-		if err1 != nil {
-			return ok1, err1
-		}
-		/*line emit.goal:1722*/ i := e.gensym("i")
-		/*line emit.goal:1723*/ return []string{fmt.Sprintf("%s = make(%s, len(%s))", dst, tf, srcExpr), fmt.Sprintf("for %s := range %s {\n%s = %s\n}", i, srcExpr, dst+"["+i+"]", elem(srcExpr+"["+i+"]"))}, nil
-	}
-	/*line emit.goal:1729*/ if sn, se, ok := arrElem(sf); ok {
-		/*line emit.goal:1730*/ tn, te, ok := arrElem(tf)
-		/*line emit.goal:1731*/ if !ok || sn != tn {
-			/*line emit.goal:1732*/ return ok1, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
-		}
-		/*line emit.goal:1734*/ elem, err1 := elemConv(se, te, reg)
+	/*line emit.goal:1733*/ if strings.HasPrefix(sf, "[]") && strings.HasPrefix(tf, "[]") {
+		/*line emit.goal:1734*/ elem, err1 := elemConv(sf[2:], tf[2:], reg)
 		if err1 != nil {
 			return ok1, err1
 		}
 		/*line emit.goal:1735*/ i := e.gensym("i")
-		/*line emit.goal:1736*/ return []string{fmt.Sprintf("for %s := range %s {\n%s = %s\n}", i, srcExpr, dst+"["+i+"]", elem(srcExpr+"["+i+"]"))}, nil
+		/*line emit.goal:1736*/ return []string{fmt.Sprintf("%s = make(%s, len(%s))", dst, tf, srcExpr), fmt.Sprintf("for %s := range %s {\n%s = %s\n}", i, srcExpr, dst+"["+i+"]", elem(srcExpr+"["+i+"]"))}, nil
 	}
-	/*line emit.goal:1741*/ if sk, sv, ok := mapKV(sf); ok {
-		/*line emit.goal:1742*/ tk, tv, ok := mapKV(tf)
-		/*line emit.goal:1743*/ if !ok || sk != tk {
-			/*line emit.goal:1744*/ return ok1, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+	/*line emit.goal:1742*/ if sn, se, ok := arrElem(sf); ok {
+		/*line emit.goal:1743*/ tn, te, ok := arrElem(tf)
+		/*line emit.goal:1744*/ if !ok || sn != tn {
+			/*line emit.goal:1745*/ return ok1, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
 		}
-		/*line emit.goal:1746*/ elem, err1 := elemConv(sv, tv, reg)
+		/*line emit.goal:1747*/ elem, err1 := elemConv(se, te, reg)
 		if err1 != nil {
 			return ok1, err1
 		}
-		/*line emit.goal:1747*/ k, v := e.gensym("k"), e.gensym("v")
-		/*line emit.goal:1748*/ return []string{fmt.Sprintf("%s = make(%s, len(%s))", dst, tf, srcExpr), fmt.Sprintf("for %s, %s := range %s {\n%s[%s] = %s\n}", k, v, srcExpr, dst, k, elem(v))}, nil
+		/*line emit.goal:1748*/ i := e.gensym("i")
+		/*line emit.goal:1749*/ return []string{fmt.Sprintf("for %s := range %s {\n%s = %s\n}", i, srcExpr, dst+"["+i+"]", elem(srcExpr+"["+i+"]"))}, nil
 	}
-	/*line emit.goal:1755*/ if _, srcStruct := structFieldsOf(e.info, sf); srcStruct {
-		/*line emit.goal:1756*/ if _, tgtStruct := structFieldsOf(e.info, tf); tgtStruct {
-			/*line emit.goal:1757*/ v := e.gensym("s")
-			/*line emit.goal:1758*/ stmts := []string{fmt.Sprintf("var %s %s", v, tf)}
-			/*line emit.goal:1759*/ body, err1 := e.deriveBody(v, srcExpr, sf, tf, fallibleOK, errName, outVar)
+	/*line emit.goal:1754*/ if sk, sv, ok := mapKV(sf); ok {
+		/*line emit.goal:1755*/ tk, tv, ok := mapKV(tf)
+		/*line emit.goal:1756*/ if !ok || sk != tk {
+			/*line emit.goal:1757*/ return ok1, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+		}
+		/*line emit.goal:1759*/ elem, err1 := elemConv(sv, tv, reg)
+		if err1 != nil {
+			return ok1, err1
+		}
+		/*line emit.goal:1760*/ k, v := e.gensym("k"), e.gensym("v")
+		/*line emit.goal:1761*/ return []string{fmt.Sprintf("%s = make(%s, len(%s))", dst, tf, srcExpr), fmt.Sprintf("for %s, %s := range %s {\n%s[%s] = %s\n}", k, v, srcExpr, dst, k, elem(v))}, nil
+	}
+	/*line emit.goal:1768*/ if _, srcStruct := structFieldsOf(e.info, sf); srcStruct {
+		/*line emit.goal:1769*/ if _, tgtStruct := structFieldsOf(e.info, tf); tgtStruct {
+			/*line emit.goal:1770*/ v := e.gensym("s")
+			/*line emit.goal:1771*/ stmts := []string{fmt.Sprintf("var %s %s", v, tf)}
+			/*line emit.goal:1772*/ body, err1 := e.deriveBody(v, srcExpr, sf, tf, fallibleOK, errName, outVar)
 			if err1 != nil {
 				return ok1, err1
 			}
-			/*line emit.goal:1760*/ stmts = append(stmts, body...)
-			/*line emit.goal:1761*/ return append(stmts, fmt.Sprintf("%s = %s", dst, v)), nil
+			/*line emit.goal:1773*/ stmts = append(stmts, body...)
+			/*line emit.goal:1774*/ return append(stmts, fmt.Sprintf("%s = %s", dst, v)), nil
 		}
 	}
-	/*line emit.goal:1764*/ return ok1, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
+	/*line emit.goal:1777*/ return ok1, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
 }
 
-//line emit.goal:1771
+//line emit.goal:1784
 func (e *emitter) deriveBody(dstVar, srcExpr, srcType, tgtType string, fallible bool, errName, outVar string) (ok1 []string, err1 error) {
-	/*line emit.goal:1772*/ tgtFields, ok := structFieldsOf(e.info, tgtType)
-	/*line emit.goal:1773*/ if !ok {
-		/*line emit.goal:1774*/ return ok1, fmt.Errorf("unknown target struct %q", tgtType)
+	/*line emit.goal:1785*/ tgtFields, ok := structFieldsOf(e.info, tgtType)
+	/*line emit.goal:1786*/ if !ok {
+		/*line emit.goal:1787*/ return ok1, fmt.Errorf("unknown target struct %q", tgtType)
 	}
-	/*line emit.goal:1776*/ srcFields, _ := structFieldsOf(e.info, srcType)
-	/*line emit.goal:1777*/ var stmts []string
+	/*line emit.goal:1789*/ srcFields, _ := structFieldsOf(e.info, srcType)
+	/*line emit.goal:1790*/ var stmts []string
 
-	/*line emit.goal:1778*/
+	/*line emit.goal:1791*/
 	for _, f := range tgtFields {
-		/*line emit.goal:1779*/ sf, found := findSemaField(srcFields, f.Name)
-		/*line emit.goal:1780*/ if !found {
-			/*line emit.goal:1781*/ return ok1, fmt.Errorf("nested field %q of %s is not sourced from %s", f.Name, tgtType, srcType)
+		/*line emit.goal:1792*/ sf, found := findSemaField(srcFields, f.Name)
+		/*line emit.goal:1793*/ if !found {
+			/*line emit.goal:1794*/ return ok1, fmt.Errorf("nested field %q of %s is not sourced from %s", f.Name, tgtType, srcType)
 		}
-		/*line emit.goal:1785*/ v1, err2 := e.resolveField(dstVar+"."+f.Name, srcExpr+"."+sf.Name, sf.Type, f.Type, fallible, errName, outVar)
+		/*line emit.goal:1798*/ v1, err2 := e.resolveField(dstVar+"."+f.Name, srcExpr+"."+sf.Name, sf.Type, f.Type, fallible, errName, outVar)
 		if err2 != nil {
 			{
-				/*line emit.goal:1787*/ return ok1, fmt.Errorf("nested field %q: %w", f.Name, err2)
+				/*line emit.goal:1800*/ return ok1, fmt.Errorf("nested field %q: %w", f.Name, err2)
 			}
 		} else {
 			{
-				/*line emit.goal:1786*/ stmts = append(stmts, v1...)
+				/*line emit.goal:1799*/ stmts = append(stmts, v1...)
 			}
 		}
 	}
-	/*line emit.goal:1790*/ return stmts, nil
+	/*line emit.goal:1803*/ return stmts, nil
 }
 
-//line emit.goal:1797
+//line emit.goal:1810
 func (e *emitter) indexExpr(x *ast.IndexExpr) {
-	/*line emit.goal:1798*/ if id, ok := x.X.(*ast.Ident); ok && id.Name == "Option" {
-		/*line emit.goal:1799*/ e.p("*")
-		/*line emit.goal:1800*/ e.expr(x.Index)
-		/*line emit.goal:1801*/ return
+	/*line emit.goal:1811*/ if id, ok := x.X.(*ast.Ident); ok && id.Name == "Option" {
+		/*line emit.goal:1812*/ e.p("*")
+		/*line emit.goal:1813*/ e.expr(x.Index)
+		/*line emit.goal:1814*/ return
 	}
-	/*line emit.goal:1803*/ e.expr(x.X)
-	/*line emit.goal:1804*/ e.p("[")
-	/*line emit.goal:1805*/ e.expr(x.Index)
-	/*line emit.goal:1806*/ e.p("]")
+	/*line emit.goal:1816*/ e.expr(x.X)
+	/*line emit.goal:1817*/ e.p("[")
+	/*line emit.goal:1818*/ e.expr(x.Index)
+	/*line emit.goal:1819*/ e.p("]")
 }
 
-//line emit.goal:1811
+//line emit.goal:1824
 func (e *emitter) returnStmt(s *ast.ReturnStmt) {
-	/*line emit.goal:1815*/ if cl, src, pos, fallible, ok := e.inlineDeriveReturn(s); ok {
-		/*line emit.goal:1816*/ e.emitInlineDerive(cl, src, pos, fallible)
-		/*line emit.goal:1817*/ return
+	/*line emit.goal:1828*/ if cl, src, pos, fallible, ok := e.inlineDeriveReturn(s); ok {
+		/*line emit.goal:1829*/ e.emitInlineDerive(cl, src, pos, fallible)
+		/*line emit.goal:1830*/ return
 	}
-	/*line emit.goal:1819*/ if len(s.Results) == 1 {
-		/*line emit.goal:1823*/ if m, ok := s.Results[0].(*ast.MatchExpr); ok {
-			/*line emit.goal:1824*/ if isSealedMatch(m) {
-				/*line emit.goal:1825*/ e.sealedMatch(m, posReturn, "")
-				/*line emit.goal:1826*/ return
+	/*line emit.goal:1832*/ if len(s.Results) == 1 {
+		/*line emit.goal:1836*/ if m, ok := s.Results[0].(*ast.MatchExpr); ok {
+			/*line emit.goal:1837*/ if isSealedMatch(m) {
+				/*line emit.goal:1838*/ e.sealedMatch(m, posReturn, "")
+				/*line emit.goal:1839*/ return
 			}
-			/*line emit.goal:1828*/ switch q := matchQualifier(m); {
+			/*line emit.goal:1841*/ switch q := matchQualifier(m); {
 			case q == "Result":
 				e.resultMatch(m, posReturn, "")
 				return
@@ -1554,132 +1561,132 @@ func (e *emitter) returnStmt(s *ast.ReturnStmt) {
 				return
 			}
 		}
-		/*line emit.goal:1840*/ switch e.fnKind {
+		/*line emit.goal:1853*/ switch e.fnKind {
 		case roResultOpen:
 			if e.emitResultReturn(s.Results[0]) {
-				/*line emit.goal:1843*/ return
+				/*line emit.goal:1856*/ return
 			}
 		case roOption:
 			if e.emitOptionReturn(s.Results[0]) {
-				/*line emit.goal:1847*/ return
+				/*line emit.goal:1860*/ return
 			}
 		case roResultClosed:
 			if e.emitClosedResultReturn(s.Results[0]) {
-				/*line emit.goal:1851*/ return
+				/*line emit.goal:1864*/ return
 			}
 		}
 	}
-	/*line emit.goal:1855*/ e.p("return")
-	/*line emit.goal:1856*/ if len(s.Results) > 0 {
-		/*line emit.goal:1857*/ e.p(" ")
-		/*line emit.goal:1858*/ e.exprList(s.Results)
+	/*line emit.goal:1868*/ e.p("return")
+	/*line emit.goal:1869*/ if len(s.Results) > 0 {
+		/*line emit.goal:1870*/ e.p(" ")
+		/*line emit.goal:1871*/ e.exprList(s.Results)
 	}
 }
 
-//line emit.goal:1869
+//line emit.goal:1882
 func (e *emitter) inlineDeriveReturn(s *ast.ReturnStmt) (*ast.CompositeLit, *ast.Ident, token.Pos, bool, bool) {
-	/*line emit.goal:1870*/ if len(s.Results) == 1 {
-		/*line emit.goal:1871*/ if cl, ok := s.Results[0].(*ast.CompositeLit); ok && cl.Type != nil {
-			/*line emit.goal:1872*/ if src, pos, ok := deriveSpreadSrc(cl); ok {
-				/*line emit.goal:1873*/ return cl, src, pos, false, true
+	/*line emit.goal:1883*/ if len(s.Results) == 1 {
+		/*line emit.goal:1884*/ if cl, ok := s.Results[0].(*ast.CompositeLit); ok && cl.Type != nil {
+			/*line emit.goal:1885*/ if src, pos, ok := deriveSpreadSrc(cl); ok {
+				/*line emit.goal:1886*/ return cl, src, pos, false, true
 			}
 		}
 	}
-	/*line emit.goal:1877*/ if len(s.Results) == 2 {
-		/*line emit.goal:1878*/ if cl, ok := s.Results[0].(*ast.CompositeLit); ok && cl.Type != nil && isNilIdent(s.Results[1]) {
-			/*line emit.goal:1879*/ if src, pos, ok := deriveSpreadSrc(cl); ok {
-				/*line emit.goal:1880*/ return cl, src, pos, true, true
+	/*line emit.goal:1890*/ if len(s.Results) == 2 {
+		/*line emit.goal:1891*/ if cl, ok := s.Results[0].(*ast.CompositeLit); ok && cl.Type != nil && isNilIdent(s.Results[1]) {
+			/*line emit.goal:1892*/ if src, pos, ok := deriveSpreadSrc(cl); ok {
+				/*line emit.goal:1893*/ return cl, src, pos, true, true
 			}
 		}
 	}
-	/*line emit.goal:1884*/ return nil, nil, token.Pos{}, false, false
+	/*line emit.goal:1897*/ return nil, nil, token.Pos{}, false, false
 }
 
-//line emit.goal:1889
+//line emit.goal:1902
 func deriveSpreadSrc(cl *ast.CompositeLit) (*ast.Ident, token.Pos, bool) {
-	/*line emit.goal:1890*/ for _, el := range cl.Elts {
-		/*line emit.goal:1891*/ sp, ok := el.(*ast.SpreadElement)
-		/*line emit.goal:1892*/ if !ok {
-			/*line emit.goal:1893*/ continue
+	/*line emit.goal:1903*/ for _, el := range cl.Elts {
+		/*line emit.goal:1904*/ sp, ok := el.(*ast.SpreadElement)
+		/*line emit.goal:1905*/ if !ok {
+			/*line emit.goal:1906*/ continue
 		}
-		/*line emit.goal:1895*/ call, ok := sp.X.(*ast.CallExpr)
-		/*line emit.goal:1896*/ if !ok {
-			/*line emit.goal:1897*/ continue
+		/*line emit.goal:1908*/ call, ok := sp.X.(*ast.CallExpr)
+		/*line emit.goal:1909*/ if !ok {
+			/*line emit.goal:1910*/ continue
 		}
-		/*line emit.goal:1899*/ fn, ok := call.Fun.(*ast.Ident)
-		/*line emit.goal:1900*/ if !ok || fn.Name != "derive" || len(call.Args) != 1 {
-			/*line emit.goal:1901*/ continue
+		/*line emit.goal:1912*/ fn, ok := call.Fun.(*ast.Ident)
+		/*line emit.goal:1913*/ if !ok || fn.Name != "derive" || len(call.Args) != 1 {
+			/*line emit.goal:1914*/ continue
 		}
-		/*line emit.goal:1903*/ if id, ok := call.Args[0].(*ast.Ident); ok {
-			/*line emit.goal:1904*/ return id, sp.Pos(), true
+		/*line emit.goal:1916*/ if id, ok := call.Args[0].(*ast.Ident); ok {
+			/*line emit.goal:1917*/ return id, sp.Pos(), true
 		}
 	}
-	/*line emit.goal:1907*/ return nil, token.Pos{}, false
+	/*line emit.goal:1920*/ return nil, token.Pos{}, false
 }
 
-//line emit.goal:1911
+//line emit.goal:1924
 func isNilIdent(e ast.Expr) bool {
-	/*line emit.goal:1912*/ id, ok := e.(*ast.Ident)
-	/*line emit.goal:1913*/ return ok && id.Name == "nil"
+	/*line emit.goal:1925*/ id, ok := e.(*ast.Ident)
+	/*line emit.goal:1926*/ return ok && id.Name == "nil"
 }
 
-//line emit.goal:1918
+//line emit.goal:1931
 func isDeriveSpread(sp *ast.SpreadElement) bool {
-	/*line emit.goal:1919*/ call, ok := sp.X.(*ast.CallExpr)
-	/*line emit.goal:1920*/ if !ok {
-		/*line emit.goal:1921*/ return false
+	/*line emit.goal:1932*/ call, ok := sp.X.(*ast.CallExpr)
+	/*line emit.goal:1933*/ if !ok {
+		/*line emit.goal:1934*/ return false
 	}
-	/*line emit.goal:1923*/ fn, ok := call.Fun.(*ast.Ident)
-	/*line emit.goal:1924*/ return ok && fn.Name == "derive"
+	/*line emit.goal:1936*/ fn, ok := call.Fun.(*ast.Ident)
+	/*line emit.goal:1937*/ return ok && fn.Name == "derive"
 }
 
-//line emit.goal:1932
+//line emit.goal:1945
 func (e *emitter) emitInlineDerive(cl *ast.CompositeLit, src *ast.Ident, pos token.Pos, fallible bool) {
-	/*line emit.goal:1933*/ tgtType := typeExprString(cl.Type)
-	/*line emit.goal:1934*/ srcType, ok := e.paramType(src.Name)
-	/*line emit.goal:1935*/ if !ok {
-		/*line emit.goal:1936*/ e.fail("`...derive` at %s: source `%s` must be a parameter of the enclosing function", pos, src.Name)
-		/*line emit.goal:1937*/ return
+	/*line emit.goal:1946*/ tgtType := typeExprString(cl.Type)
+	/*line emit.goal:1947*/ srcType, ok := e.paramType(src.Name)
+	/*line emit.goal:1948*/ if !ok {
+		/*line emit.goal:1949*/ e.fail("`...derive` at %s: source `%s` must be a parameter of the enclosing function", pos, src.Name)
+		/*line emit.goal:1950*/ return
 	}
-	/*line emit.goal:1939*/ if _, ok := structFieldsOf(e.info, derefType(tgtType)); !ok {
-		/*line emit.goal:1940*/ e.fail("`...derive` at %s: unknown target struct `%s` (no `type %s struct{…}` in this file)", pos, tgtType, derefType(tgtType))
-		/*line emit.goal:1941*/ return
+	/*line emit.goal:1952*/ if _, ok := structFieldsOf(e.info, derefType(tgtType)); !ok {
+		/*line emit.goal:1953*/ e.fail("`...derive` at %s: unknown target struct `%s` (no `type %s struct{…}` in this file)", pos, tgtType, derefType(tgtType))
+		/*line emit.goal:1954*/ return
 	}
-	/*line emit.goal:1943*/ overrides := overridesFromLit(cl)
-	/*line emit.goal:1944*/ e.p("{\n")
-	/*line emit.goal:1945*/ e.emitConversionBody("", src.Name, srcType, tgtType, fallible, overrides, pos)
-	/*line emit.goal:1946*/ e.p("}")
+	/*line emit.goal:1956*/ overrides := overridesFromLit(cl)
+	/*line emit.goal:1957*/ e.p("{\n")
+	/*line emit.goal:1958*/ e.emitConversionBody("", src.Name, srcType, tgtType, fallible, overrides, pos)
+	/*line emit.goal:1959*/ e.p("}")
 }
 
-//line emit.goal:1954
+//line emit.goal:1967
 func (e *emitter) tryVarMatch(d ast.Decl) bool {
-	/*line emit.goal:1955*/ gd, ok := d.(*ast.GenDecl)
-	/*line emit.goal:1956*/ if !ok || gd.Tok.String() != "var" || len(gd.Specs) != 1 {
-		/*line emit.goal:1957*/ return false
+	/*line emit.goal:1968*/ gd, ok := d.(*ast.GenDecl)
+	/*line emit.goal:1969*/ if !ok || gd.Tok.String() != "var" || len(gd.Specs) != 1 {
+		/*line emit.goal:1970*/ return false
 	}
-	/*line emit.goal:1959*/ vs, ok := gd.Specs[0].(*ast.ValueSpec)
-	/*line emit.goal:1960*/ if !ok || len(vs.Names) != 1 || vs.Type == nil || len(vs.Values) != 1 {
-		/*line emit.goal:1961*/ return false
+	/*line emit.goal:1972*/ vs, ok := gd.Specs[0].(*ast.ValueSpec)
+	/*line emit.goal:1973*/ if !ok || len(vs.Names) != 1 || vs.Type == nil || len(vs.Values) != 1 {
+		/*line emit.goal:1974*/ return false
 	}
-	/*line emit.goal:1963*/ m, ok := vs.Values[0].(*ast.MatchExpr)
-	/*line emit.goal:1964*/ if !ok {
-		/*line emit.goal:1965*/ return false
+	/*line emit.goal:1976*/ m, ok := vs.Values[0].(*ast.MatchExpr)
+	/*line emit.goal:1977*/ if !ok {
+		/*line emit.goal:1978*/ return false
 	}
-	/*line emit.goal:1967*/ q := matchQualifier(m)
-	/*line emit.goal:1968*/ if !isSealedMatch(m) && q != "Result" && q != "Option" && enumOf(e.info, q) == nil {
-		/*line emit.goal:1969*/ return false
+	/*line emit.goal:1980*/ q := matchQualifier(m)
+	/*line emit.goal:1981*/ if !isSealedMatch(m) && q != "Result" && q != "Option" && enumOf(e.info, q) == nil {
+		/*line emit.goal:1982*/ return false
 	}
-	/*line emit.goal:1971*/ name := vs.Names[0].Name
-	/*line emit.goal:1972*/ e.p("var " + name + " ")
-	/*line emit.goal:1973*/ e.expr(vs.Type)
-	/*line emit.goal:1974*/ e.p("\n")
-	/*line emit.goal:1975*/ e.matchValue(m, q, posVar, name)
-	/*line emit.goal:1976*/ return true
+	/*line emit.goal:1984*/ name := vs.Names[0].Name
+	/*line emit.goal:1985*/ e.p("var " + name + " ")
+	/*line emit.goal:1986*/ e.expr(vs.Type)
+	/*line emit.goal:1987*/ e.p("\n")
+	/*line emit.goal:1988*/ e.matchValue(m, q, posVar, name)
+	/*line emit.goal:1989*/ return true
 }
 
-//line emit.goal:1982
+//line emit.goal:1995
 func (e *emitter) matchValue(m *ast.MatchExpr, q string, pos matchPos, name string) {
-	/*line emit.goal:1983*/ switch {
+	/*line emit.goal:1996*/ switch {
 	case isSealedMatch(m):
 		e.sealedMatch(m, pos, name)
 	case q == "Result":
@@ -1691,106 +1698,106 @@ func (e *emitter) matchValue(m *ast.MatchExpr, q string, pos matchPos, name stri
 	}
 }
 
-//line emit.goal:2004
+//line emit.goal:2017
 func (e *emitter) tryAssignMatch(s *ast.AssignStmt) bool {
-	/*line emit.goal:2005*/ if len(s.Lhs) != 1 || len(s.Rhs) != 1 {
-		/*line emit.goal:2006*/ return false
+	/*line emit.goal:2018*/ if len(s.Lhs) != 1 || len(s.Rhs) != 1 {
+		/*line emit.goal:2019*/ return false
 	}
-	/*line emit.goal:2008*/ id, ok := s.Lhs[0].(*ast.Ident)
-	/*line emit.goal:2009*/ if !ok {
-		/*line emit.goal:2010*/ return false
+	/*line emit.goal:2021*/ id, ok := s.Lhs[0].(*ast.Ident)
+	/*line emit.goal:2022*/ if !ok {
+		/*line emit.goal:2023*/ return false
 	}
-	/*line emit.goal:2012*/ m, ok := s.Rhs[0].(*ast.MatchExpr)
-	/*line emit.goal:2013*/ if !ok {
-		/*line emit.goal:2014*/ return false
+	/*line emit.goal:2025*/ m, ok := s.Rhs[0].(*ast.MatchExpr)
+	/*line emit.goal:2026*/ if !ok {
+		/*line emit.goal:2027*/ return false
 	}
-	/*line emit.goal:2016*/ q := matchQualifier(m)
-	/*line emit.goal:2017*/ if !isSealedMatch(m) && q != "Result" && q != "Option" && enumOf(e.info, q) == nil {
-		/*line emit.goal:2018*/ return false
+	/*line emit.goal:2029*/ q := matchQualifier(m)
+	/*line emit.goal:2030*/ if !isSealedMatch(m) && q != "Result" && q != "Option" && enumOf(e.info, q) == nil {
+		/*line emit.goal:2031*/ return false
 	}
-	/*line emit.goal:2020*/ typ, ok := e.inferMatchType(m)
-	/*line emit.goal:2021*/ if !ok {
-		/*line emit.goal:2022*/ e.fail("value-position `%s := match` needs an inferable result type (arms are not all one enum, string, or bool); annotate it as `var %s T = match ...` or use `return match ...`", id.Name, id.Name)
-		/*line emit.goal:2023*/ return true
+	/*line emit.goal:2033*/ typ, ok := e.inferMatchType(m)
+	/*line emit.goal:2034*/ if !ok {
+		/*line emit.goal:2035*/ e.fail("value-position `%s := match` needs an inferable result type (arms are not all one enum, string, or bool); annotate it as `var %s T = match ...` or use `return match ...`", id.Name, id.Name)
+		/*line emit.goal:2036*/ return true
 	}
-	/*line emit.goal:2025*/ e.p("var " + id.Name + " " + typ + "\n")
-	/*line emit.goal:2026*/ e.matchValue(m, q, posVar, id.Name)
-	/*line emit.goal:2027*/ return true
+	/*line emit.goal:2038*/ e.p("var " + id.Name + " " + typ + "\n")
+	/*line emit.goal:2039*/ e.matchValue(m, q, posVar, id.Name)
+	/*line emit.goal:2040*/ return true
 }
 
-//line emit.goal:2036
+//line emit.goal:2049
 func (e *emitter) inferMatchType(m *ast.MatchExpr) (string, bool) {
-	/*line emit.goal:2037*/ inferred := ""
-	/*line emit.goal:2038*/ for _, arm := range m.Arms {
-		/*line emit.goal:2039*/ kind, ok := e.armBodyType(arm.Body)
-		/*line emit.goal:2040*/ if !ok {
-			/*line emit.goal:2041*/ return "", false
+	/*line emit.goal:2050*/ inferred := ""
+	/*line emit.goal:2051*/ for _, arm := range m.Arms {
+		/*line emit.goal:2052*/ kind, ok := e.armBodyType(arm.Body)
+		/*line emit.goal:2053*/ if !ok {
+			/*line emit.goal:2054*/ return "", false
 		}
-		/*line emit.goal:2043*/ switch {
+		/*line emit.goal:2056*/ switch {
 		case inferred == "":
 			inferred = kind
 		case inferred != kind:
 			return "", false
 		}
 	}
-	/*line emit.goal:2050*/ return inferred, inferred != ""
+	/*line emit.goal:2063*/ return inferred, inferred != ""
 }
 
-//line emit.goal:2058
+//line emit.goal:2071
 func (e *emitter) armBodyType(body ast.Node) (string, bool) {
-	/*line emit.goal:2059*/ switch v1 := body.(type) {
+	/*line emit.goal:2072*/ switch v1 := body.(type) {
 	case *ast.BasicLit:
 		{
-			/*line emit.goal:2061*/ if v1.Kind == token.STRING {
-				/*line emit.goal:2062*/ return "string", true
+			/*line emit.goal:2074*/ if v1.Kind == token.STRING {
+				/*line emit.goal:2075*/ return "string", true
 			}
 		}
 	case *ast.Ident:
 		{
-			/*line emit.goal:2066*/ if v1.Name == "true" || v1.Name == "false" {
-				/*line emit.goal:2067*/ return "bool", true
+			/*line emit.goal:2079*/ if v1.Name == "true" || v1.Name == "false" {
+				/*line emit.goal:2080*/ return "bool", true
 			}
 		}
 	case *ast.SelectorExpr:
 		{
-			/*line emit.goal:2072*/ if key, ok := enumRef(v1.X); ok && v1.Sel != nil {
-				/*line emit.goal:2073*/ if en := enumOf(e.info, key); en != nil && en.VSet[v1.Sel.Name] {
-					/*line emit.goal:2074*/ return key, true
+			/*line emit.goal:2085*/ if key, ok := enumRef(v1.X); ok && v1.Sel != nil {
+				/*line emit.goal:2086*/ if en := enumOf(e.info, key); en != nil && en.VSet[v1.Sel.Name] {
+					/*line emit.goal:2087*/ return key, true
 				}
 			}
 		}
 	case *ast.VariantLit:
 		{
-			/*line emit.goal:2080*/ if key, ok := enumRef(v1.Enum); ok && enumOf(e.info, key) != nil {
-				/*line emit.goal:2081*/ return key, true
+			/*line emit.goal:2093*/ if key, ok := enumRef(v1.Enum); ok && enumOf(e.info, key) != nil {
+				/*line emit.goal:2094*/ return key, true
 			}
 		}
 	default:
 		{
 		}
 	}
-	/*line emit.goal:2086*/ return "", false
+	/*line emit.goal:2099*/ return "", false
 }
 
-//line emit.goal:2092
+//line emit.goal:2105
 func (e *emitter) emitResultReturn(x ast.Expr) bool {
-	/*line emit.goal:2093*/ call, ok := x.(*ast.CallExpr)
-	/*line emit.goal:2094*/ if !ok {
-		/*line emit.goal:2095*/ return false
+	/*line emit.goal:2106*/ call, ok := x.(*ast.CallExpr)
+	/*line emit.goal:2107*/ if !ok {
+		/*line emit.goal:2108*/ return false
 	}
-	/*line emit.goal:2097*/ sel, ok := call.Fun.(*ast.SelectorExpr)
-	/*line emit.goal:2098*/ if !ok || sel.Sel == nil {
-		/*line emit.goal:2099*/ return false
+	/*line emit.goal:2110*/ sel, ok := call.Fun.(*ast.SelectorExpr)
+	/*line emit.goal:2111*/ if !ok || sel.Sel == nil {
+		/*line emit.goal:2112*/ return false
 	}
-	/*line emit.goal:2101*/ if base, ok := sel.X.(*ast.Ident); !ok || base.Name != "Result" {
-		/*line emit.goal:2102*/ return false
+	/*line emit.goal:2114*/ if base, ok := sel.X.(*ast.Ident); !ok || base.Name != "Result" {
+		/*line emit.goal:2115*/ return false
 	}
-	/*line emit.goal:2104*/ switch sel.Sel.Name {
+	/*line emit.goal:2117*/ switch sel.Sel.Name {
 	case "Ok":
 		if len(call.Args) == 1 {
-			/*line emit.goal:2109*/ if expr, ok := e.optionValueExpr(call.Args[0]); ok {
-				/*line emit.goal:2110*/ e.p("return " + expr + ", nil")
-				/*line emit.goal:2111*/ return true
+			/*line emit.goal:2122*/ if expr, ok := e.optionValueExpr(call.Args[0]); ok {
+				/*line emit.goal:2123*/ e.p("return " + expr + ", nil")
+				/*line emit.goal:2124*/ return true
 			}
 		}
 		e.p("return ")
@@ -1802,44 +1809,44 @@ func (e *emitter) emitResultReturn(x ast.Expr) bool {
 		e.exprList(call.Args)
 		return true
 	}
-	/*line emit.goal:2123*/ return false
+	/*line emit.goal:2136*/ return false
 }
 
-//line emit.goal:2135
+//line emit.goal:2148
 func (e *emitter) optionValueExpr(x ast.Expr) (string, bool) {
-	/*line emit.goal:2136*/ if sel, ok := x.(*ast.SelectorExpr); ok {
-		/*line emit.goal:2137*/ if base, ok := sel.X.(*ast.Ident); ok && base.Name == "Option" && sel.Sel != nil && sel.Sel.Name == "None" {
-			/*line emit.goal:2138*/ return "nil", true
+	/*line emit.goal:2149*/ if sel, ok := x.(*ast.SelectorExpr); ok {
+		/*line emit.goal:2150*/ if base, ok := sel.X.(*ast.Ident); ok && base.Name == "Option" && sel.Sel != nil && sel.Sel.Name == "None" {
+			/*line emit.goal:2151*/ return "nil", true
 		}
 	}
-	/*line emit.goal:2141*/ call, ok := x.(*ast.CallExpr)
-	/*line emit.goal:2142*/ if !ok {
-		/*line emit.goal:2143*/ return "", false
+	/*line emit.goal:2154*/ call, ok := x.(*ast.CallExpr)
+	/*line emit.goal:2155*/ if !ok {
+		/*line emit.goal:2156*/ return "", false
 	}
-	/*line emit.goal:2145*/ sel, ok := call.Fun.(*ast.SelectorExpr)
-	/*line emit.goal:2146*/ if !ok || sel.Sel == nil || sel.Sel.Name != "Some" {
-		/*line emit.goal:2147*/ return "", false
+	/*line emit.goal:2158*/ sel, ok := call.Fun.(*ast.SelectorExpr)
+	/*line emit.goal:2159*/ if !ok || sel.Sel == nil || sel.Sel.Name != "Some" {
+		/*line emit.goal:2160*/ return "", false
 	}
-	/*line emit.goal:2149*/ if base, ok := sel.X.(*ast.Ident); !ok || base.Name != "Option" {
-		/*line emit.goal:2150*/ return "", false
+	/*line emit.goal:2162*/ if base, ok := sel.X.(*ast.Ident); !ok || base.Name != "Option" {
+		/*line emit.goal:2163*/ return "", false
 	}
-	/*line emit.goal:2152*/ if len(call.Args) != 1 {
-		/*line emit.goal:2153*/ return "", false
+	/*line emit.goal:2165*/ if len(call.Args) != 1 {
+		/*line emit.goal:2166*/ return "", false
 	}
-	/*line emit.goal:2155*/ some := e.gensym("some")
-	/*line emit.goal:2156*/ e.p(some + " := ")
-	/*line emit.goal:2157*/ e.expr(call.Args[0])
-	/*line emit.goal:2158*/ e.p("\n")
-	/*line emit.goal:2159*/ return "&" + some, true
+	/*line emit.goal:2168*/ some := e.gensym("some")
+	/*line emit.goal:2169*/ e.p(some + " := ")
+	/*line emit.goal:2170*/ e.expr(call.Args[0])
+	/*line emit.goal:2171*/ e.p("\n")
+	/*line emit.goal:2172*/ return "&" + some, true
 }
 
-//line emit.goal:2173
+//line emit.goal:2186
 func (e *emitter) tryOptionValue(x ast.Expr) bool {
-	/*line emit.goal:2174*/ kind, arg, ok := optionConstruction(x)
-	/*line emit.goal:2175*/ if !ok {
-		/*line emit.goal:2176*/ return false
+	/*line emit.goal:2187*/ kind, arg, ok := optionConstruction(x)
+	/*line emit.goal:2188*/ if !ok {
+		/*line emit.goal:2189*/ return false
 	}
-	/*line emit.goal:2178*/ switch kind {
+	/*line emit.goal:2191*/ switch kind {
 	case "none":
 		e.p("nil")
 	default:
@@ -1848,33 +1855,33 @@ func (e *emitter) tryOptionValue(x ast.Expr) bool {
 		e.expr(arg)
 		e.p(")")
 	}
-	/*line emit.goal:2187*/ return true
+	/*line emit.goal:2200*/ return true
 }
 
-//line emit.goal:2192
+//line emit.goal:2205
 func (e *emitter) emitOptionReturn(x ast.Expr) bool {
-	/*line emit.goal:2193*/ expr, ok := e.optionValueExpr(x)
-	/*line emit.goal:2194*/ if !ok {
-		/*line emit.goal:2195*/ return false
+	/*line emit.goal:2206*/ expr, ok := e.optionValueExpr(x)
+	/*line emit.goal:2207*/ if !ok {
+		/*line emit.goal:2208*/ return false
 	}
-	/*line emit.goal:2197*/ e.p("return " + expr)
-	/*line emit.goal:2198*/ return true
+	/*line emit.goal:2210*/ e.p("return " + expr)
+	/*line emit.goal:2211*/ return true
 }
 
-//line emit.goal:2207
+//line emit.goal:2220
 func (e *emitter) emitClosedResultReturn(x ast.Expr) bool {
-	/*line emit.goal:2208*/ call, ok := x.(*ast.CallExpr)
-	/*line emit.goal:2209*/ if !ok {
-		/*line emit.goal:2210*/ return false
+	/*line emit.goal:2221*/ call, ok := x.(*ast.CallExpr)
+	/*line emit.goal:2222*/ if !ok {
+		/*line emit.goal:2223*/ return false
 	}
-	/*line emit.goal:2212*/ sel, ok := call.Fun.(*ast.SelectorExpr)
-	/*line emit.goal:2213*/ if !ok || sel.Sel == nil {
-		/*line emit.goal:2214*/ return false
+	/*line emit.goal:2225*/ sel, ok := call.Fun.(*ast.SelectorExpr)
+	/*line emit.goal:2226*/ if !ok || sel.Sel == nil {
+		/*line emit.goal:2227*/ return false
 	}
-	/*line emit.goal:2216*/ if base, ok := sel.X.(*ast.Ident); !ok || base.Name != "Result" {
-		/*line emit.goal:2217*/ return false
+	/*line emit.goal:2229*/ if base, ok := sel.X.(*ast.Ident); !ok || base.Name != "Result" {
+		/*line emit.goal:2230*/ return false
 	}
-	/*line emit.goal:2219*/ switch sel.Sel.Name {
+	/*line emit.goal:2232*/ switch sel.Sel.Name {
 	case "Ok":
 		e.p(fmt.Sprintf("return Ok[%s, %s]{Value: ", e.closedT, e.closedE))
 	case "Err":
@@ -1882,14 +1889,14 @@ func (e *emitter) emitClosedResultReturn(x ast.Expr) bool {
 	default:
 		return false
 	}
-	/*line emit.goal:2227*/ e.exprList(call.Args)
-	/*line emit.goal:2228*/ e.p("}")
-	/*line emit.goal:2229*/ return true
+	/*line emit.goal:2240*/ e.exprList(call.Args)
+	/*line emit.goal:2241*/ e.p("}")
+	/*line emit.goal:2242*/ return true
 }
 
-//line emit.goal:2237
+//line emit.goal:2250
 func (e *emitter) unwrap(name string, u *ast.UnwrapExpr, discard bool, tok string) {
-	/*line emit.goal:2238*/ switch e.fnKind {
+	/*line emit.goal:2251*/ switch e.fnKind {
 	case roResultOpen:
 		e.unwrapResult(name, u, discard, tok)
 	case roOption:
@@ -1901,378 +1908,378 @@ func (e *emitter) unwrap(name string, u *ast.UnwrapExpr, discard bool, tok strin
 	}
 }
 
-//line emit.goal:2255
+//line emit.goal:2268
 func (e *emitter) unwrapClosed(name string, u *ast.UnwrapExpr, discard bool, tok string) {
-	/*line emit.goal:2256*/ sig, ok := e.calleeSig(u.X)
-	/*line emit.goal:2258*/ var isClosed bool
+	/*line emit.goal:2269*/ sig, ok := e.calleeSig(u.X)
+	/*line emit.goal:2271*/ var isClosed bool
 	switch sig.Mode.(type) {
 	case sema.Mode_ModeResultClosed:
 		isClosed = true
 	default:
 		isClosed = false
 	}
-	/*line emit.goal:2262*/ if !ok || !isClosed {
-		/*line emit.goal:2263*/ e.fail("closed-E `?` needs a closed-E Result-returning callee")
-		/*line emit.goal:2264*/ return
+	/*line emit.goal:2275*/ if !ok || !isClosed {
+		/*line emit.goal:2276*/ e.fail("closed-E `?` needs a closed-E Result-returning callee")
+		/*line emit.goal:2277*/ return
 	}
-	/*line emit.goal:2266*/ guard := e.gensym("r")
-	/*line emit.goal:2267*/ errValue := guard + ".Value"
-	/*line emit.goal:2268*/ if sig.E != e.closedE {
-		/*line emit.goal:2269*/ conv, found := e.info.FromRegistry[[2]string{sig.E, e.closedE}]
-		/*line emit.goal:2270*/ if !found {
-			/*line emit.goal:2271*/ e.fail("no `from func` conversion declared for %s -> %s (required to `?` across closed error types)", sig.E, e.closedE)
-			/*line emit.goal:2272*/ return
+	/*line emit.goal:2279*/ guard := e.gensym("r")
+	/*line emit.goal:2280*/ errValue := guard + ".Value"
+	/*line emit.goal:2281*/ if sig.E != e.closedE {
+		/*line emit.goal:2282*/ conv, found := e.info.FromRegistry[[2]string{sig.E, e.closedE}]
+		/*line emit.goal:2283*/ if !found {
+			/*line emit.goal:2284*/ e.fail("no `from func` conversion declared for %s -> %s (required to `?` across closed error types)", sig.E, e.closedE)
+			/*line emit.goal:2285*/ return
 		}
-		/*line emit.goal:2274*/ errValue = conv.Name + "(" + guard + ".Value)"
+		/*line emit.goal:2287*/ errValue = conv.Name + "(" + guard + ".Value)"
 	}
-	/*line emit.goal:2276*/ lhs := name
-	/*line emit.goal:2277*/ if discard {
-		/*line emit.goal:2278*/ lhs = "_"
+	/*line emit.goal:2289*/ lhs := name
+	/*line emit.goal:2290*/ if discard {
+		/*line emit.goal:2291*/ lhs = "_"
 	}
-	/*line emit.goal:2283*/ if discard || tok != "=" {
-		/*line emit.goal:2284*/ e.p("var " + lhs + " " + sig.T + "\n")
+	/*line emit.goal:2296*/ if discard || tok != "=" {
+		/*line emit.goal:2297*/ e.p("var " + lhs + " " + sig.T + "\n")
 	}
-	/*line emit.goal:2286*/ e.p("switch " + guard + " := ")
-	/*line emit.goal:2287*/ e.expr(u.X)
-	/*line emit.goal:2288*/ e.p(".(type) {\n")
-	/*line emit.goal:2289*/ e.p(fmt.Sprintf("case Ok[%s, %s]:\n%s = %s.Value\n", sig.T, sig.E, lhs, guard))
-	/*line emit.goal:2290*/ e.p(fmt.Sprintf("case Err[%s, %s]:\nreturn Err[%s, %s]{Value: %s}\n", sig.T, sig.E, e.closedT, e.closedE, errValue))
-	/*line emit.goal:2291*/ e.p(fmt.Sprintf("default:\npanic(%q)\n}", fmt.Sprintf("unreachable: non-exhaustive Result[%s, %s] (compiler invariant violated)", sig.T, sig.E)))
+	/*line emit.goal:2299*/ e.p("switch " + guard + " := ")
+	/*line emit.goal:2300*/ e.expr(u.X)
+	/*line emit.goal:2301*/ e.p(".(type) {\n")
+	/*line emit.goal:2302*/ e.p(fmt.Sprintf("case Ok[%s, %s]:\n%s = %s.Value\n", sig.T, sig.E, lhs, guard))
+	/*line emit.goal:2303*/ e.p(fmt.Sprintf("case Err[%s, %s]:\nreturn Err[%s, %s]{Value: %s}\n", sig.T, sig.E, e.closedT, e.closedE, errValue))
+	/*line emit.goal:2304*/ e.p(fmt.Sprintf("default:\npanic(%q)\n}", fmt.Sprintf("unreachable: non-exhaustive Result[%s, %s] (compiler invariant violated)", sig.T, sig.E)))
 }
 
-//line emit.goal:2300
+//line emit.goal:2313
 func (e *emitter) unwrapResult(name string, u *ast.UnwrapExpr, discard bool, tok string) {
-	/*line emit.goal:2301*/ e.noteArityFallback(u)
-	/*line emit.goal:2302*/ n := 2
-	/*line emit.goal:2303*/ if sig, ok := e.calleeSig(u.X); ok && sig.EndsInError && sig.Arity >= 1 {
-		/*line emit.goal:2304*/ n = sig.Arity
+	/*line emit.goal:2314*/ e.noteArityFallback(u)
+	/*line emit.goal:2315*/ n := 2
+	/*line emit.goal:2316*/ if sig, ok := e.calleeSig(u.X); ok && sig.EndsInError && sig.Arity >= 1 {
+		/*line emit.goal:2317*/ n = sig.Arity
 	}
-	/*line emit.goal:2306*/ if discard {
-		/*line emit.goal:2307*/ e.p("if " + strings.Repeat("_, ", n-1) + e.errName + " := ")
-		/*line emit.goal:2308*/ e.expr(u.X)
-		/*line emit.goal:2309*/ e.p("; " + e.errName + " != nil {\nreturn " + e.okName + ", " + e.errName + "\n}")
-		/*line emit.goal:2310*/ return
+	/*line emit.goal:2319*/ if discard {
+		/*line emit.goal:2320*/ e.p("if " + strings.Repeat("_, ", n-1) + e.errName + " := ")
+		/*line emit.goal:2321*/ e.expr(u.X)
+		/*line emit.goal:2322*/ e.p("; " + e.errName + " != nil {\nreturn " + e.okName + ", " + e.errName + "\n}")
+		/*line emit.goal:2323*/ return
 	}
-	/*line emit.goal:2312*/ if sig, ok := e.calleeSig(u.X); ok && sig.Arity != 2 {
-		/*line emit.goal:2313*/ e.fail("`?` binds a value but the callee returns %d value(s); write a bare `…?` to propagate only the error", sig.Arity)
-		/*line emit.goal:2314*/ return
+	/*line emit.goal:2325*/ if sig, ok := e.calleeSig(u.X); ok && sig.Arity != 2 {
+		/*line emit.goal:2326*/ e.fail("`?` binds a value but the callee returns %d value(s); write a bare `…?` to propagate only the error", sig.Arity)
+		/*line emit.goal:2327*/ return
 	}
-	/*line emit.goal:2316*/ e.p(name + ", " + e.errName + " " + tok + " ")
-	/*line emit.goal:2317*/ e.expr(u.X)
-	/*line emit.goal:2318*/ e.p("\nif " + e.errName + " != nil {\nreturn " + e.okName + ", " + e.errName + "\n}")
+	/*line emit.goal:2329*/ e.p(name + ", " + e.errName + " " + tok + " ")
+	/*line emit.goal:2330*/ e.expr(u.X)
+	/*line emit.goal:2331*/ e.p("\nif " + e.errName + " != nil {\nreturn " + e.okName + ", " + e.errName + "\n}")
 }
 
-//line emit.goal:2327
+//line emit.goal:2340
 func (e *emitter) noteArityFallback(u *ast.UnwrapExpr) {
-	/*line emit.goal:2328*/ if e.arity == nil || u == nil {
-		/*line emit.goal:2329*/ return
+	/*line emit.goal:2341*/ if e.arity == nil || u == nil {
+		/*line emit.goal:2342*/ return
 	}
-	/*line emit.goal:2331*/ call, ok := u.X.(*ast.CallExpr)
-	/*line emit.goal:2332*/ if !ok {
-		/*line emit.goal:2333*/ return
+	/*line emit.goal:2344*/ call, ok := u.X.(*ast.CallExpr)
+	/*line emit.goal:2345*/ if !ok {
+		/*line emit.goal:2346*/ return
 	}
-	/*line emit.goal:2335*/ sel, ok := call.Fun.(*ast.SelectorExpr)
-	/*line emit.goal:2336*/ if !ok || sel.Sel == nil {
-		/*line emit.goal:2337*/ return
+	/*line emit.goal:2348*/ sel, ok := call.Fun.(*ast.SelectorExpr)
+	/*line emit.goal:2349*/ if !ok || sel.Sel == nil {
+		/*line emit.goal:2350*/ return
 	}
-	/*line emit.goal:2339*/ pkg, ok := sel.X.(*ast.Ident)
-	/*line emit.goal:2340*/ if !ok {
-		/*line emit.goal:2341*/ return
+	/*line emit.goal:2352*/ pkg, ok := sel.X.(*ast.Ident)
+	/*line emit.goal:2353*/ if !ok {
+		/*line emit.goal:2354*/ return
 	}
-	/*line emit.goal:2345*/ if e.recvTypes != nil {
-		/*line emit.goal:2346*/ if _, isRecv := e.recvTypes[pkg.Name]; isRecv {
-			/*line emit.goal:2347*/ return
+	/*line emit.goal:2358*/ if e.recvTypes != nil {
+		/*line emit.goal:2359*/ if _, isRecv := e.recvTypes[pkg.Name]; isRecv {
+			/*line emit.goal:2360*/ return
 		}
 	}
-	/*line emit.goal:2350*/ path, ierr := e.arity.importErr(pkg.Name)
-	/*line emit.goal:2351*/ if ierr == nil {
-		/*line emit.goal:2352*/ return
+	/*line emit.goal:2363*/ path, ierr := e.arity.importErr(pkg.Name)
+	/*line emit.goal:2364*/ if ierr == nil {
+		/*line emit.goal:2365*/ return
 	}
-	/*line emit.goal:2354*/ fallback := "the two-value (T, error) default"
-	/*line emit.goal:2355*/ if stdlibErrorOnly[pkg.Name+"."+sel.Sel.Name] {
-		/*line emit.goal:2356*/ fallback = "the curated stdlib error-only table"
+	/*line emit.goal:2367*/ fallback := "the two-value (T, error) default"
+	/*line emit.goal:2368*/ if stdlibErrorOnly[pkg.Name+"."+sel.Sel.Name] {
+		/*line emit.goal:2369*/ fallback = "the curated stdlib error-only table"
 	}
-	/*line emit.goal:2358*/ e.warns = append(e.warns, pipeline.Warning{File: e.srcFile, Line: u.Question.Line, Col: u.Question.Col, Code: "question-arity-fallback", Message: fmt.Sprintf("`?` arity for %s.%s could not be resolved: importing %q failed (%v); assumed %s", pkg.Name, sel.Sel.Name, path, ierr, fallback)})
+	/*line emit.goal:2371*/ e.warns = append(e.warns, pipeline.Warning{File: e.srcFile, Line: u.Question.Line, Col: u.Question.Col, Code: "question-arity-fallback", Message: fmt.Sprintf("`?` arity for %s.%s could not be resolved: importing %q failed (%v); assumed %s", pkg.Name, sel.Sel.Name, path, ierr, fallback)})
 }
 
-//line emit.goal:2371
+//line emit.goal:2384
 func (e *emitter) unwrapOption(name string, u *ast.UnwrapExpr, discard bool, tok string) {
-	/*line emit.goal:2372*/ o := e.gensym("o")
-	/*line emit.goal:2373*/ if discard {
-		/*line emit.goal:2374*/ e.p("if " + o + " := ")
-		/*line emit.goal:2375*/ e.expr(u.X)
-		/*line emit.goal:2376*/ e.p("; " + o + " == nil {\nreturn nil\n}")
-		/*line emit.goal:2377*/ return
+	/*line emit.goal:2385*/ o := e.gensym("o")
+	/*line emit.goal:2386*/ if discard {
+		/*line emit.goal:2387*/ e.p("if " + o + " := ")
+		/*line emit.goal:2388*/ e.expr(u.X)
+		/*line emit.goal:2389*/ e.p("; " + o + " == nil {\nreturn nil\n}")
+		/*line emit.goal:2390*/ return
 	}
-	/*line emit.goal:2379*/ e.p(o + " := ")
-	/*line emit.goal:2380*/ e.expr(u.X)
-	/*line emit.goal:2381*/ e.p("\nif " + o + " == nil {\nreturn nil\n}\n" + name + " " + tok + " *" + o)
+	/*line emit.goal:2392*/ e.p(o + " := ")
+	/*line emit.goal:2393*/ e.expr(u.X)
+	/*line emit.goal:2394*/ e.p("\nif " + o + " == nil {\nreturn nil\n}\n" + name + " " + tok + " *" + o)
 }
 
-//line emit.goal:2390
+//line emit.goal:2403
 var stdlibErrorOnly = map[string]bool{"os.Mkdir": true, "os.MkdirAll": true, "os.Remove": true, "os.RemoveAll": true, "os.Rename": true, "os.Chmod": true, "os.Chown": true, "os.Chdir": true, "os.Chtimes": true, "os.Symlink": true, "os.Link": true, "os.Truncate": true, "os.Setenv": true, "os.Unsetenv": true, "os.WriteFile": true, "json.Unmarshal": true, "xml.Unmarshal": true, "binary.Read": true, "binary.Write": true}
 
-//line emit.goal:2417
+//line emit.goal:2430
 func (e *emitter) calleeSig(x ast.Expr) (sema.FuncSig, bool) {
-	/*line emit.goal:2418*/ call, ok := x.(*ast.CallExpr)
-	/*line emit.goal:2419*/ if !ok {
-		/*line emit.goal:2420*/ return sema.FuncSig{}, false
+	/*line emit.goal:2431*/ call, ok := x.(*ast.CallExpr)
+	/*line emit.goal:2432*/ if !ok {
+		/*line emit.goal:2433*/ return sema.FuncSig{}, false
 	}
-	/*line emit.goal:2422*/ switch v1 := call.Fun.(type) {
+	/*line emit.goal:2435*/ switch v1 := call.Fun.(type) {
 	case *ast.Ident:
 		{
-			/*line emit.goal:2424*/ if e.info == nil || e.info.FuncSignatures == nil {
-				/*line emit.goal:2425*/ return sema.FuncSig{}, false
+			/*line emit.goal:2437*/ if e.info == nil || e.info.FuncSignatures == nil {
+				/*line emit.goal:2438*/ return sema.FuncSig{}, false
 			}
-			/*line emit.goal:2427*/ sig, ok := e.info.FuncSignatures[v1.Name]
-			/*line emit.goal:2428*/ return sig, ok
+			/*line emit.goal:2440*/ sig, ok := e.info.FuncSignatures[v1.Name]
+			/*line emit.goal:2441*/ return sig, ok
 		}
 	case *ast.SelectorExpr:
 		{
-			/*line emit.goal:2431*/ pkg, ok := v1.X.(*ast.Ident)
-			/*line emit.goal:2432*/ if !ok || v1.Sel == nil {
-				/*line emit.goal:2433*/ return sema.FuncSig{}, false
+			/*line emit.goal:2444*/ pkg, ok := v1.X.(*ast.Ident)
+			/*line emit.goal:2445*/ if !ok || v1.Sel == nil {
+				/*line emit.goal:2446*/ return sema.FuncSig{}, false
 			}
-			/*line emit.goal:2439*/ if sig, ok := e.methodCalleeSig(pkg.Name, v1.Sel.Name); ok {
-				/*line emit.goal:2440*/ return sig, true
+			/*line emit.goal:2452*/ if sig, ok := e.methodCalleeSig(pkg.Name, v1.Sel.Name); ok {
+				/*line emit.goal:2453*/ return sig, true
 			}
-			/*line emit.goal:2444*/ if a := e.arity.lookup(pkg.Name, v1.Sel.Name); a.resolved && a.endsErr {
-				/*line emit.goal:2445*/ return sema.FuncSig{Mode: sema.Mode(sema.Mode_ModeResult{}), Arity: a.results, EndsInError: true}, true
+			/*line emit.goal:2457*/ if a := e.arity.lookup(pkg.Name, v1.Sel.Name); a.resolved && a.endsErr {
+				/*line emit.goal:2458*/ return sema.FuncSig{Mode: sema.Mode(sema.Mode_ModeResult{}), Arity: a.results, EndsInError: true}, true
 			}
-			/*line emit.goal:2447*/ if stdlibErrorOnly[pkg.Name+"."+v1.Sel.Name] {
-				/*line emit.goal:2448*/ return sema.FuncSig{Mode: sema.Mode(sema.Mode_ModeResult{}), Arity: 1, EndsInError: true}, true
+			/*line emit.goal:2460*/ if stdlibErrorOnly[pkg.Name+"."+v1.Sel.Name] {
+				/*line emit.goal:2461*/ return sema.FuncSig{Mode: sema.Mode(sema.Mode_ModeResult{}), Arity: 1, EndsInError: true}, true
 			}
-			/*line emit.goal:2450*/ return sema.FuncSig{}, false
+			/*line emit.goal:2463*/ return sema.FuncSig{}, false
 		}
 	default:
 		{
 		}
 	}
-	/*line emit.goal:2454*/ return sema.FuncSig{}, false
+	/*line emit.goal:2467*/ return sema.FuncSig{}, false
 }
 
-//line emit.goal:2464
+//line emit.goal:2477
 func (e *emitter) methodCalleeSig(recv, method string) (sema.FuncSig, bool) {
-	/*line emit.goal:2465*/ if e.info == nil || e.recvTypes == nil {
-		/*line emit.goal:2466*/ return sema.FuncSig{}, false
+	/*line emit.goal:2478*/ if e.info == nil || e.recvTypes == nil {
+		/*line emit.goal:2479*/ return sema.FuncSig{}, false
 	}
-	/*line emit.goal:2468*/ typ, ok := e.recvTypes[recv]
-	/*line emit.goal:2469*/ if !ok || typ == "" {
-		/*line emit.goal:2470*/ return sema.FuncSig{}, false
+	/*line emit.goal:2481*/ typ, ok := e.recvTypes[recv]
+	/*line emit.goal:2482*/ if !ok || typ == "" {
+		/*line emit.goal:2483*/ return sema.FuncSig{}, false
 	}
-	/*line emit.goal:2472*/ for _, m := range e.info.Methods[typ] {
-		/*line emit.goal:2473*/ if m.Name == method {
-			/*line emit.goal:2474*/ return m.Return, true
+	/*line emit.goal:2485*/ for _, m := range e.info.Methods[typ] {
+		/*line emit.goal:2486*/ if m.Name == method {
+			/*line emit.goal:2487*/ return m.Return, true
 		}
 	}
-	/*line emit.goal:2477*/ for _, m := range e.info.Interfaces[typ] {
-		/*line emit.goal:2478*/ if m.Name == method {
-			/*line emit.goal:2479*/ return m.Return, true
+	/*line emit.goal:2490*/ for _, m := range e.info.Interfaces[typ] {
+		/*line emit.goal:2491*/ if m.Name == method {
+			/*line emit.goal:2492*/ return m.Return, true
 		}
 	}
-	/*line emit.goal:2482*/ return sema.FuncSig{}, false
+	/*line emit.goal:2495*/ return sema.FuncSig{}, false
 }
 
-//line emit.goal:2490
+//line emit.goal:2503
 func (e *emitter) buildRecvTypes(d *ast.FuncDecl) map[string]string {
-	/*line emit.goal:2491*/ out := map[string]string{}
-	/*line emit.goal:2492*/ add := func(fl *ast.FieldList) {
-		/*line emit.goal:2493*/ if fl == nil {
-			/*line emit.goal:2494*/ return
+	/*line emit.goal:2504*/ out := map[string]string{}
+	/*line emit.goal:2505*/ add := func(fl *ast.FieldList) {
+		/*line emit.goal:2506*/ if fl == nil {
+			/*line emit.goal:2507*/ return
 		}
-		/*line emit.goal:2496*/ for _, f := range fl.List {
-			/*line emit.goal:2497*/ base := recvBaseType(f.Type)
-			/*line emit.goal:2498*/ if base == "" {
-				/*line emit.goal:2499*/ continue
+		/*line emit.goal:2509*/ for _, f := range fl.List {
+			/*line emit.goal:2510*/ base := recvBaseType(f.Type)
+			/*line emit.goal:2511*/ if base == "" {
+				/*line emit.goal:2512*/ continue
 			}
-			/*line emit.goal:2501*/ for _, n := range f.Names {
-				/*line emit.goal:2502*/ if n != nil && n.Name != "" && n.Name != "_" {
-					/*line emit.goal:2503*/ out[n.Name] = base
+			/*line emit.goal:2514*/ for _, n := range f.Names {
+				/*line emit.goal:2515*/ if n != nil && n.Name != "" && n.Name != "_" {
+					/*line emit.goal:2516*/ out[n.Name] = base
 				}
 			}
 		}
 	}
-	/*line emit.goal:2508*/ add(d.Recv)
-	/*line emit.goal:2509*/ if d.Type != nil {
-		/*line emit.goal:2510*/ add(d.Type.Params)
+	/*line emit.goal:2521*/ add(d.Recv)
+	/*line emit.goal:2522*/ if d.Type != nil {
+		/*line emit.goal:2523*/ add(d.Type.Params)
 	}
-	/*line emit.goal:2512*/ if len(out) == 0 {
-		/*line emit.goal:2513*/ return nil
+	/*line emit.goal:2525*/ if len(out) == 0 {
+		/*line emit.goal:2526*/ return nil
 	}
-	/*line emit.goal:2515*/ return out
+	/*line emit.goal:2528*/ return out
 }
 
-//line emit.goal:2521
+//line emit.goal:2534
 func buildCurParams(d *ast.FuncDecl) map[string]string {
-	/*line emit.goal:2522*/ if d.Type == nil || d.Type.Params == nil {
-		/*line emit.goal:2523*/ return nil
+	/*line emit.goal:2535*/ if d.Type == nil || d.Type.Params == nil {
+		/*line emit.goal:2536*/ return nil
 	}
-	/*line emit.goal:2525*/ out := map[string]string{}
-	/*line emit.goal:2526*/ for _, f := range d.Type.Params.List {
-		/*line emit.goal:2527*/ ts := typeExprString(f.Type)
-		/*line emit.goal:2528*/ for _, n := range f.Names {
-			/*line emit.goal:2529*/ if n != nil && n.Name != "" && n.Name != "_" {
-				/*line emit.goal:2530*/ out[n.Name] = ts
+	/*line emit.goal:2538*/ out := map[string]string{}
+	/*line emit.goal:2539*/ for _, f := range d.Type.Params.List {
+		/*line emit.goal:2540*/ ts := typeExprString(f.Type)
+		/*line emit.goal:2541*/ for _, n := range f.Names {
+			/*line emit.goal:2542*/ if n != nil && n.Name != "" && n.Name != "_" {
+				/*line emit.goal:2543*/ out[n.Name] = ts
 			}
 		}
 	}
-	/*line emit.goal:2534*/ if len(out) == 0 {
-		/*line emit.goal:2535*/ return nil
+	/*line emit.goal:2547*/ if len(out) == 0 {
+		/*line emit.goal:2548*/ return nil
 	}
-	/*line emit.goal:2537*/ return out
+	/*line emit.goal:2550*/ return out
 }
 
-//line emit.goal:2541
+//line emit.goal:2554
 func (e *emitter) paramType(name string) (string, bool) {
-	/*line emit.goal:2542*/ if e.curParams == nil {
-		/*line emit.goal:2543*/ return "", false
+	/*line emit.goal:2555*/ if e.curParams == nil {
+		/*line emit.goal:2556*/ return "", false
 	}
-	/*line emit.goal:2545*/ t, ok := e.curParams[name]
-	/*line emit.goal:2546*/ return t, ok
+	/*line emit.goal:2558*/ t, ok := e.curParams[name]
+	/*line emit.goal:2559*/ return t, ok
 }
 
-//line emit.goal:2553
+//line emit.goal:2566
 func recvBaseType(x ast.Expr) string {
-	/*line emit.goal:2554*/ switch v1 := x.(type) {
+	/*line emit.goal:2567*/ switch v1 := x.(type) {
 	case *ast.StarExpr:
 		{
-			/*line emit.goal:2556*/ return recvBaseType(v1.X)
+			/*line emit.goal:2569*/ return recvBaseType(v1.X)
 		}
 	case *ast.Ident:
 		{
-			/*line emit.goal:2559*/ return v1.Name
+			/*line emit.goal:2572*/ return v1.Name
 		}
 	case *ast.IndexExpr:
 		{
-			/*line emit.goal:2562*/ return recvBaseType(v1.X)
+			/*line emit.goal:2575*/ return recvBaseType(v1.X)
 		}
 	case *ast.IndexListExpr:
 		{
-			/*line emit.goal:2565*/ return recvBaseType(v1.X)
+			/*line emit.goal:2578*/ return recvBaseType(v1.X)
 		}
 	default:
 		{
-			/*line emit.goal:2568*/ return ""
+			/*line emit.goal:2581*/ return ""
 		}
 	}
 }
 
-//line emit.goal:2576
+//line emit.goal:2589
 func (e *emitter) matchStmt(m *ast.MatchExpr) {
-	/*line emit.goal:2577*/ if isSealedMatch(m) {
-		/*line emit.goal:2578*/ e.sealedMatch(m, posStmt, "")
-		/*line emit.goal:2579*/ return
+	/*line emit.goal:2590*/ if isSealedMatch(m) {
+		/*line emit.goal:2591*/ e.sealedMatch(m, posStmt, "")
+		/*line emit.goal:2592*/ return
 	}
-	/*line emit.goal:2581*/ switch q := matchQualifier(m); q {
+	/*line emit.goal:2594*/ switch q := matchQualifier(m); q {
 	case "Result":
 		e.resultMatch(m, posStmt, "")
 	case "Option":
 		e.optionMatch(m, posStmt, "")
 	default:
 		if enumOf(e.info, q) != nil {
-			/*line emit.goal:2588*/ e.enumMatch(m, posStmt, "")
-			/*line emit.goal:2589*/ return
+			/*line emit.goal:2601*/ e.enumMatch(m, posStmt, "")
+			/*line emit.goal:2602*/ return
 		}
 		e.fail("unsupported statement-position match on %q (only Result/Option and enum match are lowered)", q)
 	}
 }
 
-//line emit.goal:2598
+//line emit.goal:2611
 type matchPos int
 
-//line emit.go:2182
+//line emit.go:2189
 const (
 	posStmt matchPos = iota
 	posReturn
 	posVar
 )
 
-//line emit.goal:2613
+//line emit.goal:2626
 func (e *emitter) enumMatch(m *ast.MatchExpr, pos matchPos, name string) {
-	/*line emit.goal:2614*/ enumName := matchQualifier(m)
-	/*line emit.goal:2615*/ en := enumOf(e.info, enumName)
-	/*line emit.goal:2617*/ usesBinding := false
-	/*line emit.goal:2618*/ for _, arm := range m.Arms {
-		/*line emit.goal:2619*/ if vp, ok := arm.Pattern.(*ast.VariantPattern); ok && vp.Binding != nil && usesIdent(arm.Body, vp.Binding.Name) {
-			/*line emit.goal:2620*/ usesBinding = true
-			/*line emit.goal:2621*/ break
+	/*line emit.goal:2627*/ enumName := matchQualifier(m)
+	/*line emit.goal:2628*/ en := enumOf(e.info, enumName)
+	/*line emit.goal:2630*/ usesBinding := false
+	/*line emit.goal:2631*/ for _, arm := range m.Arms {
+		/*line emit.goal:2632*/ if vp, ok := arm.Pattern.(*ast.VariantPattern); ok && vp.Binding != nil && usesIdent(arm.Body, vp.Binding.Name) {
+			/*line emit.goal:2633*/ usesBinding = true
+			/*line emit.goal:2634*/ break
 		}
 	}
-	/*line emit.goal:2625*/ guard := ""
-	/*line emit.goal:2626*/ e.p("switch ")
-	/*line emit.goal:2627*/ if usesBinding {
-		/*line emit.goal:2628*/ guard = e.gensym("v")
-		/*line emit.goal:2629*/ e.p(guard + " := ")
+	/*line emit.goal:2638*/ guard := ""
+	/*line emit.goal:2639*/ e.p("switch ")
+	/*line emit.goal:2640*/ if usesBinding {
+		/*line emit.goal:2641*/ guard = e.gensym("v")
+		/*line emit.goal:2642*/ e.p(guard + " := ")
 	}
-	/*line emit.goal:2631*/ e.expr(m.Subject)
-	/*line emit.goal:2632*/ e.p(".(type) {\n")
-	/*line emit.goal:2634*/ var restArm *ast.MatchArm
+	/*line emit.goal:2644*/ e.expr(m.Subject)
+	/*line emit.goal:2645*/ e.p(".(type) {\n")
+	/*line emit.goal:2647*/ var restArm *ast.MatchArm
 
-	/*line emit.goal:2635*/
+	/*line emit.goal:2648*/
 	for _, arm := range m.Arms {
-		/*line emit.goal:2636*/ vp, ok := arm.Pattern.(*ast.VariantPattern)
-		/*line emit.goal:2637*/ if !ok {
-			/*line emit.goal:2638*/ if _, isRest := arm.Pattern.(*ast.RestPattern); isRest {
-				/*line emit.goal:2639*/ restArm = arm
+		/*line emit.goal:2649*/ vp, ok := arm.Pattern.(*ast.VariantPattern)
+		/*line emit.goal:2650*/ if !ok {
+			/*line emit.goal:2651*/ if _, isRest := arm.Pattern.(*ast.RestPattern); isRest {
+				/*line emit.goal:2652*/ restArm = arm
 			}
-			/*line emit.goal:2641*/ continue
+			/*line emit.goal:2654*/ continue
 		}
-		/*line emit.goal:2643*/ if vp.Variant == nil {
-			/*line emit.goal:2644*/ e.fail("enum match arm has no variant tag")
-			/*line emit.goal:2645*/ return
+		/*line emit.goal:2656*/ if vp.Variant == nil {
+			/*line emit.goal:2657*/ e.fail("enum match arm has no variant tag")
+			/*line emit.goal:2658*/ return
 		}
-		/*line emit.goal:2647*/ e.p("case " + enumName + "_" + vp.Variant.Name + ":\n")
-		/*line emit.goal:2648*/ e.emitEnumArm(arm, vp, en, guard, pos, name)
-		/*line emit.goal:2649*/ e.p("\n")
+		/*line emit.goal:2660*/ e.p("case " + enumName + "_" + vp.Variant.Name + ":\n")
+		/*line emit.goal:2661*/ e.emitEnumArm(arm, vp, en, guard, pos, name)
+		/*line emit.goal:2662*/ e.p("\n")
 	}
-	/*line emit.goal:2652*/ e.p("default:\n")
-	/*line emit.goal:2653*/ if restArm != nil {
-		/*line emit.goal:2654*/ e.emitEnumArm(restArm, nil, en, guard, pos, name)
+	/*line emit.goal:2665*/ e.p("default:\n")
+	/*line emit.goal:2666*/ if restArm != nil {
+		/*line emit.goal:2667*/ e.emitEnumArm(restArm, nil, en, guard, pos, name)
 	} else {
-		/*line emit.goal:2656*/ e.p(fmt.Sprintf("panic(%q)", fmt.Sprintf("unreachable: non-exhaustive %s (compiler invariant violated)", enumName)))
+		/*line emit.goal:2669*/ e.p(fmt.Sprintf("panic(%q)", fmt.Sprintf("unreachable: non-exhaustive %s (compiler invariant violated)", enumName)))
 	}
-	/*line emit.goal:2658*/ e.p("\n}")
+	/*line emit.goal:2671*/ e.p("\n}")
 }
 
-//line emit.goal:2664
+//line emit.goal:2677
 func (e *emitter) emitEnumArm(arm *ast.MatchArm, vp *ast.VariantPattern, en *sema.Enum, guard string, pos matchPos, name string) {
-	/*line emit.goal:2665*/ binding := ""
-	/*line emit.goal:2666*/ if vp != nil && vp.Binding != nil {
-		/*line emit.goal:2667*/ binding = vp.Binding.Name
+	/*line emit.goal:2678*/ binding := ""
+	/*line emit.goal:2679*/ if vp != nil && vp.Binding != nil {
+		/*line emit.goal:2680*/ binding = vp.Binding.Name
 	}
-	/*line emit.goal:2669*/ if binding != "" {
-		/*line emit.goal:2670*/ if e.renames == nil {
-			/*line emit.goal:2671*/ e.renames = map[string]string{}
+	/*line emit.goal:2682*/ if binding != "" {
+		/*line emit.goal:2683*/ if e.renames == nil {
+			/*line emit.goal:2684*/ e.renames = map[string]string{}
 		}
-		/*line emit.goal:2673*/ e.renames[binding] = guard
-		/*line emit.goal:2674*/ prevBinding, prevFields := e.armBinding, e.armFields
-		/*line emit.goal:2675*/ e.armBinding = binding
-		/*line emit.goal:2676*/ if en != nil && vp.Variant != nil {
-			/*line emit.goal:2677*/ e.armFields = en.FieldSet[vp.Variant.Name]
+		/*line emit.goal:2686*/ e.renames[binding] = guard
+		/*line emit.goal:2687*/ prevBinding, prevFields := e.armBinding, e.armFields
+		/*line emit.goal:2688*/ e.armBinding = binding
+		/*line emit.goal:2689*/ if en != nil && vp.Variant != nil {
+			/*line emit.goal:2690*/ e.armFields = en.FieldSet[vp.Variant.Name]
 		} else {
-			/*line emit.goal:2679*/ e.armFields = nil
+			/*line emit.goal:2692*/ e.armFields = nil
 		}
-		/*line emit.goal:2681*/ defer func() {
-			/*line emit.goal:2682*/ delete(e.renames, binding)
-			/*line emit.goal:2683*/ e.armBinding, e.armFields = prevBinding, prevFields
+		/*line emit.goal:2694*/ defer func() {
+			/*line emit.goal:2695*/ delete(e.renames, binding)
+			/*line emit.goal:2696*/ e.armBinding, e.armFields = prevBinding, prevFields
 		}()
 	}
-	/*line emit.goal:2686*/ e.armWrap(arm.Body, pos, name)
+	/*line emit.goal:2699*/ e.armWrap(arm.Body, pos, name)
 }
 
-//line emit.goal:2700
+//line emit.goal:2713
 func (e *emitter) armWrap(body ast.Node, pos matchPos, name string) {
-	/*line emit.goal:2701*/ switch pos {
+	/*line emit.goal:2714*/ switch pos {
 	case posReturn:
 		if expr, isExpr := body.(ast.Expr); isExpr {
-			/*line emit.goal:2704*/ switch e.fnKind {
+			/*line emit.goal:2717*/ switch e.fnKind {
 			case roResultOpen:
 				if e.emitResultReturn(expr) {
-					/*line emit.goal:2707*/ return
+					/*line emit.goal:2720*/ return
 				}
 			case roResultClosed:
 				if e.emitClosedResultReturn(expr) {
-					/*line emit.goal:2711*/ return
+					/*line emit.goal:2724*/ return
 				}
 			}
 		}
@@ -2286,72 +2293,72 @@ func (e *emitter) armWrap(body ast.Node, pos matchPos, name string) {
 	}
 }
 
-//line emit.goal:2732
+//line emit.goal:2745
 func (e *emitter) sealedMatch(m *ast.MatchExpr, pos matchPos, name string) {
-	/*line emit.goal:2733*/ usesBinding := false
-	/*line emit.goal:2734*/ for _, arm := range m.Arms {
-		/*line emit.goal:2735*/ if tp, ok := arm.Pattern.(*ast.TypePattern); ok && tp.Binding != nil && usesIdent(arm.Body, tp.Binding.Name) {
-			/*line emit.goal:2736*/ usesBinding = true
-			/*line emit.goal:2737*/ break
+	/*line emit.goal:2746*/ usesBinding := false
+	/*line emit.goal:2747*/ for _, arm := range m.Arms {
+		/*line emit.goal:2748*/ if tp, ok := arm.Pattern.(*ast.TypePattern); ok && tp.Binding != nil && usesIdent(arm.Body, tp.Binding.Name) {
+			/*line emit.goal:2749*/ usesBinding = true
+			/*line emit.goal:2750*/ break
 		}
 	}
-	/*line emit.goal:2741*/ guard := ""
-	/*line emit.goal:2742*/ e.p("switch ")
-	/*line emit.goal:2743*/ if usesBinding {
-		/*line emit.goal:2744*/ guard = e.gensym("v")
-		/*line emit.goal:2745*/ e.p(guard + " := ")
+	/*line emit.goal:2754*/ guard := ""
+	/*line emit.goal:2755*/ e.p("switch ")
+	/*line emit.goal:2756*/ if usesBinding {
+		/*line emit.goal:2757*/ guard = e.gensym("v")
+		/*line emit.goal:2758*/ e.p(guard + " := ")
 	}
-	/*line emit.goal:2747*/ e.expr(m.Subject)
-	/*line emit.goal:2748*/ e.p(".(type) {\n")
-	/*line emit.goal:2750*/ var restArm *ast.MatchArm
+	/*line emit.goal:2760*/ e.expr(m.Subject)
+	/*line emit.goal:2761*/ e.p(".(type) {\n")
+	/*line emit.goal:2763*/ var restArm *ast.MatchArm
 
-	/*line emit.goal:2751*/
+	/*line emit.goal:2764*/
 	for _, arm := range m.Arms {
-		/*line emit.goal:2752*/ tp, ok := arm.Pattern.(*ast.TypePattern)
-		/*line emit.goal:2753*/ if !ok {
-			/*line emit.goal:2754*/ if _, isRest := arm.Pattern.(*ast.RestPattern); isRest {
-				/*line emit.goal:2755*/ restArm = arm
+		/*line emit.goal:2765*/ tp, ok := arm.Pattern.(*ast.TypePattern)
+		/*line emit.goal:2766*/ if !ok {
+			/*line emit.goal:2767*/ if _, isRest := arm.Pattern.(*ast.RestPattern); isRest {
+				/*line emit.goal:2768*/ restArm = arm
 			}
-			/*line emit.goal:2757*/ continue
+			/*line emit.goal:2770*/ continue
 		}
-		/*line emit.goal:2759*/ if tp.Type == nil {
-			/*line emit.goal:2760*/ e.fail("sealed match arm has no concrete type")
-			/*line emit.goal:2761*/ return
+		/*line emit.goal:2772*/ if tp.Type == nil {
+			/*line emit.goal:2773*/ e.fail("sealed match arm has no concrete type")
+			/*line emit.goal:2774*/ return
 		}
-		/*line emit.goal:2763*/ e.p("case ")
-		/*line emit.goal:2764*/ e.expr(tp.Type)
-		/*line emit.goal:2765*/ e.p(":\n")
-		/*line emit.goal:2766*/ e.emitSealedArm(arm, tp, guard, pos, name)
-		/*line emit.goal:2767*/ e.p("\n")
+		/*line emit.goal:2776*/ e.p("case ")
+		/*line emit.goal:2777*/ e.expr(tp.Type)
+		/*line emit.goal:2778*/ e.p(":\n")
+		/*line emit.goal:2779*/ e.emitSealedArm(arm, tp, guard, pos, name)
+		/*line emit.goal:2780*/ e.p("\n")
 	}
-	/*line emit.goal:2770*/ e.p("default:\n")
-	/*line emit.goal:2771*/ if restArm != nil {
-		/*line emit.goal:2772*/ e.emitSealedArm(restArm, nil, guard, pos, name)
+	/*line emit.goal:2783*/ e.p("default:\n")
+	/*line emit.goal:2784*/ if restArm != nil {
+		/*line emit.goal:2785*/ e.emitSealedArm(restArm, nil, guard, pos, name)
 	} else {
-		/*line emit.goal:2774*/ e.p(fmt.Sprintf("panic(%q)", "unreachable: non-exhaustive sealed match (compiler invariant violated)"))
+		/*line emit.goal:2787*/ e.p(fmt.Sprintf("panic(%q)", "unreachable: non-exhaustive sealed match (compiler invariant violated)"))
 	}
-	/*line emit.goal:2776*/ e.p("\n}")
+	/*line emit.goal:2789*/ e.p("\n}")
 }
 
-//line emit.goal:2784
+//line emit.goal:2797
 func (e *emitter) emitSealedArm(arm *ast.MatchArm, tp *ast.TypePattern, guard string, pos matchPos, name string) {
-	/*line emit.goal:2785*/ binding := ""
-	/*line emit.goal:2786*/ if tp != nil && tp.Binding != nil {
-		/*line emit.goal:2787*/ binding = tp.Binding.Name
+	/*line emit.goal:2798*/ binding := ""
+	/*line emit.goal:2799*/ if tp != nil && tp.Binding != nil {
+		/*line emit.goal:2800*/ binding = tp.Binding.Name
 	}
-	/*line emit.goal:2789*/ if binding != "" {
-		/*line emit.goal:2790*/ if e.renames == nil {
-			/*line emit.goal:2791*/ e.renames = map[string]string{}
+	/*line emit.goal:2802*/ if binding != "" {
+		/*line emit.goal:2803*/ if e.renames == nil {
+			/*line emit.goal:2804*/ e.renames = map[string]string{}
 		}
-		/*line emit.goal:2793*/ e.renames[binding] = guard
-		/*line emit.goal:2794*/ defer delete(e.renames, binding)
+		/*line emit.goal:2806*/ e.renames[binding] = guard
+		/*line emit.goal:2807*/ defer delete(e.renames, binding)
 	}
-	/*line emit.goal:2796*/ e.armWrap(arm.Body, pos, name)
+	/*line emit.goal:2809*/ e.armWrap(arm.Body, pos, name)
 }
 
-//line emit.goal:2807
+//line emit.goal:2820
 func (e *emitter) resultMatch(m *ast.MatchExpr, pos matchPos, name string) {
-	/*line emit.goal:2808*/ var subjectIsClosed bool
+	/*line emit.goal:2821*/ var subjectIsClosed bool
 	switch e.calleeMode(m.Subject).(type) {
 	case sema.Mode_ModeResultClosed:
 		subjectIsClosed = true
@@ -2364,155 +2371,155 @@ func (e *emitter) resultMatch(m *ast.MatchExpr, pos matchPos, name string) {
 	default:
 		panic("unreachable: non-exhaustive sema.Mode (compiler invariant violated)")
 	}
-	/*line emit.goal:2814*/ if subjectIsClosed {
-		/*line emit.goal:2815*/ e.closedResultMatch(m, pos, name)
-		/*line emit.goal:2816*/ return
+	/*line emit.goal:2827*/ if subjectIsClosed {
+		/*line emit.goal:2828*/ e.closedResultMatch(m, pos, name)
+		/*line emit.goal:2829*/ return
 	}
-	/*line emit.goal:2818*/ okArm, errArm := armByVariant(m, "Ok"), armByVariant(m, "Err")
-	/*line emit.goal:2819*/ if okArm == nil || errArm == nil {
-		/*line emit.goal:2820*/ e.fail("Result match must have both Result.Ok and Result.Err arms")
-		/*line emit.goal:2821*/ return
+	/*line emit.goal:2831*/ okArm, errArm := armByVariant(m, "Ok"), armByVariant(m, "Err")
+	/*line emit.goal:2832*/ if okArm == nil || errArm == nil {
+		/*line emit.goal:2833*/ e.fail("Result match must have both Result.Ok and Result.Err arms")
+		/*line emit.goal:2834*/ return
 	}
-	/*line emit.goal:2823*/ val, errVar := e.gensym("v"), e.gensym("err")
-	/*line emit.goal:2824*/ okBinding := bindingName(okArm.Pattern)
-	/*line emit.goal:2825*/ okLHS := "_"
-	/*line emit.goal:2826*/ if okBinding != "" && usesIdent(okArm.Body, okBinding) {
-		/*line emit.goal:2827*/ okLHS = val
+	/*line emit.goal:2836*/ val, errVar := e.gensym("v"), e.gensym("err")
+	/*line emit.goal:2837*/ okBinding := bindingName(okArm.Pattern)
+	/*line emit.goal:2838*/ okLHS := "_"
+	/*line emit.goal:2839*/ if okBinding != "" && usesIdent(okArm.Body, okBinding) {
+		/*line emit.goal:2840*/ okLHS = val
 	}
-	/*line emit.goal:2829*/ e.p(okLHS + ", " + errVar + " := ")
-	/*line emit.goal:2830*/ e.expr(m.Subject)
-	/*line emit.goal:2831*/ e.p("\nif " + errVar + " != nil {\n")
-	/*line emit.goal:2832*/ e.armBodyRenamedWrap(errArm.Body, bindingName(errArm.Pattern), errVar, pos, name)
-	/*line emit.goal:2833*/ e.p("\n} else {\n")
-	/*line emit.goal:2834*/ e.armBodyRenamedWrap(okArm.Body, okBinding, val, pos, name)
-	/*line emit.goal:2835*/ e.p("\n}")
+	/*line emit.goal:2842*/ e.p(okLHS + ", " + errVar + " := ")
+	/*line emit.goal:2843*/ e.expr(m.Subject)
+	/*line emit.goal:2844*/ e.p("\nif " + errVar + " != nil {\n")
+	/*line emit.goal:2845*/ e.armBodyRenamedWrap(errArm.Body, bindingName(errArm.Pattern), errVar, pos, name)
+	/*line emit.goal:2846*/ e.p("\n} else {\n")
+	/*line emit.goal:2847*/ e.armBodyRenamedWrap(okArm.Body, okBinding, val, pos, name)
+	/*line emit.goal:2848*/ e.p("\n}")
 }
 
-//line emit.goal:2844
+//line emit.goal:2857
 func (e *emitter) closedResultMatch(m *ast.MatchExpr, pos matchPos, name string) {
-	/*line emit.goal:2845*/ sig, _ := e.calleeSig(m.Subject)
-	/*line emit.goal:2846*/ okArm, errArm := armByVariant(m, "Ok"), armByVariant(m, "Err")
-	/*line emit.goal:2847*/ if okArm == nil || errArm == nil {
-		/*line emit.goal:2848*/ e.fail("Result match must have both Result.Ok and Result.Err arms")
-		/*line emit.goal:2849*/ return
+	/*line emit.goal:2858*/ sig, _ := e.calleeSig(m.Subject)
+	/*line emit.goal:2859*/ okArm, errArm := armByVariant(m, "Ok"), armByVariant(m, "Err")
+	/*line emit.goal:2860*/ if okArm == nil || errArm == nil {
+		/*line emit.goal:2861*/ e.fail("Result match must have both Result.Ok and Result.Err arms")
+		/*line emit.goal:2862*/ return
 	}
-	/*line emit.goal:2851*/ okBinding, errBinding := bindingName(okArm.Pattern), bindingName(errArm.Pattern)
-	/*line emit.goal:2852*/ okUse := okBinding != "" && usesIdent(okArm.Body, okBinding)
-	/*line emit.goal:2853*/ errUse := errBinding != "" && usesIdent(errArm.Body, errBinding)
-	/*line emit.goal:2855*/ guard := ""
-	/*line emit.goal:2856*/ e.p("switch ")
-	/*line emit.goal:2857*/ if okUse || errUse {
-		/*line emit.goal:2858*/ guard = e.gensym("r")
-		/*line emit.goal:2859*/ e.p(guard + " := ")
+	/*line emit.goal:2864*/ okBinding, errBinding := bindingName(okArm.Pattern), bindingName(errArm.Pattern)
+	/*line emit.goal:2865*/ okUse := okBinding != "" && usesIdent(okArm.Body, okBinding)
+	/*line emit.goal:2866*/ errUse := errBinding != "" && usesIdent(errArm.Body, errBinding)
+	/*line emit.goal:2868*/ guard := ""
+	/*line emit.goal:2869*/ e.p("switch ")
+	/*line emit.goal:2870*/ if okUse || errUse {
+		/*line emit.goal:2871*/ guard = e.gensym("r")
+		/*line emit.goal:2872*/ e.p(guard + " := ")
 	}
-	/*line emit.goal:2861*/ e.expr(m.Subject)
-	/*line emit.goal:2862*/ e.p(".(type) {\n")
-	/*line emit.goal:2864*/ e.p(fmt.Sprintf("case Ok[%s, %s]:\n", sig.T, sig.E))
-	/*line emit.goal:2865*/ if okUse {
-		/*line emit.goal:2866*/ e.p(okBinding + " := " + guard + ".Value\n")
+	/*line emit.goal:2874*/ e.expr(m.Subject)
+	/*line emit.goal:2875*/ e.p(".(type) {\n")
+	/*line emit.goal:2877*/ e.p(fmt.Sprintf("case Ok[%s, %s]:\n", sig.T, sig.E))
+	/*line emit.goal:2878*/ if okUse {
+		/*line emit.goal:2879*/ e.p(okBinding + " := " + guard + ".Value\n")
 	}
-	/*line emit.goal:2868*/ e.armWrap(okArm.Body, pos, name)
-	/*line emit.goal:2869*/ e.p(fmt.Sprintf("\ncase Err[%s, %s]:\n", sig.T, sig.E))
-	/*line emit.goal:2870*/ if errUse {
-		/*line emit.goal:2871*/ e.p(errBinding + " := " + guard + ".Value\n")
+	/*line emit.goal:2881*/ e.armWrap(okArm.Body, pos, name)
+	/*line emit.goal:2882*/ e.p(fmt.Sprintf("\ncase Err[%s, %s]:\n", sig.T, sig.E))
+	/*line emit.goal:2883*/ if errUse {
+		/*line emit.goal:2884*/ e.p(errBinding + " := " + guard + ".Value\n")
 	}
-	/*line emit.goal:2873*/ e.armWrap(errArm.Body, pos, name)
-	/*line emit.goal:2874*/ e.p(fmt.Sprintf("\ndefault:\npanic(%q)\n}", fmt.Sprintf("unreachable: non-exhaustive Result[%s, %s] (compiler invariant violated)", sig.T, sig.E)))
+	/*line emit.goal:2886*/ e.armWrap(errArm.Body, pos, name)
+	/*line emit.goal:2887*/ e.p(fmt.Sprintf("\ndefault:\npanic(%q)\n}", fmt.Sprintf("unreachable: non-exhaustive Result[%s, %s] (compiler invariant violated)", sig.T, sig.E)))
 }
 
-//line emit.goal:2880
+//line emit.goal:2893
 func (e *emitter) optionMatch(m *ast.MatchExpr, pos matchPos, name string) {
-	/*line emit.goal:2881*/ someArm, noneArm := armByVariant(m, "Some"), armByVariant(m, "None")
-	/*line emit.goal:2882*/ if someArm == nil || noneArm == nil {
-		/*line emit.goal:2883*/ e.fail("Option match must have both Option.Some and Option.None arms")
-		/*line emit.goal:2884*/ return
+	/*line emit.goal:2894*/ someArm, noneArm := armByVariant(m, "Some"), armByVariant(m, "None")
+	/*line emit.goal:2895*/ if someArm == nil || noneArm == nil {
+		/*line emit.goal:2896*/ e.fail("Option match must have both Option.Some and Option.None arms")
+		/*line emit.goal:2897*/ return
 	}
-	/*line emit.goal:2886*/ o := e.gensym("o")
-	/*line emit.goal:2887*/ e.p("if " + o + " := ")
-	/*line emit.goal:2888*/ e.expr(m.Subject)
-	/*line emit.goal:2889*/ e.p("; " + o + " != nil {\n")
-	/*line emit.goal:2890*/ if b := bindingName(someArm.Pattern); b != "" && usesIdent(someArm.Body, b) {
-		/*line emit.goal:2891*/ e.p(b + " := *" + o + "\n")
+	/*line emit.goal:2899*/ o := e.gensym("o")
+	/*line emit.goal:2900*/ e.p("if " + o + " := ")
+	/*line emit.goal:2901*/ e.expr(m.Subject)
+	/*line emit.goal:2902*/ e.p("; " + o + " != nil {\n")
+	/*line emit.goal:2903*/ if b := bindingName(someArm.Pattern); b != "" && usesIdent(someArm.Body, b) {
+		/*line emit.goal:2904*/ e.p(b + " := *" + o + "\n")
 	}
-	/*line emit.goal:2893*/ e.optionArm(someArm.Body, pos, name)
-	/*line emit.goal:2894*/ e.p("\n} else {\n")
-	/*line emit.goal:2895*/ e.optionArm(noneArm.Body, pos, name)
-	/*line emit.goal:2896*/ e.p("\n}")
+	/*line emit.goal:2906*/ e.optionArm(someArm.Body, pos, name)
+	/*line emit.goal:2907*/ e.p("\n} else {\n")
+	/*line emit.goal:2908*/ e.optionArm(noneArm.Body, pos, name)
+	/*line emit.goal:2909*/ e.p("\n}")
 }
 
-//line emit.goal:2905
+//line emit.goal:2918
 func (e *emitter) optionArm(body ast.Node, pos matchPos, name string) {
-	/*line emit.goal:2906*/ if pos == posStmt {
-		/*line emit.goal:2907*/ if blk, ok := body.(*ast.BlockStmt); ok {
-			/*line emit.goal:2908*/ e.blockInner(blk)
-			/*line emit.goal:2909*/ return
+	/*line emit.goal:2919*/ if pos == posStmt {
+		/*line emit.goal:2920*/ if blk, ok := body.(*ast.BlockStmt); ok {
+			/*line emit.goal:2921*/ e.blockInner(blk)
+			/*line emit.goal:2922*/ return
 		}
 	}
-	/*line emit.goal:2912*/ e.armWrap(body, pos, name)
+	/*line emit.goal:2925*/ e.armWrap(body, pos, name)
 }
 
-//line emit.goal:2916
+//line emit.goal:2929
 func armByVariant(m *ast.MatchExpr, variant string) *ast.MatchArm {
-	/*line emit.goal:2917*/ for _, arm := range m.Arms {
-		/*line emit.goal:2918*/ if vp, ok := arm.Pattern.(*ast.VariantPattern); ok && vp.Variant != nil && vp.Variant.Name == variant {
-			/*line emit.goal:2919*/ return arm
+	/*line emit.goal:2930*/ for _, arm := range m.Arms {
+		/*line emit.goal:2931*/ if vp, ok := arm.Pattern.(*ast.VariantPattern); ok && vp.Variant != nil && vp.Variant.Name == variant {
+			/*line emit.goal:2932*/ return arm
 		}
 	}
-	/*line emit.goal:2922*/ return nil
+	/*line emit.goal:2935*/ return nil
 }
 
-//line emit.goal:2926
+//line emit.goal:2939
 func bindingName(p ast.Expr) string {
-	/*line emit.goal:2927*/ if vp, ok := p.(*ast.VariantPattern); ok && vp.Binding != nil {
-		/*line emit.goal:2928*/ return vp.Binding.Name
+	/*line emit.goal:2940*/ if vp, ok := p.(*ast.VariantPattern); ok && vp.Binding != nil {
+		/*line emit.goal:2941*/ return vp.Binding.Name
 	}
-	/*line emit.goal:2930*/ return ""
+	/*line emit.goal:2943*/ return ""
 }
 
-//line emit.goal:2936
+//line emit.goal:2949
 func (e *emitter) calleeMode(x ast.Expr) sema.Mode {
-	/*line emit.goal:2937*/ call, ok := x.(*ast.CallExpr)
-	/*line emit.goal:2938*/ if !ok {
-		/*line emit.goal:2939*/ return sema.Mode(sema.Mode_ModeNone{})
+	/*line emit.goal:2950*/ call, ok := x.(*ast.CallExpr)
+	/*line emit.goal:2951*/ if !ok {
+		/*line emit.goal:2952*/ return sema.Mode(sema.Mode_ModeNone{})
 	}
-	/*line emit.goal:2941*/ id, ok := call.Fun.(*ast.Ident)
-	/*line emit.goal:2942*/ if !ok || e.info == nil || e.info.FuncSignatures == nil {
-		/*line emit.goal:2943*/ return sema.Mode(sema.Mode_ModeNone{})
+	/*line emit.goal:2954*/ id, ok := call.Fun.(*ast.Ident)
+	/*line emit.goal:2955*/ if !ok || e.info == nil || e.info.FuncSignatures == nil {
+		/*line emit.goal:2956*/ return sema.Mode(sema.Mode_ModeNone{})
 	}
-	/*line emit.goal:2947*/ sig, found := e.info.FuncSignatures[id.Name]
-	/*line emit.goal:2948*/ if !found {
-		/*line emit.goal:2949*/ return sema.Mode(sema.Mode_ModeNone{})
+	/*line emit.goal:2960*/ sig, found := e.info.FuncSignatures[id.Name]
+	/*line emit.goal:2961*/ if !found {
+		/*line emit.goal:2962*/ return sema.Mode(sema.Mode_ModeNone{})
 	}
-	/*line emit.goal:2951*/ return sig.Mode
+	/*line emit.goal:2964*/ return sig.Mode
 }
 
-//line emit.goal:2956
+//line emit.goal:2969
 func (e *emitter) armBodyRenamed(body ast.Node, binding, target string) {
-	/*line emit.goal:2957*/ if binding != "" {
-		/*line emit.goal:2958*/ if e.renames == nil {
-			/*line emit.goal:2959*/ e.renames = map[string]string{}
+	/*line emit.goal:2970*/ if binding != "" {
+		/*line emit.goal:2971*/ if e.renames == nil {
+			/*line emit.goal:2972*/ e.renames = map[string]string{}
 		}
-		/*line emit.goal:2961*/ e.renames[binding] = target
-		/*line emit.goal:2962*/ defer delete(e.renames, binding)
+		/*line emit.goal:2974*/ e.renames[binding] = target
+		/*line emit.goal:2975*/ defer delete(e.renames, binding)
 	}
-	/*line emit.goal:2964*/ e.armBody(body)
+	/*line emit.goal:2977*/ e.armBody(body)
 }
 
-//line emit.goal:2971
+//line emit.goal:2984
 func (e *emitter) armBodyRenamedWrap(body ast.Node, binding, target string, pos matchPos, name string) {
-	/*line emit.goal:2972*/ if binding != "" {
-		/*line emit.goal:2973*/ if e.renames == nil {
-			/*line emit.goal:2974*/ e.renames = map[string]string{}
+	/*line emit.goal:2985*/ if binding != "" {
+		/*line emit.goal:2986*/ if e.renames == nil {
+			/*line emit.goal:2987*/ e.renames = map[string]string{}
 		}
-		/*line emit.goal:2976*/ e.renames[binding] = target
-		/*line emit.goal:2977*/ defer delete(e.renames, binding)
+		/*line emit.goal:2989*/ e.renames[binding] = target
+		/*line emit.goal:2990*/ defer delete(e.renames, binding)
 	}
-	/*line emit.goal:2979*/ e.armWrap(body, pos, name)
+	/*line emit.goal:2992*/ e.armWrap(body, pos, name)
 }
 
-//line emit.goal:2992
+//line emit.goal:3005
 func (e *emitter) armBody(n ast.Node) {
-	/*line emit.goal:2993*/ switch b := n.(type) {
+	/*line emit.goal:3006*/ switch b := n.(type) {
 	case nil:
 	case ast.Stmt:
 		e.stmt(b)
@@ -2523,27 +2530,27 @@ func (e *emitter) armBody(n ast.Node) {
 	}
 }
 
-//line emit.goal:3005
+//line emit.goal:3018
 func (e *emitter) sliceExpr(x *ast.SliceExpr) {
-	/*line emit.goal:3006*/ e.expr(x.X)
-	/*line emit.goal:3007*/ e.p("[")
-	/*line emit.goal:3008*/ if x.Low != nil {
-		/*line emit.goal:3009*/ e.expr(x.Low)
+	/*line emit.goal:3019*/ e.expr(x.X)
+	/*line emit.goal:3020*/ e.p("[")
+	/*line emit.goal:3021*/ if x.Low != nil {
+		/*line emit.goal:3022*/ e.expr(x.Low)
 	}
-	/*line emit.goal:3011*/ e.p(":")
-	/*line emit.goal:3012*/ if x.High != nil {
-		/*line emit.goal:3013*/ e.expr(x.High)
+	/*line emit.goal:3024*/ e.p(":")
+	/*line emit.goal:3025*/ if x.High != nil {
+		/*line emit.goal:3026*/ e.expr(x.High)
 	}
-	/*line emit.goal:3015*/ if x.Max != nil {
-		/*line emit.goal:3016*/ e.p(":")
-		/*line emit.goal:3017*/ e.expr(x.Max)
+	/*line emit.goal:3028*/ if x.Max != nil {
+		/*line emit.goal:3029*/ e.p(":")
+		/*line emit.goal:3030*/ e.expr(x.Max)
 	}
-	/*line emit.goal:3019*/ e.p("]")
+	/*line emit.goal:3032*/ e.p("]")
 }
 
-//line emit.goal:3022
+//line emit.goal:3035
 func (e *emitter) chanType(x *ast.ChanType) {
-	/*line emit.goal:3023*/ switch x.Dir.(type) {
+	/*line emit.goal:3036*/ switch x.Dir.(type) {
 	case ast.ChanDir_RecvOnly:
 		e.p("<-chan ")
 	case ast.ChanDir_SendOnly:
@@ -2553,25 +2560,25 @@ func (e *emitter) chanType(x *ast.ChanType) {
 	default:
 		panic("unreachable: non-exhaustive ast.ChanDir (compiler invariant violated)")
 	}
-	/*line emit.goal:3028*/ e.expr(x.Value)
+	/*line emit.goal:3041*/ e.expr(x.Value)
 }
 
-//line emit.goal:3031
+//line emit.goal:3044
 func (e *emitter) identList(ids []*ast.Ident) {
-	/*line emit.goal:3032*/ for i, id := range ids {
-		/*line emit.goal:3033*/ if i > 0 {
-			/*line emit.goal:3034*/ e.p(", ")
+	/*line emit.goal:3045*/ for i, id := range ids {
+		/*line emit.goal:3046*/ if i > 0 {
+			/*line emit.goal:3047*/ e.p(", ")
 		}
-		/*line emit.goal:3036*/ e.p(id.Name)
+		/*line emit.goal:3049*/ e.p(id.Name)
 	}
 }
 
-//line emit.goal:3040
+//line emit.goal:3053
 func (e *emitter) exprList(xs []ast.Expr) {
-	/*line emit.goal:3041*/ for i, x := range xs {
-		/*line emit.goal:3042*/ if i > 0 {
-			/*line emit.goal:3043*/ e.p(", ")
+	/*line emit.goal:3054*/ for i, x := range xs {
+		/*line emit.goal:3055*/ if i > 0 {
+			/*line emit.goal:3056*/ e.p(", ")
 		}
-		/*line emit.goal:3045*/ e.expr(x)
+		/*line emit.goal:3058*/ e.expr(x)
 	}
 }

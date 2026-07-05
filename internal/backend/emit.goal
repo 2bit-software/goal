@@ -503,7 +503,20 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 	// (holding the body) plus one forwarding method per variant. The scope setup
 	// above (recvTypes/curParams/gensym) already covers the free function's body.
 	if d.Recv != nil && len(d.Recv.List) > 0 {
-		if en := enumOf(e.info, recvBaseType(d.Recv.List[0].Type)); en != nil {
+		recvType := d.Recv.List[0].Type
+		// A POINTER receiver on an enum (`func (v *E) m()`) is not a supported form:
+		// the enum lowers to a Go interface, and Go forbids a pointer-to-interface
+		// receiver. Routing it through enumMethodDecl would emit forwarders that fail
+		// go/types, so reject it here with a clear transpile error instead of shipping
+		// broken Go. sema.CheckEnumReceiver surfaces the located goal diagnostic; this
+		// guard keeps `goal build` from emitting non-compiling output for the same form.
+		if _, isPtr := recvType.(*ast.StarExpr); isPtr {
+			if en := enumOf(e.info, recvBaseType(recvType)); en != nil {
+				e.fail("method on sum type %s has a pointer receiver, which is not supported: a sum type lowers to a Go interface and cannot carry a pointer receiver; use a value receiver", en.Name)
+				return
+			}
+		}
+		if en := enumOf(e.info, recvBaseType(recvType)); en != nil {
 			e.enumMethodDecl(d, en)
 			return
 		}

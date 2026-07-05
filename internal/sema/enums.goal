@@ -59,6 +59,92 @@ func CheckEnumConstruction(file *ast.File, info *Info) []Diagnostic {
 	return diags
 }
 
+// CheckEnumReceiver enforces the receiver-form rule for methods on a sum type
+// (feature-01 enums, and sealed interfaces): a method whose receiver is a POINTER to a
+// sum type (`func (v *SomeEnum) m()`) is not a supported form. A sum type lowers to a
+// Go interface (§8.1), and Go forbids a pointer-to-interface receiver, so the backend
+// would otherwise emit non-compiling Go whose go/types error is dropped by the depth
+// stage (its position resolves to a generated `//line`, not a `.goal` file) — leaving
+// the author with no located feedback. This located Error names the unsupported form
+// and points at the value-receiver fix. Only pointer receivers are judged; a value
+// receiver on an enum is the supported form (it lowers to a shared free function plus
+// per-variant forwarders) and is left alone.
+func CheckEnumReceiver(file *ast.File, info *Info) []Diagnostic {
+	var diags []Diagnostic
+	if file == nil || info == nil {
+		return diags
+	}
+	for _, d := range file.Decls {
+		fd, ok := d.(*ast.FuncDecl)
+		if !ok || fd.Recv == nil || len(fd.Recv.List) == 0 {
+			continue
+		}
+		recvField := fd.Recv.List[0]
+		base, isPtr := recvPointerBase(recvField.Type)
+		if !isPtr || base == "" {
+			continue
+		}
+		// Only a locally-authoritative sum type is judged: an in-file enum or a
+		// sealed interface. A pointer receiver on an ordinary struct is legal Go and
+		// not our concern.
+		if info.Enums[base] == nil && !info.Sealed[base] {
+			continue
+		}
+		diags = append(diags, Diagnostic{
+			Pos:      recvField.Type.Pos(),
+			Severity: Severity.Error,
+			Feature:  "01-enums",
+			Code:     "sum-type-pointer-receiver",
+			Message: fmt.Sprintf("pointer receiver `*%s` is not a supported receiver form on sum type `%s`: a sum type lowers to a Go interface, which cannot carry a pointer receiver — declare the method with a value receiver `(%s %s)` instead",
+				base, base, receiverName(recvField), base),
+		})
+	}
+	return diags
+}
+
+// recvPointerBase reports the star-stripped base type name of a receiver type and
+// whether the receiver was written as a pointer (`*T`, `*Box[int]`). A non-pointer
+// receiver yields ("", false).
+func recvPointerBase(t ast.Expr) (string, bool) {
+	star, ok := t.(*ast.StarExpr)
+	if !ok {
+		return "", false
+	}
+	return typeBaseName(star.X), true
+}
+
+// typeBaseName renders the base identifier of a (possibly generic or pointer) type
+// expression: `T` from `T`, `Box` from `Box[int]`. It returns "" for a shape it does
+// not recognize.
+func typeBaseName(x ast.Expr) string {
+	match x {
+		*ast.Ident(id) => {
+			return id.Name
+		}
+		*ast.IndexExpr(ix) => {
+			return typeBaseName(ix.X)
+		}
+		*ast.IndexListExpr(ix) => {
+			return typeBaseName(ix.X)
+		}
+		*ast.StarExpr(s) => {
+			return typeBaseName(s.X)
+		}
+		_ => {
+			return ""
+		}
+	}
+}
+
+// receiverName returns the receiver's declared name, or "v" when it is unnamed or
+// `_`, for use in the value-receiver fix hint.
+func receiverName(f *ast.Field) string {
+	if len(f.Names) > 0 && f.Names[0] != nil && f.Names[0].Name != "" && f.Names[0].Name != "_" {
+		return f.Names[0].Name
+	}
+	return "v"
+}
+
 // localEnumNames returns the set of enum names declared in this file — the enums
 // whose variant set is authoritative for the construction check.
 func localEnumNames(file *ast.File) map[string]bool {

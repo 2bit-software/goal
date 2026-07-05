@@ -96,7 +96,7 @@
         "`task check-full` exits 0 and `task fixpoint` reports FIXPOINT OK."
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Feature hardening; not required by the Value conversion (Value's methods are value-receiver). Depends on US-001."
     },
     {

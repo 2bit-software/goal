@@ -25,6 +25,7 @@ var diagnosticCatalog = []diagDoc{
 	{"invalid-number-literal", "00-lex", "error", "a numeric literal has a digit outside its radix (e.g. `0o889`, `0b77`) or no digits after its `0x`/`0o`/`0b` prefix."},
 	// 01-enums
 	{"unknown-variant", "01-enums", "error", "constructing an enum variant the enum doesn't declare (its closed set is enforced at construction, not only at `match`)."},
+	{"sum-type-pointer-receiver", "01-enums", "error", "a method's receiver is a pointer to a sum type (an `enum` or `sealed interface`), which lowers to a Go interface and cannot carry a pointer receiver; declare the method with a value receiver."},
 	// 02-match
 	{"non-exhaustive-match", "02-match", "error", "a `match` on an enum omits a variant and has no `_` rest-arm."},
 	{"unresolved-match-enum", "02-match", "warning", "the matched value's enum type can't be resolved lexically; deferred to the typed stage."},

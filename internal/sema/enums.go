@@ -36,13 +36,82 @@ func CheckEnumConstruction(file *ast.File, info *Info) []Diagnostic {
 	/*line enums.goal:59*/ return diags
 }
 
-//line enums.goal:64
-func localEnumNames(file *ast.File) map[string]bool {
-	/*line enums.goal:65*/ names := map[string]bool{}
-	/*line enums.goal:66*/ for _, d := range file.Decls {
-		/*line enums.goal:67*/ if ed, ok := d.(*ast.EnumDecl); ok && ed.Name != nil {
-			/*line enums.goal:68*/ names[ed.Name.Name] = true
+//line enums.goal:72
+func CheckEnumReceiver(file *ast.File, info *Info) []Diagnostic {
+	/*line enums.goal:73*/ var diags []Diagnostic
+
+	/*line enums.goal:74*/
+	if file == nil || info == nil {
+		/*line enums.goal:75*/ return diags
+	}
+	/*line enums.goal:77*/ for _, d := range file.Decls {
+		/*line enums.goal:78*/ fd, ok := d.(*ast.FuncDecl)
+		/*line enums.goal:79*/ if !ok || fd.Recv == nil || len(fd.Recv.List) == 0 {
+			/*line enums.goal:80*/ continue
+		}
+		/*line enums.goal:82*/ recvField := fd.Recv.List[0]
+		/*line enums.goal:83*/ base, isPtr := recvPointerBase(recvField.Type)
+		/*line enums.goal:84*/ if !isPtr || base == "" {
+			/*line enums.goal:85*/ continue
+		}
+		/*line enums.goal:90*/ if info.Enums[base] == nil && !info.Sealed[base] {
+			/*line enums.goal:91*/ continue
+		}
+		/*line enums.goal:93*/ diags = append(diags, Diagnostic{Pos: recvField.Type.Pos(), Severity: Severity(Severity_Error{}), Feature: "01-enums", Code: "sum-type-pointer-receiver", Message: fmt.Sprintf("pointer receiver `*%s` is not a supported receiver form on sum type `%s`: a sum type lowers to a Go interface, which cannot carry a pointer receiver — declare the method with a value receiver `(%s %s)` instead", base, base, receiverName(recvField), base)})
+	}
+	/*line enums.goal:102*/ return diags
+}
+
+//line enums.goal:108
+func recvPointerBase(t ast.Expr) (string, bool) {
+	/*line enums.goal:109*/ star, ok := t.(*ast.StarExpr)
+	/*line enums.goal:110*/ if !ok {
+		/*line enums.goal:111*/ return "", false
+	}
+	/*line enums.goal:113*/ return typeBaseName(star.X), true
+}
+
+//line enums.goal:119
+func typeBaseName(x ast.Expr) string {
+	/*line enums.goal:120*/ switch v := x.(type) {
+	case *ast.Ident:
+		{
+			/*line enums.goal:122*/ return v.Name
+		}
+	case *ast.IndexExpr:
+		{
+			/*line enums.goal:125*/ return typeBaseName(v.X)
+		}
+	case *ast.IndexListExpr:
+		{
+			/*line enums.goal:128*/ return typeBaseName(v.X)
+		}
+	case *ast.StarExpr:
+		{
+			/*line enums.goal:131*/ return typeBaseName(v.X)
+		}
+	default:
+		{
+			/*line enums.goal:134*/ return ""
 		}
 	}
-	/*line enums.goal:71*/ return names
+}
+
+//line enums.goal:141
+func receiverName(f *ast.Field) string {
+	/*line enums.goal:142*/ if len(f.Names) > 0 && f.Names[0] != nil && f.Names[0].Name != "" && f.Names[0].Name != "_" {
+		/*line enums.goal:143*/ return f.Names[0].Name
+	}
+	/*line enums.goal:145*/ return "v"
+}
+
+//line enums.goal:150
+func localEnumNames(file *ast.File) map[string]bool {
+	/*line enums.goal:151*/ names := map[string]bool{}
+	/*line enums.goal:152*/ for _, d := range file.Decls {
+		/*line enums.goal:153*/ if ed, ok := d.(*ast.EnumDecl); ok && ed.Name != nil {
+			/*line enums.goal:154*/ names[ed.Name.Name] = true
+		}
+	}
+	/*line enums.goal:157*/ return names
 }

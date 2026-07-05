@@ -110,6 +110,14 @@ func TestSemaConvertRunner(t *testing.T) {
 	runSemaCheckDir(t, "testdata/check/12-derive-convert/")
 }
 
+// TestSemaEnumRunner drives every feature-01 (enums) check case through the
+// AST-based SemaCheck, pinning both the construction check (unknown-variant) and
+// the unsupported-receiver check (sum-type-pointer-receiver, US-007) against their
+// inline // want markers — message text and source line.
+func TestSemaEnumRunner(t *testing.T) {
+	runSemaCheckDir(t, "testdata/check/01-enums/")
+}
+
 // runSemaCheckDir runs every check case under dir through SemaCheck, failing
 // loudly if the manifest yields none (so a mis-generated manifest cannot pass).
 func runSemaCheckDir(t *testing.T, dir string) {

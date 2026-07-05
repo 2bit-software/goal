@@ -433,6 +433,14 @@
       "normalize": "none"
     },
     {
+      "id": "testdata-check-01-enums-pointer_receiver",
+      "kind": "check",
+      "input": "testdata/check/01-enums/pointer_receiver.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
       "id": "testdata-check-01-enums-unknown_variant",
       "kind": "check",
       "input": "testdata/check/01-enums/unknown_variant.goal",

@@ -1,6 +1,15 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- The typed depth stage (internal/typecheck/gotypes.goal) DROPS any go/types error whose
+  //line position is not a `.goal` file, so a type error at synthesized/lowered-only code
+  (e.g. enum-method forwarders, which carry `//line <pkg>.go:NN`) is invisible to
+  `goal check` — it can return a false "ok" for emit that would fail `go build`. To make
+  such a case a real located diagnostic: add a SEMA check (lexical stage, source-located)
+  AND `e.fail` in the backend on the same construct, so `goal build` fails cleanly and the
+  depth stage degrades to a "depth stage unavailable" NOTE instead of leaking a raw error
+  (found US-007). A backend `e.fail` on a construct that only appears in a testdata/check
+  fixture is safe: check cases are KindCheck (RunCheck -> SemaCheck, never transpiled).
 - An emitted package (internal/<pkg> with *.goal) can carry HAND-WRITTEN Go unit
   tests: the emit never produces *_test.go, and `task generate` copies per-file
   (never rm's the dir), so a committed `internal/<pkg>/foo_test.go` survives
@@ -9415,4 +9424,37 @@ detour proved necessary.
 - Learnings: see the two new Codebase Patterns entries at the top (Option[*T]
   modelling of optional pointers + every-construction-site gotcha; and the
   `task generate` wedge escape hatch via the existing ./bin/goal binary).
+---
+
+## 2026-07-04T00:00:00Z - US-007
+- Diagnose an unsupported receiver form on a sum type: a POINTER receiver on an enum
+  (`func (v *E) m()`) now yields a located goal diagnostic `[sum-type-pointer-receiver]`
+  instead of a silently-accepted check (false negative) or a raw go-build failure.
+- Files changed: internal/sema/enums.goal (new CheckEnumReceiver + recvPointerBase/
+  typeBaseName/receiverName helpers), internal/sema/check.goal (wire into Check),
+  internal/backend/emit.goal (funcDecl guard: e.fail on pointer-receiver-on-enum before
+  enumMethodDecl routing), internal/guide/catalog.goal (register the diagDoc under
+  01-enums), testdata/check/01-enums/pointer_receiver.goal (new // want fixture),
+  internal/corpus/generate_test.go (check count 66 -> 67),
+  internal/corpus/ast_gate_test.go (new TestSemaEnumRunner over testdata/check/01-enums/),
+  corpus/manifest.json (regenerated) + all generated .go siblings.
+- Learnings for future iterations:
+  - The depth stage (internal/typecheck/gotypes.goal) DROPS any go/types error whose
+    //line-resolved position is not a `.goal` file. Synthesized code (enum-method
+    forwarders carry `//line <pkg>.go:NN`) therefore produces NO surfaced go-type-error
+    even when the emitted Go is type-invalid — `goal check` silently returned "ok". To
+    turn such a latent emit bug into a real located diagnostic, add a SEMA check (fires
+    in the lexical stage, source-located) AND make the backend `e.fail` on the same
+    construct so `goal build` fails cleanly and the depth stage degrades to a
+    "depth stage unavailable" NOTE rather than leaking a go-build error.
+  - A backend `e.fail` on a construct that appears only in a check fixture is safe for
+    the corpus: testdata/check/** is KindCheck (RunCheck -> SemaCheck, never transpiled),
+    so a non-transpiling check fixture never breaks the behavioral/transpile gates.
+  - The guide diagnostic-catalog parity gate (guidetest.TestDiagnosticCatalogMatchesSource)
+    scrapes EVERY kebab-case string literal in sema/typecheck/backend/lexer *.go. A new
+    `Code: "x-y-z"` must get a matching diagDoc in catalog.goal, and any backend e.fail
+    MESSAGE must avoid a standalone kebab-case literal (a spaced format string is fine).
+  - AI-KNOWLEDGE-BOOTSTRAP.md and cmd/goal/testdata/ai-features.golden do NOT enumerate
+    the diagnostic catalog (only a live feedback sample references one code), so adding a
+    catalog entry does not drift either golden — no regeneration needed.
 ---

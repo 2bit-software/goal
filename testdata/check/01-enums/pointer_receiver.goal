@@ -1,0 +1,16 @@
+package app
+
+// A POINTER receiver on an enum (`func (c *Color) ...`) is not a supported receiver
+// form: the enum lowers to a Go interface (§8.1), which cannot carry a pointer
+// receiver. The checker rejects it with a located `sum-type-pointer-receiver` error
+// naming the unsupported form — not a raw `[go-type-error]` from the typed stage. A
+// value receiver (`func (c Color) ...`) is the supported form (US-001).
+
+enum Color {
+	Red
+	Green
+}
+
+func (c *Color) label() string { // want "pointer receiver `*Color` is not a supported receiver form on sum type `Color`"
+	return "x"
+}

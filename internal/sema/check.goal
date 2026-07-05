@@ -73,6 +73,7 @@ type SuggestedFix struct {
 func Check(file *ast.File, info *Info) []Diagnostic {
 	var diags []Diagnostic
 	diags = append(diags, CheckEnumConstruction(file, info)...)
+	diags = append(diags, CheckEnumReceiver(file, info)...)
 	diags = append(diags, CheckExhaustive(file, info)...)
 	diags = append(diags, CheckFields(file, info)...)
 	diags = append(diags, CheckUnsafeDefaults(file, info)...)
