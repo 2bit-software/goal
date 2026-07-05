@@ -30,7 +30,7 @@
         "`task check-full` exits 0 and `task fixpoint` reports FIXPOINT OK."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-001. The forwarder must reproduce funcSig's Result/Option special-casing; verify the free function and forwarder emit the same return shape."
     },
     {

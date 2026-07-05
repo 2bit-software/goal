@@ -9217,3 +9217,44 @@ detour proved necessary.
     compiler's own enums have no receiver methods, so its self-emit is
     byte-identical.
 ---
+
+## 2026-07-05T00:00:00Z - US-002 (sum-type-methods PRD)
+- Made an enum (sum-type) value-receiver method returning `Result[T, error]`
+  actually lower. US-001 already produced the correct SIGNATURE (open-E Result ->
+  native `(ok T, err error)`, Option -> `*T`) via the shared `funcResults`, but a
+  `return match g { … => Result.Ok/Err(…) }` BODY left the Result constructors
+  verbatim (non-compiling Go). Option already worked because the value-position
+  `e.expr` path lowers `Option.Some/None` (`goalSome`/`nil`); Result has no
+  value-position form.
+- Root cause + fix: `internal/backend/emit.goal` `armWrap` (shared by enumMatch and
+  sealedMatch) emitted `return <body>` for a `posReturn` arm without the Result
+  lowering that `returnStmt` applies. Added a Result-family `fnKind` dispatch to
+  armWrap's posReturn case: roResultOpen -> `emitResultReturn`, roResultClosed ->
+  `emitClosedResultReturn`, before the plain fallback. Option is intentionally NOT
+  rerouted (its value-position emit shape `goalSome(x)` must not flip to
+  `some := x; return &some`, which would risk a fixpoint diff).
+- Files changed: internal/backend/emit.goal (armWrap) + emit.go (regenerated),
+  internal/backend/testdata/resultoptionmethods/main.goal (fixture: enum Grade with
+  Points() Option[int] + Validate() Result[int,error]),
+  internal/backendtest/enum_result_option_method_test.go (lowered-source + build-
+  and-run parity vs hand-authored Go type switch). task check-full green, FIXPOINT OK.
+- Learnings for future iterations:
+  - Two return-lowering seams must agree: `returnStmt` (a direct `return match …`)
+    dispatches Result/Option lowering by `e.fnKind`, but MATCH ARMS render through
+    `armWrap`/`armBody`, which only had the value-position `e.expr` path. Any
+    construct that lowers differently in return vs value position (Result: only a
+    return form; Option: has both) needs the arm wrapper to mirror returnStmt, or
+    the two diverge silently (compiles for Option, breaks for Result).
+  - Why adding Result lowering to armWrap can't regress fixpoint: any pre-existing
+    enum-match-in-return inside a Result function would ALREADY emit non-compiling
+    `Result.Ok(...)` verbatim, so no valid current source (incl. the compiler
+    itself) contains that pattern -> no existing emit changes.
+  - Backend build-and-run tests (internal/backendtest) transpile via single-file
+    `backend.Transpile`, which INLINES the Option `goalSome` prelude
+    (suppressPrelude=false) into out.Go — so `runGoMain` compiles a self-contained
+    main.go even when the fixture uses Option. (Package-mode `goal build` instead
+    emits a separate goal_options.go.)
+  - A backend-only fixture (internal/backend/testdata, read only by backendtest —
+    NOT the corpus, NOT the interp) can consume a Result with the two-value bind
+    `v, err := g.M()`; the interp's single-Value Result limitation never applies.
+---

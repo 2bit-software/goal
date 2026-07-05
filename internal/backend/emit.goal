@@ -2690,9 +2690,28 @@ func (e *emitter) emitEnumArm(arm *ast.MatchArm, vp *ast.VariantPattern, en *sem
 // statement position, `return <body>` in return position, and `name = <body>` in
 // var position. Return/var positions require an expression body (a value-position
 // match's arms are always expressions).
+//
+// In a Result-returning function, a `return Result.Ok/Err(...)` arm must lower to
+// the native `(T, error)` pair form exactly as returnStmt does — the value-position
+// `e.expr` path (armBody) only lowers Option constructors, so a Result constructor
+// would otherwise print verbatim and not compile (US-002). Option arms already
+// lower through armBody's `e.expr` (tryOptionValue), so they fall through to the
+// plain `return <body>` below and keep their existing emit shape.
 func (e *emitter) armWrap(body ast.Node, pos matchPos, name string) {
 	switch pos {
 	case posReturn:
+		if expr, isExpr := body.(ast.Expr); isExpr {
+			switch e.fnKind {
+			case roResultOpen:
+				if e.emitResultReturn(expr) {
+					return
+				}
+			case roResultClosed:
+				if e.emitClosedResultReturn(expr) {
+					return
+				}
+			}
+		}
 		e.p("return ")
 		e.armBody(body)
 	case posVar:

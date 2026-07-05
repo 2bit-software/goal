@@ -1,0 +1,49 @@
+package main
+
+import "fmt"
+
+// Grade is a sum type carrying error/absence-returning behaviour on value-receiver
+// methods (US-002): one method returns Option[int], another returns
+// Result[int, error]. Each dispatches on the variant through a value-position
+// match, so the method set folds into the enum interface and every per-variant
+// forwarder agrees with the shared free function's lowered return shape.
+enum Grade {
+    Pass { score: int }
+    Fail { reason: string }
+}
+
+// Points returns Option[int]: Some(score) for a Pass, None for a Fail.
+func (g Grade) Points() Option[int] {
+    return match g {
+        Grade.Pass(p) => Option.Some(p.score)
+        Grade.Fail(f) => Option.None
+    }
+}
+
+// Validate returns Result[int, error]: Ok(score) for a Pass, Err for a Fail.
+// The Result.Ok/Err constructors must lower to the native (ok int, err error)
+// pair form inside the enum-match return arms.
+func (g Grade) Validate() Result[int, error] {
+    return match g {
+        Grade.Pass(p) => Result.Ok(p.score)
+        Grade.Fail(f) => Result.Err(fmt.Errorf("failed: %s", f.reason))
+    }
+}
+
+func main() {
+    grades := []Grade{Grade.Pass(score: 90), Grade.Fail(reason: "late")}
+    for _, g := range grades {
+        // Option path: exercise both Some and None.
+        match g.Points() {
+            Option.Some(v) => fmt.Printf("points=%d\n", v)
+            Option.None => fmt.Println("points=none")
+        }
+        // Result path: exercise both Ok and Err via a backend-safe two-value bind.
+        v, err := g.Validate()
+        if err != nil {
+            fmt.Printf("validate err=%v\n", err)
+        } else {
+            fmt.Printf("validate ok=%d\n", v)
+        }
+    }
+}
