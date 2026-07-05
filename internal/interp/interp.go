@@ -487,7 +487,7 @@ func (ip *Interp) execIf(s *ast.IfStmt, scope *Env) error {
 	/*line interp.goal:641*/ if cond.Kind != KindBool {
 		/*line interp.goal:642*/ return fmt.Errorf("interp: if condition must be bool, got %s", cond.Kind)
 	}
-	/*line interp.goal:644*/ if cond.Bool {
+	/*line interp.goal:644*/ if cond.asBool() {
 		/*line interp.goal:645*/ return ip.execBlock(s.Body, ifScope.NewChild())
 	}
 	/*line interp.goal:647*/ switch e := s.Else.(type) {
@@ -508,7 +508,7 @@ func (ip *Interp) execMatch(m *ast.MatchExpr, scope *Env) error {
 	/*line interp.goal:669*/ if err != nil {
 		/*line interp.goal:670*/ return err
 	}
-	/*line interp.goal:672*/ if subj.Kind != KindVariant || subj.Variant == nil {
+	/*line interp.goal:672*/ if subj.Kind != KindVariant || subj.asVariant() == nil {
 		/*line interp.goal:673*/ return fmt.Errorf("interp: match subject must be a variant, got %s", subj.Kind)
 	}
 	/*line interp.goal:675*/ arm, vp := selectMatchArm(m, subj)
@@ -526,7 +526,7 @@ func selectMatchArm(m *ast.MatchExpr, subj Value) (*ast.MatchArm, *ast.VariantPa
 	for _, arm := range m.Arms {
 		/*line interp.goal:690*/ switch p := arm.Pattern.(type) {
 		case *ast.VariantPattern:
-			if p.Variant != nil && p.Variant.Name == subj.Variant.Tag {
+			if name, ok := variantPatternTag(p); ok && name == subj.asVariant().Tag {
 				/*line interp.goal:693*/ return arm, p
 			}
 		case *ast.RestPattern:
@@ -538,7 +538,7 @@ func selectMatchArm(m *ast.MatchExpr, subj Value) (*ast.MatchArm, *ast.VariantPa
 
 //line interp.goal:705
 func unreachableMatch(subj Value) error {
-	/*line interp.goal:706*/ return panicSignal{value: StrVal(fmt.Sprintf("unreachable: non-exhaustive match on %s (compiler invariant violated)", subj.Variant.TypeID))}
+	/*line interp.goal:706*/ return panicSignal{value: StrVal(fmt.Sprintf("unreachable: non-exhaustive match on %s (compiler invariant violated)", subj.asVariant().TypeID))}
 }
 
 //line interp.goal:718
@@ -546,8 +546,8 @@ func armScopeFor(vp *ast.VariantPattern, subj Value, scope *Env) *Env {
 	/*line interp.goal:719*/ armScope := scope.NewChild()
 	/*line interp.goal:720*/ if vp != nil && vp.Binding != nil {
 		/*line interp.goal:721*/ bound := subj
-		/*line interp.goal:722*/ if subj.Kind == KindVariant && subj.Variant != nil && (subj.Variant.TypeID == resultTypeID || subj.Variant.TypeID == optionTypeID) {
-			/*line interp.goal:724*/ if pv, ok := payloadValue(subj.Variant); ok {
+		/*line interp.goal:722*/ if subj.Kind == KindVariant && subj.asVariant() != nil && (subj.asVariant().TypeID == resultTypeID || subj.asVariant().TypeID == optionTypeID) {
+			/*line interp.goal:724*/ if pv, ok := payloadValue(subj.asVariant()); ok {
 				/*line interp.goal:725*/ bound = pv
 			}
 		}
@@ -709,20 +709,20 @@ func (ip *Interp) assignIndex(t *ast.IndexExpr, v Value, tok token.Kind, scope *
 		if idx.Kind != KindInt {
 			/*line interp.goal:915*/ return fmt.Errorf("interp: slice index must be int, got %s", idx.Kind)
 		}
-		if idx.Int < 0 || idx.Int >= int64(len(recv.Slice)) {
-			/*line interp.goal:918*/ return fmt.Errorf("interp: slice index %d out of range (len %d)", idx.Int, len(recv.Slice))
+		if idx.asInt() < 0 || idx.asInt() >= int64(len(recv.asSlice())) {
+			/*line interp.goal:918*/ return fmt.Errorf("interp: slice index %d out of range (len %d)", idx.asInt(), len(recv.asSlice()))
 		}
 		if tok != token.ASSIGN {
-			/*line interp.goal:921*/ res, err := ip.compoundApply(tok, recv.Slice[idx.Int], v)
+			/*line interp.goal:921*/ res, err := ip.compoundApply(tok, recv.asSlice()[idx.asInt()], v)
 			/*line interp.goal:922*/ if err != nil {
 				/*line interp.goal:923*/ return err
 			}
 			/*line interp.goal:925*/ v = res
 		}
-		recv.Slice[idx.Int] = v
+		recv.asSlice()[idx.asInt()] = v
 		return nil
 	case KindMap:
-		if recv.Map == nil {
+		if recv.asMap() == nil {
 			/*line interp.goal:931*/ return fmt.Errorf("interp: assignment to entry in nil map")
 		}
 		key, err := mapKeyString(idx)
@@ -730,7 +730,7 @@ func (ip *Interp) assignIndex(t *ast.IndexExpr, v Value, tok token.Kind, scope *
 			/*line interp.goal:935*/ return err
 		}
 		if tok != token.ASSIGN {
-			/*line interp.goal:938*/ cur, ok := recv.Map.Entries[key]
+			/*line interp.goal:938*/ cur, ok := recv.asMap().Entries[key]
 			/*line interp.goal:939*/ if !ok {
 				/*line interp.goal:940*/ return fmt.Errorf("interp: compound assignment to absent map key %q", key)
 			}
@@ -740,7 +740,7 @@ func (ip *Interp) assignIndex(t *ast.IndexExpr, v Value, tok token.Kind, scope *
 			}
 			/*line interp.goal:946*/ v = res
 		}
-		recv.Map.Entries[key] = v
+		recv.asMap().Entries[key] = v
 		return nil
 	default:
 		return fmt.Errorf("interp: cannot index-assign %s", recv.Kind)
@@ -756,13 +756,13 @@ func (ip *Interp) assignField(t *ast.SelectorExpr, v Value, tok token.Kind, scop
 	/*line interp.goal:965*/ if err != nil {
 		/*line interp.goal:966*/ return err
 	}
-	/*line interp.goal:968*/ if recv.Kind != KindStruct || recv.Struct == nil {
+	/*line interp.goal:968*/ if recv.Kind != KindStruct || recv.asStruct() == nil {
 		/*line interp.goal:969*/ return fmt.Errorf("interp: cannot assign field %s on %s", t.Sel.Name, recv.Kind)
 	}
 	/*line interp.goal:971*/ if tok != token.ASSIGN {
-		/*line interp.goal:972*/ cur, ok := recv.Struct.Fields[t.Sel.Name]
+		/*line interp.goal:972*/ cur, ok := recv.asStruct().Fields[t.Sel.Name]
 		/*line interp.goal:973*/ if !ok {
-			/*line interp.goal:974*/ return fmt.Errorf("interp: %s has no field %s", recv.Struct.TypeID, t.Sel.Name)
+			/*line interp.goal:974*/ return fmt.Errorf("interp: %s has no field %s", recv.asStruct().TypeID, t.Sel.Name)
 		}
 		/*line interp.goal:976*/ res, err := ip.compoundApply(tok, cur, v)
 		/*line interp.goal:977*/ if err != nil {
@@ -770,7 +770,7 @@ func (ip *Interp) assignField(t *ast.SelectorExpr, v Value, tok token.Kind, scop
 		}
 		/*line interp.goal:980*/ v = res
 	}
-	/*line interp.goal:982*/ recv.Struct.Fields[t.Sel.Name] = v
+	/*line interp.goal:982*/ recv.asStruct().Fields[t.Sel.Name] = v
 	/*line interp.goal:983*/ return nil
 }
 
@@ -791,7 +791,7 @@ func (ip *Interp) execFor(s *ast.ForStmt, scope *Env) error {
 			/*line interp.goal:1006*/ if cond.Kind != KindBool {
 				/*line interp.goal:1007*/ return fmt.Errorf("interp: for condition must be bool, got %s", cond.Kind)
 			}
-			/*line interp.goal:1009*/ if !cond.Bool {
+			/*line interp.goal:1009*/ if !cond.asBool() {
 				/*line interp.goal:1010*/ return nil
 			}
 		}
@@ -851,7 +851,7 @@ func (ip *Interp) execRange(s *ast.RangeStmt, scope *Env) error {
 	}
 	/*line interp.goal:1070*/ switch subject.Kind {
 	case KindSlice:
-		for i, elem := range subject.Slice {
+		for i, elem := range subject.asSlice() {
 			/*line interp.goal:1073*/ stop, err := iterate(IntVal(int64(i)), elem)
 			/*line interp.goal:1074*/ if err != nil {
 				/*line interp.goal:1075*/ return err
@@ -862,16 +862,16 @@ func (ip *Interp) execRange(s *ast.RangeStmt, scope *Env) error {
 		}
 		return nil
 	case KindMap:
-		if subject.Map == nil {
+		if subject.asMap() == nil {
 			/*line interp.goal:1084*/ return nil
 		}
-		keys := make([]string, 0, len(subject.Map.Entries))
-		for k := range subject.Map.Entries {
+		keys := make([]string, 0, len(subject.asMap().Entries))
+		for k := range subject.asMap().Entries {
 			/*line interp.goal:1088*/ keys = append(keys, k)
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			/*line interp.goal:1092*/ stop, err := iterate(StrVal(k), subject.Map.Entries[k])
+			/*line interp.goal:1092*/ stop, err := iterate(StrVal(k), subject.asMap().Entries[k])
 			/*line interp.goal:1093*/ if err != nil {
 				/*line interp.goal:1094*/ return err
 			}
@@ -983,7 +983,7 @@ func (ip *Interp) caseMatches(cc *ast.CaseClause, hasTag bool, tag Value, scope 
 		/*line interp.goal:1205*/ if v.Kind != KindBool {
 			/*line interp.goal:1206*/ return false, fmt.Errorf("interp: tagless switch case must be bool, got %s", v.Kind)
 		}
-		/*line interp.goal:1208*/ if v.Bool {
+		/*line interp.goal:1208*/ if v.asBool() {
 			/*line interp.goal:1209*/ return true, nil
 		}
 	}

@@ -62,7 +62,7 @@ func (ip *Interp) evalMatch(m *ast.MatchExpr, scope *Env) (Value, error) {
 	/*line eval.goal:92*/ if err != nil {
 		/*line eval.goal:93*/ return Value{}, err
 	}
-	/*line eval.goal:95*/ if subj.Kind != KindVariant || subj.Variant == nil {
+	/*line eval.goal:95*/ if subj.Kind != KindVariant || subj.asVariant() == nil {
 		/*line eval.goal:96*/ return Value{}, fmt.Errorf("interp: match subject must be a variant, got %s", subj.Kind)
 	}
 	/*line eval.goal:98*/ arm, vp := selectMatchArm(m, subj)
@@ -86,36 +86,36 @@ func (ip *Interp) evalUnwrap(u *ast.UnwrapExpr, scope *Env) (Value, error) {
 	/*line eval.goal:125*/ if err != nil {
 		/*line eval.goal:126*/ return Value{}, err
 	}
-	/*line eval.goal:128*/ if v.Kind != KindVariant || v.Variant == nil {
+	/*line eval.goal:128*/ if v.Kind != KindVariant || v.asVariant() == nil {
 		/*line eval.goal:129*/ return Value{}, fmt.Errorf("interp: %s: cannot use ? on %s (operand is not a Result or Option)", u.Question, v.Kind)
 	}
 	/*line eval.goal:131*/ sig, _ := ip.curSig()
-	/*line eval.goal:132*/ switch v.Variant.TypeID {
+	/*line eval.goal:132*/ switch v.asVariant().TypeID {
 	case resultTypeID:
 		if !isModeResult(sig.Mode) && !isModeResultClosed(sig.Mode) {
 			/*line eval.goal:138*/ return Value{}, fmt.Errorf("interp: %s: ? used on a Result outside a Result-returning function", u.Question)
 		}
-		if v.Variant.Tag == resultOkTag {
-			/*line eval.goal:141*/ if pv, ok := payloadValue(v.Variant); ok {
+		if v.asVariant().Tag == resultOkTag {
+			/*line eval.goal:141*/ if pv, ok := payloadValue(v.asVariant()); ok {
 				/*line eval.goal:142*/ return pv, nil
 			}
 			/*line eval.goal:144*/ return NilVal(), nil
 		}
-		errVal, _ := payloadValue(v.Variant)
+		errVal, _ := payloadValue(v.asVariant())
 		return Value{}, ip.propagateErr(u, errVal, sig)
 	case optionTypeID:
 		if !isModeOption(sig.Mode) {
 			/*line eval.goal:150*/ return Value{}, fmt.Errorf("interp: %s: ? used on an Option outside an Option-returning function", u.Question)
 		}
-		if v.Variant.Tag == optionSomeTag {
-			/*line eval.goal:153*/ if pv, ok := payloadValue(v.Variant); ok {
+		if v.asVariant().Tag == optionSomeTag {
+			/*line eval.goal:153*/ if pv, ok := payloadValue(v.asVariant()); ok {
 				/*line eval.goal:154*/ return pv, nil
 			}
 			/*line eval.goal:156*/ return NilVal(), nil
 		}
 		return Value{}, ip.propagateNone()
 	default:
-		return Value{}, fmt.Errorf("interp: %s: cannot use ? on %s.%s (operand is not a Result or Option)", u.Question, v.Variant.TypeID, v.Variant.Tag)
+		return Value{}, fmt.Errorf("interp: %s: cannot use ? on %s.%s (operand is not a Result or Option)", u.Question, v.asVariant().TypeID, v.asVariant().Tag)
 	}
 }
 
@@ -334,21 +334,21 @@ func (ip *Interp) evalSelector(s *ast.SelectorExpr, scope *Env) (Value, error) {
 	}
 	/*line eval.goal:441*/ switch recv.Kind {
 	case KindStruct:
-		if recv.Struct == nil {
+		if recv.asStruct() == nil {
 			/*line eval.goal:444*/ return Value{}, fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
 		}
-		v, ok := recv.Struct.Fields[s.Sel.Name]
+		v, ok := recv.asStruct().Fields[s.Sel.Name]
 		if !ok {
-			/*line eval.goal:448*/ return Value{}, fmt.Errorf("interp: %s has no field %s", recv.Struct.TypeID, s.Sel.Name)
+			/*line eval.goal:448*/ return Value{}, fmt.Errorf("interp: %s has no field %s", recv.asStruct().TypeID, s.Sel.Name)
 		}
 		return v, nil
 	case KindVariant:
-		if recv.Variant == nil {
+		if recv.asVariant() == nil {
 			/*line eval.goal:455*/ return Value{}, fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
 		}
 		v, ok := recv.Field(s.Sel.Name)
 		if !ok {
-			/*line eval.goal:459*/ return Value{}, fmt.Errorf("interp: %s.%s has no payload field %s", recv.Variant.TypeID, recv.Variant.Tag, s.Sel.Name)
+			/*line eval.goal:459*/ return Value{}, fmt.Errorf("interp: %s.%s has no payload field %s", recv.asVariant().TypeID, recv.asVariant().Tag, s.Sel.Name)
 		}
 		return v, nil
 	default:
@@ -369,10 +369,10 @@ func (ip *Interp) evalVariantLit(vl *ast.VariantLit, scope *Env) (Value, error) 
 	/*line eval.goal:483*/ if !ok {
 		/*line eval.goal:484*/ return Value{}, fmt.Errorf("interp: unknown enum %s in variant construction", id.Name)
 	}
-	/*line eval.goal:486*/ if vl.Variant == nil {
-		/*line eval.goal:487*/ return Value{}, fmt.Errorf("interp: variant construction on enum %s is missing a variant tag", enumDecl.Name)
+	/*line eval.goal:486*/ tag, hasTag := variantLitTag(vl)
+	/*line eval.goal:487*/ if !hasTag {
+		/*line eval.goal:488*/ return Value{}, fmt.Errorf("interp: variant construction on enum %s is missing a variant tag", enumDecl.Name)
 	}
-	/*line eval.goal:489*/ tag := vl.Variant.Name
 	/*line eval.goal:490*/ if !enumDecl.VSet[tag] {
 		/*line eval.goal:491*/ return Value{}, fmt.Errorf("interp: enum %s has no variant %s", enumDecl.Name, tag)
 	}
@@ -478,19 +478,19 @@ func (ip *Interp) evalIndex(e *ast.IndexExpr, scope *Env) (Value, error) {
 		if idx.Kind != KindInt {
 			/*line eval.goal:608*/ return Value{}, fmt.Errorf("interp: slice index must be int, got %s", idx.Kind)
 		}
-		if idx.Int < 0 || idx.Int >= int64(len(recv.Slice)) {
-			/*line eval.goal:611*/ return Value{}, fmt.Errorf("interp: slice index %d out of range (len %d)", idx.Int, len(recv.Slice))
+		if idx.asInt() < 0 || idx.asInt() >= int64(len(recv.asSlice())) {
+			/*line eval.goal:611*/ return Value{}, fmt.Errorf("interp: slice index %d out of range (len %d)", idx.asInt(), len(recv.asSlice()))
 		}
-		return recv.Slice[idx.Int], nil
+		return recv.asSlice()[idx.asInt()], nil
 	case KindMap:
 		key, err := mapKeyString(idx)
 		if err != nil {
 			/*line eval.goal:617*/ return Value{}, err
 		}
-		if recv.Map == nil {
+		if recv.asMap() == nil {
 			/*line eval.goal:620*/ return NilVal(), nil
 		}
-		if v, ok := recv.Map.Entries[key]; ok {
+		if v, ok := recv.asMap().Entries[key]; ok {
 			/*line eval.goal:623*/ return v, nil
 		}
 		return NilVal(), nil
@@ -504,7 +504,7 @@ func mapKeyString(v Value) (string, error) {
 	/*line eval.goal:635*/ if v.Kind != KindString {
 		/*line eval.goal:636*/ return "", fmt.Errorf("interp: map key must be string, got %s", v.Kind)
 	}
-	/*line eval.goal:638*/ return v.Str, nil
+	/*line eval.goal:638*/ return v.asStr(), nil
 }
 
 //line eval.goal:645
@@ -623,10 +623,10 @@ func (ip *Interp) evalBinary(b *ast.BinaryExpr, scope *Env) (Value, error) {
 		/*line eval.goal:790*/ if left.Kind != KindBool {
 			/*line eval.goal:791*/ return Value{}, fmt.Errorf("interp: operator %s requires bool, got %s", b.Op, left.Kind)
 		}
-		/*line eval.goal:794*/ if b.Op == token.LAND && !left.Bool {
+		/*line eval.goal:794*/ if b.Op == token.LAND && !left.asBool() {
 			/*line eval.goal:795*/ return BoolVal(false), nil
 		}
-		/*line eval.goal:797*/ if b.Op == token.LOR && left.Bool {
+		/*line eval.goal:797*/ if b.Op == token.LOR && left.asBool() {
 			/*line eval.goal:798*/ return BoolVal(true), nil
 		}
 		/*line eval.goal:800*/ right, err := ip.evalExpr(b.Y, scope)
@@ -636,7 +636,7 @@ func (ip *Interp) evalBinary(b *ast.BinaryExpr, scope *Env) (Value, error) {
 		/*line eval.goal:804*/ if right.Kind != KindBool {
 			/*line eval.goal:805*/ return Value{}, fmt.Errorf("interp: operator %s requires bool, got %s", b.Op, right.Kind)
 		}
-		/*line eval.goal:807*/ return BoolVal(right.Bool), nil
+		/*line eval.goal:807*/ return BoolVal(right.asBool()), nil
 	}
 	/*line eval.goal:810*/ left, err := ip.evalExpr(b.X, scope)
 	/*line eval.goal:811*/ if err != nil {
@@ -662,11 +662,11 @@ func applyBinary(op token.Kind, left, right Value) (Value, error) {
 	}
 	/*line eval.goal:835*/ switch left.Kind {
 	case KindInt:
-		return intBinary(op, left.Int, right.Int)
+		return intBinary(op, left.asInt(), right.asInt())
 	case KindFloat:
-		return floatBinary(op, left.Float, right.Float)
+		return floatBinary(op, left.asFloat(), right.asFloat())
 	case KindString:
-		return stringBinary(op, left.Str, right.Str)
+		return stringBinary(op, left.asStr(), right.asStr())
 	default:
 		return Value{}, fmt.Errorf("interp: operator %s not supported on %s", op, left.Kind)
 	}
@@ -763,9 +763,9 @@ func (ip *Interp) evalUnary(u *ast.UnaryExpr, scope *Env) (Value, error) {
 	case token.SUB:
 		switch x.Kind {
 		case KindInt:
-			return IntVal(-x.Int), nil
+			return IntVal(-x.asInt()), nil
 		case KindFloat:
-			return FloatVal(-x.Float), nil
+			return FloatVal(-x.asFloat()), nil
 		default:
 			return Value{}, fmt.Errorf("interp: unary - requires numeric, got %s", x.Kind)
 		}
@@ -773,7 +773,7 @@ func (ip *Interp) evalUnary(u *ast.UnaryExpr, scope *Env) (Value, error) {
 		if x.Kind != KindBool {
 			/*line eval.goal:944*/ return Value{}, fmt.Errorf("interp: unary ! requires bool, got %s", x.Kind)
 		}
-		return BoolVal(!x.Bool), nil
+		return BoolVal(!x.asBool()), nil
 	default:
 		return Value{}, fmt.Errorf("interp: unsupported unary operator %s", u.Op)
 	}
@@ -836,14 +836,14 @@ func (ip *Interp) builtinLen(call *ast.CallExpr, scope *Env) ([]Value, error) {
 	}
 	/*line eval.goal:1016*/ switch v.Kind {
 	case KindSlice:
-		return []Value{IntVal(int64(len(v.Slice)))}, nil
+		return []Value{IntVal(int64(len(v.asSlice())))}, nil
 	case KindString:
-		return []Value{IntVal(int64(len(v.Str)))}, nil
+		return []Value{IntVal(int64(len(v.asStr())))}, nil
 	case KindMap:
-		if v.Map == nil {
+		if v.asMap() == nil {
 			/*line eval.goal:1023*/ return []Value{IntVal(0)}, nil
 		}
-		return []Value{IntVal(int64(len(v.Map.Entries)))}, nil
+		return []Value{IntVal(int64(len(v.asMap().Entries)))}, nil
 	default:
 		return nil, fmt.Errorf("interp: len of %s is not defined", v.Kind)
 	}
@@ -861,8 +861,8 @@ func (ip *Interp) builtinAppend(call *ast.CallExpr, scope *Env) ([]Value, error)
 	/*line eval.goal:1043*/ if base.Kind != KindSlice {
 		/*line eval.goal:1044*/ return nil, fmt.Errorf("interp: append of %s (first argument must be a slice)", base.Kind)
 	}
-	/*line eval.goal:1046*/ out := make([]Value, len(base.Slice), len(base.Slice)+len(call.Args)-1)
-	/*line eval.goal:1047*/ copy(out, base.Slice)
+	/*line eval.goal:1046*/ out := make([]Value, len(base.asSlice()), len(base.asSlice())+len(call.Args)-1)
+	/*line eval.goal:1047*/ copy(out, base.asSlice())
 	/*line eval.goal:1048*/ for _, a := range call.Args[1:] {
 		/*line eval.goal:1049*/ v, err := ip.evalExpr(a, scope)
 		/*line eval.goal:1050*/ if err != nil {
@@ -891,10 +891,10 @@ func (ip *Interp) builtinMake(call *ast.CallExpr, scope *Env) ([]Value, error) {
 			/*line eval.goal:1076*/ if sz.Kind != KindInt {
 				/*line eval.goal:1077*/ return nil, fmt.Errorf("interp: make length must be int, got %s", sz.Kind)
 			}
-			/*line eval.goal:1079*/ if sz.Int < 0 {
-				/*line eval.goal:1080*/ return nil, fmt.Errorf("interp: make length %d is negative", sz.Int)
+			/*line eval.goal:1079*/ if sz.asInt() < 0 {
+				/*line eval.goal:1080*/ return nil, fmt.Errorf("interp: make length %d is negative", sz.asInt())
 			}
-			/*line eval.goal:1082*/ n = int(sz.Int)
+			/*line eval.goal:1082*/ n = int(sz.asInt())
 		}
 		zero := zeroValue(t.Elt)
 		elems := make([]Value, n)
@@ -925,10 +925,10 @@ func (ip *Interp) tryMethodCall(sel *ast.SelectorExpr, call *ast.CallExpr, scope
 	/*line eval.goal:1117*/ if rerr != nil {
 		/*line eval.goal:1118*/ return nil, false, nil
 	}
-	/*line eval.goal:1120*/ if recv.Kind != KindStruct || recv.Struct == nil {
+	/*line eval.goal:1120*/ if recv.Kind != KindStruct || recv.asStruct() == nil {
 		/*line eval.goal:1121*/ return nil, false, nil
 	}
-	/*line eval.goal:1123*/ byName := ip.methods[recv.Struct.TypeID]
+	/*line eval.goal:1123*/ byName := ip.methods[recv.asStruct().TypeID]
 	/*line eval.goal:1124*/ if byName == nil {
 		/*line eval.goal:1125*/ return nil, false, nil
 	}
@@ -950,14 +950,14 @@ func (ip *Interp) tryMethodCall(sel *ast.SelectorExpr, call *ast.CallExpr, scope
 
 //line eval.goal:1147
 func copyStructValue(v Value) Value {
-	/*line eval.goal:1148*/ if v.Kind != KindStruct || v.Struct == nil {
+	/*line eval.goal:1148*/ if v.Kind != KindStruct || v.asStruct() == nil {
 		/*line eval.goal:1149*/ return v
 	}
-	/*line eval.goal:1151*/ fields := make(map[string]Value, len(v.Struct.Fields))
-	/*line eval.goal:1152*/ for k, fv := range v.Struct.Fields {
+	/*line eval.goal:1151*/ fields := make(map[string]Value, len(v.asStruct().Fields))
+	/*line eval.goal:1152*/ for k, fv := range v.asStruct().Fields {
 		/*line eval.goal:1153*/ fields[k] = fv
 	}
-	/*line eval.goal:1155*/ return StructVal(v.Struct.TypeID, fields)
+	/*line eval.goal:1155*/ return StructVal(v.asStruct().TypeID, fields)
 }
 
 //line eval.goal:1162

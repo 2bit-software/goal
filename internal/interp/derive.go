@@ -78,7 +78,7 @@ func (ip *Interp) deriveConvert(name string, src Value, srcType, tgtType string,
 	/*line derive.goal:110*/ if src.Kind == KindNil {
 		/*line derive.goal:111*/ return ip.zeroValue(tgtVal, 0), nil
 	}
-	/*line derive.goal:113*/ if src.Kind != KindStruct || src.Struct == nil {
+	/*line derive.goal:113*/ if src.Kind != KindStruct || src.asStruct() == nil {
 		/*line derive.goal:114*/ return Value{}, fmt.Errorf("interp: derive %s: source value is %s, not a struct", name, src.Kind)
 	}
 	/*line derive.goal:116*/ srcFields, _ := ip.structFields(baseTypeName(derefTypeName(srcType)))
@@ -105,7 +105,7 @@ func (ip *Interp) deriveConvert(name string, src Value, srcType, tgtType string,
 		/*line derive.goal:143*/ if !found {
 			/*line derive.goal:144*/ return Value{}, fmt.Errorf("interp: derive %s: target field %q of %s is not sourced from %s (add an explicit override or a `from func`)", name, f.Name, tgtType, srcType)
 		}
-		/*line derive.goal:146*/ srcVal, ok := src.Struct.Fields[sf.Name]
+		/*line derive.goal:146*/ srcVal, ok := src.asStruct().Fields[sf.Name]
 		/*line derive.goal:147*/ if !ok {
 			/*line derive.goal:148*/ srcVal = ip.zeroValue(sf.Type, 0)
 		}
@@ -181,11 +181,11 @@ func (ip *Interp) convertFieldValue(v Value, sf, tf string, fallible bool) (Valu
 		/*line derive.goal:230*/ if !ok || sk != tk {
 			/*line derive.goal:231*/ return Value{}, fmt.Errorf("no conversion %s -> %s in scope", sf, tf)
 		}
-		/*line derive.goal:233*/ if v.Kind != KindMap || v.Map == nil {
+		/*line derive.goal:233*/ if v.Kind != KindMap || v.asMap() == nil {
 			/*line derive.goal:234*/ return MapVal(nil), nil
 		}
-		/*line derive.goal:236*/ entries := make(map[string]Value, len(v.Map.Entries))
-		/*line derive.goal:237*/ for k, ev := range v.Map.Entries {
+		/*line derive.goal:236*/ entries := make(map[string]Value, len(v.asMap().Entries))
+		/*line derive.goal:237*/ for k, ev := range v.asMap().Entries {
 			/*line derive.goal:238*/ cv, err := ip.convertFieldValue(ev, sv, tv, false)
 			/*line derive.goal:239*/ if err != nil {
 				/*line derive.goal:240*/ return Value{}, err
@@ -207,8 +207,8 @@ func (ip *Interp) convertElements(v Value, se, te string) (Value, error) {
 	/*line derive.goal:259*/ if v.Kind != KindSlice {
 		/*line derive.goal:260*/ return SliceVal(), nil
 	}
-	/*line derive.goal:262*/ out := make([]Value, 0, len(v.Slice))
-	/*line derive.goal:263*/ for _, ev := range v.Slice {
+	/*line derive.goal:262*/ out := make([]Value, 0, len(v.asSlice()))
+	/*line derive.goal:263*/ for _, ev := range v.asSlice() {
 		/*line derive.goal:264*/ cv, err := ip.convertFieldValue(ev, se, te, false)
 		/*line derive.goal:265*/ if err != nil {
 			/*line derive.goal:266*/ var de deriveErrVal

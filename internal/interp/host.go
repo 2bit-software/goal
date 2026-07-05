@@ -21,7 +21,7 @@ var hostFuncs = map[string]hostFunc{"fmt.Sprintf": func(args []Value) ([]Value, 
 	/*line host.goal:38*/ if args[0].Kind != KindString {
 		/*line host.goal:39*/ return nil, fmt.Errorf("interp: fmt.Sprintf format must be string, got %s", args[0].Kind)
 	}
-	/*line host.goal:41*/ return []Value{StrVal(fmt.Sprintf(args[0].Str, goArgs(args[1:])...))}, nil
+	/*line host.goal:41*/ return []Value{StrVal(fmt.Sprintf(args[0].asStr(), goArgs(args[1:])...))}, nil
 }, "fmt.Sprint": func(args []Value) ([]Value, error) {
 	/*line host.goal:44*/ return []Value{StrVal(fmt.Sprint(goArgs(args)...))}, nil
 }, "fmt.Errorf": func(args []Value) ([]Value, error) {
@@ -31,7 +31,7 @@ var hostFuncs = map[string]hostFunc{"fmt.Sprintf": func(args []Value) ([]Value, 
 	/*line host.goal:53*/ if args[0].Kind != KindString {
 		/*line host.goal:54*/ return nil, fmt.Errorf("interp: fmt.Errorf format must be string, got %s", args[0].Kind)
 	}
-	/*line host.goal:56*/ return []Value{errVal(fmt.Errorf(args[0].Str, goArgs(args[1:])...).Error())}, nil
+	/*line host.goal:56*/ return []Value{errVal(fmt.Errorf(args[0].asStr(), goArgs(args[1:])...).Error())}, nil
 }, "errors.New": func(args []Value) ([]Value, error) {
 	/*line host.goal:59*/ if len(args) != 1 {
 		/*line host.goal:60*/ return nil, fmt.Errorf("interp: errors.New expects 1 argument, got %d", len(args))
@@ -39,7 +39,7 @@ var hostFuncs = map[string]hostFunc{"fmt.Sprintf": func(args []Value) ([]Value, 
 	/*line host.goal:62*/ if args[0].Kind != KindString {
 		/*line host.goal:63*/ return nil, fmt.Errorf("interp: errors.New argument must be string, got %s", args[0].Kind)
 	}
-	/*line host.goal:65*/ return []Value{errVal(args[0].Str)}, nil
+	/*line host.goal:65*/ return []Value{errVal(args[0].asStr())}, nil
 }}
 
 //line host.goal:73
@@ -49,7 +49,7 @@ func errVal(msg string) Value {
 
 //line host.goal:78
 func isErrorValue(v Value) bool {
-	/*line host.goal:79*/ return v.Kind == KindStruct && v.Struct != nil && v.Struct.TypeID == "error"
+	/*line host.goal:79*/ return v.Kind == KindStruct && v.asStruct() != nil && v.asStruct().TypeID == "error"
 }
 
 //line host.goal:86
@@ -58,17 +58,17 @@ func goArg(v Value) any {
 	case KindNil:
 		return nil
 	case KindInt:
-		return v.Int
+		return v.asInt()
 	case KindFloat:
-		return v.Float
+		return v.asFloat()
 	case KindString:
-		return v.Str
+		return v.asStr()
 	case KindBool:
-		return v.Bool
+		return v.asBool()
 	case KindStruct:
 		if isErrorValue(v) {
-			/*line host.goal:100*/ msg, _ := v.Struct.Fields["message"]
-			/*line host.goal:101*/ return errors.New(msg.Str)
+			/*line host.goal:100*/ msg, _ := v.asStruct().Fields["message"]
+			/*line host.goal:101*/ return errors.New(msg.asStr())
 		}
 		return v.String()
 	default:

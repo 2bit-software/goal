@@ -129,7 +129,10 @@ tasks:
           set -e
           for entry in _bootstrap/verify/internal/*; do
             name="$(basename "$entry")"
-            diff -r -x '*.goal' -x testdata "internal/$name" "$entry"
+            # The emit never produces *_test.go (there is no .goal test source), so
+            # hand-written in-package unit tests (e.g. internal/interp/value_test.go)
+            # are not drift — exclude them from the comparison.
+            diff -r -x '*.goal' -x '*_test.go' -x testdata "internal/$name" "$entry"
           done
       - rm -rf _bootstrap/verify
       - cmd: echo "generated Go is up to date"

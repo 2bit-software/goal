@@ -221,6 +221,98 @@ func VariantVal(typeID, tag string, fields map[string]Value) Value {
 	return Value{Kind: KindVariant, Variant: &Variant{TypeID: typeID, Tag: tag, Fields: fields}}
 }
 
+// --- Payload accessors -----------------------------------------------------
+//
+// Every read of a Value payload outside this file goes through one of these
+// accessors (US-003) so the representation can later change in ONE place
+// (US-005). They wrap the CURRENT flat struct verbatim: each returns the field
+// selected by Kind, so a mismatched-kind read yields that field's zero value —
+// exactly what a direct field read would have produced. Pointer- and
+// slice-backed accessors return the SAME backing (not a copy), so mutation
+// through them (e.g. asStruct().Fields[k] = v) is preserved.
+
+// kind returns the value's dynamic kind. Named lowercase because the `Kind`
+// field name is taken; the discriminant accessor for the read gate.
+func (v Value) kind() Kind { return v.Kind }
+
+// asInt returns the int payload (KindInt).
+func (v Value) asInt() int64 { return v.Int }
+
+// asFloat returns the float payload (KindFloat).
+func (v Value) asFloat() float64 { return v.Float }
+
+// asStr returns the string payload (KindString).
+func (v Value) asStr() string { return v.Str }
+
+// asBool returns the bool payload (KindBool).
+func (v Value) asBool() bool { return v.Bool }
+
+// asStruct returns the struct payload (KindStruct); nil when absent.
+func (v Value) asStruct() *StructValue { return v.Struct }
+
+// asSlice returns the slice payload (KindSlice); the backing is shared.
+func (v Value) asSlice() []Value { return v.Slice }
+
+// asMap returns the map payload (KindMap); nil when absent.
+func (v Value) asMap() *MapValue { return v.Map }
+
+// asFunc returns the function payload (KindFunc); nil when absent.
+func (v Value) asFunc() *FuncValue { return v.Func }
+
+// asVariant returns the tagged-union payload (KindVariant); nil when absent.
+func (v Value) asVariant() *Variant { return v.Variant }
+
+// isNil reports whether v is the nil value.
+func (v Value) isNil() bool { return v.Kind == KindNil }
+
+// isInt reports whether v carries an int payload.
+func (v Value) isInt() bool { return v.Kind == KindInt }
+
+// isFloat reports whether v carries a float payload.
+func (v Value) isFloat() bool { return v.Kind == KindFloat }
+
+// isStr reports whether v carries a string payload.
+func (v Value) isStr() bool { return v.Kind == KindString }
+
+// isBool reports whether v carries a bool payload.
+func (v Value) isBool() bool { return v.Kind == KindBool }
+
+// isStruct reports whether v is a non-nil struct value.
+func (v Value) isStruct() bool { return v.Kind == KindStruct && v.Struct != nil }
+
+// isSlice reports whether v carries a slice payload.
+func (v Value) isSlice() bool { return v.Kind == KindSlice }
+
+// isMap reports whether v is a non-nil map value.
+func (v Value) isMap() bool { return v.Kind == KindMap && v.Map != nil }
+
+// isFunc reports whether v carries a function payload.
+func (v Value) isFunc() bool { return v.Kind == KindFunc }
+
+// isVariant reports whether v is a non-nil tagged-union value.
+func (v Value) isVariant() bool { return v.Kind == KindVariant && v.Variant != nil }
+
+// variantPatternTag returns a match arm's VariantPattern tag name and true, or
+// ("", false) when the pattern carries no tag. It lives here (not in the match
+// evaluator) so the Value read gate — which reads `.Variant` off both Value and
+// the AST node ast.VariantPattern and excludes only value.goal — stays green.
+func variantPatternTag(p *ast.VariantPattern) (string, bool) {
+	if p == nil || p.Variant == nil {
+		return "", false
+	}
+	return p.Variant.Name, true
+}
+
+// variantLitTag returns a variant construction's VariantLit tag name and true,
+// or ("", false) when the literal carries no tag. Kept here for the same
+// read-gate reason as variantPatternTag.
+func variantLitTag(vl *ast.VariantLit) (string, bool) {
+	if vl == nil || vl.Variant == nil {
+		return "", false
+	}
+	return vl.Variant.Name, true
+}
+
 // Field reads a tagged-union payload field by name. ok is false when v is not a
 // variant or the field is absent (a not-present read, never a panic).
 func (v Value) Field(name string) (Value, bool) {

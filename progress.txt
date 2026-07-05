@@ -1,6 +1,13 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- An emitted package (internal/<pkg> with *.goal) can carry HAND-WRITTEN Go unit
+  tests: the emit never produces *_test.go, and `task generate` copies per-file
+  (never rm's the dir), so a committed `internal/<pkg>/foo_test.go` survives
+  regeneration. `task verify-generated`'s diff was taught `-x '*_test.go'` so the
+  test file is not flagged as drift (found US-003). Use this to unit-test
+  UNEXPORTED helpers of an emitted package in-package (a sibling *test package
+  can only reach exported API) — e.g. interp's lowercase `kind()`/`asInt()`.
 - A `testdata/` fixture dir under an EMITTED package (any dir with `*.goal`, e.g.
   internal/backend) breaks `task verify-generated`, which does
   `diff -r internal/<pkg> _bootstrap/verify/internal/<pkg>`; the emit never
@@ -9258,3 +9265,28 @@ detour proved necessary.
     NOT the corpus, NOT the interp) can consume a Result with the two-value bind
     `v, err := g.M()`; the interp's single-Value Result limitation never applies.
 ---
+
+## 2026-07-05T00:47:22Z - US-003
+- Migrated every interpreter Value payload READ outside value.goal to accessor
+  methods, so US-005 can flip Value's representation in one file.
+- Added to internal/interp/value.goal: kind(), asInt/asFloat/asStr/asBool/
+  asStruct/asSlice/asMap/asFunc/asVariant (pointer/slice accessors return the
+  shared backing, so mutation through them is preserved), and predicates
+  isNil/isInt/isFloat/isStr/isBool/isStruct/isSlice/isMap/isFunc/isVariant
+  (pointer-backed ones nil-check). Plus AST tag-reader helpers
+  variantPatternTag/variantLitTag.
+- Converted ~88 read sites in derive/host/interp/eval/assert.goal (bulk via
+  perl, no Edit hook). Added internal/interp/value_test.go (in-package unit
+  tests for every accessor/predicate). Taskfile verify-generated diff now
+  -x '*_test.go'.
+- Files changed: internal/interp/{value,derive,host,interp,eval,assert}.goal
+  (+ regenerated .go), internal/interp/value_test.go (new), Taskfile.yml.
+- Read gate greps to 0; task check-full green; FIXPOINT OK.
+- Learnings for future iterations:
+  - The US-003 read-gate grep matches BOTH Value.Variant AND the AST fields
+    ast.VariantPattern.Variant / ast.VariantLit.Variant (and the comment
+    'Enum.Variant'). value.goal is the ONLY file the gate excludes, so AST
+    tag-reader helpers must live there; reword any doc comment that names a
+    gated field (used a concrete 'Status.Active' example).
+  - zsh does NOT word-split unquoted $VARS — pass perl file lists as explicit
+    args, not a single $FILES variable, or perl sees one giant filename.

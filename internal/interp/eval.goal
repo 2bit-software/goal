@@ -92,7 +92,7 @@ func (ip *Interp) evalMatch(m *ast.MatchExpr, scope *Env) (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
-	if subj.Kind != KindVariant || subj.Variant == nil {
+	if subj.Kind != KindVariant || subj.asVariant() == nil {
 		return Value{}, fmt.Errorf("interp: match subject must be a variant, got %s", subj.Kind)
 	}
 	arm, vp := selectMatchArm(m, subj)
@@ -125,11 +125,11 @@ func (ip *Interp) evalUnwrap(u *ast.UnwrapExpr, scope *Env) (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
-	if v.Kind != KindVariant || v.Variant == nil {
+	if v.Kind != KindVariant || v.asVariant() == nil {
 		return Value{}, fmt.Errorf("interp: %s: cannot use ? on %s (operand is not a Result or Option)", u.Question, v.Kind)
 	}
 	sig, _ := ip.curSig()
-	switch v.Variant.TypeID {
+	switch v.asVariant().TypeID {
 	case resultTypeID:
 		// `?` on a Result requires a Result-returning enclosing function — checked
 		// up front so the erased static guarantee fails loudly on BOTH the success
@@ -137,27 +137,27 @@ func (ip *Interp) evalUnwrap(u *ast.UnwrapExpr, scope *Env) (Value, error) {
 		if !isModeResult(sig.Mode) && !isModeResultClosed(sig.Mode) {
 			return Value{}, fmt.Errorf("interp: %s: ? used on a Result outside a Result-returning function", u.Question)
 		}
-		if v.Variant.Tag == resultOkTag {
-			if pv, ok := payloadValue(v.Variant); ok {
+		if v.asVariant().Tag == resultOkTag {
+			if pv, ok := payloadValue(v.asVariant()); ok {
 				return pv, nil
 			}
 			return NilVal(), nil
 		}
-		errVal, _ := payloadValue(v.Variant)
+		errVal, _ := payloadValue(v.asVariant())
 		return Value{}, ip.propagateErr(u, errVal, sig)
 	case optionTypeID:
 		if !isModeOption(sig.Mode) {
 			return Value{}, fmt.Errorf("interp: %s: ? used on an Option outside an Option-returning function", u.Question)
 		}
-		if v.Variant.Tag == optionSomeTag {
-			if pv, ok := payloadValue(v.Variant); ok {
+		if v.asVariant().Tag == optionSomeTag {
+			if pv, ok := payloadValue(v.asVariant()); ok {
 				return pv, nil
 			}
 			return NilVal(), nil
 		}
 		return Value{}, ip.propagateNone()
 	default:
-		return Value{}, fmt.Errorf("interp: %s: cannot use ? on %s.%s (operand is not a Result or Option)", u.Question, v.Variant.TypeID, v.Variant.Tag)
+		return Value{}, fmt.Errorf("interp: %s: cannot use ? on %s.%s (operand is not a Result or Option)", u.Question, v.asVariant().TypeID, v.asVariant().Tag)
 	}
 }
 
@@ -414,7 +414,7 @@ func baseTypeName(t string) string {
 // must evaluate to a struct value and the named field is read from it. A
 // non-struct receiver or an absent field is a descriptive refusal.
 func (ip *Interp) evalSelector(s *ast.SelectorExpr, scope *Env) (Value, error) {
-	// Data-less enum construction: `Enum.Variant` with no parens parses to a
+	// Data-less enum construction: a selector like `Status.Active` with no parens parses to a
 	// selector. It is enum construction only when the receiver is an enum type
 	// name not shadowed by a value binding and the selected name is a declared
 	// variant; otherwise it is an ordinary field read.
@@ -440,23 +440,23 @@ func (ip *Interp) evalSelector(s *ast.SelectorExpr, scope *Env) (Value, error) {
 	}
 	switch recv.Kind {
 	case KindStruct:
-		if recv.Struct == nil {
+		if recv.asStruct() == nil {
 			return Value{}, fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
 		}
-		v, ok := recv.Struct.Fields[s.Sel.Name]
+		v, ok := recv.asStruct().Fields[s.Sel.Name]
 		if !ok {
-			return Value{}, fmt.Errorf("interp: %s has no field %s", recv.Struct.TypeID, s.Sel.Name)
+			return Value{}, fmt.Errorf("interp: %s has no field %s", recv.asStruct().TypeID, s.Sel.Name)
 		}
 		return v, nil
 	case KindVariant:
 		// A match arm binds the whole variant value to its payload name, so a
 		// payload field is read as `binding.field` off the tagged union.
-		if recv.Variant == nil {
+		if recv.asVariant() == nil {
 			return Value{}, fmt.Errorf("interp: cannot select field %s on %s", s.Sel.Name, recv.Kind)
 		}
 		v, ok := recv.Field(s.Sel.Name)
 		if !ok {
-			return Value{}, fmt.Errorf("interp: %s.%s has no payload field %s", recv.Variant.TypeID, recv.Variant.Tag, s.Sel.Name)
+			return Value{}, fmt.Errorf("interp: %s.%s has no payload field %s", recv.asVariant().TypeID, recv.asVariant().Tag, s.Sel.Name)
 		}
 		return v, nil
 	default:
@@ -483,10 +483,10 @@ func (ip *Interp) evalVariantLit(vl *ast.VariantLit, scope *Env) (Value, error) 
 	if !ok {
 		return Value{}, fmt.Errorf("interp: unknown enum %s in variant construction", id.Name)
 	}
-	if vl.Variant == nil {
+	tag, hasTag := variantLitTag(vl)
+	if !hasTag {
 		return Value{}, fmt.Errorf("interp: variant construction on enum %s is missing a variant tag", enumDecl.Name)
 	}
-	tag := vl.Variant.Name
 	if !enumDecl.VSet[tag] {
 		return Value{}, fmt.Errorf("interp: enum %s has no variant %s", enumDecl.Name, tag)
 	}
@@ -607,19 +607,19 @@ func (ip *Interp) evalIndex(e *ast.IndexExpr, scope *Env) (Value, error) {
 		if idx.Kind != KindInt {
 			return Value{}, fmt.Errorf("interp: slice index must be int, got %s", idx.Kind)
 		}
-		if idx.Int < 0 || idx.Int >= int64(len(recv.Slice)) {
-			return Value{}, fmt.Errorf("interp: slice index %d out of range (len %d)", idx.Int, len(recv.Slice))
+		if idx.asInt() < 0 || idx.asInt() >= int64(len(recv.asSlice())) {
+			return Value{}, fmt.Errorf("interp: slice index %d out of range (len %d)", idx.asInt(), len(recv.asSlice()))
 		}
-		return recv.Slice[idx.Int], nil
+		return recv.asSlice()[idx.asInt()], nil
 	case KindMap:
 		key, err := mapKeyString(idx)
 		if err != nil {
 			return Value{}, err
 		}
-		if recv.Map == nil {
+		if recv.asMap() == nil {
 			return NilVal(), nil
 		}
-		if v, ok := recv.Map.Entries[key]; ok {
+		if v, ok := recv.asMap().Entries[key]; ok {
 			return v, nil
 		}
 		return NilVal(), nil
@@ -635,7 +635,7 @@ func mapKeyString(v Value) (string, error) {
 	if v.Kind != KindString {
 		return "", fmt.Errorf("interp: map key must be string, got %s", v.Kind)
 	}
-	return v.Str, nil
+	return v.asStr(), nil
 }
 
 // evalCall evaluates a call in single-value position: it requires the callee to
@@ -791,10 +791,10 @@ func (ip *Interp) evalBinary(b *ast.BinaryExpr, scope *Env) (Value, error) {
 			return Value{}, fmt.Errorf("interp: operator %s requires bool, got %s", b.Op, left.Kind)
 		}
 		// && short-circuits when left is false; || when left is true.
-		if b.Op == token.LAND && !left.Bool {
+		if b.Op == token.LAND && !left.asBool() {
 			return BoolVal(false), nil
 		}
-		if b.Op == token.LOR && left.Bool {
+		if b.Op == token.LOR && left.asBool() {
 			return BoolVal(true), nil
 		}
 		right, err := ip.evalExpr(b.Y, scope)
@@ -804,7 +804,7 @@ func (ip *Interp) evalBinary(b *ast.BinaryExpr, scope *Env) (Value, error) {
 		if right.Kind != KindBool {
 			return Value{}, fmt.Errorf("interp: operator %s requires bool, got %s", b.Op, right.Kind)
 		}
-		return BoolVal(right.Bool), nil
+		return BoolVal(right.asBool()), nil
 	}
 
 	left, err := ip.evalExpr(b.X, scope)
@@ -834,11 +834,11 @@ func applyBinary(op token.Kind, left, right Value) (Value, error) {
 
 	switch left.Kind {
 	case KindInt:
-		return intBinary(op, left.Int, right.Int)
+		return intBinary(op, left.asInt(), right.asInt())
 	case KindFloat:
-		return floatBinary(op, left.Float, right.Float)
+		return floatBinary(op, left.asFloat(), right.asFloat())
 	case KindString:
-		return stringBinary(op, left.Str, right.Str)
+		return stringBinary(op, left.asStr(), right.asStr())
 	default:
 		return Value{}, fmt.Errorf("interp: operator %s not supported on %s", op, left.Kind)
 	}
@@ -933,9 +933,9 @@ func (ip *Interp) evalUnary(u *ast.UnaryExpr, scope *Env) (Value, error) {
 	case token.SUB:
 		switch x.Kind {
 		case KindInt:
-			return IntVal(-x.Int), nil
+			return IntVal(-x.asInt()), nil
 		case KindFloat:
-			return FloatVal(-x.Float), nil
+			return FloatVal(-x.asFloat()), nil
 		default:
 			return Value{}, fmt.Errorf("interp: unary - requires numeric, got %s", x.Kind)
 		}
@@ -943,7 +943,7 @@ func (ip *Interp) evalUnary(u *ast.UnaryExpr, scope *Env) (Value, error) {
 		if x.Kind != KindBool {
 			return Value{}, fmt.Errorf("interp: unary ! requires bool, got %s", x.Kind)
 		}
-		return BoolVal(!x.Bool), nil
+		return BoolVal(!x.asBool()), nil
 	default:
 		return Value{}, fmt.Errorf("interp: unsupported unary operator %s", u.Op)
 	}
@@ -1015,14 +1015,14 @@ func (ip *Interp) builtinLen(call *ast.CallExpr, scope *Env) ([]Value, error) {
 	}
 	switch v.Kind {
 	case KindSlice:
-		return []Value{IntVal(int64(len(v.Slice)))}, nil
+		return []Value{IntVal(int64(len(v.asSlice())))}, nil
 	case KindString:
-		return []Value{IntVal(int64(len(v.Str)))}, nil
+		return []Value{IntVal(int64(len(v.asStr())))}, nil
 	case KindMap:
-		if v.Map == nil {
+		if v.asMap() == nil {
 			return []Value{IntVal(0)}, nil
 		}
-		return []Value{IntVal(int64(len(v.Map.Entries)))}, nil
+		return []Value{IntVal(int64(len(v.asMap().Entries)))}, nil
 	default:
 		return nil, fmt.Errorf("interp: len of %s is not defined", v.Kind)
 	}
@@ -1043,8 +1043,8 @@ func (ip *Interp) builtinAppend(call *ast.CallExpr, scope *Env) ([]Value, error)
 	if base.Kind != KindSlice {
 		return nil, fmt.Errorf("interp: append of %s (first argument must be a slice)", base.Kind)
 	}
-	out := make([]Value, len(base.Slice), len(base.Slice)+len(call.Args)-1)
-	copy(out, base.Slice)
+	out := make([]Value, len(base.asSlice()), len(base.asSlice())+len(call.Args)-1)
+	copy(out, base.asSlice())
 	for _, a := range call.Args[1:] {
 		v, err := ip.evalExpr(a, scope)
 		if err != nil {
@@ -1076,10 +1076,10 @@ func (ip *Interp) builtinMake(call *ast.CallExpr, scope *Env) ([]Value, error) {
 			if sz.Kind != KindInt {
 				return nil, fmt.Errorf("interp: make length must be int, got %s", sz.Kind)
 			}
-			if sz.Int < 0 {
-				return nil, fmt.Errorf("interp: make length %d is negative", sz.Int)
+			if sz.asInt() < 0 {
+				return nil, fmt.Errorf("interp: make length %d is negative", sz.asInt())
 			}
-			n = int(sz.Int)
+			n = int(sz.asInt())
 		}
 		zero := zeroValue(t.Elt)
 		elems := make([]Value, n)
@@ -1117,10 +1117,10 @@ func (ip *Interp) tryMethodCall(sel *ast.SelectorExpr, call *ast.CallExpr, scope
 	if rerr != nil {
 		return nil, false, nil
 	}
-	if recv.Kind != KindStruct || recv.Struct == nil {
+	if recv.Kind != KindStruct || recv.asStruct() == nil {
 		return nil, false, nil
 	}
-	byName := ip.methods[recv.Struct.TypeID]
+	byName := ip.methods[recv.asStruct().TypeID]
 	if byName == nil {
 		return nil, false, nil
 	}
@@ -1145,14 +1145,14 @@ func (ip *Interp) tryMethodCall(sel *ast.SelectorExpr, call *ast.CallExpr, scope
 // value-receiver method's field writes do not leak to the caller. A non-struct
 // value is returned unchanged.
 func copyStructValue(v Value) Value {
-	if v.Kind != KindStruct || v.Struct == nil {
+	if v.Kind != KindStruct || v.asStruct() == nil {
 		return v
 	}
-	fields := make(map[string]Value, len(v.Struct.Fields))
-	for k, fv := range v.Struct.Fields {
+	fields := make(map[string]Value, len(v.asStruct().Fields))
+	for k, fv := range v.asStruct().Fields {
 		fields[k] = fv
 	}
-	return StructVal(v.Struct.TypeID, fields)
+	return StructVal(v.asStruct().TypeID, fields)
 }
 
 // compoundBinOp maps a compound-assignment token to the binary operator it

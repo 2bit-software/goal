@@ -43,7 +43,7 @@
         "`task check-full` exits 0 (behaviour-preserving refactor; all interpreter and corpus behavioural tests still pass)."
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Behaviour-preserving: accessors wrap the CURRENT flat struct; the representation does not change in this story. `.Kind` and `.Func` reads are intentionally NOT gated here (they collide with token.Kind/ast.BasicLit.Kind and the doctest Func field); the representation flip (US-005) forces the remaining Value.Kind/Value.Func sites via compile failure."
     },
     {

@@ -193,21 +193,137 @@ func VariantVal(typeID, tag string, fields map[string]Value) Value {
 	/*line value.goal:221*/ return Value{Kind: KindVariant, Variant: &Variant{TypeID: typeID, Tag: tag, Fields: fields}}
 }
 
-//line value.goal:226
-func (v Value) Field(name string) (Value, bool) {
-	/*line value.goal:227*/ if v.Kind != KindVariant || v.Variant == nil {
-		/*line value.goal:228*/ return Value{}, false
-	}
-	/*line value.goal:230*/ f, ok := v.Variant.Fields[name]
-	/*line value.goal:231*/ return f, ok
+//line value.goal:236
+func (v Value) kind() Kind {
+	/*line value.goal:236*/ return v.Kind
 }
 
-//line value.goal:237
-func (v Value) Equal(other Value) bool {
-	/*line value.goal:238*/ if v.Kind != other.Kind {
-		/*line value.goal:239*/ return false
+//line value.goal:239
+func (v Value) asInt() int64 {
+	/*line value.goal:239*/ return v.Int
+}
+
+//line value.goal:242
+func (v Value) asFloat() float64 {
+	/*line value.goal:242*/ return v.Float
+}
+
+//line value.goal:245
+func (v Value) asStr() string {
+	/*line value.goal:245*/ return v.Str
+}
+
+//line value.goal:248
+func (v Value) asBool() bool {
+	/*line value.goal:248*/ return v.Bool
+}
+
+//line value.goal:251
+func (v Value) asStruct() *StructValue {
+	/*line value.goal:251*/ return v.Struct
+}
+
+//line value.goal:254
+func (v Value) asSlice() []Value {
+	/*line value.goal:254*/ return v.Slice
+}
+
+//line value.goal:257
+func (v Value) asMap() *MapValue {
+	/*line value.goal:257*/ return v.Map
+}
+
+//line value.goal:260
+func (v Value) asFunc() *FuncValue {
+	/*line value.goal:260*/ return v.Func
+}
+
+//line value.goal:263
+func (v Value) asVariant() *Variant {
+	/*line value.goal:263*/ return v.Variant
+}
+
+//line value.goal:266
+func (v Value) isNil() bool {
+	/*line value.goal:266*/ return v.Kind == KindNil
+}
+
+//line value.goal:269
+func (v Value) isInt() bool {
+	/*line value.goal:269*/ return v.Kind == KindInt
+}
+
+//line value.goal:272
+func (v Value) isFloat() bool {
+	/*line value.goal:272*/ return v.Kind == KindFloat
+}
+
+//line value.goal:275
+func (v Value) isStr() bool {
+	/*line value.goal:275*/ return v.Kind == KindString
+}
+
+//line value.goal:278
+func (v Value) isBool() bool {
+	/*line value.goal:278*/ return v.Kind == KindBool
+}
+
+//line value.goal:281
+func (v Value) isStruct() bool {
+	/*line value.goal:281*/ return v.Kind == KindStruct && v.Struct != nil
+}
+
+//line value.goal:284
+func (v Value) isSlice() bool {
+	/*line value.goal:284*/ return v.Kind == KindSlice
+}
+
+//line value.goal:287
+func (v Value) isMap() bool {
+	/*line value.goal:287*/ return v.Kind == KindMap && v.Map != nil
+}
+
+//line value.goal:290
+func (v Value) isFunc() bool {
+	/*line value.goal:290*/ return v.Kind == KindFunc
+}
+
+//line value.goal:293
+func (v Value) isVariant() bool {
+	/*line value.goal:293*/ return v.Kind == KindVariant && v.Variant != nil
+}
+
+//line value.goal:299
+func variantPatternTag(p *ast.VariantPattern) (string, bool) {
+	/*line value.goal:300*/ if p == nil || p.Variant == nil {
+		/*line value.goal:301*/ return "", false
 	}
-	/*line value.goal:241*/ switch v.Kind {
+	/*line value.goal:303*/ return p.Variant.Name, true
+}
+
+//line value.goal:309
+func variantLitTag(vl *ast.VariantLit) (string, bool) {
+	/*line value.goal:310*/ if vl == nil || vl.Variant == nil {
+		/*line value.goal:311*/ return "", false
+	}
+	/*line value.goal:313*/ return vl.Variant.Name, true
+}
+
+//line value.goal:318
+func (v Value) Field(name string) (Value, bool) {
+	/*line value.goal:319*/ if v.Kind != KindVariant || v.Variant == nil {
+		/*line value.goal:320*/ return Value{}, false
+	}
+	/*line value.goal:322*/ f, ok := v.Variant.Fields[name]
+	/*line value.goal:323*/ return f, ok
+}
+
+//line value.goal:329
+func (v Value) Equal(other Value) bool {
+	/*line value.goal:330*/ if v.Kind != other.Kind {
+		/*line value.goal:331*/ return false
+	}
+	/*line value.goal:333*/ switch v.Kind {
 	case KindNil:
 		return true
 	case KindInt:
@@ -222,11 +338,11 @@ func (v Value) Equal(other Value) bool {
 		return structEqual(v.Struct, other.Struct)
 	case KindSlice:
 		if len(v.Slice) != len(other.Slice) {
-			/*line value.goal:256*/ return false
+			/*line value.goal:348*/ return false
 		}
 		for i := range v.Slice {
-			/*line value.goal:259*/ if !v.Slice[i].Equal(other.Slice[i]) {
-				/*line value.goal:260*/ return false
+			/*line value.goal:351*/ if !v.Slice[i].Equal(other.Slice[i]) {
+				/*line value.goal:352*/ return false
 			}
 		}
 		return true
@@ -241,47 +357,47 @@ func (v Value) Equal(other Value) bool {
 	}
 }
 
-//line value.goal:275
+//line value.goal:367
 func fieldsEqual(a, b map[string]Value) bool {
-	/*line value.goal:276*/ if len(a) != len(b) {
-		/*line value.goal:277*/ return false
+	/*line value.goal:368*/ if len(a) != len(b) {
+		/*line value.goal:369*/ return false
 	}
-	/*line value.goal:279*/ for k, av := range a {
-		/*line value.goal:280*/ bv, ok := b[k]
-		/*line value.goal:281*/ if !ok || !av.Equal(bv) {
-			/*line value.goal:282*/ return false
+	/*line value.goal:371*/ for k, av := range a {
+		/*line value.goal:372*/ bv, ok := b[k]
+		/*line value.goal:373*/ if !ok || !av.Equal(bv) {
+			/*line value.goal:374*/ return false
 		}
 	}
-	/*line value.goal:285*/ return true
+	/*line value.goal:377*/ return true
 }
 
-//line value.goal:288
+//line value.goal:380
 func structEqual(a, b *StructValue) bool {
-	/*line value.goal:289*/ if a == nil || b == nil {
-		/*line value.goal:290*/ return a == b
+	/*line value.goal:381*/ if a == nil || b == nil {
+		/*line value.goal:382*/ return a == b
 	}
-	/*line value.goal:292*/ return a.TypeID == b.TypeID && fieldsEqual(a.Fields, b.Fields)
+	/*line value.goal:384*/ return a.TypeID == b.TypeID && fieldsEqual(a.Fields, b.Fields)
 }
 
-//line value.goal:295
+//line value.goal:387
 func mapEqual(a, b *MapValue) bool {
-	/*line value.goal:296*/ if a == nil || b == nil {
-		/*line value.goal:297*/ return a == b
+	/*line value.goal:388*/ if a == nil || b == nil {
+		/*line value.goal:389*/ return a == b
 	}
-	/*line value.goal:299*/ return fieldsEqual(a.Entries, b.Entries)
+	/*line value.goal:391*/ return fieldsEqual(a.Entries, b.Entries)
 }
 
-//line value.goal:302
+//line value.goal:394
 func variantEqual(a, b *Variant) bool {
-	/*line value.goal:303*/ if a == nil || b == nil {
-		/*line value.goal:304*/ return a == b
+	/*line value.goal:395*/ if a == nil || b == nil {
+		/*line value.goal:396*/ return a == b
 	}
-	/*line value.goal:306*/ return a.TypeID == b.TypeID && a.Tag == b.Tag && fieldsEqual(a.Fields, b.Fields)
+	/*line value.goal:398*/ return a.TypeID == b.TypeID && a.Tag == b.Tag && fieldsEqual(a.Fields, b.Fields)
 }
 
-//line value.goal:310
+//line value.goal:402
 func (v Value) String() string {
-	/*line value.goal:311*/ switch v.Kind {
+	/*line value.goal:403*/ switch v.Kind {
 	case KindNil:
 		return "nil"
 	case KindInt:
@@ -294,33 +410,33 @@ func (v Value) String() string {
 		return strconv.FormatBool(v.Bool)
 	case KindStruct:
 		if v.Struct == nil {
-			/*line value.goal:324*/ return "struct{}"
+			/*line value.goal:416*/ return "struct{}"
 		}
 		return v.Struct.TypeID + "{" + renderFields(v.Struct.Fields) + "}"
 	case KindSlice:
 		parts := make([]string, len(v.Slice))
 		for i, e := range v.Slice {
-			/*line value.goal:330*/ parts[i] = e.String()
+			/*line value.goal:422*/ parts[i] = e.String()
 		}
 		return "[" + strings.Join(parts, " ") + "]"
 	case KindMap:
 		if v.Map == nil {
-			/*line value.goal:335*/ return "map[]"
+			/*line value.goal:427*/ return "map[]"
 		}
 		return "map[" + renderFields(v.Map.Entries) + "]"
 	case KindFunc:
 		name := ""
 		if v.Func != nil {
-			/*line value.goal:341*/ name = v.Func.Name
+			/*line value.goal:433*/ name = v.Func.Name
 		}
 		return "func " + name
 	case KindVariant:
 		if v.Variant == nil {
-			/*line value.goal:346*/ return "<variant>"
+			/*line value.goal:438*/ return "<variant>"
 		}
 		s := v.Variant.TypeID + "." + v.Variant.Tag
 		if len(v.Variant.Fields) > 0 {
-			/*line value.goal:350*/ s += "(" + renderFields(v.Variant.Fields) + ")"
+			/*line value.goal:442*/ s += "(" + renderFields(v.Variant.Fields) + ")"
 		}
 		return s
 	default:
@@ -328,16 +444,16 @@ func (v Value) String() string {
 	}
 }
 
-//line value.goal:359
+//line value.goal:451
 func renderFields(m map[string]Value) string {
-	/*line value.goal:360*/ keys := make([]string, 0, len(m))
-	/*line value.goal:361*/ for k := range m {
-		/*line value.goal:362*/ keys = append(keys, k)
+	/*line value.goal:452*/ keys := make([]string, 0, len(m))
+	/*line value.goal:453*/ for k := range m {
+		/*line value.goal:454*/ keys = append(keys, k)
 	}
-	/*line value.goal:364*/ sort.Strings(keys)
-	/*line value.goal:365*/ parts := make([]string, len(keys))
-	/*line value.goal:366*/ for i, k := range keys {
-		/*line value.goal:367*/ parts[i] = k + ": " + m[k].String()
+	/*line value.goal:456*/ sort.Strings(keys)
+	/*line value.goal:457*/ parts := make([]string, len(keys))
+	/*line value.goal:458*/ for i, k := range keys {
+		/*line value.goal:459*/ parts[i] = k + ": " + m[k].String()
 	}
-	/*line value.goal:369*/ return strings.Join(parts, ", ")
+	/*line value.goal:461*/ return strings.Join(parts, ", ")
 }

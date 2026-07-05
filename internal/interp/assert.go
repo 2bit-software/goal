@@ -21,7 +21,7 @@ func (ip *Interp) execAssert(s *ast.AssertStmt, scope *Env) error {
 	/*line assert.goal:40*/ if cond.Kind != KindBool {
 		/*line assert.goal:41*/ return fmt.Errorf("interp: assert condition must be bool, got %s", cond.Kind)
 	}
-	/*line assert.goal:43*/ if cond.Bool {
+	/*line assert.goal:43*/ if cond.asBool() {
 		/*line assert.goal:44*/ return nil
 	}
 	/*line assert.goal:47*/ msg := "assertion failed: " + exprText(s.Cond)
@@ -41,7 +41,7 @@ func (ip *Interp) execAssert(s *ast.AssertStmt, scope *Env) error {
 			}
 			/*line assert.goal:62*/ args[i] = v
 		}
-		/*line assert.goal:64*/ msg += ": " + fmt.Sprintf(format.Str, goArgs(args)...)
+		/*line assert.goal:64*/ msg += ": " + fmt.Sprintf(format.asStr(), goArgs(args)...)
 	}
 	/*line assert.goal:67*/ located := s.Assert.String() + ": " + msg
 	/*line assert.goal:68*/ return panicSignal{value: StrVal(located)}

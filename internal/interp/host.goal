@@ -38,7 +38,7 @@ var hostFuncs = map[string]hostFunc{
 		if args[0].Kind != KindString {
 			return nil, fmt.Errorf("interp: fmt.Sprintf format must be string, got %s", args[0].Kind)
 		}
-		return []Value{StrVal(fmt.Sprintf(args[0].Str, goArgs(args[1:])...))}, nil
+		return []Value{StrVal(fmt.Sprintf(args[0].asStr(), goArgs(args[1:])...))}, nil
 	},
 	"fmt.Sprint": func(args []Value) ([]Value, error) {
 		return []Value{StrVal(fmt.Sprint(goArgs(args)...))}, nil
@@ -53,7 +53,7 @@ var hostFuncs = map[string]hostFunc{
 		if args[0].Kind != KindString {
 			return nil, fmt.Errorf("interp: fmt.Errorf format must be string, got %s", args[0].Kind)
 		}
-		return []Value{errVal(fmt.Errorf(args[0].Str, goArgs(args[1:])...).Error())}, nil
+		return []Value{errVal(fmt.Errorf(args[0].asStr(), goArgs(args[1:])...).Error())}, nil
 	},
 	"errors.New": func(args []Value) ([]Value, error) {
 		if len(args) != 1 {
@@ -62,7 +62,7 @@ var hostFuncs = map[string]hostFunc{
 		if args[0].Kind != KindString {
 			return nil, fmt.Errorf("interp: errors.New argument must be string, got %s", args[0].Kind)
 		}
-		return []Value{errVal(args[0].Str)}, nil
+		return []Value{errVal(args[0].asStr())}, nil
 	},
 }
 
@@ -76,7 +76,7 @@ func errVal(msg string) Value {
 
 // isErrorValue reports whether v is the interpreter's error struct.
 func isErrorValue(v Value) bool {
-	return v.Kind == KindStruct && v.Struct != nil && v.Struct.TypeID == "error"
+	return v.Kind == KindStruct && v.asStruct() != nil && v.asStruct().TypeID == "error"
 }
 
 // goArg converts a runtime Value into a Go value suitable for fmt formatting.
@@ -88,17 +88,17 @@ func goArg(v Value) any {
 	case KindNil:
 		return nil
 	case KindInt:
-		return v.Int
+		return v.asInt()
 	case KindFloat:
-		return v.Float
+		return v.asFloat()
 	case KindString:
-		return v.Str
+		return v.asStr()
 	case KindBool:
-		return v.Bool
+		return v.asBool()
 	case KindStruct:
 		if isErrorValue(v) {
-			msg, _ := v.Struct.Fields["message"]
-			return errors.New(msg.Str)
+			msg, _ := v.asStruct().Fields["message"]
+			return errors.New(msg.asStr())
 		}
 		return v.String()
 	default:

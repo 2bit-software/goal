@@ -40,7 +40,7 @@ func (ip *Interp) execAssert(s *ast.AssertStmt, scope *Env) error {
 	if cond.Kind != KindBool {
 		return fmt.Errorf("interp: assert condition must be bool, got %s", cond.Kind)
 	}
-	if cond.Bool {
+	if cond.asBool() {
 		return nil
 	}
 
@@ -61,7 +61,7 @@ func (ip *Interp) execAssert(s *ast.AssertStmt, scope *Env) error {
 			}
 			args[i] = v
 		}
-		msg += ": " + fmt.Sprintf(format.Str, goArgs(args)...)
+		msg += ": " + fmt.Sprintf(format.asStr(), goArgs(args)...)
 	}
 
 	located := s.Assert.String() + ": " + msg
