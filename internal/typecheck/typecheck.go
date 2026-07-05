@@ -59,7 +59,7 @@ func Load(pkg *project.Package) (ok *Package, err1 error) {
 	/*line typecheck.goal:107*/ var typeErrs []error
 
 	/*line typecheck.goal:108*/
-	conf := types.Config{Importer: importer.Default(), Error: func(e error) {
+	conf := types.Config{Importer: importer.ForCompiler(fset, "source", nil), Error: func(e error) {
 		/*line typecheck.goal:110*/ typeErrs = append(typeErrs, e)
 	}}
 	/*line typecheck.goal:113*/ typesPkg, _ := conf.Check(pkg.Name, fset, files, info)

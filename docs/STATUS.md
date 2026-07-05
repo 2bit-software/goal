@@ -39,18 +39,23 @@ These stay honest `Warning`s (`unresolved-match-enum`/`-sealed`, `unresolved-err
 `unresolved-derive-field`). They are **not** reachable by the current typed depth stage,
 for a structural reason worth recording:
 
-- The depth stage loads types with `importer.Default()` (`internal/typecheck/typecheck.goal:106`),
-  which resolves stdlib but **cannot import sibling or third-party goal packages**
-  (`DECISIONS.md:1743-1749`).
-- It runs on **lowered** Go. The only cases the lexical stage defers are *unresolvable
-  types* — and an unresolvable enum/struct also **blocks the backend from lowering** the
-  `match`/`derive`/`?`, so no Go is produced for the depth stage to inspect.
-- Therefore `{cases sema defers} ∩ {cases the depth stage can resolve} = ∅`. The three
-  depth checks that *do* exist (`implements`/`must-use`/`no-zero-value`) work only because
-  their targets lower fine; these deferrals do not.
+- The depth stage now loads types with the **source importer**,
+  `importer.ForCompiler(fset, "source", nil)` (`internal/typecheck/typecheck.goal:109`).
+  That resolves sibling goal packages from their colocated generated `.go` (the importer
+  swap in (d), now **DONE**), so cross-package *Go type errors* are surfaced. But it does
+  **not** close these sema deferrals — they fail earlier, for a different reason:
+- The depth stage runs on **lowered** Go. The only cases the lexical stage defers are
+  *unresolvable types* — and an unresolvable enum/struct also **blocks the backend from
+  lowering** the `match`/`derive`/`?`, so **no Go is produced** for the depth stage to
+  inspect. The importer swap changes import *resolution*, not whether lowering happens, so
+  it cannot reach these.
+- Therefore `{cases sema defers} ∩ {cases the depth stage can resolve} = ∅` still holds.
+  The depth checks that *do* exist (`implements`/`must-use`/`no-zero-value`, plus the new
+  cross-package `go-type-error` reach) work only because their targets lower fine; these
+  deferrals do not.
 
-Closing them needs the front end to resolve more cross-package facts, or the importer swap
-in (d) — not another depth check.
+Closing them needs the front end to resolve more cross-package facts *before* lowering —
+not the importer swap (which is done) and not another depth check.
 
 ## (c) Deliberate design boundaries (located diagnostics, working as intended)
 
@@ -75,12 +80,19 @@ in (d) — not another depth check.
   asking for `var x T = match …` (`armBodyType` in `internal/backend/emit.goal`). The
   remaining open part is arms whose type needs resolution the backend lacks pre-lowering
   (e.g. function-call results returning user types); that full close is still deferred.
-- **Importer swap** `importer.Default()` → `importer.ForCompiler(…, "source", …)`
-  (`DECISIONS.md` DEPTH-TODO, open): would let the depth stage see sibling packages and
-  surface cross-package Go type errors. Cross-cutting; spike before committing.
+- **Importer swap** `importer.Default()` → `importer.ForCompiler(fset, "source", nil)`
+  (`internal/typecheck/typecheck.goal:109`, `DECISIONS.md` DEPTH-TODO): **DONE.** The depth
+  stage now resolves sibling goal packages from their colocated generated `.go` and surfaces
+  cross-package Go type errors as located `[go-type-error]` diagnostics (regression test:
+  `cmd/goal/gotypeerror_crosspkg_test.go`). Verified whole-tree: `goal check ./internal`
+  still reports 0 `go-type-error` and 0 `[unsafe-zero]` (no false positives), and
+  `task check-full` / `task fixpoint` stay green. It does **not** close the (b)
+  unresolved-match/derive/`?` sema deferrals — those are blocked at lowering, so no Go is
+  emitted to type-check. Cost: `goal check ./internal` roughly doubles (~6-7s → ~12-13s)
+  because the source importer re-type-checks imported packages from source.
 
 ## What "next" actually looks like
 
 The language is substantially complete for its scope. The remaining work is **design
-decisions** (the (d) items) plus one cross-cutting **importer** spike — not the pile of
+decisions** (the (d) items; the cross-cutting importer swap is now landed) — not the pile of
 "missing features" the historical docs imply. Pick from (d) deliberately.

@@ -9517,3 +9517,13 @@ value-position `x := match` inference to the syntactic boolean subset — compar
 arms still fall through. Fixture testdata/match_infer_value.goal + cmd/goal tests;
 check-full/fixpoint/build all green, no existing generated Go changed.
 ---
+
+Importer swap: internal/typecheck depth stage now builds its types.Config with the source
+importer importer.ForCompiler(fset,"source",nil) instead of importer.Default(), so it
+resolves sibling goal packages from their colocated generated .go and surfaces cross-package
+Go type errors as located [go-type-error] diagnostics. Whole-tree triage: goal check
+./internal still 0 go-type-error / 0 [unsafe-zero] (no false positives); only typecheck.go
+regenerated; check-full + fixpoint green. Does NOT close the sema unresolved-match/derive/?
+deferrals (blocked at lowering). Cost: goal check ./internal ~doubles (~6-7s -> ~12-13s).
+Regression test cmd/goal/gotypeerror_crosspkg_test.go. Docs: STATUS.md (b)/(d) updated.
+---

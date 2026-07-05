@@ -106,7 +106,7 @@ func Load(pkg *project.Package) Result[*Package, error] {
 	// pointer is never omitted (no post-literal assignment relied upon for safety).
 	var typeErrs []error
 	conf := types.Config{
-		Importer: importer.Default(),
+		Importer: importer.ForCompiler(fset, "source", nil),
 		Error:    func(e error) { typeErrs = append(typeErrs, e) },
 	}
 	// Check returns a usable (possibly incomplete) package even when Error fires.
