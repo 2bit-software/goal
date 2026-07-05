@@ -55,17 +55,46 @@ type Package struct {
 	goalFiles []*goalast.File
 }
 
+// Importers is one check run's go/types resolution cache: a FileSet and the source
+// importer bound to it. The source importer type-checks each imported package from its
+// committed generated .go and caches the result on the importer instance, so sharing one
+// Importers across every package's Load type-checks each sibling once for the whole run
+// rather than once per importing package — recovering the ~2x cost of a fresh importer
+// per Load on a bulk `goal check`.
+//
+// Fset is shared with the importer deliberately: an imported object's position must
+// resolve in the same coordinates the checked package's own files use, since the depth
+// checks (nozero's isGoalDeclared, gotypes' te.Fset) resolve positions through this one
+// FileSet. Keeping importer.fset == check.fset == Package.Fset preserves that invariant.
+type Importers struct {
+	Fset *token.FileSet
+	Imp  types.Importer
+}
+
+// NewImporters builds a fresh per-run cache: a new FileSet and a source importer bound to
+// it. A caller that checks many packages in one run builds this once and reuses it; a
+// single-package caller (the LSP) lets Load build one per call, keeping that pass
+// isolated.
+func NewImporters() *Importers {
+	fset := token.NewFileSet()
+	return &Importers{Fset: fset, Imp: importer.ForCompiler(fset, "source", nil)}
+}
+
 // Load transpiles a goal package, parses the lowered Go, and type-checks it with
 // stdlib go/types under an error-collecting configuration. It returns an error only for
 // a transpile or parse failure (a goal-compiler bug — the lowered Go must be valid Go);
 // Go type errors in the user's program are collected into Package.Errors instead.
+//
+// shared is the per-run resolution cache (see Importers): non-nil reuses one FileSet-bound
+// source importer so each dependency is type-checked once across the whole run; nil (the
+// LSP's single-package pass) builds a fresh one, keeping that pass isolated.
 //
 // SEAM-005: Load is a goal Result. Its internal propagation WRAPS context
 // (fmt.Errorf("…: %w", err)) at every site, so `?` (which propagates the error
 // UNCHANGED) cannot apply — each guard stays a statement-form
 // `if err != nil { return Result.Err(fmt.Errorf(...)) }`. The Result return is
 // what lets the sole caller GoTypesChecker.Check propagate Load with `?`.
-func Load(pkg *project.Package) Result[*Package, error] {
+func Load(pkg *project.Package, shared *Importers) Result[*Package, error] {
 	out, err := backend.TranspilePackage(pkg)
 	if err != nil {
 		return Result.Err(fmt.Errorf("transpile: %w", err))
@@ -85,7 +114,12 @@ func Load(pkg *project.Package) Result[*Package, error] {
 	}
 	semaInfo := sema.ResolvePackage(goalFiles)
 
-	fset := token.NewFileSet()
+	// Reuse the run-wide FileSet-bound source importer (shared != nil) so each dependency
+	// is type-checked once; a single-package caller (shared == nil) gets a fresh one.
+	if shared == nil {
+		shared = NewImporters()
+	}
+	fset := shared.Fset
 	var files []*ast.File
 	for _, gf := range out.Files {
 		f, err := parser.ParseFile(fset, gf.Name, gf.Go, parser.SkipObjectResolution)
@@ -106,7 +140,7 @@ func Load(pkg *project.Package) Result[*Package, error] {
 	// pointer is never omitted (no post-literal assignment relied upon for safety).
 	var typeErrs []error
 	conf := types.Config{
-		Importer: importer.ForCompiler(fset, "source", nil),
+		Importer: shared.Imp,
 		Error:    func(e error) { typeErrs = append(typeErrs, e) },
 	}
 	// Check returns a usable (possibly incomplete) package even when Error fires.

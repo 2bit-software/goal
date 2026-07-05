@@ -12,20 +12,21 @@ type TypeChecker interface {
 
 //line checker.goal:26
 type GoTypesChecker struct {
+	Shared *Importers
 }
 
-//line checker.goal:31
-func (GoTypesChecker) Check(pkg *project.Package) (ok []Diagnostic, err error) {
-	/*line checker.goal:32*/ p, err := Load(pkg)
+//line checker.goal:38
+func (c GoTypesChecker) Check(pkg *project.Package) (ok []Diagnostic, err error) {
+	/*line checker.goal:39*/ p, err := Load(pkg, c.Shared)
 	if err != nil {
 		return ok, err
 	}
-	/*line checker.goal:33*/ var diags []Diagnostic
+	/*line checker.goal:40*/ var diags []Diagnostic
 
-	/*line checker.goal:34*/
+	/*line checker.goal:41*/
 	diags = append(diags, CheckImplements(p)...)
-	/*line checker.goal:35*/ diags = append(diags, CheckMustUse(p)...)
-	/*line checker.goal:36*/ diags = append(diags, CheckNoZeroValue(p)...)
-	/*line checker.goal:37*/ diags = append(diags, goTypeDiags(p)...)
-	/*line checker.goal:38*/ return diags, nil
+	/*line checker.goal:42*/ diags = append(diags, CheckMustUse(p)...)
+	/*line checker.goal:43*/ diags = append(diags, CheckNoZeroValue(p)...)
+	/*line checker.goal:44*/ diags = append(diags, goTypeDiags(p)...)
+	/*line checker.goal:45*/ return diags, nil
 }

@@ -692,11 +692,16 @@ func cmdCheck(root string, jsonMode bool, out, errOut io.Writer) error {
 	if len(pkgs) == 0 {
 		return fmt.Errorf("no .goal packages found under %s", root)
 	}
+	// One source importer, shared across every package's depth stage: it type-checks each
+	// dependency (stdlib and sibling goal packages) from source once and caches it, so an
+	// N-package run does not re-type-check every shared sibling ~N times.
+	shared := typecheck.NewImporters()
+
 	// Accumulate every package's findings so JSON mode can emit a single array and
 	// both modes render in one stable order.
 	var all []checkDiag
 	for _, pkg := range pkgs {
-		diags, err := checkPackage(pkg, errOut)
+		diags, err := checkPackage(pkg, shared, errOut)
 		if err != nil {
 			return fmt.Errorf("check %s: %w", pkg.Dir, err)
 		}
@@ -749,7 +754,7 @@ func cmdCheck(root string, jsonMode bool, out, errOut io.Writer) error {
 // composite literal, an outright misfire. A depth-stage load failure (the program does
 // not transpile) is reported as a note and the AST findings still stand; goal build is
 // the gate that hard-fails on non-transpiling source.
-func checkPackage(pkg *project.Package, errOut io.Writer) ([]checkDiag, error) {
+func checkPackage(pkg *project.Package, shared *typecheck.Importers, errOut io.Writer) ([]checkDiag, error) {
 	// A file that fails to parse has no meaningful AST facts (and AnalyzePackageInDir
 	// would bail on the whole package), so a syntax error short-circuits the sema and
 	// depth stages: report it in the shared diagnostic format and stop here.
@@ -766,7 +771,7 @@ func checkPackage(pkg *project.Package, errOut io.Writer) ([]checkDiag, error) {
 		return nil, err
 	}
 
-	depth, derr := runDepthChecks(pkg)
+	depth, derr := runDepthChecks(pkg, shared)
 	if derr != nil {
 		fmt.Fprintf(errOut, "goal check: depth stage unavailable for %s: %v\n", pkg.Dir, briefDepthErr(derr))
 	}
@@ -815,10 +820,11 @@ func briefDepthErr(err error) string {
 // runDepthChecks loads the package's lowered Go into go/types and runs every depth check.
 // It returns an error only when the package fails to transpile or parse (a goal-compiler
 // problem); user type errors are tolerated inside Load.
-func runDepthChecks(pkg *project.Package) ([]typecheck.Diagnostic, error) {
+func runDepthChecks(pkg *project.Package, shared *typecheck.Importers) ([]typecheck.Diagnostic, error) {
 	// Resolve depth diagnostics through the TypeChecker seam so the go/types crutch can be
-	// swapped for a native goal checker later without changing this caller (US-028).
-	var tc typecheck.TypeChecker = typecheck.GoTypesChecker{}
+	// swapped for a native goal checker later without changing this caller (US-028). The
+	// shared importer caches each dependency's type-check across the whole run.
+	var tc typecheck.TypeChecker = typecheck.GoTypesChecker{Shared: shared}
 	return tc.Check(pkg)
 }
 

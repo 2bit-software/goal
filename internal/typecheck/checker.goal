@@ -23,13 +23,20 @@ type TypeChecker interface {
 // GoTypesChecker is the default TypeChecker: it transpiles the goal package to Go, loads
 // the lowered Go into stdlib go/types (Load), and runs every depth check over the typed
 // view. It is the "transpile then ask the Go compiler" crutch behind the interface.
-type GoTypesChecker struct{}
+type GoTypesChecker struct {
+	// Shared is the per-run go/types resolution cache (see Importers). A bulk caller
+	// (goal check over a whole tree) sets it once so every package's Load reuses one
+	// FileSet-bound source importer and each sibling is type-checked once for the run.
+	// Left nil — the LSP's single-package pass — Load builds a fresh importer per call,
+	// keeping that pass isolated and its per-package latency independent.
+	Shared *Importers
+}
 
 // Check implements TypeChecker. It loads the package's typed view and concatenates the
 // findings of every depth check in a stable order (implements, must-use, no-zero-value).
 // SEAM-005: Load's pure propagation is now the idiomatic `?`; success is Result.Ok.
-func (GoTypesChecker) Check(pkg *project.Package) Result[[]Diagnostic, error] {
-	p := Load(pkg)?
+func (c GoTypesChecker) Check(pkg *project.Package) Result[[]Diagnostic, error] {
+	p := Load(pkg, c.Shared)?
 	var diags []Diagnostic
 	diags = append(diags, CheckImplements(p)...)
 	diags = append(diags, CheckMustUse(p)...)
