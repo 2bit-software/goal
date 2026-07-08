@@ -24,17 +24,39 @@ const state = {
   byId: new Map(), // anchor -> card
   drift: [],
 
-  view: "playground", // "playground" | "overview" | "about"
+  view: "feature", // "feature" | "playground" | "overview" | "about"
   currentId: null, // active idea (primary) anchor
   mode: "valid", // "valid" | "error"
   exampleIdx: 0, // which example, when an idea has more than one
   editorValue: "",
+  scratch: "", // the free-playground ("Playground" tab) source
+  collapsed: false, // sidebar rail mode
 
   runSeq: 0, // guards against a stale live-run overwriting a newer one
+  scratchSeq: 0,
   editTimer: null,
+  scratchTimer: null,
 };
 
 const GH = "https://github.com/2bit-software/goal";
+const GH_RELEASES = "https://github.com/2bit-software/goal/releases/latest";
+
+// Seed for the free-playground scratchpad: a small program touching several
+// features at once, so the pane isn't empty on first open.
+const DEFAULT_SCRATCH = `package main
+
+enum Shape {
+    Circle { r: float64 }
+    Rect   { w: float64, h: float64 }
+}
+
+func area(s Shape) float64 {
+    return match s {
+        Shape.Circle(c) => 3.14159 * c.r * c.r
+        Shape.Rect(r)   => r.w * r.h
+    }
+}
+`;
 
 // --------------------------------------------------------------------------- //
 // boot
@@ -136,8 +158,10 @@ function restore() {
   if (saved.id && state.byId.has(saved.id)) state.currentId = saved.id;
   else if (state.cards.length) state.currentId = state.cards[0].anchor;
   if (saved.mode === "valid" || saved.mode === "error") state.mode = saved.mode;
-  if (["playground", "overview", "about"].includes(saved.view)) state.view = saved.view;
+  if (["feature", "playground", "overview", "about"].includes(saved.view)) state.view = saved.view;
   if (Number.isInteger(saved.ex)) state.exampleIdx = saved.ex;
+  state.scratch = typeof saved.scratch === "string" ? saved.scratch : DEFAULT_SCRATCH;
+  state.collapsed = saved.collapsed === true;
   normalizeMode();
 }
 
@@ -145,7 +169,14 @@ function persist() {
   try {
     localStorage.setItem(
       "goal_pg",
-      JSON.stringify({ id: state.currentId, mode: state.mode, view: state.view, ex: state.exampleIdx }),
+      JSON.stringify({
+        id: state.currentId,
+        mode: state.mode,
+        view: state.view,
+        ex: state.exampleIdx,
+        scratch: state.scratch,
+        collapsed: state.collapsed,
+      }),
     );
   } catch {
     /* private mode / disabled storage — non-fatal */
@@ -174,7 +205,7 @@ function currentExample() {
 
 function openFeature(id) {
   state.currentId = id;
-  state.view = "playground";
+  state.view = "feature";
   state.exampleIdx = 0;
   normalizeMode();
   seedEditor();
@@ -184,6 +215,18 @@ function openFeature(id) {
 
 function setView(view) {
   state.view = view;
+  persist();
+  render();
+}
+
+function toggleCollapse() {
+  state.collapsed = !state.collapsed;
+  persist();
+  render();
+}
+
+function resetScratch() {
+  state.scratch = DEFAULT_SCRATCH;
   persist();
   render();
 }
@@ -232,6 +275,8 @@ function reset() {
 
 function onKey(e) {
   if (e.target && /TEXTAREA|INPUT/.test(e.target.tagName)) return;
+  // ↑↓/j/k/e are feature-navigation keys; leave the scratchpad and doc views alone.
+  if (state.view !== "feature") return;
   if (e.key === "ArrowDown" || e.key === "j") {
     e.preventDefault();
     move(1);
@@ -252,6 +297,7 @@ function render() {
   const app = document.getElementById("app");
   const card = state.byId.get(state.currentId);
   app.style.setProperty("--accent", card ? card.accent : "#4dd3d8");
+  app.dataset.collapsed = state.collapsed ? "true" : "false";
 
   app.innerHTML = "";
   if (state.drift.length) app.appendChild(driftBanner());
@@ -259,9 +305,12 @@ function render() {
   app.appendChild(renderMain());
 
   refreshWasmStatus();
-  if (state.view === "playground") {
+  if (state.view === "feature") {
     wireEditor();
     runCurrent(); // replace the seed output with a live transpile
+  } else if (state.view === "playground") {
+    wireScratch();
+    runScratch();
   }
 }
 
@@ -281,11 +330,28 @@ function driftBanner() {
 function renderSidebar() {
   const aside = el("aside", "sidebar");
 
+  // Collapsed rail: brand dot + an expand button. Shown only in collapsed mode
+  // (CSS); hovering the rail slides the full sidebar back in as an overlay.
+  const rail = el("div", "side-rail");
+  rail.appendChild(el("span", "brand-dot"));
+  const expand = el("button", "iconbtn", "»");
+  expand.title = "Expand sidebar";
+  expand.addEventListener("click", () => toggleCollapse());
+  rail.appendChild(expand);
+  aside.appendChild(rail);
+
+  const full = el("div", "side-full");
+
   const head = el("div", "side-head");
   const brand = el("div", "brand");
   brand.appendChild(el("span", "brand-dot"));
   brand.appendChild(el("span", "brand-name", "goal"));
   brand.appendChild(el("span", "brand-chip", `v0 · ${state.cards.length} features`));
+  brand.appendChild(el("span", "brand-spacer"));
+  const collapse = el("button", "collapse-btn", "«");
+  collapse.title = "Collapse sidebar";
+  collapse.addEventListener("click", () => toggleCollapse());
+  brand.appendChild(collapse);
   head.appendChild(brand);
   head.appendChild(
     el(
@@ -294,7 +360,7 @@ function renderSidebar() {
       "A correctness-oriented Go dialect. One example per feature, valid and broken.",
     ),
   );
-  aside.appendChild(head);
+  full.appendChild(head);
 
   const tabs = el("div", "tabs");
   for (const [view, label] of [
@@ -306,7 +372,7 @@ function renderSidebar() {
     t.addEventListener("click", () => setView(view));
     tabs.appendChild(t);
   }
-  aside.appendChild(tabs);
+  full.appendChild(tabs);
 
   const nav = el("nav", "nav");
   for (const cat of state.map.categories) {
@@ -315,7 +381,7 @@ function renderSidebar() {
     const group = el("div", "nav-group");
     group.appendChild(el("div", "nav-cat", cat.name));
     for (const card of cards) {
-      const active = card.anchor === state.currentId && state.view === "playground";
+      const active = card.anchor === state.currentId && state.view === "feature";
       const item = el("button", "nav-item" + (active ? " active" : ""));
       item.style.setProperty("--accent", card.accent);
       item.appendChild(el("span", "nav-num", card.num));
@@ -328,7 +394,7 @@ function renderSidebar() {
     }
     nav.appendChild(group);
   }
-  aside.appendChild(nav);
+  full.appendChild(nav);
 
   const foot = el("div", "side-foot");
   const src = el("a");
@@ -342,8 +408,9 @@ function renderSidebar() {
   status.appendChild(el("span", "dot"));
   status.appendChild(el("span", "to-go", "transpiles → Go"));
   foot.appendChild(status);
-  aside.appendChild(foot);
+  full.appendChild(foot);
 
+  aside.appendChild(full);
   return aside;
 }
 
@@ -354,9 +421,15 @@ function renderSidebar() {
 function renderMain() {
   const main = el("main", "main");
   main.appendChild(renderTopbar());
+  // The scratchpad ("Playground") manages its own full-height layout; the other
+  // views share the scrolling, max-width content column.
+  if (state.view === "playground") {
+    main.appendChild(renderScratchpad());
+    return main;
+  }
   const scroll = el("div", "scroll");
   const content = el("div", "content");
-  if (state.view === "playground") content.appendChild(renderPlayground());
+  if (state.view === "feature") content.appendChild(renderFeature());
   else if (state.view === "overview") content.appendChild(renderOverview());
   else content.appendChild(renderAbout());
   scroll.appendChild(content);
@@ -369,18 +442,22 @@ function renderTopbar() {
   const crumbs = el("div", "crumbs");
   const card = state.byId.get(state.currentId);
   const [a, b] =
-    state.view === "playground"
-      ? ["playground", card ? card.catName : ""]
-      : state.view === "overview"
-        ? ["overview", "all features"]
-        : ["about", "the language goals"];
+    state.view === "feature"
+      ? ["feature", card ? card.primary.title : ""]
+      : state.view === "playground"
+        ? ["playground", "scratchpad"]
+        : state.view === "overview"
+          ? ["overview", "all features"]
+          : ["about", "the language goals"];
   crumbs.appendChild(el("span", null, a));
   crumbs.appendChild(el("span", "sep", "/"));
-  crumbs.appendChild(el("span", "crumb-b", b));
+  const cb = el("span", "crumb-b");
+  cb.innerHTML = state.view === "feature" && card ? card.primary.titleHtml || escapeHtml(b) : escapeHtml(b);
+  crumbs.appendChild(cb);
   bar.appendChild(crumbs);
 
-  if (state.view === "playground" && card) {
-    const right = el("div", "topbar-right");
+  const right = el("div", "topbar-right");
+  if (state.view === "feature" && card) {
     const idx = state.cards.findIndex((c) => c.anchor === state.currentId);
     right.appendChild(el("span", "count", `${idx + 1} / ${state.cards.length}`));
     const btns = el("div", "navbtns");
@@ -393,16 +470,28 @@ function renderTopbar() {
     btns.appendChild(up);
     btns.appendChild(down);
     right.appendChild(btns);
-    bar.appendChild(right);
+    right.appendChild(el("span", "divider"));
   }
+  const gh = el("a", "gh-link", "GitHub ↗");
+  gh.href = GH;
+  gh.target = "_blank";
+  gh.rel = "noopener";
+  right.appendChild(gh);
+  const dl = el("a", "dl-btn", "↓ Download");
+  dl.href = GH_RELEASES;
+  dl.target = "_blank";
+  dl.rel = "noopener";
+  dl.title = "Download the latest release";
+  right.appendChild(dl);
+  bar.appendChild(right);
   return bar;
 }
 
 // --------------------------------------------------------------------------- //
-// playground view
+// feature view (a single documented feature, its examples, editor + output)
 // --------------------------------------------------------------------------- //
 
-function renderPlayground() {
+function renderFeature() {
   const card = state.byId.get(state.currentId);
   const wrap = el("div");
   if (!card) return wrap;
@@ -591,6 +680,174 @@ function renderStatus(card) {
 }
 
 // --------------------------------------------------------------------------- //
+// scratchpad view (the "Playground" tab — a free editor over the live transpiler)
+// --------------------------------------------------------------------------- //
+
+function renderScratchpad() {
+  const wrap = el("div", "scratch");
+
+  const head = el("div", "scratch-head");
+  const heading = el("div");
+  heading.appendChild(el("h1", "scratch-title", "Scratchpad"));
+  heading.appendChild(
+    el("p", "scratch-sub", "Write any goal you like and watch it lower to Go. Ambiguity welcome."),
+  );
+  head.appendChild(heading);
+
+  const controls = el("div", "scratch-controls");
+  const status = el("span", "scratch-status");
+  status.id = "scratch-status";
+  status.appendChild(el("span", "dot"));
+  status.appendChild(el("span", "txt", "transpiler loading…"));
+  controls.appendChild(status);
+  const rst = el("button", "resetbtn", "reset");
+  rst.addEventListener("click", () => resetScratch());
+  controls.appendChild(rst);
+  head.appendChild(controls);
+  wrap.appendChild(head);
+
+  const grid = el("div", "scratch-grid");
+
+  // editor pane (fills height, internal scroll)
+  const edPane = el("section", "pane scratch-pane");
+  const edHead = el("div", "pane-head");
+  edHead.appendChild(el("span", "cap", "editor · scratch.goal"));
+  edHead.appendChild(el("span", "hint", "editable"));
+  edPane.appendChild(edHead);
+  const edRow = el("div", "editor-row fill");
+  const edGutter = el("div", "gutter");
+  edGutter.id = "scratch-gutter";
+  const edWrap = el("div", "editor-wrap fill");
+  const hl = el("pre", "editor-hl");
+  hl.id = "scratch-hl";
+  hl.setAttribute("aria-hidden", "true");
+  const ta = el("textarea", "editor");
+  ta.id = "scratch";
+  ta.spellcheck = false;
+  ta.value = state.scratch;
+  edWrap.appendChild(hl);
+  edWrap.appendChild(ta);
+  edRow.appendChild(edGutter);
+  edRow.appendChild(edWrap);
+  edPane.appendChild(edRow);
+  grid.appendChild(edPane);
+
+  // output pane (fills height, internal scroll)
+  const outPane = el("section", "pane scratch-pane");
+  const outHead = el("div", "pane-head");
+  outHead.appendChild(el("span", "cap", "transpiled · .go"));
+  outHead.appendChild(el("span", "badge", "preview"));
+  outPane.appendChild(outHead);
+  const outBody = el("div", "out-body fill");
+  const outGutter = el("div", "gutter");
+  outGutter.id = "scratch-out-gutter";
+  const pre = el("pre", "output");
+  pre.id = "scratch-output";
+  outBody.appendChild(outGutter);
+  outBody.appendChild(pre);
+  outPane.appendChild(outBody);
+  grid.appendChild(outPane);
+
+  wrap.appendChild(grid);
+  return wrap;
+}
+
+function wireScratch() {
+  const ta = document.getElementById("scratch");
+  if (!ta) return;
+  const hl = document.getElementById("scratch-hl");
+  const paint = () => {
+    if (hl) hl.innerHTML = highlight(ta.value) + "\n";
+    syncGutter("scratch-gutter", ta.value);
+  };
+  const syncScroll = () => {
+    if (hl) {
+      hl.scrollTop = ta.scrollTop;
+      hl.scrollLeft = ta.scrollLeft;
+    }
+    const g = document.getElementById("scratch-gutter");
+    if (g) g.scrollTop = ta.scrollTop;
+  };
+  paint();
+  ta.addEventListener("input", () => {
+    state.scratch = ta.value;
+    paint();
+    persist();
+    clearTimeout(state.scratchTimer);
+    state.scratchTimer = setTimeout(() => runScratch(), 300);
+  });
+  ta.addEventListener("scroll", syncScroll);
+  ta.addEventListener("keydown", (e) => {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const s = ta.selectionStart,
+        en = ta.selectionEnd;
+      ta.value = ta.value.slice(0, s) + "    " + ta.value.slice(en);
+      ta.selectionStart = ta.selectionEnd = s + 4;
+      state.scratch = ta.value;
+      paint();
+    }
+  });
+}
+
+// runScratch transpiles the scratchpad source live and paints the output pane,
+// coloring Go on success and formatting a diagnostic on rejection.
+async function runScratch() {
+  if (state.view !== "playground") return;
+  const seq = ++state.scratchSeq;
+  setScratchStatus("loading");
+  try {
+    const transpile = await getTranspiler();
+    const result = transpile(withTrailingNewline(state.scratch), "scratch.goal");
+    if (seq !== state.scratchSeq) return;
+    if (result.error) {
+      paintScratch({ kind: "diag", text: result.error }, true);
+      setScratchStatus("error");
+    } else {
+      paintScratch({ kind: "go", text: result.go || "" }, false);
+      setScratchStatus("ok");
+    }
+  } catch (err) {
+    if (seq === state.scratchSeq) {
+      paintScratch({ kind: "diag", text: `Runtime error:\n${String(err)}` }, true);
+      setScratchStatus("error");
+    }
+  }
+}
+
+function paintScratch(result, bad) {
+  const pre = document.getElementById("scratch-output");
+  if (!pre) return;
+  const body = pre.closest(".out-body");
+  if (body) body.classList.toggle("bad", bad);
+  const pane = pre.closest(".pane");
+  if (pane) pane.classList.toggle("bad", bad);
+  const text = (result.text || "").replace(/\n$/, "");
+  pre.classList.remove("muted");
+  if (!text) {
+    pre.classList.add("muted");
+    pre.textContent = "(no output)";
+    syncGutter("scratch-out-gutter", "");
+    return;
+  }
+  pre.innerHTML = result.kind === "diag" ? formatDiag(text) : highlight(text);
+  syncGutter("scratch-out-gutter", text);
+}
+
+function setScratchStatus(kind) {
+  const node = document.getElementById("scratch-status");
+  if (!node) return;
+  const map = {
+    loading: ["loading", "transpiler loading…"],
+    ok: ["ok", "transpiler connected"],
+    error: ["bad", "goal check: rejected"],
+  };
+  const [cls, txt] = map[kind] || map.loading;
+  node.dataset.state = cls;
+  node.querySelector(".txt").textContent = txt;
+}
+
+// --------------------------------------------------------------------------- //
 // editor wiring (plain textarea + synced line-number gutter)
 // --------------------------------------------------------------------------- //
 
@@ -650,7 +907,7 @@ function syncGutter(id, text) {
 // --------------------------------------------------------------------------- //
 
 async function runCurrent(explicit) {
-  if (state.view !== "playground") return;
+  if (state.view !== "feature") return;
   const feat = activeFeature();
   if (!feat) return;
   // A doctest-failure is proven by running `go test`, which the browser can't do —

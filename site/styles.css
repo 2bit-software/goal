@@ -1092,3 +1092,232 @@ pre.code code {
 .d-indent {
   color: #7c8985;
 }
+
+/* --------------------------------------------------------------------------- */
+/* collapsible sidebar                                                          */
+/* --------------------------------------------------------------------------- */
+
+.sidebar {
+  position: relative;
+  transition:
+    width 0.18s ease,
+    box-shadow 0.18s ease;
+}
+.side-rail {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  padding: 17px 0 14px;
+  gap: 16px;
+}
+.side-full {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  transition: opacity 0.15s ease;
+}
+.brand-spacer {
+  flex: 1;
+}
+.collapse-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  color: #8a9895;
+  cursor: pointer;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.collapse-btn:hover {
+  background: var(--bg-hover);
+  color: #e4ecea;
+}
+
+.app[data-collapsed="true"] .sidebar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 56px;
+  z-index: 60;
+}
+.app[data-collapsed="true"] .side-full {
+  opacity: 0;
+  pointer-events: none;
+}
+.app[data-collapsed="true"] .side-rail {
+  display: flex;
+}
+.app[data-collapsed="true"] .sidebar:hover {
+  width: 274px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+}
+.app[data-collapsed="true"] .sidebar:hover .side-full {
+  opacity: 1;
+  pointer-events: auto;
+}
+.app[data-collapsed="true"] .sidebar:hover .side-rail {
+  display: none;
+}
+.app[data-collapsed="true"] .main {
+  margin-left: 56px;
+}
+
+/* --------------------------------------------------------------------------- */
+/* topbar GitHub link + download button                                        */
+/* --------------------------------------------------------------------------- */
+
+.topbar-right .divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border-chip);
+  margin: 0 2px;
+}
+.gh-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: #a8b4b1;
+  border: 1px solid var(--border-chip);
+  border-radius: 7px;
+  padding: 6px 12px;
+}
+.gh-link:hover {
+  color: #e4ecea;
+  border-color: #33443f;
+  filter: none;
+}
+.dl-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #07100e;
+  background: var(--accent);
+  border-radius: 7px;
+  padding: 7px 14px;
+}
+.dl-btn:hover {
+  color: #07100e;
+  filter: brightness(1.08);
+}
+
+/* --------------------------------------------------------------------------- */
+/* scratchpad ("Playground" tab)                                               */
+/* --------------------------------------------------------------------------- */
+
+.scratch {
+  height: calc(100vh - 53px);
+  display: flex;
+  flex-direction: column;
+  padding: 18px 22px 20px;
+  min-width: 0;
+}
+.scratch-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.scratch-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--text-strong);
+}
+.scratch-sub {
+  margin: 5px 0 0;
+  font-size: 13.5px;
+  color: #8a9895;
+}
+.scratch-controls {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.scratch-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #e8b84b;
+}
+.scratch-status .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #e8b84b;
+  flex-shrink: 0;
+}
+.scratch-status[data-state="loading"] .dot {
+  animation: pulse 1s ease-in-out infinite;
+}
+.scratch-status[data-state="ok"] {
+  color: var(--ok);
+}
+.scratch-status[data-state="ok"] .dot {
+  background: var(--ok-dot);
+  box-shadow: 0 0 8px rgba(87, 211, 140, 0.6);
+}
+.scratch-status[data-state="bad"] {
+  color: var(--bad);
+}
+.scratch-status[data-state="bad"] .dot {
+  background: var(--bad-strong);
+}
+.scratch-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 900px) {
+  .scratch-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.scratch-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.scratch-pane .pane-head {
+  flex-shrink: 0;
+}
+
+/* fill variant: editor/output panes that fill their pane and scroll internally */
+.editor-row.fill {
+  flex: 1;
+  min-height: 0;
+}
+.editor-wrap.fill {
+  height: 100%;
+}
+.editor-wrap.fill > .editor {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+.out-body.fill {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  align-items: flex-start;
+}
