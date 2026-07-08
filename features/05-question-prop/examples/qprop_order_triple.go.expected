@@ -1,0 +1,31 @@
+package demo
+
+func a() (ok int, err error) {
+	return 1, nil
+}
+
+func b() (ok int, err error) {
+	return 2, nil
+}
+
+func plain() int {
+	return 7
+}
+
+func add3(x int, y int, z int) int {
+	return x + y + z
+}
+
+func use() (ok int, err error) {
+	q, err := a()
+	if err != nil {
+		return ok, err
+	}
+	q1 := plain()
+	q2, err := b()
+	if err != nil {
+		return ok, err
+	}
+	v := add3(q, q1, q2)
+	return v, nil
+}

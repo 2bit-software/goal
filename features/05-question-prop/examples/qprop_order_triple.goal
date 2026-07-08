@@ -1,0 +1,22 @@
+package demo
+
+func a() Result[int, error] {
+    return Result.Ok(1)
+}
+
+func b() Result[int, error] {
+    return Result.Ok(2)
+}
+
+func plain() int {
+    return 7
+}
+
+func add3(x int, y int, z int) int {
+    return x + y + z
+}
+
+func use() Result[int, error] {
+    v := add3(a()?, plain(), b()?)
+    return Result.Ok(v)
+}

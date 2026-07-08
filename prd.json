@@ -31,7 +31,7 @@
         "The verify-generated stage stays green, i.e. the committed generated Go for all `?`-free code in `./internal` is byte-identical after this change."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Reference implementation: the ANF-prefix pass in emit.goal (hoistArgs binds call-valued operands preceding the last `?`-carrying operand; containsUnwrap/containsCall predicates; `hoisted` keyed by ast.Expr). Only bind operands that contain a call, so pure expressions stay inline and `?`-free output is unchanged. Re-run `task generate` after editing emit.goal."
     },
     {

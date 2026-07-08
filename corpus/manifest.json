@@ -217,6 +217,30 @@
       "normalize": "gofmt"
     },
     {
+      "id": "features-05-question-prop-examples-qprop_order_pair",
+      "kind": "transpile",
+      "input": "features/05-question-prop/examples/qprop_order_pair.goal",
+      "expected": "features/05-question-prop/examples/qprop_order_pair.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-05-question-prop-examples-qprop_order_pure",
+      "kind": "transpile",
+      "input": "features/05-question-prop/examples/qprop_order_pure.goal",
+      "expected": "features/05-question-prop/examples/qprop_order_pure.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-05-question-prop-examples-qprop_order_triple",
+      "kind": "transpile",
+      "input": "features/05-question-prop/examples/qprop_order_triple.goal",
+      "expected": "features/05-question-prop/examples/qprop_order_triple.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
       "id": "features-05-question-prop-examples-qprop_result",
       "kind": "transpile",
       "input": "features/05-question-prop/examples/qprop_result.goal",
@@ -321,16 +345,16 @@
       "normalize": "gofmt"
     },
     {
-      "id": "features-11-doctests-examples-add",
-      "kind": "transpile",
+      "id": "features-11-doctests-examples-add-doctest",
+      "kind": "doctest",
       "input": "features/11-doctests/examples/add.goal",
       "expected": "features/11-doctests/examples/add.go.expected",
       "mode": "file",
       "normalize": "gofmt"
     },
     {
-      "id": "features-11-doctests-examples-add-doctest",
-      "kind": "doctest",
+      "id": "features-11-doctests-examples-add",
+      "kind": "transpile",
       "input": "features/11-doctests/examples/add.goal",
       "expected": "features/11-doctests/examples/add.go.expected",
       "mode": "file",

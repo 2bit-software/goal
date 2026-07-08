@@ -9553,3 +9553,30 @@ Regression test cmd/goal/gotypeerror_crosspkg_test.go. Docs: STATUS.md (b)/(d) u
     prd note; the remaining loop work was purely regenerate-and-bless: task generate,
     bump the count, corpus-gen, then task check-full.
 ---
+
+## 2026-07-08T00:00:00Z - US-002
+- Blessed the evaluation-order guarantee for hoisted nested `?`: side-effecting
+  operands that source-precede a nested `?` are bound to temps in source order,
+  and pure operands (literals, `x+1`, field reads) stay inline. The ANF-prefix
+  pass (hoistArgs / containsCall / containsUnwrap in internal/backend/emit.goal
+  and its generated emit.go) was already in-tree from the US-001 spike; this
+  story adds corpus goldens that pin the ordered lowering and proves the
+  no-regression property for `?`-free code.
+- Files changed: three new corpus golden pairs under
+  features/05-question-prop/examples/ (qprop_order_{pair,triple,pure}.{goal,
+  go.expected}), internal/corpus/generate_test.go (transpile count 67 -> 70),
+  corpus/manifest.json (regenerated via go run ./cmd/corpus-gen, 147 cases),
+  prd.json (US-002 passes).
+- Verify: `task check-full` exit 0 (verify-generated green, FIXPOINT OK);
+  `go test ./internal/corpus -count=1` ok. Golden checks: pair emits
+  `q := plain()` before `q1, err := g()`; triple emits a, plain, b in order;
+  pure emits `f(1, q)` with the literal `1` NOT hoisted.
+- Learnings for future iterations:
+  - The emitter binds a preceding `?`-free operand to a temp ONLY when it
+    `containsCall`; a bare literal/`x+1`/field-read operand stays inline, so
+    `?`-free output for such operands is byte-identical (US-002 required no
+    emit.goal edit — the US-001 spike already carried the ANF-prefix pass).
+  - Produce every features/05-question-prop/examples/*.go.expected with
+    `go run ./cmd/goalc <file.goal> > <file>.go.expected`; it is byte-identical
+    to the corpus file-mode transpile path, so hand-writing risks gensym drift.
+---
