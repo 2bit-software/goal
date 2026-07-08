@@ -12,6 +12,14 @@ import (
 	"goal/internal/sema"
 )
 
+// Build metadata, injected at release time by goreleaser via -ldflags -X (see
+// .goreleaser.yaml). The defaults keep plain `go build`/`go run` working.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "goalc:", err)
@@ -30,6 +38,9 @@ func run(args []string, stdin io.Reader, out, errOut io.Writer) error {
 	var files []string
 	for _, a := range args {
 		switch a {
+		case "-version", "--version":
+			fmt.Fprintf(out, "goalc %s (commit %s, built %s)\n", version, commit, date)
+			return nil
 		case "-test":
 			testMode = true
 		case "-nocheck":

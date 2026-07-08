@@ -1,0 +1,43 @@
+name: Release
+
+# Tag-driven releases. Pushing a semver tag (e.g. `v1.2.3`) builds the goal and
+# goalc CLIs with that version baked in via -ldflags and publishes a GitHub
+# release with cross-platform archives and checksums. The tag is the single
+# source of the released version.
+
+on:
+  push:
+    tags: ["v*"]
+
+# goreleaser needs write access to create the GitHub release and upload assets.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # goreleaser's changelog and version detection need full history + tags.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+          # Stdlib-only module (no go.sum), so there is nothing to cache.
+          cache: false
+
+      - name: Install Task
+        # $HOME/go/bin is on the runner PATH; goreleaser's before-hook shells out
+        # to `task verify-generated` (the generated-Go drift gate).
+        run: go install github.com/go-task/task/v3/cmd/task@v3
+
+      - name: Release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

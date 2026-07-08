@@ -1,0 +1,71 @@
+# goreleaser config for the goal toolchain. Releases are tag-driven: pushing a
+# `vX.Y.Z` tag builds the two CLIs with that version baked in and publishes a
+# GitHub release. Run `task release-check` to validate this file and
+# `task release-snapshot` to build locally without publishing.
+#
+# See https://goreleaser.com
+version: 2
+
+# The released binary must be built from committed generated Go that matches the
+# .goal source. This is the same drift gate the pre-commit hook and CI run; here
+# it guarantees a drifted commit can never be tagged and shipped.
+before:
+  hooks:
+    - task verify-generated
+
+builds:
+  - id: goal
+    main: ./cmd/goal
+    binary: goal
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    # The tag drives the version; -s -w strip debug info to shrink the binary.
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+
+  - id: goalc
+    main: ./cmd/goalc
+    binary: goalc
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+
+archives:
+  - id: goal-toolchain
+    # One archive per platform containing both CLIs.
+    ids: [goal, goalc]
+    name_template: >-
+      goal_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  # Cut the GitHub release as a draft-free published release on tag push.
+  prerelease: auto

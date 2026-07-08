@@ -162,6 +162,14 @@ func exitCode(err error) int {
 	return 1
 }
 
+// Build metadata, injected at release time by goreleaser via -ldflags -X (see
+// .goreleaser.yaml). The defaults keep plain `go build`/`go run` working.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "goal:", err)
@@ -178,6 +186,9 @@ func run(args []string, out, errOut io.Writer) error {
 		cmd = "ai"
 	}
 	switch cmd {
+	case "version", "--version":
+		fmt.Fprintf(out, "goal %s (commit %s, built %s)\n", version, commit, date)
+		return nil
 	case "ai":
 		return cmdAI(rest, out)
 	case "category":
