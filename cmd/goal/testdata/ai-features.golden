@@ -503,6 +503,52 @@ func loadConfig(p string) (ok Config, err error) {
 `name, err := expr; if err != nil { return ok, err }`. In an
 `Option[_]` function it becomes a nil-check-and-return, then a deref.
 
+**Nested `?`:** `?` also works *inside* an expression — a call argument, a binary
+operand, or a return payload. Each nested `?` is **hoisted** onto its own statement
+just before the enclosing one, bound to a fresh temp, and reuses the same
+unwrap-or-early-return lowering. So `y := f(g()?)`:
+
+```goal
+func use() Result[int, error] {
+    y := f(g()?)
+    return Result.Ok(y)
+}
+```
+
+```go
+func use() (ok int, err error) {
+	q, err := g()
+	if err != nil {
+		return ok, err
+	}
+	y := f(q)
+	return y, nil
+}
+```
+
+**Evaluation order is preserved:** an operand evaluated before a nested `?` that has
+a side effect (it calls a function) is bound first, so hoisting never reorders
+effects. For `y := add(plain(), g()?)`, `plain()` binds before the `g()?` temp:
+
+```goal
+func use() Result[int, error] {
+    y := add(plain(), g()?)
+    return Result.Ok(y)
+}
+```
+
+```go
+func use() (ok int, err error) {
+	q := plain()
+	q1, err := g()
+	if err != nil {
+		return ok, err
+	}
+	y := add(q, q1)
+	return y, nil
+}
+```
+
 #### Rejecting `?` in a non-fallible function
 
 `?` early-returns a failure, so it needs a failure channel to return it *through*. Use

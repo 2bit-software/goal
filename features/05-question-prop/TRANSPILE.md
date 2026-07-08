@@ -98,6 +98,97 @@ func sync() (__goal_ok int, __goal_err error) {
 }
 ```
 
+### 2.4 Nested `?` in expression position (`examples/qprop_nested_arg`)
+
+`?` also composes *inside* an expression — a call argument, a binary operand, or a
+return payload. Each nested `?` is **hoisted** onto its own statement just before the
+enclosing one, bound to a fresh temp, and reuses the same unwrap-or-early-return
+lowering the statement-position `?` already produces.
+
+```goal
+func g() Result[int, error] {
+    return Result.Ok(1)
+}
+
+func f(x int) int {
+    return x + 1
+}
+
+func use() Result[int, error] {
+    y := f(g()?)
+    return Result.Ok(y)
+}
+```
+
+```go
+func g() (ok int, err error) {
+	return 1, nil
+}
+
+func f(x int) int {
+	return x + 1
+}
+
+func use() (ok int, err error) {
+	q, err := g()
+	if err != nil {
+		return ok, err
+	}
+	y := f(q)
+	return y, nil
+}
+```
+
+### 2.5 Evaluation order preserved (`examples/qprop_nested_multi`)
+
+When an operand evaluated *before* a nested `?` has a side effect (it calls a
+function), it is bound to a temp first, so hoisting the `?` never reorders effects.
+For `add(plain(), g()?)`, `plain()` is bound before the `g()?` temp — source order
+is preserved. Pure operands (literals, `x + 1`, field reads) are left inline.
+
+```goal
+func plain() int {
+    return 1
+}
+
+func g() Result[int, error] {
+    return Result.Ok(2)
+}
+
+func add(a int, b int) int {
+    return a + b
+}
+
+func use() Result[int, error] {
+    y := add(plain(), g()?)
+    return Result.Ok(y)
+}
+```
+
+```go
+func plain() int {
+	return 1
+}
+
+func g() (ok int, err error) {
+	return 2, nil
+}
+
+func add(a int, b int) int {
+	return a + b
+}
+
+func use() (ok int, err error) {
+	q := plain()
+	q1, err := g()
+	if err != nil {
+		return ok, err
+	}
+	y := add(q, q1)
+	return y, nil
+}
+```
+
 ---
 
 ## 3. Lowering rules (the general algorithm)
@@ -160,7 +251,8 @@ point. (The defensive panic belongs to exhaustive enum `match`, feature 02.)
 | Open-`E` Result `?` | native `(T, error)` + `if err != nil` | **implemented** |
 | Option `?` | pointer `*T` + nil-check early return | **implemented** |
 | Closed-`E` Result `?` | sum encoding + type-switch-and-return with a `From`-conversion in the `Err` arm | **feature 06** (out of scope) |
-| Inline `?` (`g(f()?)`) / stored Result/Option | hoist / sum encoding | deferred |
+| Nested `?` in expression position (`f(g()?)`, `g()? + 1`, `return Ok(f(g()?))`) | hoist onto its own statement (§2.4–2.5) | **implemented** |
+| Stored Result/Option | sum encoding | deferred |
 
 Closed-`E` and open-`E` `?` are the **same** mechanism with/without a conversion step (§3.3
 line-to-protect); only the open path is built here.

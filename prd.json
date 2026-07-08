@@ -56,7 +56,7 @@
         "The generated guide includes the nested-`?` example and `go test ./internal/guidetest -count=1` passes."
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "By-example blocks are transpiled live by the test binary, so the Go in each block must exactly match current emitter output."
     },
     {

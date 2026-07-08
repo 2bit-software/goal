@@ -9631,3 +9631,34 @@ Regression test cmd/goal/gotypeerror_crosspkg_test.go. Docs: STATUS.md (b)/(d) u
     no guide.goal category edit and no bootstrap regen are needed for a
     non-core rejection feature.
 ---
+
+## 2026-07-08T20:40:00Z - US-004
+- Documented nested `?` in the feature docs. Added TRANSPILE.md §2.4 (`f(g()?)`)
+  and §2.5 (eval-order `add(plain(), g()?)`) "Transpiles to" pairs and flipped the
+  strategy-fork table row for expression-position `?` from "deferred" to
+  "implemented". Added a "Nested `?`" prose block (with an `f(g()?)` and an
+  eval-order goal→go pair) inside the `## 05. ? propagation` section of
+  docs/by-example.md so the generated guide includes it. Regenerated
+  cmd/goal/testdata/ai-features.golden.
+- Files changed: features/05-question-prop/TRANSPILE.md, docs/by-example.md,
+  cmd/goal/testdata/ai-features.golden, prd.json, progress.txt.
+- Learnings for future iterations:
+  - The generated guide renders exactly ONE primary feature per category, matched
+    by Anchor (question -> "05-propagation"); it renders that feature's
+    DescriptionMD + single live-transpiled example + LoweringMD prose VERBATIM.
+    To make the guide include an extra example, put it as PROSE inside the primary
+    section body (it lands in LoweringMD). A standalone non-numbered sub-section
+    would NOT be rendered by the guide (no category anchor points at it).
+  - Do NOT put any `#`-level heading in prose you add inside a by-example section:
+    byexample.splitSections splits on `#{1,6}`, so an inner heading truncates the
+    section body early (your prose ends up in a separate, unrendered section). Use
+    a bold lead-in (`**Nested `?`:**`) instead. Use UNNAMED ```goal fences so
+    byexample does not treat the extra block as the feature's example (it keys off
+    `name=`), and place them AFTER the primary ```go output block (readOutputBlock
+    consumes only the FIRST output block; the rest is LoweringMD).
+  - features/NN/TRANSPILE.md files are pure docs — no test reads them (only
+    features/NN/examples/*.goal pairs feed the corpus). Free to edit; still keep
+    the shown Go matching live output for reader trust.
+  - `go run ./cmd/goal ...` cold-compiles for >2min in this env and can time out;
+    `go build -o $TMPDIR/goal ./cmd/goal` once then run the binary.
+---
