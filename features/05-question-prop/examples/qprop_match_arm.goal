@@ -1,0 +1,22 @@
+package demo
+
+enum Shape {
+    Circle { radius: int }
+    Square { side: int }
+}
+
+func lookup(s Shape) Result[int, error] {
+    return Result.Ok(1)
+}
+
+func area(s Shape) Result[int, error] {
+    match s {
+        Shape.Circle(c) => {
+            v := lookup(s)?
+            return Result.Ok(v + c.radius)
+        }
+        Shape.Square(q) => {
+            return Result.Ok(q.side)
+        }
+    }
+}

@@ -1,6 +1,17 @@
 # Progress Log — goal AST front-end rewrite
 
 ## Codebase Patterns
+- A corpus feature example (features/*/examples/*.goal) is VET-gated: `go test
+  ./internal/corpus` runs `go vet` on each emitted golden, so an exhaustive `match`
+  with all arms + default returning must NOT be followed by a trailing `return` —
+  the emitted switch is terminating and the trailing return is flagged
+  "unreachable code" (found US-003). A goal function body may end in a terminating
+  match. Separately, a `?` inside a function literal is checker-rejected
+  ([question-outside-result]) unless the nearest enclosing DECLARED func is fallible
+  (the checker maps `?` to the declared func, not the closure); the BACKEND still
+  lowers a closure `?` to an early return from the closure's own named returns, so
+  put the closure in a Result/Option-returning outer func to get a checker-clean,
+  closure-local example.
 - The typed depth stage (internal/typecheck/gotypes.goal) DROPS any go/types error whose
   //line position is not a `.goal` file, so a type error at synthesized/lowered-only code
   (e.g. enum-method forwarders, which carry `//line <pkg>.go:NN`) is invisible to
@@ -9579,4 +9590,44 @@ Regression test cmd/goal/gotypeerror_crosspkg_test.go. Docs: STATUS.md (b)/(d) u
   - Produce every features/05-question-prop/examples/*.go.expected with
     `go run ./cmd/goalc <file.goal> > <file>.go.expected`; it is byte-identical
     to the corpus file-mode transpile path, so hand-writing risks gensym drift.
+---
+
+## 2026-07-08T00:00:00Z - US-003
+- Rejected `?` on the short-circuit side of `&&`/`||` and locked the arm-local /
+  closure-local `?` lowering. The emitter behavior already existed from the
+  US-001/US-002 spike (emit.goal hoistExpr LAND/LOR branch calls e.fail; hoistExpr
+  and containsUnwrap have no MatchExpr/FuncLit case so they fall through the `_`
+  no-op arm and never descend into arms/closures). This story was docs + goldens
+  only — NO emit.goal edit, so verify-generated stayed byte-identical.
+- Files changed: docs/by-example.md (new "Rejecting `?` on a short-circuit `&&` /
+  `||`" section, backend error block), features/05-question-prop/examples/
+  qprop_match_arm.{goal,go.expected} + qprop_closure.{goal,go.expected} (new
+  corpus pairs), internal/corpus/generate_test.go (transpile 70->72),
+  corpus/manifest.json (corpus-gen), cmd/goal/testdata/ai-features.golden.
+- Learnings for future iterations:
+  - A corpus feature example that is an EXHAUSTIVE match with all arms + default
+    returning must NOT carry a trailing `return ...` after the match: the emitted
+    Go switch is terminating, so the trailing return is unreachable and the corpus
+    VET gate (go vet inside internal/corpus) fails with "unreachable code". Drop
+    the trailing return; goal accepts a function body that ends in a terminating
+    match.
+  - A `?` inside a function literal is checker-REJECTED unless the enclosing
+    DECLARED function is itself fallible: the checker maps a `?` to the nearest
+    enclosing declared func (not the closure), so `func make() func()Result{...}`
+    with a closure `?` fails [question-outside-result]. Put the closure inside a
+    Result/Option-returning outer func; the backend still lowers the `?` to an
+    early return from the CLOSURE's own named returns (backend does not descend
+    into FuncLit for hoisting), so the example is both checker-clean and proves
+    closure-local lowering.
+  - A backend "Rejected with" by-example block's locked text is `terr.Error()`
+    verbatim, i.e. begins with `backend:` (NOT the sourceName), which routes
+    build-playground/guide to the backend.Transpile verifier via
+    !isCheckerDiagnostic. `goalc` prints an extra `goalc: ` prefix on top of that
+    — strip it; the locked block is just the `backend: ...` part.
+  - Adding a NON-numbered "Rejecting ..." by-example feature drifts
+    cmd/goal/testdata/ai-features.golden (regenerate: `go run ./cmd/goal ai
+    features > cmd/goal/testdata/ai-features.golden`) but leaves the SLIM
+    AI-KNOWLEDGE-BOOTSTRAP.md byte-identical (it only carries core features), so
+    no guide.goal category edit and no bootstrap regen are needed for a
+    non-core rejection feature.
 ---

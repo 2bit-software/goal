@@ -1,0 +1,36 @@
+package demo
+
+type Shape interface{ isShape() }
+
+type Shape_Circle struct {
+	Radius int
+}
+type Shape_Square struct {
+	Side int
+}
+
+func (Shape_Circle) isShape() {}
+func (Shape_Square) isShape() {}
+
+func lookup(s Shape) (ok int, err error) {
+	return 1, nil
+}
+
+func area(s Shape) (ok int, err error) {
+	switch v1 := s.(type) {
+	case Shape_Circle:
+		{
+			v, err := lookup(s)
+			if err != nil {
+				return ok, err
+			}
+			return v + v1.Radius, nil
+		}
+	case Shape_Square:
+		{
+			return v1.Side, nil
+		}
+	default:
+		panic("unreachable: non-exhaustive Shape (compiler invariant violated)")
+	}
+}

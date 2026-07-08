@@ -1,0 +1,13 @@
+package demo
+
+func g() Result[int, error] {
+    return Result.Ok(1)
+}
+
+func run() Result[int, error] {
+    apply := func() Result[int, error] {
+        v := g()?
+        return Result.Ok(v)
+    }
+    return apply()
+}

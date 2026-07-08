@@ -1,0 +1,16 @@
+package demo
+
+func g() (ok int, err error) {
+	return 1, nil
+}
+
+func run() (ok int, err error) {
+	apply := func() (ok int, err error) {
+		v, err := g()
+		if err != nil {
+			return ok, err
+		}
+		return v, nil
+	}
+	return apply()
+}

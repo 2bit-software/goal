@@ -533,6 +533,39 @@ qprop_nonfallible.goal:8:23: error: [question-outside-result] `?` propagates a f
 `int` has nowhere to put that failure, so the propagation is unrepresentable. Change
 `peek`'s return to `Result[int, error]` (or `Option[int]`) and the `?` has a channel.
 
+#### Rejecting `?` on a short-circuit `&&` / `||`
+
+A nested `?` is lifted (hoisted) to run *before* its enclosing statement, so it always
+executes. On the conditionally-evaluated side of `&&` or `||` that would change behavior —
+the operand should run only when the left side does not short-circuit. Rather than silently
+hoisting it out of the guard, the transpiler rejects a `?` placed on the short-circuit side.
+
+```goal
+package demo
+
+func g() Result[int, error] {
+    return Result.Ok(1)
+}
+
+func use(cond bool) Result[int, error] {
+    if cond && (g()? > 0) {
+        return Result.Ok(2)
+    }
+    return Result.Ok(0)
+}
+```
+
+_rejected with:_
+
+```text
+backend: a `?` on the short-circuit side of && / || is not supported; bind it to a variable on its own line first
+```
+
+**Why:** `?` unconditionally early-returns a failure, but the right side of `&&` (and `||`)
+runs only when the left side does not short-circuit. Hoisting the `?` out of the guard would
+evaluate `g()` even when `cond` is false, changing behavior. Bind it first — `x := g()?` on
+its own line, then test `cond && x > 0` — so the propagation is explicit and unconditional.
+
 #### Result (closed-E)
 
 The error type `E` in `Result[T, E]` may instead be an `enum` (the *closed* case). The

@@ -44,7 +44,7 @@
         "A \"Rejected with\" error block is added to the 05-question-prop by-example markdown for the `&& g()?` case, and `go test ./internal/byexample -count=1` validates that the recorded error matches the emitter's actual message."
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "The hoist walk must not descend into MatchExpr or FuncLit (they own their `?`). Reference: the LAND/LOR branch of hoistExpr calls e.fail when the RHS contains a `?`. Re-run `task generate` after editing emit.goal."
     },
     {

@@ -145,6 +145,14 @@
       "normalize": "gofmt"
     },
     {
+      "id": "features-05-question-prop-examples-qprop_closure",
+      "kind": "transpile",
+      "input": "features/05-question-prop/examples/qprop_closure.goal",
+      "expected": "features/05-question-prop/examples/qprop_closure.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
       "id": "features-05-question-prop-examples-qprop_discard",
       "kind": "transpile",
       "input": "features/05-question-prop/examples/qprop_discard.goal",
@@ -157,6 +165,14 @@
       "kind": "transpile",
       "input": "features/05-question-prop/examples/qprop_erronly.goal",
       "expected": "features/05-question-prop/examples/qprop_erronly.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "features-05-question-prop-examples-qprop_match_arm",
+      "kind": "transpile",
+      "input": "features/05-question-prop/examples/qprop_match_arm.goal",
+      "expected": "features/05-question-prop/examples/qprop_match_arm.go.expected",
       "mode": "file",
       "normalize": "gofmt"
     },
@@ -393,16 +409,16 @@
       "normalize": "gofmt"
     },
     {
-      "id": "features-11-doctests-examples-multi",
-      "kind": "transpile",
+      "id": "features-11-doctests-examples-multi-doctest",
+      "kind": "doctest",
       "input": "features/11-doctests/examples/multi.goal",
       "expected": "features/11-doctests/examples/multi.go.expected",
       "mode": "file",
       "normalize": "gofmt"
     },
     {
-      "id": "features-11-doctests-examples-multi-doctest",
-      "kind": "doctest",
+      "id": "features-11-doctests-examples-multi",
+      "kind": "transpile",
       "input": "features/11-doctests/examples/multi.goal",
       "expected": "features/11-doctests/examples/multi.go.expected",
       "mode": "file",
