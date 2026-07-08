@@ -68,7 +68,7 @@
         "Re-running `go run ./cmd/goal ai` and diffing against the committed AI-KNOWLEDGE-BOOTSTRAP.md produces no differences (the committed copy is up to date)."
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Per project memory, by-example / error features require regenerating AI-KNOWLEDGE-BOOTSTRAP.md. The generator is `goal ai`; the file header documents the regeneration command."
     }
   ]
