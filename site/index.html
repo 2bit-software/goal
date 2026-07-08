@@ -8,46 +8,20 @@
       name="description"
       content="A live, in-browser playground for goal — a correctness-oriented dialect of Go. Edit a .goal program and watch it transpile to plain Go, with one example per language feature."
     />
-    <!-- code-input's base layout/overlay CSS; loaded before styles.css so the
-         playground theme (code-input.editor rules) overrides it. -->
-    <link rel="stylesheet" href="code-input.min.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header class="topbar">
-      <div class="brand">
-        <span class="logo">goal</span>
-        <span class="tagline">Playground &mdash; a live example for every feature</span>
-      </div>
-      <div class="topbar-right">
-        <a class="repo-link" href="https://github.com/2bit-software/goal" target="_blank" rel="noopener">source</a>
-        <div class="runtime-status" id="runtime-status" data-state="idle">
-          wasm: not loaded
-        </div>
-      </div>
-    </header>
-
-    <div class="layout">
-      <nav class="sidebar" id="sidebar" aria-label="Features">
-        <!-- feature list injected from features.json -->
-      </nav>
-
-      <main class="content" id="content">
-        <p class="loading">Loading features&hellip;</p>
-      </main>
+    <!-- The whole SPA is built by app.js from features.json + playground-map.json,
+         and runs the real transpiler in-browser via goal.wasm (preloaded on boot). -->
+    <div id="app" class="app">
+      <p class="boot">Loading the goal playground…</p>
     </div>
-
-    <!-- Prism (vendored, ~9KB): syntax-highlights the transpiled Go in the result
-         pane. Classic script so window.Prism exists before the deferred module runs. -->
-    <script src="prism.js"></script>
-    <!-- goal grammar (extends Prism's Go) + the code-input editor component and its
-         Indent plugin. Classic scripts, in order, so Prism.languages.goal and
-         window.codeInput exist before app.js (a deferred module) renders any editor. -->
-    <script src="prism-goal.js"></script>
-    <script src="code-input.min.js"></script>
-    <script src="code-input-indent.min.js"></script>
-    <!-- The goal transpiler, compiled to WebAssembly. wasm_exec.js (Go's runtime
-         glue) is loaded lazily on the first Run; see app.js. -->
     <script type="module" src="app.js"></script>
   </body>
 </html>

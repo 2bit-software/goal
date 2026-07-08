@@ -1,0 +1,133 @@
+{
+  "_comment": "Presentation map for the playground redesign. Content comes from features.json (generated from docs/by-example.md); this file adds ONLY presentation: category grouping, accent colors, per-feature display numbers, and — per idea — an ordered list of `examples`, each linking a `valid` anchor to an optional `error` anchor. Every anchor referenced here must exist in features.json, every doc primary must appear as one idea `anchor`, and every doc error must be some example's `error` exactly once. cmd/build-playground's map_test.go fails the build if this drifts from docs/by-example.md, so adding an example to the doc forces a matching link here.",
+  "categories": [
+    {
+      "id": "sum-types",
+      "name": "Sum types & control flow",
+      "accent": "#4dd3d8",
+      "features": [
+        {
+          "anchor": "01-enums",
+          "num": "01",
+          "examples": [
+            { "label": "Enums", "valid": "01-enums", "error": "rejecting-an-unknown-enum-variant" }
+          ]
+        },
+        {
+          "anchor": "02-match",
+          "num": "02",
+          "examples": [
+            { "label": "Match", "valid": "02-match", "error": "rejecting-a-non-exhaustive-match" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "errors",
+      "name": "Errors & absence",
+      "accent": "#ff9382",
+      "features": [
+        {
+          "anchor": "03-result-open-e",
+          "num": "03",
+          "examples": [
+            { "label": "Result (open-E)", "valid": "03-result-open-e", "error": "rejecting-a-dropped-result" }
+          ]
+        },
+        {
+          "anchor": "04-option",
+          "num": "04",
+          "examples": [
+            { "label": "Option", "valid": "04-option", "error": null }
+          ]
+        },
+        {
+          "anchor": "05-propagation",
+          "num": "05",
+          "examples": [
+            { "label": "Non-fallible function", "valid": "05-propagation", "error": "rejecting-in-a-non-fallible-function" },
+            { "label": "Short-circuit && / ||", "valid": "05-propagation", "error": "rejecting-on-a-short-circuit" }
+          ]
+        },
+        {
+          "anchor": "06-result-closed-e",
+          "num": "06",
+          "examples": [
+            { "label": "Result (closed-E)", "valid": "06-result-closed-e", "error": "rejecting-an-unbridged-closed-e-propagation" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "contracts",
+      "name": "Contracts on types",
+      "accent": "#8ab4ff",
+      "features": [
+        {
+          "anchor": "07-implements",
+          "num": "07",
+          "examples": [
+            { "label": "Implements", "valid": "07-implements", "error": "rejecting-an-unmet-implements-clause" }
+          ]
+        },
+        {
+          "anchor": "08-no-zero-value",
+          "num": "08",
+          "examples": [
+            { "label": "Unsafe default", "valid": "08-no-zero-value", "error": "rejecting-an-unsafe-default" },
+            { "label": "Incomplete literal", "valid": "08-no-zero-value", "error": "rejecting-an-incomplete-literal" }
+          ]
+        },
+        {
+          "anchor": "09-methods-on-sum-types",
+          "num": "09",
+          "examples": [
+            { "label": "Methods on sum types", "valid": "09-methods-on-sum-types", "error": null }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "feedback",
+      "name": "Runtime & test feedback",
+      "accent": "#7ee0a6",
+      "features": [
+        {
+          "anchor": "10-assert",
+          "num": "10",
+          "examples": [
+            { "label": "Assert", "valid": "10-assert", "error": "rejecting-a-statically-false-assert" }
+          ]
+        },
+        {
+          "anchor": "11-doctests",
+          "num": "11",
+          "examples": [
+            { "label": "Doctests", "valid": "11-doctests", "error": "a-drifted-doctest-fails-its-test" }
+          ]
+        },
+        {
+          "anchor": "12-derive-convert",
+          "num": "12",
+          "examples": [
+            { "label": "Derive-convert", "valid": "12-derive-convert", "error": "rejecting-an-unsourced-derive-field" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "composition",
+      "name": "Composition",
+      "accent": "#c792ea",
+      "features": [
+        {
+          "anchor": "composition-all-eleven-in-one-file",
+          "num": "∑",
+          "examples": [
+            { "label": "All eleven in one file", "valid": "composition-all-eleven-in-one-file", "error": null }
+          ]
+        }
+      ]
+    }
+  ]
+}
