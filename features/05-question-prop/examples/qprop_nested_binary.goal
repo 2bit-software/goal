@@ -1,0 +1,10 @@
+package demo
+
+func g() Result[int, error] {
+    return Result.Ok(1)
+}
+
+func use() Result[int, error] {
+    y := g()? + 1
+    return Result.Ok(y)
+}

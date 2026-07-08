@@ -1,0 +1,21 @@
+package demo
+
+func g() (ok int, err error) {
+	return 1, nil
+}
+
+func outer(x int) (ok int, err error) {
+	return x * 2, nil
+}
+
+func use() (ok int, err error) {
+	q, err := g()
+	if err != nil {
+		return ok, err
+	}
+	y, err := outer(q)
+	if err != nil {
+		return ok, err
+	}
+	return y, nil
+}

@@ -1,0 +1,24 @@
+package users
+
+type User struct {
+	Name string
+}
+
+func find(name string) *User {
+	return nil
+}
+
+func nameLen(u User) int {
+	return len(u.Name)
+}
+
+func lookup(name string) *int {
+	o := find(name)
+	if o == nil {
+		return nil
+	}
+	q := *o
+	v := nameLen(q)
+	some := v
+	return &some
+}

@@ -1,0 +1,18 @@
+package demo
+
+func g() (ok int, err error) {
+	return 1, nil
+}
+
+func f(x int) int {
+	return x + 1
+}
+
+func use() (ok int, err error) {
+	q, err := g()
+	if err != nil {
+		return ok, err
+	}
+	y := f(q)
+	return y, nil
+}

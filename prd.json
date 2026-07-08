@@ -1,116 +1,75 @@
 {
   "project": "goal",
-  "branchName": "ralph/sum-type-methods",
-  "description": "Add methods-on-sum-types to the goal compiler, then convert the interpreter's Value union to a real sum type so no literal omits an unsafe pointer.",
+  "branchName": "ralph/inline-question-hoisting",
+  "description": "Allow the `?` operator anywhere an expression can appear (call arguments, binary/index operands, return payloads), hoisting each nested `?` out of its statement while preserving left-to-right evaluation order.",
   "verifyCommands": [
     "task check-full"
   ],
   "userStories": [
     {
       "id": "US-001",
-      "title": "Lower sum-type receiver methods",
-      "description": "As a goal author, I need a method whose receiver is an enum (or sealed interface) to compile, so that a sum type can carry behaviour instead of only free functions.",
+      "title": "Hoist nested ? in expression position",
+      "description": "As a goal author, I need `?` to work when it is nested inside an expression (call argument, binary operand, return payload) so that I do not have to hand-lift every `?` onto its own line.",
       "acceptanceCriteria": [
-        "A fixture package under internal/backend/testdata/ declares an `enum` with at least two value-receiver methods — one taking a parameter and one returning two values (e.g. `(Value, bool)`) — plus a caller that invokes them as `v.M(...)`; `task build` then `./bin/goal check <fixture>` and `./bin/goal build <fixture>` all exit 0 with no `[go-type-error] invalid receiver type` diagnostic.",
-        "The emitted Go folds each method's signature into the enum's interface method set and, for each method, emits one shared free function holding the body plus one forwarding method per variant that delegates to it — asserted by a backend test that inspects the lowered source.",
-        "A backend test builds and runs the fixture and asserts its output equals a reference implementation written with a hand-authored Go type switch.",
-        "`task check-full` exits 0, and `task fixpoint` reports FIXPOINT OK (existing enums, which have no receiver methods, emit byte-identical Go)."
+        "The emitter transpiles `f(g()?)`, `g()? + 1`, `return Result.Ok(f(g()?))`, `add(g()?, h()?)`, a chained `outer(g()?)?`, and a nested Option `?` (`f(find(x)?)`) instead of failing with `unsupported expression *ast.UnwrapExpr`.",
+        "Each nested `?` reuses the existing statement-position unwrap lowering: the emitted Go contains the same `tmp, err := …; if err != nil { return … }` (Result) or `o := …; if o == nil { return nil }` (Option) form the top-level `?` already produces, bound to a fresh gensym.",
+        "New corpus golden pairs (`*.goal` + `*.go.expected`) under the 05-question-prop examples directory cover single-nested, binary-operand, return-nested, multiple-`?`, chained-`?`, and Option-nested shapes, and `go test ./internal/corpus -count=1` passes with them.",
+        "`go run ./cmd/goal check` on a file that uses nested `?` reports zero `question-*` diagnostics for these valid cases."
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Feature lives in internal/backend/{emit,lower}.goal (mirror the sealed-interface path: a buildEnumMethods pre-pass like pointerReceiverSet; split genEnum so enumDecl can inject method sigs; route in funcDecl when recvBaseType is an enum). Reuse the receiver Field as the free function's first param so the body copies verbatim. Additive: the new path fires only when an enum has receiver methods, so the fixpoint holds. Always `task generate` before the verify-generated gate. When checking with goal, use the freshly built ./bin/goal, never a stale installed binary."
+      "notes": "A proven reference implementation exists in the working tree (internal/backend/emit.goal: `hoisted` field, expr() substitution, hoistStmt/hoistRoots/hoistExpr, UnwrapExpr expr-case). After editing emit.goal you MUST run `task generate` so the committed internal/backend/emit.go matches, or verify-generated fails. After adding example files run `task update-goldens` then `task corpus-gen` to bless the goldens/manifest; the gate then verifies them. This story covers straight-line hoisting only — evaluation ordering of side effects is US-002."
     },
     {
       "id": "US-002",
-      "title": "Lower Result/Option-returning sum-type methods",
-      "description": "As a goal author, I need a sum-type method that returns Result[T,error] or Option[T] to lower correctly, so error-carrying behaviour can live on a sum type.",
+      "title": "Preserve evaluation order for hoisted ?",
+      "description": "As a goal author, I need side-effecting operands that are evaluated before a nested `?` to keep their source order so that hoisting the `?` never changes program behaviour.",
       "acceptanceCriteria": [
-        "A fixture enum method returning `Option[T]` and another returning `Result[T, error]` build and run; the generated free function and its per-variant forwarders agree on the lowered signature (open-E Result lowers to the native named `(ok T, err error)` returns, Option to `*T`).",
-        "A backend test builds and runs the fixture against a reference implementation and asserts identical behaviour, including the error/None path.",
-        "`task check-full` exits 0 and `task fixpoint` reports FIXPOINT OK."
+        "For `add(plain(), g()?)` the emitted Go binds `plain()` to a temp BEFORE the `g()?` temp (source order preserved), and for `add3(a()?, plain(), b()?)` the emitted temps appear in source order a, plain, b.",
+        "Corpus golden pairs capture the ordered lowering for both cases above and `go test ./internal/corpus -count=1` passes.",
+        "Operands that evaluate no function call (integer/string literals, `x + 1`, field reads) are NOT hoisted: the emitted Go for `f(1, g()?)` binds no temp for `1`.",
+        "The verify-generated stage stays green, i.e. the committed generated Go for all `?`-free code in `./internal` is byte-identical after this change."
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Depends on US-001. The forwarder must reproduce funcSig's Result/Option special-casing; verify the free function and forwarder emit the same return shape."
+      "passes": false,
+      "notes": "Reference implementation: the ANF-prefix pass in emit.goal (hoistArgs binds call-valued operands preceding the last `?`-carrying operand; containsUnwrap/containsCall predicates; `hoisted` keyed by ast.Expr). Only bind operands that contain a call, so pure expressions stay inline and `?`-free output is unchanged. Re-run `task generate` after editing emit.goal."
     },
     {
       "id": "US-003",
-      "title": "Migrate interpreter Value payload reads to accessors",
-      "description": "As a maintainer, I need every read of a Value payload to go through an accessor, so the representation can later change in one place.",
+      "title": "Reject ? on short-circuit && / || side",
+      "description": "As a goal author, I need a clear error when I place `?` on the conditionally-evaluated side of `&&` or `||` so that I am never silently miscompiled by unconditional hoisting.",
       "acceptanceCriteria": [
-        "internal/interp/value.goal defines accessor methods/functions covering every Value payload and the discriminant (e.g. kind(), asInt(), asStruct(), asSlice(), asMap(), asFunc(), asVariant(), plus is-predicates), each with test coverage.",
-        "`grep -rEn '\\.(Int|Float|Str|Bool|Slice|Variant|Struct|Map)\\b' internal/interp --include='*.goal' | grep -v '/value.goal' | wc -l` prints 0 (no direct Value payload field read remains outside value.goal).",
-        "`task check-full` exits 0 (behaviour-preserving refactor; all interpreter and corpus behavioural tests still pass)."
+        "Transpiling `cond && (g()? > 0)` fails with a diagnostic that names the short-circuit restriction (a message distinct from the generic `unsupported expression %T`).",
+        "A `?` inside a `match` arm body or a function literal is NOT hoisted above the enclosing statement: a corpus golden shows the arm-local / closure-local `?` lowering unchanged from today.",
+        "A \"Rejected with\" error block is added to the 05-question-prop by-example markdown for the `&& g()?` case, and `go test ./internal/byexample -count=1` validates that the recorded error matches the emitter's actual message."
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Behaviour-preserving: accessors wrap the CURRENT flat struct; the representation does not change in this story. `.Kind` and `.Func` reads are intentionally NOT gated here (they collide with token.Kind/ast.BasicLit.Kind and the doctest Func field); the representation flip (US-005) forces the remaining Value.Kind/Value.Func sites via compile failure."
+      "passes": false,
+      "notes": "The hoist walk must not descend into MatchExpr or FuncLit (they own their `?`). Reference: the LAND/LOR branch of hoistExpr calls e.fail when the RHS contains a `?`. Re-run `task generate` after editing emit.goal."
     },
     {
       "id": "US-004",
-      "title": "Route interpreter Value constructions through constructors",
-      "description": "As a maintainer, I need every Value to be built through a constructor, so the representation can later change in one place.",
+      "title": "Document nested ? in feature docs",
+      "description": "As a goal learner, I need the by-example docs and the generated guide to show nested `?` so that the new capability is discoverable and machine-verified.",
       "acceptanceCriteria": [
-        "internal/interp/value.goal defines a constructor for each Value kind (e.g. newInt, newFloat, newStr, newBool, newStruct, newSlice, newMap, newFunc, newVariant, nilValue), each with test coverage.",
-        "`grep -rEn 'Value\\{(Kind|\\})' internal/interp --include='*.goal' | grep -v '/value.goal' | wc -l` prints 0 (no tagged-union or zero Value literal is built outside value.goal; `[]Value{...}` slice literals are unaffected).",
-        "`task check-full` exits 0 (behaviour-preserving refactor; all tests pass)."
+        "`features/05-question-prop/TRANSPILE.md` gains a \"nested `?`\" section with at least one \"Transpiles to\" goal-to-Go pair covering `f(g()?)` and one covering the evaluation-order case, and `go test ./internal/byexample -count=1` parses and validates them against live transpilation.",
+        "The generated guide includes the nested-`?` example and `go test ./internal/guidetest -count=1` passes."
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Behaviour-preserving: constructors wrap the CURRENT flat struct. Shares the value.goal edit surface with US-003."
+      "passes": false,
+      "notes": "By-example blocks are transpiled live by the test binary, so the Go in each block must exactly match current emitter output."
     },
     {
       "id": "US-005",
-      "title": "Flip Value to a sum type",
-      "description": "As a maintainer, I need Value represented as a real sum type so that no literal omits an unsafe zero pointer.",
+      "title": "Regenerate AI-KNOWLEDGE-BOOTSTRAP",
+      "description": "As a maintainer, I need AI-KNOWLEDGE-BOOTSTRAP.md refreshed after the new nested-`?` examples and short-circuit rejection so that generated agent context stays accurate and does not drift.",
       "acceptanceCriteria": [
-        "Value is declared as a sum type (an `enum` or `sealed interface` with one payload struct per kind) in internal/interp/value.goal; the flat multi-pointer struct and its Kind discriminant field are gone.",
-        "The former union methods (Field, Equal, String) are defined on the sum type — via per-variant methods and/or the enum-receiver-method feature from US-001 — and the accessors/constructors from US-003/US-004 are re-expressed against the new representation with their call sites unchanged.",
-        "`task build` then `./bin/goal check ./internal 2>&1 | grep '\\[unsafe-zero\\]' | grep -c 'of .Value. omits'` prints 0 (no elided-Value-literal diagnostic remains).",
-        "`task check-full` exits 0 and `task fixpoint` reports FIXPOINT OK (interpreter and corpus behavioural tests confirm behaviour is preserved)."
+        "AI-KNOWLEDGE-BOOTSTRAP.md is regenerated with `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md` and reflects the nested-`?` capability and the short-circuit rejection.",
+        "Re-running `go run ./cmd/goal ai` and diffing against the committed AI-KNOWLEDGE-BOOTSTRAP.md produces no differences (the committed copy is up to date)."
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Depends on US-001 (and US-002 if any converted method returns Result/Option) and US-003/US-004. Because the payload fields no longer exist, any read/construction site missed earlier now fails to compile — this story owns migrating the remaining Value.Kind/Value.Func dispatch sites. Value is used only within internal/interp (no external importer), so the blast radius is one package."
-    },
-    {
-      "id": "US-006",
-      "title": "Assert interpreter self-check is clean",
-      "description": "As a maintainer, I need the interpreter's unsafe-zero self-check to reach zero and be recorded, so the boundary that was documented as structural is now enforceable.",
-      "acceptanceCriteria": [
-        "`task build` then `./bin/goal check ./internal 2>&1 | grep '\\[unsafe-zero\\]' | grep -c '^internal/interp/'` prints 0 (any residual helper-struct omissions — StructValue/MapValue/Variant/FuncValue/Env — are fixed by setting the field explicitly or modelling it as Option[T]).",
-        "A dated DECISIONS.md entry records the Value sum-type conversion, supersedes the earlier 'defer the Value refactor' decision, and states the whole-repo invariant that `goal check ./internal` now emits zero `[unsafe-zero]` diagnostics.",
-        "`task check-full` exits 0 and `task fixpoint` reports FIXPOINT OK."
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "Depends on US-005. If US-005 already drove internal/interp to 0, this story is the assertion plus the ledger entry; otherwise it clears the last non-Value helper-struct omissions first."
-    },
-    {
-      "id": "US-007",
-      "title": "Diagnose unsupported sum-type receivers",
-      "description": "As a goal author, I need a clear compiler error when I write an unsupported receiver form on a sum type, so I get a located goal diagnostic instead of a raw Go type error.",
-      "acceptanceCriteria": [
-        "`./bin/goal check` on a fixture with a pointer receiver on an enum (`func (v *SomeEnum) m()`) reports a specific, source-located goal diagnostic that names the unsupported receiver form — not a raw `[go-type-error]`.",
-        "The new diagnostic code is registered in the guide catalog (internal/guide) and a sema/backend test pins the diagnostic message and location.",
-        "`task check-full` exits 0 and `task fixpoint` reports FIXPOINT OK."
-      ],
-      "priority": 7,
-      "passes": true,
-      "notes": "Feature hardening; not required by the Value conversion (Value's methods are value-receiver). Depends on US-001."
-    },
-    {
-      "id": "US-008",
-      "title": "Document methods on sum types",
-      "description": "As a goal user, I need the new methods-on-sum-types capability documented and exercised, so the feature is discoverable and pinned against drift.",
-      "acceptanceCriteria": [
-        "A committed example or doctest fixture demonstrates a sum type carrying a method and is covered by an existing round-trip/doctest test that runs under `task test`.",
-        "The capability is described in the guide (internal/guide) and AI-KNOWLEDGE-BOOTSTRAP.md is regenerated with no drift, verified by the guide/knowledge golden test passing.",
-        "`task check-full` exits 0."
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "Depends on US-001/US-002. If US-007 added a diagnostic, cross-reference it from the docs."
+      "passes": false,
+      "notes": "Per project memory, by-example / error features require regenerating AI-KNOWLEDGE-BOOTSTRAP.md. The generator is `goal ai`; the file header documents the regeneration command."
     }
   ]
 }

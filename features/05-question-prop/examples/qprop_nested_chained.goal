@@ -1,0 +1,14 @@
+package demo
+
+func g() Result[int, error] {
+    return Result.Ok(1)
+}
+
+func outer(x int) Result[int, error] {
+    return Result.Ok(x * 2)
+}
+
+func use() Result[int, error] {
+    y := outer(g()?)?
+    return Result.Ok(y)
+}

@@ -1,0 +1,26 @@
+package demo
+
+func g() (ok int, err error) {
+	return 1, nil
+}
+
+func h() (ok int, err error) {
+	return 2, nil
+}
+
+func add(a int, b int) int {
+	return a + b
+}
+
+func use() (ok int, err error) {
+	q, err := g()
+	if err != nil {
+		return ok, err
+	}
+	q1, err := h()
+	if err != nil {
+		return ok, err
+	}
+	y := add(q, q1)
+	return y, nil
+}

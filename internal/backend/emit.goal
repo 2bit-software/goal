@@ -109,6 +109,11 @@ type emitter struct {
 	// curated stdlib table or the two-value default. They thread out through
 	// emitFileWith and never affect the emitted bytes, so goldens stay byte-identical.
 	warns []pipeline.Warning
+	// hoisted maps an expression pre-lifted out of a statement — a nested `?`
+	// (`tmp := <operand>?`) or a side-effecting operand that precedes a `?`
+	// (`tmp := <operand>`) — to its temp name, so expr() emits the temp in place of
+	// the original node. Keyed by node identity. SPIKE: inline-`?` hoisting.
+	hoisted map[ast.Expr]string
 }
 
 // emitFileWith is emitFile with the prelude-suppression knob the package driver
@@ -798,6 +803,10 @@ func (e *emitter) blockInner(b *ast.BlockStmt) {
 		if e.srcFile != "" && s.Pos().IsValid() {
 			e.p(fmt.Sprintf("/*line %s:%d*/", e.srcFile, s.Pos().Line))
 		}
+		// Lift any nested `?` in s to preceding `tmp := <operand>?` statements, then
+		// emit s with each `?` replaced by its temp. No-op for statements with no
+		// nested `?`. SPIKE: inline-`?` hoisting.
+		e.hoistStmt(s)
 		e.stmt(s)
 		e.p("\n")
 	}
@@ -1119,6 +1128,12 @@ func (e *emitter) rangeStmt(s *ast.RangeStmt) {
 }
 
 func (e *emitter) expr(x ast.Expr) {
+	// A node hoisted out of this statement (a nested `?` or a preceding
+	// side-effecting operand) emits its temp in place of the original. SPIKE.
+	if name, ok := e.hoisted[x]; ok {
+		e.p(name)
+		return
+	}
 	// An Option construction (`Option.None` / `Option.Some(x)`) produced in any
 	// value position — a var/assign RHS, a call argument, a struct field, or a
 	// slice/map element — lowers to its `*T` pointer encoding here, so optional
@@ -1267,8 +1282,264 @@ func (e *emitter) expr(x ast.Expr) {
 				e.expr(x.Elt)
 			}
 		}
+		*ast.UnwrapExpr(x) => {
+			// A nested `?` is pre-lifted by hoistStmt to a `tmp := <operand>?`
+			// statement; emit the temp here. An un-hoisted one (e.g. refused on
+			// the short-circuit side of && / ||) still errors.
+			if name, ok := e.hoisted[x]; ok {
+				e.p(name)
+			} else {
+				e.fail("unsupported expression *ast.UnwrapExpr (a `?` in this position is not hoistable)")
+			}
+		}
 		_ => {
 			e.fail("unsupported expression %T", x)
+		}
+	}
+}
+
+// hoistStmt lifts every nested `?` in s — and every side-effecting operand that
+// precedes one — out of the statement, so a nested `?` reuses the tested
+// statement-position unwrap lowering and no side effect is reordered. The lifted
+// nodes are recorded in e.hoisted so expr() substitutes their temps. SPIKE.
+func (e *emitter) hoistStmt(s ast.Stmt) {
+	if e.hoisted == nil {
+		e.hoisted = map[ast.Expr]string{}
+	}
+	for _, r := range hoistRoots(s) {
+		e.hoistExpr(r)
+	}
+}
+
+// hoistRoots returns the expressions of s that may carry a nested `?`. A statement's
+// own top-level `?` (assignment RHS or a bare expr `?`) is left to the existing
+// handlers by returning its operand rather than the `?` node itself. SPIKE.
+func hoistRoots(s ast.Stmt) []ast.Expr {
+	match s {
+		*ast.ExprStmt(x) => {
+			if u, ok := x.X.(*ast.UnwrapExpr); ok {
+				return []ast.Expr{u.X}
+			}
+			return []ast.Expr{x.X}
+		}
+		*ast.AssignStmt(x) => {
+			if len(x.Rhs) == 1 {
+				if u, ok := x.Rhs[0].(*ast.UnwrapExpr); ok {
+					return []ast.Expr{u.X}
+				}
+			}
+			return x.Rhs
+		}
+		*ast.ReturnStmt(x) => {
+			return x.Results
+		}
+		*ast.IfStmt(x) => {
+			return []ast.Expr{x.Cond}
+		}
+		_ => {
+			return nil
+		}
+	}
+}
+
+// hoistExpr walks x in evaluation order, emitting a hoist for each nested `?`
+// (a `tmp := <operand>?` via the statement-position unwrap) and for each
+// side-effecting operand that precedes a `?` (a plain `tmp := <operand>`), so the
+// rewritten statement observes the same evaluation order. A `?` on the
+// conditionally-evaluated side of && / || is refused. SPIKE.
+func (e *emitter) hoistExpr(x ast.Expr) {
+	if x == nil || e.err != nil {
+		return
+	}
+	match x {
+		*ast.UnwrapExpr(u) => {
+			e.hoistExpr(u.X)
+			t := e.gensym("q")
+			e.unwrap(t, u, false, ":=")
+			e.p("\n")
+			e.hoisted[u] = t
+		}
+		*ast.CallExpr(c) => {
+			e.hoistExpr(c.Fun)
+			e.hoistArgs(c.Args)
+		}
+		*ast.BinaryExpr(b) => {
+			if b.Op == token.LAND || b.Op == token.LOR {
+				e.hoistExpr(b.X)
+				if containsUnwrap(b.Y) {
+					e.fail("a `?` on the short-circuit side of && / || is not supported; bind it to a variable on its own line first")
+				}
+			} else if containsUnwrap(b.Y) && !containsUnwrap(b.X) && containsCall(b.X) {
+				e.bindTemp(b.X)
+				e.hoistExpr(b.Y)
+			} else {
+				e.hoistExpr(b.X)
+				e.hoistExpr(b.Y)
+			}
+		}
+		*ast.ParenExpr(p) => {
+			e.hoistExpr(p.X)
+		}
+		*ast.UnaryExpr(u) => {
+			e.hoistExpr(u.X)
+		}
+		*ast.StarExpr(s) => {
+			e.hoistExpr(s.X)
+		}
+		*ast.IndexExpr(i) => {
+			if containsUnwrap(i.Index) && !containsUnwrap(i.X) && containsCall(i.X) {
+				e.bindTemp(i.X)
+			} else {
+				e.hoistExpr(i.X)
+			}
+			e.hoistExpr(i.Index)
+		}
+		*ast.SelectorExpr(s) => {
+			e.hoistExpr(s.X)
+		}
+		*ast.KeyValueExpr(kv) => {
+			e.hoistExpr(kv.Value)
+		}
+		*ast.CompositeLit(cl) => {
+			e.hoistArgs(cl.Elts)
+		}
+		_ => {
+		}
+	}
+}
+
+// hoistArgs hoists a left-to-right operand list: each operand carrying a `?` is
+// hoisted in place, and each `?`-free operand that precedes the last `?`-carrying
+// one and evaluates a call is bound to a temp, so a lifted `?` never jumps ahead of
+// an earlier side effect. SPIKE.
+func (e *emitter) hoistArgs(args []ast.Expr) {
+	last := -1
+	for k, a := range args {
+		if containsUnwrap(a) {
+			last = k
+		}
+	}
+	for i, a := range args {
+		if containsUnwrap(a) {
+			e.hoistExpr(a)
+		} else if i < last && containsCall(a) {
+			e.bindTemp(a)
+		}
+	}
+}
+
+// bindTemp lifts a `?`-free, side-effecting operand to a preceding `tmp := <operand>`
+// and records it so expr() emits the temp in its place, pinning its evaluation
+// before a later hoisted `?`. SPIKE.
+func (e *emitter) bindTemp(x ast.Expr) {
+	t := e.gensym("q")
+	e.p(t + " := ")
+	e.expr(x)
+	e.p("\n")
+	e.hoisted[x] = t
+}
+
+// containsUnwrap reports whether x contains a `?` that this statement would hoist —
+// reachable through expr(), not inside a nested function literal or match arm. SPIKE.
+func containsUnwrap(x ast.Expr) bool {
+	if x == nil {
+		return false
+	}
+	match x {
+		*ast.UnwrapExpr(u) => {
+			return true
+		}
+		*ast.CallExpr(c) => {
+			if containsUnwrap(c.Fun) {
+				return true
+			}
+			for _, a := range c.Args {
+				if containsUnwrap(a) {
+					return true
+				}
+			}
+			return false
+		}
+		*ast.BinaryExpr(b) => {
+			return containsUnwrap(b.X) || containsUnwrap(b.Y)
+		}
+		*ast.ParenExpr(p) => {
+			return containsUnwrap(p.X)
+		}
+		*ast.UnaryExpr(u) => {
+			return containsUnwrap(u.X)
+		}
+		*ast.StarExpr(s) => {
+			return containsUnwrap(s.X)
+		}
+		*ast.IndexExpr(i) => {
+			return containsUnwrap(i.X) || containsUnwrap(i.Index)
+		}
+		*ast.SelectorExpr(s) => {
+			return containsUnwrap(s.X)
+		}
+		*ast.KeyValueExpr(kv) => {
+			return containsUnwrap(kv.Value)
+		}
+		*ast.CompositeLit(cl) => {
+			for _, el := range cl.Elts {
+				if containsUnwrap(el) {
+					return true
+				}
+			}
+			return false
+		}
+		_ => {
+			return false
+		}
+	}
+}
+
+// containsCall reports whether x evaluates any function call now, so hoisting a
+// later `?` above it would reorder an observable effect. A call inside a nested
+// function literal or match arm is not evaluated here and does not count. SPIKE.
+func containsCall(x ast.Expr) bool {
+	if x == nil {
+		return false
+	}
+	match x {
+		*ast.CallExpr(c) => {
+			return true
+		}
+		*ast.UnwrapExpr(u) => {
+			return containsCall(u.X)
+		}
+		*ast.BinaryExpr(b) => {
+			return containsCall(b.X) || containsCall(b.Y)
+		}
+		*ast.ParenExpr(p) => {
+			return containsCall(p.X)
+		}
+		*ast.UnaryExpr(u) => {
+			return containsCall(u.X)
+		}
+		*ast.StarExpr(s) => {
+			return containsCall(s.X)
+		}
+		*ast.IndexExpr(i) => {
+			return containsCall(i.X) || containsCall(i.Index)
+		}
+		*ast.SelectorExpr(s) => {
+			return containsCall(s.X)
+		}
+		*ast.KeyValueExpr(kv) => {
+			return containsCall(kv.Value)
+		}
+		*ast.CompositeLit(cl) => {
+			for _, el := range cl.Elts {
+				if containsCall(el) {
+					return true
+				}
+			}
+			return false
+		}
+		_ => {
+			return false
 		}
 	}
 }

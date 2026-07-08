@@ -1,0 +1,13 @@
+package demo
+
+func g() Result[int, error] {
+    return Result.Ok(1)
+}
+
+func f(x int) int {
+    return x + 1
+}
+
+func use() Result[int, error] {
+    return Result.Ok(f(g()?))
+}

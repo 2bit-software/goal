@@ -1,0 +1,18 @@
+package users
+
+type User struct {
+    Name string
+}
+
+func find(name string) Option[User] {
+    return Option.None
+}
+
+func nameLen(u User) int {
+    return len(u.Name)
+}
+
+func lookup(name string) Option[int] {
+    v := nameLen(find(name)?)
+    return Option.Some(v)
+}
