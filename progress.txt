@@ -11,6 +11,32 @@
 - The project verify command is `task check` (vet + build + verify-generated +
   go test ./...). Zero-dependency: stdlib `testing` only, no testify.
 - morse-code `history/` is gitignored — initiative artifacts are not committed.
+- Emit-lifecycle ownership is keyed on the goal line-1 marker, defined ONCE as
+  `goalGeneratedMarker` in cmd/goal/main.go; reuse `IsGoalGenerated` rather than
+  re-deriving the marker. Refactoring an emitted literal into a same-valued
+  constant keeps `verify-generated` green with zero regen (no internal/ churn).
+
+## [2026-07-09T05:23:31Z] - US-002
+- Added the single, version-independent goal-generated ownership predicate
+  `IsGoalGenerated(content []byte) bool` in cmd/goal/main.go, keyed only on the
+  file's first line equalling the goal line-1 marker. Factored that marker into a
+  shared `goalGeneratedMarker` const that `goalGeneratedHeader` now also uses, so
+  emit and the matcher share exactly one definition. Ignores line-2 version;
+  tolerates a single CRLF `\r`; total function (empty content -> false).
+- Added table-driven `TestIsGoalGenerated` (cmd/goal/main_test.go): true for
+  `vdev` and `v9.9.9`; false for protoc-gen-go, stringer, headerless, a marker
+  below line 1, and empty content.
+- Files changed: cmd/goal/main.go, cmd/goal/main_test.go.
+- Verified: `task check` exit 0 (drift gate green — the marker literal is
+  unchanged, so no re-emit was needed and no internal/**/*.go churned). Commit
+  ad32c02.
+- Learnings for future iterations:
+  - US-005 (prune) and US-006 (clean) must call `IsGoalGenerated` — do not
+    re-derive the marker; it lives in `goalGeneratedMarker`.
+  - Refactoring an emitted literal into a constant with an identical value keeps
+    verify-generated green with zero regen — safe pattern for touching emit code
+    without the 76-file header churn US-001 required.
+---
 
 ## [2026-07-09T05:14:36Z] - US-001
 - Made `goal build --emit` write a goal-owned generated-code header on every .go

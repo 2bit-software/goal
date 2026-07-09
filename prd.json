@@ -33,7 +33,7 @@
         "The matcher's tests run under `task check`."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "This is the safety core reused by US-005 and US-006. Version-agnostic on purpose: matching the exact version would strand files emitted by an older goal so prune could never reclaim them."
     },
     {
