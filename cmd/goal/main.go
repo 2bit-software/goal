@@ -846,7 +846,7 @@ func cmdBuild(root string, emit bool, emitDir string, out, errOut io.Writer) err
 	}
 	reportWarnings(ts, errOut)
 	if emit {
-		return emitFiles(ts, emitDir, out)
+		return emitFiles(ts, emitDir, out, errOut)
 	}
 	return goToolchain(root, ts, out, errOut, "build", "./...")
 }
@@ -876,7 +876,7 @@ func cmdRun(root string, emit bool, emitDir string, progArgs []string, out, errO
 	}
 	reportWarnings(ts, errOut)
 	if emit {
-		if err := emitFiles(ts, emitDir, out); err != nil {
+		if err := emitFiles(ts, emitDir, out, errOut); err != nil {
 			return err
 		}
 	}
@@ -1473,9 +1473,10 @@ func loadEmitManifest(path string) (*emitManifest, error) {
 // emitFiles writes the generated Go to disk: beside each .goal by default, or mirrored
 // under emitDir when given. Test sidecars are written too so doctests can run. Every
 // file is prefixed with the goal-generated header (see goalGeneratedHeader). After a
-// successful run it writes an emit manifest (goalManifestName) at the emit root
+// successful run it warns (to errOut) about any orphaned generated files (see
+// warnOrphanedFiles) and writes an emit manifest (goalManifestName) at the emit root
 // recording every .go path produced, so a later build can detect orphaned output.
-func emitFiles(ts []transpiled, emitDir string, out io.Writer) error {
+func emitFiles(ts []transpiled, emitDir string, out, errOut io.Writer) error {
 	header := goalGeneratedHeader(version)
 	var emitted []string
 	for _, t := range ts {
@@ -1496,7 +1497,46 @@ func emitFiles(ts []transpiled, emitDir string, out io.Writer) error {
 		}
 	}
 	root := emitManifestRoot(ts, emitDir)
-	return writeEmitManifest(root, manifestRelPaths(root, emitted))
+	current := manifestRelPaths(root, emitted)
+	// Warn about orphans BEFORE overwriting the prior manifest — the diff needs
+	// the previous run's file set, which writeEmitManifest is about to replace.
+	warnOrphanedFiles(root, current, errOut)
+	return writeEmitManifest(root, current)
+}
+
+// warnOrphanedFiles reports, to errOut, any goal-generated .go file that a prior
+// emit produced but this run did not (an orphan): its source is gone, so the
+// stale .go would silently break the later Go build. An orphan is a path in the
+// prior manifest that (a) is absent from the current emit set, (b) still exists
+// on disk, and (c) still passes the goal ownership matcher (IsGoalGenerated) — a
+// file whose header a user removed by hand is no longer goal-owned and is left
+// alone. This is detect-and-surface only: nothing is ever deleted, and the
+// absence of a prior manifest (first emit) yields no warnings and no error, so
+// the build's exit status is unaffected either way. Deletion is the opt-in job
+// of `--prune` (US-005) and `goal clean` (US-006).
+func warnOrphanedFiles(root string, current []string, errOut io.Writer) {
+	prior, err := loadEmitManifest(filepath.Join(root, goalManifestName))
+	if err != nil {
+		return // no prior manifest (or unreadable) — nothing to compare against
+	}
+	inCurrent := make(map[string]bool, len(current))
+	for _, rel := range current {
+		inCurrent[rel] = true
+	}
+	for _, rel := range prior.Files {
+		if inCurrent[rel] {
+			continue
+		}
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		content, err := os.ReadFile(p)
+		if err != nil {
+			continue // orphan candidate no longer on disk
+		}
+		if !IsGoalGenerated(content) {
+			continue // header removed by hand — not goal-owned anymore
+		}
+		fmt.Fprintln(errOut, "warning: orphaned generated file "+p)
+	}
 }
 
 // soleMainDir returns the directory of the one `package main` among the transpiled

@@ -356,6 +356,68 @@ func TestEmitWritesManifest(t *testing.T) {
 	}
 }
 
+// TestEmitOrphanWarning proves `goal build --emit` warns (US-004) about a
+// previously-generated file that this run no longer produces: a prior-manifest
+// path that still exists on disk and is goal-generated, but is absent from the
+// current emit set, is reported to stderr as
+// `warning: orphaned generated file <path>`. A prior-manifest path whose header
+// was removed by hand (no longer goal-owned) is NOT warned about; the warning
+// leaves exit status untouched (build exits 0); and nothing is deleted.
+func TestEmitOrphanWarning(t *testing.T) {
+	dir := goalModule(t, multiPkgFiles())
+
+	// First emit seeds a real manifest and the current .go output.
+	var out, errOut bytes.Buffer
+	if err := run([]string{"build", "--emit", dir}, &out, &errOut); err != nil {
+		t.Fatalf("seed emit failed: %v\nstderr: %s", err, errOut.String())
+	}
+
+	// Seed two prior-manifest entries the current source will NOT produce:
+	//  - a goal-generated orphan (SHOULD warn),
+	//  - a hand-written file with its header stripped (SHOULD NOT warn).
+	orphan := filepath.Join(dir, "internal", "foo", "gone.go")
+	if err := os.WriteFile(orphan, []byte(goalGeneratedHeader("dev")+"package foo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stripped := filepath.Join(dir, "internal", "foo", "plain.go")
+	if err := os.WriteFile(stripped, []byte("package foo\n\nfunc Plain() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := loadEmitManifest(filepath.Join(dir, ".goal-manifest.json"))
+	if err != nil {
+		t.Fatalf("loading seeded manifest: %v", err)
+	}
+	augmented := append([]string{}, m.Files...)
+	augmented = append(augmented, "internal/foo/gone.go", "internal/foo/plain.go")
+	if err := writeEmitManifest(dir, augmented); err != nil {
+		t.Fatalf("rewriting manifest with orphans: %v", err)
+	}
+
+	// Second emit: the orphaned files are in the prior manifest but not produced.
+	out.Reset()
+	errOut.Reset()
+	if err := run([]string{"build", "--emit", dir}, &out, &errOut); err != nil {
+		t.Fatalf("emit with orphans failed (should exit 0): %v\nstderr: %s", err, errOut.String())
+	}
+
+	stderr := errOut.String()
+	wantWarn := "warning: orphaned generated file " + orphan
+	if !strings.Contains(stderr, wantWarn) {
+		t.Errorf("missing orphan warning.\n got stderr: %q\nwant substring: %q", stderr, wantWarn)
+	}
+	if strings.Contains(stderr, stripped) {
+		t.Errorf("warned about a header-stripped (non-goal-owned) file: %q", stderr)
+	}
+
+	// Warn, not delete: both files must still be on disk.
+	if _, err := os.Stat(orphan); err != nil {
+		t.Errorf("orphaned goal-generated file was removed (should only warn): %v", err)
+	}
+	if _, err := os.Stat(stripped); err != nil {
+		t.Errorf("hand-written file was removed: %v", err)
+	}
+}
+
 // goal check runs BOTH stages: the depth (go/types) stage catches an elided composite
 // literal that omits a field whose zero is UNSAFE — a safety-only feature-08 violation the
 // lexical stage cannot see on an elided literal. Omitting the nil-map field `m` (whose zero
