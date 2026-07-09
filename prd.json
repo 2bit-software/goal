@@ -47,7 +47,7 @@
         "Test: emit a fixture project, then assert the manifest's file set equals the set of emitted paths and that loading the manifest round-trips that set."
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "A live directory scan cannot see a package whose last .goal source was deleted (goal never revisits that dir); the manifest is what remembers goal used to emit there. Prefer a committed manifest so a fresh clone can still prune deleted-package orphans."
     },
     {

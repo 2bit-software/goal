@@ -16,6 +16,33 @@
   re-deriving the marker. Refactoring an emitted literal into a same-valued
   constant keeps `verify-generated` green with zero regen (no internal/ churn).
 
+## [2026-07-09T05:33:20Z] - US-003
+- `goal build --emit` now writes an emit manifest (.goal-manifest.json) at the
+  emit root after a successful run: JSON `{generator:"goal", version, files}`
+  where `files` are the module-relative, slash-separated, sorted+deduped paths
+  of every .go file emitted that run. Added `emitManifest` type,
+  `goalManifestName` const, `emitManifestRoot` (emitDir if set, else module root
+  via moduleInfo, else first pkg dir), `manifestRelPaths`, `writeEmitManifest`,
+  `loadEmitManifest`; `emitFiles` collects written paths and writes the manifest
+  before returning.
+- Added `TestEmitWritesManifest` (cmd/goal/main_test.go): emits multiPkgFiles,
+  walks the tree for *.go, asserts the manifest set == emitted set (no extra/
+  missing, never lists itself), generator=="goal", non-empty version, and a
+  round-trip via loadEmitManifest.
+- Files changed: cmd/goal/main.go, cmd/goal/main_test.go. Commit 673527d.
+- Verified: `task check` exit 0 (drift gate green — the generate/verify steps
+  emit into _bootstrap/*, so the manifest lands outside internal/* and is not a
+  .go file; verify-generated neither copies nor diffs it, zero internal churn).
+- Learnings for future iterations:
+  - US-004/US-005 consume this manifest: load the PRIOR manifest via
+    `loadEmitManifest`, then an orphan is a prior path that still exists,
+    `IsGoalGenerated`, and is absent from the current emit set.
+  - The manifest root convention (`emitManifestRoot`) is the base for relative
+    paths — reuse it so prior/current path sets are comparable.
+  - Emitting into an `--emit=dir` keeps generated artifacts (incl. the manifest)
+    out of the source tree — the pattern the drift gate relies on.
+---
+
 ## [2026-07-09T05:23:31Z] - US-002
 - Added the single, version-independent goal-generated ownership predicate
   `IsGoalGenerated(content []byte) bool` in cmd/goal/main.go, keyed only on the
