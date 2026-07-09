@@ -77,6 +77,8 @@ message:
     - `-inplace` — write changes back to each file instead of printing to stdout
 - `goal fmt [-w] [path]` — format .goal source into the canonical, comment-preserving layout
     - `-w` — write the formatted result back to each file instead of printing to stdout
+- `goal clean [-n] [path]` — remove goal-generated .go files under a path (only files goal generated are deleted)
+    - `-n` — dry run: list the goal-generated files that would be removed, delete nothing
 - `goal ai [section]` — print the AI bootstrap guide (how to write goal) to stdout
 - `goal category [name]` — list the language features, or print one feature's full reference
 - `goal lsp` — run the language server (editor diagnostics) over stdio
