@@ -1,0 +1,11 @@
+package sig
+
+// discard takes an unnamed generic type (Option[int]) in parameter position.
+func discard(Option[int]) {}
+
+// lookup returns an unnamed generic type (Option[string]) in result position,
+// alongside another unnamed result, exercising the balanced-bracket scan on
+// both sides of a signature.
+func lookup() ([]int, Option[string]) {
+    return nil, Option.None
+}

@@ -1215,6 +1215,14 @@
       "expected": "testdata/result_qprop_arity.go.expected",
       "mode": "file",
       "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-unnamed_generic_sig",
+      "kind": "transpile",
+      "input": "testdata/unnamed_generic_sig.goal",
+      "expected": "testdata/unnamed_generic_sig.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
     }
   ]
 }

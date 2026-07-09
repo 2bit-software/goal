@@ -628,54 +628,78 @@ func (p *parser) nameThenType() bool {
 	/*line parser.goal:724*/ for p.kindAt(i) == token.IDENT && p.kindAt(i+1) == token.COMMA {
 		/*line parser.goal:725*/ i += 2
 	}
-	/*line parser.goal:727*/ return p.kindAt(i) == token.IDENT && startsTypeKind(p.kindAt(i+1))
+	/*line parser.goal:727*/ if p.kindAt(i) != token.IDENT {
+		/*line parser.goal:728*/ return false
+	}
+	/*line parser.goal:734*/ if p.kindAt(i+1) == token.LBRACK {
+		/*line parser.goal:735*/ return startsTypeKind(p.kindAt(p.afterBracketGroup(i + 1)))
+	}
+	/*line parser.goal:737*/ return startsTypeKind(p.kindAt(i + 1))
 }
 
-//line parser.goal:731
-func (p *parser) parseTypeOrVariadic() ast.Expr {
-	/*line parser.goal:732*/ if p.at(token.ELLIPSIS) {
-		/*line parser.goal:733*/ e := p.advance()
-		/*line parser.goal:734*/ return &ast.Ellipsis{Ellipsis: e.Pos, Elt: p.parseType()}
-	}
-	/*line parser.goal:736*/ return p.parseType()
-}
-
-//line parser.goal:746
-func (p *parser) parseResults(paramsEnd token.Pos) *ast.FieldList {
-	/*line parser.goal:747*/ if p.cur().Pos.Line != paramsEnd.Line {
-		/*line parser.goal:748*/ return nil
-	}
-	/*line parser.goal:750*/ if p.at(token.LPAREN) {
-		/*line parser.goal:751*/ return p.parseParamList()
-	}
-	/*line parser.goal:753*/ if p.startsType() {
-		/*line parser.goal:754*/ return &ast.FieldList{List: []*ast.Field{{Type: p.parseType()}}}
-	}
-	/*line parser.goal:756*/ return nil
-}
-
-//line parser.goal:769
-func (p *parser) parseBlock() *ast.BlockStmt {
-	/*line parser.goal:770*/ lb := p.expect(token.LBRACE)
-	/*line parser.goal:771*/ b := &ast.BlockStmt{Lbrace: lb.Pos}
-	/*line parser.goal:772*/ for !p.at(token.RBRACE) && !p.at(token.EOF) {
-		/*line parser.goal:775*/ if p.at(token.DOC_COMMENT) {
-			/*line parser.goal:776*/ p.advance()
-			/*line parser.goal:777*/ continue
+//line parser.goal:742
+func (p *parser) afterBracketGroup(open int) int {
+	/*line parser.goal:743*/ depth := 0
+	/*line parser.goal:744*/ for i := open; ; i++ {
+		/*line parser.goal:745*/ switch p.kindAt(i) {
+		case token.EOF:
+			return i
+		case token.LBRACK:
+			depth++
+		case token.RBRACK:
+			depth--
+			if depth == 0 {
+				/*line parser.goal:753*/ return i + 1
+			}
 		}
-		/*line parser.goal:779*/ b.List = append(b.List, p.parseStmt())
 	}
-	/*line parser.goal:781*/ rb := p.expect(token.RBRACE)
-	/*line parser.goal:782*/ b.Rbrace = rb.Pos
-	/*line parser.goal:783*/ return b
 }
 
-//line parser.goal:787
-func (p *parser) parseStmt() ast.Stmt {
-	/*line parser.goal:790*/ if p.at(token.IDENT) && p.peekKind() == token.COLON {
-		/*line parser.goal:791*/ return p.parseLabeledStmt()
+//line parser.goal:760
+func (p *parser) parseTypeOrVariadic() ast.Expr {
+	/*line parser.goal:761*/ if p.at(token.ELLIPSIS) {
+		/*line parser.goal:762*/ e := p.advance()
+		/*line parser.goal:763*/ return &ast.Ellipsis{Ellipsis: e.Pos, Elt: p.parseType()}
 	}
-	/*line parser.goal:793*/ switch p.kind() {
+	/*line parser.goal:765*/ return p.parseType()
+}
+
+//line parser.goal:775
+func (p *parser) parseResults(paramsEnd token.Pos) *ast.FieldList {
+	/*line parser.goal:776*/ if p.cur().Pos.Line != paramsEnd.Line {
+		/*line parser.goal:777*/ return nil
+	}
+	/*line parser.goal:779*/ if p.at(token.LPAREN) {
+		/*line parser.goal:780*/ return p.parseParamList()
+	}
+	/*line parser.goal:782*/ if p.startsType() {
+		/*line parser.goal:783*/ return &ast.FieldList{List: []*ast.Field{{Type: p.parseType()}}}
+	}
+	/*line parser.goal:785*/ return nil
+}
+
+//line parser.goal:798
+func (p *parser) parseBlock() *ast.BlockStmt {
+	/*line parser.goal:799*/ lb := p.expect(token.LBRACE)
+	/*line parser.goal:800*/ b := &ast.BlockStmt{Lbrace: lb.Pos}
+	/*line parser.goal:801*/ for !p.at(token.RBRACE) && !p.at(token.EOF) {
+		/*line parser.goal:804*/ if p.at(token.DOC_COMMENT) {
+			/*line parser.goal:805*/ p.advance()
+			/*line parser.goal:806*/ continue
+		}
+		/*line parser.goal:808*/ b.List = append(b.List, p.parseStmt())
+	}
+	/*line parser.goal:810*/ rb := p.expect(token.RBRACE)
+	/*line parser.goal:811*/ b.Rbrace = rb.Pos
+	/*line parser.goal:812*/ return b
+}
+
+//line parser.goal:816
+func (p *parser) parseStmt() ast.Stmt {
+	/*line parser.goal:819*/ if p.at(token.IDENT) && p.peekKind() == token.COLON {
+		/*line parser.goal:820*/ return p.parseLabeledStmt()
+	}
+	/*line parser.goal:822*/ switch p.kind() {
 	case token.LBRACE:
 		return p.parseBlock()
 	case token.IF:
@@ -708,14 +732,14 @@ func (p *parser) parseStmt() ast.Stmt {
 	}
 }
 
-//line parser.goal:832
+//line parser.goal:861
 func (p *parser) parseSimpleStmt(allowRange bool) ast.Stmt {
-	/*line parser.goal:833*/ lhs := p.parseExprList()
-	/*line parser.goal:834*/ switch p.kind() {
+	/*line parser.goal:862*/ lhs := p.parseExprList()
+	/*line parser.goal:863*/ switch p.kind() {
 	case token.ASSIGN, token.DEFINE, token.ADD_ASSIGN, token.SUB_ASSIGN, token.MUL_ASSIGN, token.QUO_ASSIGN, token.REM_ASSIGN, token.AND_ASSIGN, token.OR_ASSIGN, token.XOR_ASSIGN, token.SHL_ASSIGN, token.SHR_ASSIGN, token.AND_NOT_ASSIGN:
 		tok := p.advance()
 		if allowRange && p.at(token.RANGE) && (tok.Kind == token.ASSIGN || tok.Kind == token.DEFINE) {
-			/*line parser.goal:841*/ return p.parseRangeRest(lhs, tok)
+			/*line parser.goal:870*/ return p.parseRangeRest(lhs, tok)
 		}
 		rhs := p.parseExprList()
 		return &ast.AssignStmt{Lhs: lhs, TokPos: tok.Pos, Tok: tok.Kind, Rhs: rhs}
@@ -727,291 +751,291 @@ func (p *parser) parseSimpleStmt(allowRange bool) ast.Stmt {
 		return &ast.IncDecStmt{X: lhs[0], TokPos: tok.Pos, Tok: tok.Kind}
 	default:
 		if len(lhs) > 1 {
-			/*line parser.goal:853*/ p.errorf(p.cur().Pos, "expected := or = (multiple expressions in statement), found %s", describe(p.cur()))
+			/*line parser.goal:882*/ p.errorf(p.cur().Pos, "expected := or = (multiple expressions in statement), found %s", describe(p.cur()))
 		}
 		return &ast.ExprStmt{X: lhs[0]}
 	}
 }
 
-//line parser.goal:861
+//line parser.goal:890
 func (p *parser) parseRangeRest(lhs []ast.Expr, tok token.Token) *ast.RangeStmt {
-	/*line parser.goal:862*/ p.expect(token.RANGE)
-	/*line parser.goal:863*/ rs := &ast.RangeStmt{TokPos: tok.Pos, Tok: tok.Kind, X: p.parseExpr()}
-	/*line parser.goal:864*/ if len(lhs) > 0 {
-		/*line parser.goal:865*/ rs.Key = lhs[0]
+	/*line parser.goal:891*/ p.expect(token.RANGE)
+	/*line parser.goal:892*/ rs := &ast.RangeStmt{TokPos: tok.Pos, Tok: tok.Kind, X: p.parseExpr()}
+	/*line parser.goal:893*/ if len(lhs) > 0 {
+		/*line parser.goal:894*/ rs.Key = lhs[0]
 	}
-	/*line parser.goal:867*/ if len(lhs) > 1 {
-		/*line parser.goal:868*/ rs.Value = lhs[1]
+	/*line parser.goal:896*/ if len(lhs) > 1 {
+		/*line parser.goal:897*/ rs.Value = lhs[1]
 	}
-	/*line parser.goal:870*/ return rs
+	/*line parser.goal:899*/ return rs
 }
 
-//line parser.goal:875
+//line parser.goal:904
 func (p *parser) parseIfStmt() ast.Stmt {
-	/*line parser.goal:876*/ ifPos := p.expect(token.IF).Pos
-	/*line parser.goal:877*/ s := &ast.IfStmt{If: ifPos}
-	/*line parser.goal:879*/ prev := p.exprLev
-	/*line parser.goal:880*/ p.exprLev = -1
-	/*line parser.goal:881*/ s1 := p.parseSimpleStmt(false)
-	/*line parser.goal:882*/ if p.at(token.SEMICOLON) {
-		/*line parser.goal:883*/ p.advance()
-		/*line parser.goal:884*/ s.Init = s1
-		/*line parser.goal:885*/ s.Cond = p.parseExpr()
+	/*line parser.goal:905*/ ifPos := p.expect(token.IF).Pos
+	/*line parser.goal:906*/ s := &ast.IfStmt{If: ifPos}
+	/*line parser.goal:908*/ prev := p.exprLev
+	/*line parser.goal:909*/ p.exprLev = -1
+	/*line parser.goal:910*/ s1 := p.parseSimpleStmt(false)
+	/*line parser.goal:911*/ if p.at(token.SEMICOLON) {
+		/*line parser.goal:912*/ p.advance()
+		/*line parser.goal:913*/ s.Init = s1
+		/*line parser.goal:914*/ s.Cond = p.parseExpr()
 	} else {
-		/*line parser.goal:887*/ s.Cond = p.condExpr(s1, "if")
+		/*line parser.goal:916*/ s.Cond = p.condExpr(s1, "if")
 	}
-	/*line parser.goal:889*/ p.exprLev = prev
-	/*line parser.goal:891*/ s.Body = p.parseBlock()
-	/*line parser.goal:892*/ if p.at(token.ELSE) {
-		/*line parser.goal:893*/ p.advance()
-		/*line parser.goal:894*/ if p.at(token.IF) {
-			/*line parser.goal:895*/ s.Else = p.parseIfStmt()
+	/*line parser.goal:918*/ p.exprLev = prev
+	/*line parser.goal:920*/ s.Body = p.parseBlock()
+	/*line parser.goal:921*/ if p.at(token.ELSE) {
+		/*line parser.goal:922*/ p.advance()
+		/*line parser.goal:923*/ if p.at(token.IF) {
+			/*line parser.goal:924*/ s.Else = p.parseIfStmt()
 		} else {
-			/*line parser.goal:897*/ s.Else = p.parseBlock()
+			/*line parser.goal:926*/ s.Else = p.parseBlock()
 		}
 	}
-	/*line parser.goal:900*/ return s
+	/*line parser.goal:929*/ return s
 }
 
-//line parser.goal:905
+//line parser.goal:934
 func (p *parser) parseForStmt() ast.Stmt {
-	/*line parser.goal:906*/ forPos := p.expect(token.FOR).Pos
-	/*line parser.goal:909*/ if p.at(token.LBRACE) {
-		/*line parser.goal:910*/ return &ast.ForStmt{For: forPos, Body: p.parseBlock()}
+	/*line parser.goal:935*/ forPos := p.expect(token.FOR).Pos
+	/*line parser.goal:938*/ if p.at(token.LBRACE) {
+		/*line parser.goal:939*/ return &ast.ForStmt{For: forPos, Body: p.parseBlock()}
 	}
-	/*line parser.goal:913*/ prev := p.exprLev
-	/*line parser.goal:914*/ p.exprLev = -1
-	/*line parser.goal:917*/ if p.at(token.RANGE) {
-		/*line parser.goal:918*/ p.advance()
-		/*line parser.goal:919*/ x := p.parseExpr()
-		/*line parser.goal:920*/ p.exprLev = prev
-		/*line parser.goal:921*/ return &ast.RangeStmt{For: forPos, X: x, Body: p.parseBlock()}
+	/*line parser.goal:942*/ prev := p.exprLev
+	/*line parser.goal:943*/ p.exprLev = -1
+	/*line parser.goal:946*/ if p.at(token.RANGE) {
+		/*line parser.goal:947*/ p.advance()
+		/*line parser.goal:948*/ x := p.parseExpr()
+		/*line parser.goal:949*/ p.exprLev = prev
+		/*line parser.goal:950*/ return &ast.RangeStmt{For: forPos, X: x, Body: p.parseBlock()}
 	}
-	/*line parser.goal:924*/ var s1 ast.Stmt
+	/*line parser.goal:953*/ var s1 ast.Stmt
 
-	/*line parser.goal:925*/
+	/*line parser.goal:954*/
 	if !p.at(token.SEMICOLON) {
-		/*line parser.goal:926*/ s1 = p.parseSimpleStmt(true)
-		/*line parser.goal:927*/ if rs, ok := s1.(*ast.RangeStmt); ok {
-			/*line parser.goal:928*/ rs.For = forPos
-			/*line parser.goal:929*/ p.exprLev = prev
-			/*line parser.goal:930*/ rs.Body = p.parseBlock()
-			/*line parser.goal:931*/ return rs
+		/*line parser.goal:955*/ s1 = p.parseSimpleStmt(true)
+		/*line parser.goal:956*/ if rs, ok := s1.(*ast.RangeStmt); ok {
+			/*line parser.goal:957*/ rs.For = forPos
+			/*line parser.goal:958*/ p.exprLev = prev
+			/*line parser.goal:959*/ rs.Body = p.parseBlock()
+			/*line parser.goal:960*/ return rs
 		}
 	}
-	/*line parser.goal:936*/ if p.at(token.SEMICOLON) {
-		/*line parser.goal:937*/ p.advance()
-		/*line parser.goal:938*/ s := &ast.ForStmt{For: forPos, Init: s1}
-		/*line parser.goal:939*/ if !p.at(token.SEMICOLON) {
-			/*line parser.goal:940*/ s.Cond = p.parseExpr()
+	/*line parser.goal:965*/ if p.at(token.SEMICOLON) {
+		/*line parser.goal:966*/ p.advance()
+		/*line parser.goal:967*/ s := &ast.ForStmt{For: forPos, Init: s1}
+		/*line parser.goal:968*/ if !p.at(token.SEMICOLON) {
+			/*line parser.goal:969*/ s.Cond = p.parseExpr()
 		}
-		/*line parser.goal:942*/ p.expect(token.SEMICOLON)
-		/*line parser.goal:943*/ if !p.at(token.LBRACE) {
-			/*line parser.goal:944*/ s.Post = p.parseSimpleStmt(false)
+		/*line parser.goal:971*/ p.expect(token.SEMICOLON)
+		/*line parser.goal:972*/ if !p.at(token.LBRACE) {
+			/*line parser.goal:973*/ s.Post = p.parseSimpleStmt(false)
 		}
-		/*line parser.goal:946*/ p.exprLev = prev
-		/*line parser.goal:947*/ s.Body = p.parseBlock()
-		/*line parser.goal:948*/ return s
+		/*line parser.goal:975*/ p.exprLev = prev
+		/*line parser.goal:976*/ s.Body = p.parseBlock()
+		/*line parser.goal:977*/ return s
 	}
-	/*line parser.goal:952*/ s := &ast.ForStmt{For: forPos, Cond: p.condExpr(s1, "for")}
-	/*line parser.goal:953*/ p.exprLev = prev
-	/*line parser.goal:954*/ s.Body = p.parseBlock()
-	/*line parser.goal:955*/ return s
+	/*line parser.goal:981*/ s := &ast.ForStmt{For: forPos, Cond: p.condExpr(s1, "for")}
+	/*line parser.goal:982*/ p.exprLev = prev
+	/*line parser.goal:983*/ s.Body = p.parseBlock()
+	/*line parser.goal:984*/ return s
 }
 
-//line parser.goal:959
+//line parser.goal:988
 func (p *parser) parseSwitchStmt() ast.Stmt {
-	/*line parser.goal:960*/ swPos := p.expect(token.SWITCH).Pos
-	/*line parser.goal:965*/ prev := p.exprLev
-	/*line parser.goal:966*/ p.exprLev = -1
-	/*line parser.goal:967*/ var init, guard ast.Stmt
+	/*line parser.goal:989*/ swPos := p.expect(token.SWITCH).Pos
+	/*line parser.goal:994*/ prev := p.exprLev
+	/*line parser.goal:995*/ p.exprLev = -1
+	/*line parser.goal:996*/ var init, guard ast.Stmt
 
-	/*line parser.goal:968*/
+	/*line parser.goal:997*/
 	if !p.at(token.LBRACE) && !p.at(token.SEMICOLON) {
-		/*line parser.goal:969*/ guard = p.parseSimpleStmt(false)
+		/*line parser.goal:998*/ guard = p.parseSimpleStmt(false)
 	}
-	/*line parser.goal:971*/ if p.at(token.SEMICOLON) {
-		/*line parser.goal:972*/ p.advance()
-		/*line parser.goal:973*/ init = guard
-		/*line parser.goal:974*/ guard = nil
-		/*line parser.goal:975*/ if !p.at(token.LBRACE) {
-			/*line parser.goal:976*/ guard = p.parseSimpleStmt(false)
+	/*line parser.goal:1000*/ if p.at(token.SEMICOLON) {
+		/*line parser.goal:1001*/ p.advance()
+		/*line parser.goal:1002*/ init = guard
+		/*line parser.goal:1003*/ guard = nil
+		/*line parser.goal:1004*/ if !p.at(token.LBRACE) {
+			/*line parser.goal:1005*/ guard = p.parseSimpleStmt(false)
 		}
 	}
-	/*line parser.goal:979*/ p.exprLev = prev
-	/*line parser.goal:982*/ if isTypeSwitchGuard(guard) {
-		/*line parser.goal:983*/ ts := &ast.TypeSwitchStmt{Switch: swPos, Init: init, Assign: guard}
-		/*line parser.goal:984*/ ts.Body = p.parseCaseBody()
-		/*line parser.goal:985*/ return ts
+	/*line parser.goal:1008*/ p.exprLev = prev
+	/*line parser.goal:1011*/ if isTypeSwitchGuard(guard) {
+		/*line parser.goal:1012*/ ts := &ast.TypeSwitchStmt{Switch: swPos, Init: init, Assign: guard}
+		/*line parser.goal:1013*/ ts.Body = p.parseCaseBody()
+		/*line parser.goal:1014*/ return ts
 	}
-	/*line parser.goal:987*/ return &ast.SwitchStmt{Switch: swPos, Init: init, Tag: stmtExpr(guard), Body: p.parseCaseBody()}
+	/*line parser.goal:1016*/ return &ast.SwitchStmt{Switch: swPos, Init: init, Tag: stmtExpr(guard), Body: p.parseCaseBody()}
 }
 
-//line parser.goal:992
+//line parser.goal:1021
 func isTypeSwitchGuard(s ast.Stmt) bool {
-	/*line parser.goal:993*/ switch v := s.(type) {
+	/*line parser.goal:1022*/ switch v := s.(type) {
 	case *ast.ExprStmt:
 		{
-			/*line parser.goal:995*/ ta, ok := v.X.(*ast.TypeAssertExpr)
-			/*line parser.goal:996*/ return ok && ta.Type == nil
+			/*line parser.goal:1024*/ ta, ok := v.X.(*ast.TypeAssertExpr)
+			/*line parser.goal:1025*/ return ok && ta.Type == nil
 		}
 	case *ast.AssignStmt:
 		{
-			/*line parser.goal:999*/ if v.Tok != token.DEFINE || len(v.Rhs) != 1 {
-				/*line parser.goal:1000*/ return false
+			/*line parser.goal:1028*/ if v.Tok != token.DEFINE || len(v.Rhs) != 1 {
+				/*line parser.goal:1029*/ return false
 			}
-			/*line parser.goal:1002*/ ta, ok := v.Rhs[0].(*ast.TypeAssertExpr)
-			/*line parser.goal:1003*/ return ok && ta.Type == nil
+			/*line parser.goal:1031*/ ta, ok := v.Rhs[0].(*ast.TypeAssertExpr)
+			/*line parser.goal:1032*/ return ok && ta.Type == nil
 		}
 	default:
 		{
-			/*line parser.goal:1006*/ return false
+			/*line parser.goal:1035*/ return false
 		}
 	}
 }
 
-//line parser.goal:1013
+//line parser.goal:1042
 func (p *parser) parseCaseBody() *ast.BlockStmt {
-	/*line parser.goal:1014*/ lb := p.expect(token.LBRACE)
-	/*line parser.goal:1015*/ body := &ast.BlockStmt{Lbrace: lb.Pos}
-	/*line parser.goal:1016*/ for p.at(token.CASE) || p.at(token.DEFAULT) {
-		/*line parser.goal:1017*/ body.List = append(body.List, p.parseCaseClause())
+	/*line parser.goal:1043*/ lb := p.expect(token.LBRACE)
+	/*line parser.goal:1044*/ body := &ast.BlockStmt{Lbrace: lb.Pos}
+	/*line parser.goal:1045*/ for p.at(token.CASE) || p.at(token.DEFAULT) {
+		/*line parser.goal:1046*/ body.List = append(body.List, p.parseCaseClause())
 	}
-	/*line parser.goal:1019*/ body.Rbrace = p.expect(token.RBRACE).Pos
-	/*line parser.goal:1020*/ return body
+	/*line parser.goal:1048*/ body.Rbrace = p.expect(token.RBRACE).Pos
+	/*line parser.goal:1049*/ return body
 }
 
-//line parser.goal:1025
+//line parser.goal:1054
 func (p *parser) parseSelectStmt() ast.Stmt {
-	/*line parser.goal:1026*/ pos := p.expect(token.SELECT).Pos
-	/*line parser.goal:1027*/ lb := p.expect(token.LBRACE)
-	/*line parser.goal:1028*/ body := &ast.BlockStmt{Lbrace: lb.Pos}
-	/*line parser.goal:1029*/ for p.at(token.CASE) || p.at(token.DEFAULT) {
-		/*line parser.goal:1030*/ body.List = append(body.List, p.parseCommClause())
+	/*line parser.goal:1055*/ pos := p.expect(token.SELECT).Pos
+	/*line parser.goal:1056*/ lb := p.expect(token.LBRACE)
+	/*line parser.goal:1057*/ body := &ast.BlockStmt{Lbrace: lb.Pos}
+	/*line parser.goal:1058*/ for p.at(token.CASE) || p.at(token.DEFAULT) {
+		/*line parser.goal:1059*/ body.List = append(body.List, p.parseCommClause())
 	}
-	/*line parser.goal:1032*/ body.Rbrace = p.expect(token.RBRACE).Pos
-	/*line parser.goal:1033*/ return &ast.SelectStmt{Select: pos, Body: body}
+	/*line parser.goal:1061*/ body.Rbrace = p.expect(token.RBRACE).Pos
+	/*line parser.goal:1062*/ return &ast.SelectStmt{Select: pos, Body: body}
 }
 
-//line parser.goal:1038
+//line parser.goal:1067
 func (p *parser) parseCommClause() ast.Stmt {
-	/*line parser.goal:1039*/ cc := &ast.CommClause{Case: p.cur().Pos}
-	/*line parser.goal:1040*/ if p.at(token.CASE) {
-		/*line parser.goal:1041*/ p.advance()
-		/*line parser.goal:1042*/ cc.Comm = p.parseSimpleStmt(false)
+	/*line parser.goal:1068*/ cc := &ast.CommClause{Case: p.cur().Pos}
+	/*line parser.goal:1069*/ if p.at(token.CASE) {
+		/*line parser.goal:1070*/ p.advance()
+		/*line parser.goal:1071*/ cc.Comm = p.parseSimpleStmt(false)
 	} else {
-		/*line parser.goal:1044*/ p.expect(token.DEFAULT)
+		/*line parser.goal:1073*/ p.expect(token.DEFAULT)
 	}
-	/*line parser.goal:1046*/ cc.Colon = p.expect(token.COLON).Pos
-	/*line parser.goal:1047*/ for !p.at(token.CASE) && !p.at(token.DEFAULT) && !p.at(token.RBRACE) && !p.at(token.EOF) {
-		/*line parser.goal:1048*/ if p.at(token.SEMICOLON) {
-			/*line parser.goal:1049*/ p.advance()
-			/*line parser.goal:1050*/ continue
+	/*line parser.goal:1075*/ cc.Colon = p.expect(token.COLON).Pos
+	/*line parser.goal:1076*/ for !p.at(token.CASE) && !p.at(token.DEFAULT) && !p.at(token.RBRACE) && !p.at(token.EOF) {
+		/*line parser.goal:1077*/ if p.at(token.SEMICOLON) {
+			/*line parser.goal:1078*/ p.advance()
+			/*line parser.goal:1079*/ continue
 		}
-		/*line parser.goal:1052*/ cc.Body = append(cc.Body, p.parseStmt())
+		/*line parser.goal:1081*/ cc.Body = append(cc.Body, p.parseStmt())
 	}
-	/*line parser.goal:1054*/ return cc
+	/*line parser.goal:1083*/ return cc
 }
 
-//line parser.goal:1060
+//line parser.goal:1089
 func (p *parser) parseLabeledStmt() ast.Stmt {
-	/*line parser.goal:1061*/ label := p.ident()
-	/*line parser.goal:1062*/ colon := p.expect(token.COLON)
-	/*line parser.goal:1063*/ ls := &ast.LabeledStmt{Label: label, Colon: colon.Pos}
-	/*line parser.goal:1064*/ if p.at(token.RBRACE) || p.at(token.EOF) {
-		/*line parser.goal:1065*/ ls.Stmt = &ast.EmptyStmt{Semicolon: colon.Pos}
+	/*line parser.goal:1090*/ label := p.ident()
+	/*line parser.goal:1091*/ colon := p.expect(token.COLON)
+	/*line parser.goal:1092*/ ls := &ast.LabeledStmt{Label: label, Colon: colon.Pos}
+	/*line parser.goal:1093*/ if p.at(token.RBRACE) || p.at(token.EOF) {
+		/*line parser.goal:1094*/ ls.Stmt = &ast.EmptyStmt{Semicolon: colon.Pos}
 	} else {
-		/*line parser.goal:1067*/ ls.Stmt = p.parseStmt()
+		/*line parser.goal:1096*/ ls.Stmt = p.parseStmt()
 	}
-	/*line parser.goal:1069*/ return ls
+	/*line parser.goal:1098*/ return ls
 }
 
-//line parser.goal:1073
+//line parser.goal:1102
 func (p *parser) parseCaseClause() ast.Stmt {
-	/*line parser.goal:1074*/ cc := &ast.CaseClause{Case: p.cur().Pos}
-	/*line parser.goal:1075*/ if p.at(token.CASE) {
-		/*line parser.goal:1076*/ p.advance()
-		/*line parser.goal:1077*/ cc.List = p.parseExprList()
+	/*line parser.goal:1103*/ cc := &ast.CaseClause{Case: p.cur().Pos}
+	/*line parser.goal:1104*/ if p.at(token.CASE) {
+		/*line parser.goal:1105*/ p.advance()
+		/*line parser.goal:1106*/ cc.List = p.parseExprList()
 	} else {
-		/*line parser.goal:1079*/ p.expect(token.DEFAULT)
+		/*line parser.goal:1108*/ p.expect(token.DEFAULT)
 	}
-	/*line parser.goal:1081*/ cc.Colon = p.expect(token.COLON).Pos
-	/*line parser.goal:1082*/ for !p.at(token.CASE) && !p.at(token.DEFAULT) && !p.at(token.RBRACE) && !p.at(token.EOF) {
-		/*line parser.goal:1083*/ if p.at(token.SEMICOLON) {
-			/*line parser.goal:1084*/ p.advance()
-			/*line parser.goal:1085*/ continue
+	/*line parser.goal:1110*/ cc.Colon = p.expect(token.COLON).Pos
+	/*line parser.goal:1111*/ for !p.at(token.CASE) && !p.at(token.DEFAULT) && !p.at(token.RBRACE) && !p.at(token.EOF) {
+		/*line parser.goal:1112*/ if p.at(token.SEMICOLON) {
+			/*line parser.goal:1113*/ p.advance()
+			/*line parser.goal:1114*/ continue
 		}
-		/*line parser.goal:1087*/ cc.Body = append(cc.Body, p.parseStmt())
+		/*line parser.goal:1116*/ cc.Body = append(cc.Body, p.parseStmt())
 	}
-	/*line parser.goal:1089*/ return cc
+	/*line parser.goal:1118*/ return cc
 }
 
-//line parser.goal:1093
+//line parser.goal:1122
 func (p *parser) parseReturnStmt() ast.Stmt {
-	/*line parser.goal:1094*/ pos := p.expect(token.RETURN).Pos
-	/*line parser.goal:1095*/ r := &ast.ReturnStmt{Return: pos}
-	/*line parser.goal:1096*/ if startsExpr(p.kind()) {
-		/*line parser.goal:1097*/ r.Results = p.parseExprList()
+	/*line parser.goal:1123*/ pos := p.expect(token.RETURN).Pos
+	/*line parser.goal:1124*/ r := &ast.ReturnStmt{Return: pos}
+	/*line parser.goal:1125*/ if startsExpr(p.kind()) {
+		/*line parser.goal:1126*/ r.Results = p.parseExprList()
 	}
-	/*line parser.goal:1099*/ return r
+	/*line parser.goal:1128*/ return r
 }
 
-//line parser.goal:1103
+//line parser.goal:1132
 func (p *parser) parseCallStmt(tok token.Kind) ast.Stmt {
-	/*line parser.goal:1104*/ pos := p.expect(tok).Pos
-	/*line parser.goal:1105*/ x := p.parseExpr()
-	/*line parser.goal:1106*/ call, ok := x.(*ast.CallExpr)
-	/*line parser.goal:1107*/ if !ok {
-		/*line parser.goal:1108*/ p.errorf(pos, "expected function call after %s", tok.String())
+	/*line parser.goal:1133*/ pos := p.expect(tok).Pos
+	/*line parser.goal:1134*/ x := p.parseExpr()
+	/*line parser.goal:1135*/ call, ok := x.(*ast.CallExpr)
+	/*line parser.goal:1136*/ if !ok {
+		/*line parser.goal:1137*/ p.errorf(pos, "expected function call after %s", tok.String())
 	}
-	/*line parser.goal:1110*/ if tok == token.DEFER {
-		/*line parser.goal:1111*/ return &ast.DeferStmt{Defer: pos, Call: call}
+	/*line parser.goal:1139*/ if tok == token.DEFER {
+		/*line parser.goal:1140*/ return &ast.DeferStmt{Defer: pos, Call: call}
 	}
-	/*line parser.goal:1113*/ return &ast.GoStmt{Go: pos, Call: call}
+	/*line parser.goal:1142*/ return &ast.GoStmt{Go: pos, Call: call}
 }
 
-//line parser.goal:1117
+//line parser.goal:1146
 func (p *parser) parseBranchStmt() ast.Stmt {
-	/*line parser.goal:1118*/ t := p.advance()
-	/*line parser.goal:1119*/ b := &ast.BranchStmt{TokPos: t.Pos, Tok: t.Kind}
-	/*line parser.goal:1120*/ if t.Kind != token.FALLTHROUGH && p.at(token.IDENT) {
-		/*line parser.goal:1121*/ b.Label = p.ident()
+	/*line parser.goal:1147*/ t := p.advance()
+	/*line parser.goal:1148*/ b := &ast.BranchStmt{TokPos: t.Pos, Tok: t.Kind}
+	/*line parser.goal:1149*/ if t.Kind != token.FALLTHROUGH && p.at(token.IDENT) {
+		/*line parser.goal:1150*/ b.Label = p.ident()
 	}
-	/*line parser.goal:1123*/ return b
+	/*line parser.goal:1152*/ return b
 }
 
-//line parser.goal:1128
+//line parser.goal:1157
 func stmtExpr(s ast.Stmt) ast.Expr {
-	/*line parser.goal:1129*/ if es, ok := s.(*ast.ExprStmt); ok {
-		/*line parser.goal:1130*/ return es.X
+	/*line parser.goal:1158*/ if es, ok := s.(*ast.ExprStmt); ok {
+		/*line parser.goal:1159*/ return es.X
 	}
-	/*line parser.goal:1132*/ return nil
+	/*line parser.goal:1161*/ return nil
 }
 
-//line parser.goal:1140
+//line parser.goal:1169
 func (p *parser) condExpr(s ast.Stmt, kw string) ast.Expr {
-	/*line parser.goal:1141*/ if es, ok := s.(*ast.ExprStmt); ok {
-		/*line parser.goal:1142*/ return es.X
+	/*line parser.goal:1170*/ if es, ok := s.(*ast.ExprStmt); ok {
+		/*line parser.goal:1171*/ return es.X
 	}
-	/*line parser.goal:1144*/ p.errorf(p.cur().Pos, "expected ; after init statement (missing %s condition)", kw)
-	/*line parser.goal:1145*/ return nil
+	/*line parser.goal:1173*/ p.errorf(p.cur().Pos, "expected ; after init statement (missing %s condition)", kw)
+	/*line parser.goal:1174*/ return nil
 }
 
-//line parser.goal:1150
+//line parser.goal:1179
 func startsExpr(k token.Kind) bool {
-	/*line parser.goal:1151*/ switch k {
+	/*line parser.goal:1180*/ switch k {
 	case token.IDENT, token.INT, token.FLOAT, token.IMAG, token.CHAR, token.STRING, token.LPAREN, token.ADD, token.SUB, token.NOT, token.XOR, token.AND, token.ARROW, token.MUL, token.MATCH, token.LBRACK, token.MAP, token.STRUCT, token.CHAN, token.INTERFACE, token.FUNC:
 		return true
 	}
-	/*line parser.goal:1161*/ return false
+	/*line parser.goal:1190*/ return false
 }
 
-//line parser.goal:1176
+//line parser.goal:1205
 const lowestBinaryPrec = 1
 
-//line parser.goal:1181
+//line parser.goal:1210
 func precedence(k token.Kind) int {
-	/*line parser.goal:1182*/ switch k {
+	/*line parser.goal:1211*/ switch k {
 	case token.LOR:
 		return 1
 	case token.LAND:
@@ -1023,34 +1047,34 @@ func precedence(k token.Kind) int {
 	case token.MUL, token.QUO, token.REM, token.SHL, token.SHR, token.AND, token.AND_NOT:
 		return 5
 	}
-	/*line parser.goal:1194*/ return 0
+	/*line parser.goal:1223*/ return 0
 }
 
-//line parser.goal:1199
+//line parser.goal:1228
 func (p *parser) parseExpr() ast.Expr {
-	/*line parser.goal:1200*/ return p.parseBinary(lowestBinaryPrec)
+	/*line parser.goal:1229*/ return p.parseBinary(lowestBinaryPrec)
 }
 
-//line parser.goal:1207
+//line parser.goal:1236
 func (p *parser) parseBinary(minPrec int) ast.Expr {
-	/*line parser.goal:1208*/ x := p.parseUnary()
-	/*line parser.goal:1209*/ for {
-		/*line parser.goal:1210*/ opPrec := precedence(p.kind())
-		/*line parser.goal:1211*/ if opPrec < minPrec {
-			/*line parser.goal:1212*/ return x
+	/*line parser.goal:1237*/ x := p.parseUnary()
+	/*line parser.goal:1238*/ for {
+		/*line parser.goal:1239*/ opPrec := precedence(p.kind())
+		/*line parser.goal:1240*/ if opPrec < minPrec {
+			/*line parser.goal:1241*/ return x
 		}
-		/*line parser.goal:1218*/ if p.armBody && p.onNewLine() {
-			/*line parser.goal:1219*/ return x
+		/*line parser.goal:1247*/ if p.armBody && p.onNewLine() {
+			/*line parser.goal:1248*/ return x
 		}
-		/*line parser.goal:1221*/ op := p.advance()
-		/*line parser.goal:1222*/ y := p.parseBinary(opPrec + 1)
-		/*line parser.goal:1223*/ x = &ast.BinaryExpr{X: x, OpPos: op.Pos, Op: op.Kind, Y: y}
+		/*line parser.goal:1250*/ op := p.advance()
+		/*line parser.goal:1251*/ y := p.parseBinary(opPrec + 1)
+		/*line parser.goal:1252*/ x = &ast.BinaryExpr{X: x, OpPos: op.Pos, Op: op.Kind, Y: y}
 	}
 }
 
-//line parser.goal:1230
+//line parser.goal:1259
 func (p *parser) parseUnary() ast.Expr {
-	/*line parser.goal:1231*/ switch p.kind() {
+	/*line parser.goal:1260*/ switch p.kind() {
 	case token.ADD, token.SUB, token.NOT, token.XOR, token.AND, token.ARROW:
 		op := p.advance()
 		return &ast.UnaryExpr{OpPos: op.Pos, Op: op.Kind, X: p.parseUnary()}
@@ -1062,10 +1086,10 @@ func (p *parser) parseUnary() ast.Expr {
 	}
 }
 
-//line parser.goal:1245
+//line parser.goal:1274
 func (p *parser) parseOperand() ast.Expr {
-	/*line parser.goal:1246*/ t := p.cur()
-	/*line parser.goal:1247*/ switch t.Kind {
+	/*line parser.goal:1275*/ t := p.cur()
+	/*line parser.goal:1276*/ switch t.Kind {
 	case token.MATCH:
 		return p.parseMatchExpr()
 	case token.IDENT:
@@ -1093,44 +1117,44 @@ func (p *parser) parseOperand() ast.Expr {
 	}
 }
 
-//line parser.goal:1288
+//line parser.goal:1317
 func (p *parser) parseFuncOperand() ast.Expr {
-	/*line parser.goal:1289*/ kw := p.expect(token.FUNC)
-	/*line parser.goal:1290*/ ft := p.parseSignature()
-	/*line parser.goal:1291*/ ft.Func = kw.Pos
-	/*line parser.goal:1292*/ if !p.at(token.LBRACE) {
-		/*line parser.goal:1293*/ return ft
+	/*line parser.goal:1318*/ kw := p.expect(token.FUNC)
+	/*line parser.goal:1319*/ ft := p.parseSignature()
+	/*line parser.goal:1320*/ ft.Func = kw.Pos
+	/*line parser.goal:1321*/ if !p.at(token.LBRACE) {
+		/*line parser.goal:1322*/ return ft
 	}
-	/*line parser.goal:1295*/ prev := p.exprLev
-	/*line parser.goal:1296*/ p.exprLev = 0
-	/*line parser.goal:1297*/ body := p.parseBlock()
-	/*line parser.goal:1298*/ p.exprLev = prev
-	/*line parser.goal:1299*/ return &ast.FuncLit{Type: ft, Body: body}
+	/*line parser.goal:1324*/ prev := p.exprLev
+	/*line parser.goal:1325*/ p.exprLev = 0
+	/*line parser.goal:1326*/ body := p.parseBlock()
+	/*line parser.goal:1327*/ p.exprLev = prev
+	/*line parser.goal:1328*/ return &ast.FuncLit{Type: ft, Body: body}
 }
 
-//line parser.goal:1305
+//line parser.goal:1334
 func (p *parser) parseTypeAssert(x ast.Expr) ast.Expr {
-	/*line parser.goal:1306*/ lp := p.expect(token.LPAREN)
-	/*line parser.goal:1307*/ ta := &ast.TypeAssertExpr{X: x, Lparen: lp.Pos}
-	/*line parser.goal:1308*/ if p.at(token.TYPE) {
-		/*line parser.goal:1309*/ p.advance()
+	/*line parser.goal:1335*/ lp := p.expect(token.LPAREN)
+	/*line parser.goal:1336*/ ta := &ast.TypeAssertExpr{X: x, Lparen: lp.Pos}
+	/*line parser.goal:1337*/ if p.at(token.TYPE) {
+		/*line parser.goal:1338*/ p.advance()
 	} else {
-		/*line parser.goal:1311*/ ta.Type = p.parseType()
+		/*line parser.goal:1340*/ ta.Type = p.parseType()
 	}
-	/*line parser.goal:1313*/ ta.Rparen = p.expect(token.RPAREN).Pos
-	/*line parser.goal:1314*/ return ta
+	/*line parser.goal:1342*/ ta.Rparen = p.expect(token.RPAREN).Pos
+	/*line parser.goal:1343*/ return ta
 }
 
-//line parser.goal:1319
+//line parser.goal:1348
 func (p *parser) parsePostfix(x ast.Expr) ast.Expr {
-	/*line parser.goal:1320*/ for {
-		/*line parser.goal:1321*/ switch p.kind() {
+	/*line parser.goal:1349*/ for {
+		/*line parser.goal:1350*/ switch p.kind() {
 		case token.PERIOD:
 			p.advance()
 			if p.at(token.LPAREN) {
-				/*line parser.goal:1325*/ x = p.parseTypeAssert(x)
+				/*line parser.goal:1354*/ x = p.parseTypeAssert(x)
 			} else {
-				/*line parser.goal:1327*/ x = &ast.SelectorExpr{X: x, Sel: p.ident()}
+				/*line parser.goal:1356*/ x = &ast.SelectorExpr{X: x, Sel: p.ident()}
 			}
 		case token.LPAREN:
 			x = p.parseCallSuffix(x)
@@ -1141,7 +1165,7 @@ func (p *parser) parsePostfix(x ast.Expr) ast.Expr {
 			x = &ast.UnwrapExpr{X: x, Question: q.Pos}
 		case token.LBRACE:
 			if p.exprLev < 0 || !compositeOK(x) {
-				/*line parser.goal:1340*/ return x
+				/*line parser.goal:1369*/ return x
 			}
 			x = p.parseCompositeLit(x)
 		default:
@@ -1150,167 +1174,167 @@ func (p *parser) parsePostfix(x ast.Expr) ast.Expr {
 	}
 }
 
-//line parser.goal:1351
+//line parser.goal:1380
 func compositeOK(x ast.Expr) bool {
-	/*line parser.goal:1354*/ switch x.(type) {
+	/*line parser.goal:1383*/ switch x.(type) {
 	case *ast.Ident:
 		{
-			/*line parser.goal:1355*/ return true
+			/*line parser.goal:1384*/ return true
 		}
 	case *ast.SelectorExpr:
 		{
-			/*line parser.goal:1356*/ return true
+			/*line parser.goal:1385*/ return true
 		}
 	case *ast.IndexExpr:
 		{
-			/*line parser.goal:1357*/ return true
+			/*line parser.goal:1386*/ return true
 		}
 	case *ast.IndexListExpr:
 		{
-			/*line parser.goal:1358*/ return true
+			/*line parser.goal:1387*/ return true
 		}
 	case *ast.ArrayType:
 		{
-			/*line parser.goal:1359*/ return true
+			/*line parser.goal:1388*/ return true
 		}
 	case *ast.MapType:
 		{
-			/*line parser.goal:1360*/ return true
+			/*line parser.goal:1389*/ return true
 		}
 	case *ast.StructType:
 		{
-			/*line parser.goal:1361*/ return true
+			/*line parser.goal:1390*/ return true
 		}
 	default:
 		{
-			/*line parser.goal:1362*/ return false
+			/*line parser.goal:1391*/ return false
 		}
 	}
 }
 
-//line parser.goal:1370
+//line parser.goal:1399
 func (p *parser) parseCallSuffix(fun ast.Expr) ast.Expr {
-	/*line parser.goal:1371*/ lp := p.expect(token.LPAREN)
-	/*line parser.goal:1372*/ prev := p.exprLev
-	/*line parser.goal:1373*/ p.exprLev++
-	/*line parser.goal:1374*/ var args []ast.Expr
+	/*line parser.goal:1400*/ lp := p.expect(token.LPAREN)
+	/*line parser.goal:1401*/ prev := p.exprLev
+	/*line parser.goal:1402*/ p.exprLev++
+	/*line parser.goal:1403*/ var args []ast.Expr
 
-	/*line parser.goal:1375*/
+	/*line parser.goal:1404*/
 	var ellipsis token.Pos
 
-	/*line parser.goal:1376*/
+	/*line parser.goal:1405*/
 	labeled := false
-	/*line parser.goal:1377*/ for !p.at(token.RPAREN) && !p.at(token.EOF) {
-		/*line parser.goal:1378*/ arg := p.parseCallArg()
-		/*line parser.goal:1379*/ if _, ok := arg.(*ast.LabeledArg); ok {
-			/*line parser.goal:1380*/ labeled = true
+	/*line parser.goal:1406*/ for !p.at(token.RPAREN) && !p.at(token.EOF) {
+		/*line parser.goal:1407*/ arg := p.parseCallArg()
+		/*line parser.goal:1408*/ if _, ok := arg.(*ast.LabeledArg); ok {
+			/*line parser.goal:1409*/ labeled = true
 		}
-		/*line parser.goal:1382*/ args = append(args, arg)
-		/*line parser.goal:1383*/ if p.at(token.ELLIPSIS) {
-			/*line parser.goal:1384*/ ellipsis = p.advance().Pos
-			/*line parser.goal:1385*/ if p.at(token.COMMA) {
-				/*line parser.goal:1386*/ p.advance()
+		/*line parser.goal:1411*/ args = append(args, arg)
+		/*line parser.goal:1412*/ if p.at(token.ELLIPSIS) {
+			/*line parser.goal:1413*/ ellipsis = p.advance().Pos
+			/*line parser.goal:1414*/ if p.at(token.COMMA) {
+				/*line parser.goal:1415*/ p.advance()
 			}
-			/*line parser.goal:1388*/ break
+			/*line parser.goal:1417*/ break
 		}
-		/*line parser.goal:1390*/ if p.at(token.COMMA) {
-			/*line parser.goal:1391*/ p.advance()
+		/*line parser.goal:1419*/ if p.at(token.COMMA) {
+			/*line parser.goal:1420*/ p.advance()
 		} else {
-			/*line parser.goal:1393*/ break
+			/*line parser.goal:1422*/ break
 		}
 	}
-	/*line parser.goal:1396*/ p.exprLev = prev
-	/*line parser.goal:1397*/ rp := p.expect(token.RPAREN)
-	/*line parser.goal:1398*/ if labeled {
-		/*line parser.goal:1399*/ return p.makeVariantLit(fun, lp.Pos, args, rp.Pos)
+	/*line parser.goal:1425*/ p.exprLev = prev
+	/*line parser.goal:1426*/ rp := p.expect(token.RPAREN)
+	/*line parser.goal:1427*/ if labeled {
+		/*line parser.goal:1428*/ return p.makeVariantLit(fun, lp.Pos, args, rp.Pos)
 	}
-	/*line parser.goal:1401*/ return &ast.CallExpr{Fun: fun, Lparen: lp.Pos, Args: args, Ellipsis: ellipsis, Rparen: rp.Pos}
+	/*line parser.goal:1430*/ return &ast.CallExpr{Fun: fun, Lparen: lp.Pos, Args: args, Ellipsis: ellipsis, Rparen: rp.Pos}
 }
 
-//line parser.goal:1412
+//line parser.goal:1441
 func (p *parser) parseIndexSuffix(x ast.Expr) ast.Expr {
-	/*line parser.goal:1413*/ lb := p.expect(token.LBRACK)
-	/*line parser.goal:1414*/ prev := p.exprLev
-	/*line parser.goal:1415*/ p.exprLev++
-	/*line parser.goal:1418*/ if p.at(token.COLON) {
-		/*line parser.goal:1419*/ return p.finishSlice(x, lb.Pos, prev, nil)
+	/*line parser.goal:1442*/ lb := p.expect(token.LBRACK)
+	/*line parser.goal:1443*/ prev := p.exprLev
+	/*line parser.goal:1444*/ p.exprLev++
+	/*line parser.goal:1447*/ if p.at(token.COLON) {
+		/*line parser.goal:1448*/ return p.finishSlice(x, lb.Pos, prev, nil)
 	}
-	/*line parser.goal:1421*/ first := p.parseExpr()
-	/*line parser.goal:1422*/ if p.at(token.COLON) {
-		/*line parser.goal:1423*/ return p.finishSlice(x, lb.Pos, prev, first)
+	/*line parser.goal:1450*/ first := p.parseExpr()
+	/*line parser.goal:1451*/ if p.at(token.COLON) {
+		/*line parser.goal:1452*/ return p.finishSlice(x, lb.Pos, prev, first)
 	}
-	/*line parser.goal:1426*/ indices := []ast.Expr{first}
-	/*line parser.goal:1427*/ for p.at(token.COMMA) {
-		/*line parser.goal:1428*/ p.advance()
-		/*line parser.goal:1429*/ if p.at(token.RBRACK) {
-			/*line parser.goal:1430*/ break
+	/*line parser.goal:1455*/ indices := []ast.Expr{first}
+	/*line parser.goal:1456*/ for p.at(token.COMMA) {
+		/*line parser.goal:1457*/ p.advance()
+		/*line parser.goal:1458*/ if p.at(token.RBRACK) {
+			/*line parser.goal:1459*/ break
 		}
-		/*line parser.goal:1432*/ indices = append(indices, p.parseExpr())
+		/*line parser.goal:1461*/ indices = append(indices, p.parseExpr())
 	}
-	/*line parser.goal:1434*/ p.exprLev = prev
-	/*line parser.goal:1435*/ rb := p.expect(token.RBRACK)
-	/*line parser.goal:1436*/ if len(indices) == 1 {
-		/*line parser.goal:1437*/ return &ast.IndexExpr{X: x, Lbrack: lb.Pos, Index: indices[0], Rbrack: rb.Pos}
+	/*line parser.goal:1463*/ p.exprLev = prev
+	/*line parser.goal:1464*/ rb := p.expect(token.RBRACK)
+	/*line parser.goal:1465*/ if len(indices) == 1 {
+		/*line parser.goal:1466*/ return &ast.IndexExpr{X: x, Lbrack: lb.Pos, Index: indices[0], Rbrack: rb.Pos}
 	}
-	/*line parser.goal:1439*/ return &ast.IndexListExpr{X: x, Lbrack: lb.Pos, Indices: indices, Rbrack: rb.Pos}
+	/*line parser.goal:1468*/ return &ast.IndexListExpr{X: x, Lbrack: lb.Pos, Indices: indices, Rbrack: rb.Pos}
 }
 
-//line parser.goal:1447
+//line parser.goal:1476
 func (p *parser) finishSlice(x ast.Expr, lbrack token.Pos, prevLev int, low ast.Expr) ast.Expr {
-	/*line parser.goal:1448*/ s := &ast.SliceExpr{X: x, Lbrack: lbrack, Low: low}
-	/*line parser.goal:1449*/ p.expect(token.COLON)
-	/*line parser.goal:1450*/ if !p.at(token.RBRACK) && !p.at(token.COLON) {
-		/*line parser.goal:1451*/ s.High = p.parseExpr()
+	/*line parser.goal:1477*/ s := &ast.SliceExpr{X: x, Lbrack: lbrack, Low: low}
+	/*line parser.goal:1478*/ p.expect(token.COLON)
+	/*line parser.goal:1479*/ if !p.at(token.RBRACK) && !p.at(token.COLON) {
+		/*line parser.goal:1480*/ s.High = p.parseExpr()
 	}
-	/*line parser.goal:1453*/ if p.at(token.COLON) {
-		/*line parser.goal:1454*/ p.advance()
-		/*line parser.goal:1455*/ if !p.at(token.RBRACK) {
-			/*line parser.goal:1456*/ s.Max = p.parseExpr()
+	/*line parser.goal:1482*/ if p.at(token.COLON) {
+		/*line parser.goal:1483*/ p.advance()
+		/*line parser.goal:1484*/ if !p.at(token.RBRACK) {
+			/*line parser.goal:1485*/ s.Max = p.parseExpr()
 		}
 	}
-	/*line parser.goal:1459*/ p.exprLev = prevLev
-	/*line parser.goal:1460*/ rb := p.expect(token.RBRACK)
-	/*line parser.goal:1461*/ s.Rbrack = rb.Pos
-	/*line parser.goal:1462*/ return s
+	/*line parser.goal:1488*/ p.exprLev = prevLev
+	/*line parser.goal:1489*/ rb := p.expect(token.RBRACK)
+	/*line parser.goal:1490*/ s.Rbrack = rb.Pos
+	/*line parser.goal:1491*/ return s
 }
 
-//line parser.goal:1467
+//line parser.goal:1496
 func (p *parser) parseCompositeLit(typ ast.Expr) ast.Expr {
-	/*line parser.goal:1468*/ lb := p.expect(token.LBRACE)
-	/*line parser.goal:1469*/ cl := &ast.CompositeLit{Type: typ, Lbrace: lb.Pos}
-	/*line parser.goal:1470*/ prev := p.exprLev
-	/*line parser.goal:1471*/ p.exprLev++
-	/*line parser.goal:1472*/ for !p.at(token.RBRACE) && !p.at(token.EOF) {
-		/*line parser.goal:1473*/ cl.Elts = append(cl.Elts, p.parseElement())
-		/*line parser.goal:1474*/ if p.at(token.COMMA) {
-			/*line parser.goal:1475*/ p.advance()
+	/*line parser.goal:1497*/ lb := p.expect(token.LBRACE)
+	/*line parser.goal:1498*/ cl := &ast.CompositeLit{Type: typ, Lbrace: lb.Pos}
+	/*line parser.goal:1499*/ prev := p.exprLev
+	/*line parser.goal:1500*/ p.exprLev++
+	/*line parser.goal:1501*/ for !p.at(token.RBRACE) && !p.at(token.EOF) {
+		/*line parser.goal:1502*/ cl.Elts = append(cl.Elts, p.parseElement())
+		/*line parser.goal:1503*/ if p.at(token.COMMA) {
+			/*line parser.goal:1504*/ p.advance()
 		} else {
-			/*line parser.goal:1477*/ break
+			/*line parser.goal:1506*/ break
 		}
 	}
-	/*line parser.goal:1480*/ p.exprLev = prev
-	/*line parser.goal:1481*/ rb := p.expect(token.RBRACE)
-	/*line parser.goal:1482*/ cl.Rbrace = rb.Pos
-	/*line parser.goal:1483*/ return cl
+	/*line parser.goal:1509*/ p.exprLev = prev
+	/*line parser.goal:1510*/ rb := p.expect(token.RBRACE)
+	/*line parser.goal:1511*/ cl.Rbrace = rb.Pos
+	/*line parser.goal:1512*/ return cl
 }
 
-//line parser.goal:1488
+//line parser.goal:1517
 func (p *parser) parseElement() ast.Expr {
-	/*line parser.goal:1489*/ if p.at(token.ELLIPSIS) {
-		/*line parser.goal:1490*/ return p.parseSpreadElement()
+	/*line parser.goal:1518*/ if p.at(token.ELLIPSIS) {
+		/*line parser.goal:1519*/ return p.parseSpreadElement()
 	}
-	/*line parser.goal:1492*/ x := p.parseElementValue()
-	/*line parser.goal:1493*/ if p.at(token.COLON) {
-		/*line parser.goal:1494*/ colon := p.advance()
-		/*line parser.goal:1495*/ return &ast.KeyValueExpr{Key: x, Colon: colon.Pos, Value: p.parseElementValue()}
+	/*line parser.goal:1521*/ x := p.parseElementValue()
+	/*line parser.goal:1522*/ if p.at(token.COLON) {
+		/*line parser.goal:1523*/ colon := p.advance()
+		/*line parser.goal:1524*/ return &ast.KeyValueExpr{Key: x, Colon: colon.Pos, Value: p.parseElementValue()}
 	}
-	/*line parser.goal:1497*/ return x
+	/*line parser.goal:1526*/ return x
 }
 
-//line parser.goal:1502
+//line parser.goal:1531
 func (p *parser) parseElementValue() ast.Expr {
-	/*line parser.goal:1503*/ if p.at(token.LBRACE) {
-		/*line parser.goal:1504*/ return p.parseCompositeLit(nil)
+	/*line parser.goal:1532*/ if p.at(token.LBRACE) {
+		/*line parser.goal:1533*/ return p.parseCompositeLit(nil)
 	}
-	/*line parser.goal:1506*/ return p.parseExpr()
+	/*line parser.goal:1535*/ return p.parseExpr()
 }

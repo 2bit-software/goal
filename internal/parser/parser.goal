@@ -724,7 +724,36 @@ func (p *parser) nameThenType() bool {
 	for p.kindAt(i) == token.IDENT && p.kindAt(i+1) == token.COMMA {
 		i += 2
 	}
-	return p.kindAt(i) == token.IDENT && startsTypeKind(p.kindAt(i+1))
+	if p.kindAt(i) != token.IDENT {
+		return false
+	}
+	// `IDENT [` is ambiguous: `name [N]Elem` (an array type, so a name group) vs
+	// `Name[T]` (an unnamed generic instantiation). Decide by what follows the
+	// balanced `[...]`: a type means array (name group); `,`/`)` means the ident
+	// is itself one unnamed generic type.
+	if p.kindAt(i+1) == token.LBRACK {
+		return startsTypeKind(p.kindAt(p.afterBracketGroup(i + 1)))
+	}
+	return startsTypeKind(p.kindAt(i + 1))
+}
+
+// afterBracketGroup returns the index just past a balanced `[...]` group that
+// begins at index open (an LBRACK), counting nesting.
+func (p *parser) afterBracketGroup(open int) int {
+	depth := 0
+	for i := open; ; i++ {
+		switch p.kindAt(i) {
+		case token.EOF:
+			return i
+		case token.LBRACK:
+			depth++
+		case token.RBRACK:
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
 }
 
 // parseTypeOrVariadic parses a type or a variadic "...type" element.

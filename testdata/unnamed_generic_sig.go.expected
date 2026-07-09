@@ -1,0 +1,8 @@
+package sig
+
+func discard(*int) {
+}
+
+func lookup() ([]int, *string) {
+	return nil, nil
+}
