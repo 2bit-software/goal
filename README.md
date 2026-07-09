@@ -106,7 +106,7 @@ checker (see [Status](#status)).
 | 11 | doctests | `/// >>> f(2)` / `/// 4` | a generated `_test.go` |
 | 12 | derive-convert | `derive func g(s S) T` | field-by-field conversion via a `from func` registry |
 
-Locked conventions (see `DECISIONS.md`): qualified construction (`Status.Active(…)`,
+Locked conventions (see `docs/DECISIONS.md`): qualified construction (`Status.Active(…)`,
 `Result.Ok`, `Option.Some`), brace-named payloads, newline-separated variants/arms,
 conventional names verbatim (`Ok`/`Err`/`Some`/`None`/`=>`/`_`/`?`), modifiers before
 `func` (`from`/`derive`), and `__goal_`-prefixed synthesized temporaries.
@@ -117,7 +117,7 @@ One engine-neutral front-end, pluggable back-ends. Source is lexed to tokens, pa
 real AST with first-class positions, checked over that AST, and then handed to a back-end.
 There is no per-feature tool and no source→source splicing: a single front-end handles
 **any combination** of the 11 features, and the Go back-end formats the emitted Go once at
-the end. (`REWRITE-ARCHITECTURE.md` is the canonical, as-built architecture reference.)
+the end. (`docs/archive/REWRITE-ARCHITECTURE.md` is the canonical, as-built architecture reference.)
 
 ```
 source ─▶ token ─▶ lexer ─▶ parser ─▶ AST ─▶ sema (check) ─┬─▶ backend/go    (transpile → Go)   ← today's product
@@ -205,11 +205,11 @@ and `task fixpoint` are the two correctness gates.
 
 ## Project files
 
-- `goal-design-spec.md` — the language design spec (read-only; covers features 01–11).
-- `DECISIONS.md` — the choice / assumption / refusal ledger, §01–§12.
-- `TODO.md` — per-feature status and artifact pointers.
-- `REWRITE-ARCHITECTURE.md` — the AST front-end architecture as built (lexer → parser → AST → sema → backend).
-- `FEATURE-AUDIT-PROMPT.md` — the per-feature audit loop, for adding any future feature.
+- `docs/goal-design-spec.md` — the language design spec (read-only; covers features 01–11).
+- `docs/DECISIONS.md` — the choice / assumption / refusal ledger, §01–§12.
+- `docs/STATUS.md` — the empirically-verified current language status (the live picture).
+- `docs/archive/` — superseded planning docs kept for the record (`TODO.md`,
+  `REWRITE-ARCHITECTURE.md`, `FEATURE-AUDIT-PROMPT.md`, `ROADMAP_TO_GOAL.md`, `SELF-HOST-*.md`).
 - `features/NN-*/` — per-feature reference material (`SYNTAX.md`, `TRANSPILE.md`, and
   `examples/`). The standalone per-feature transpilers that once lived here were retired
   once the AST front-end subsumed them; these directories now serve as the design source of

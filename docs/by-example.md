@@ -30,8 +30,8 @@ its keep.
 > a lexical stage over the original source and a typed depth stage over the lowered Go. See
 > `testdata/check/` for the programs each check is expected to flag.
 
-This doc is the quick-ingest companion to the [design spec](../goal-design-spec.md)
-(authoritative prose), the [decisions ledger](../DECISIONS.md), and the per-feature
+This doc is the quick-ingest companion to the [design spec](goal-design-spec.md)
+(authoritative prose), the [decisions ledger](DECISIONS.md), and the per-feature
 reference transpilers in [`features/`](../features/). It is also the intended source
 for a future website with a live playground — each section is a self-contained
 goal→Go pair ready to drop into an editor.

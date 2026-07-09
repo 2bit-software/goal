@@ -3,13 +3,11 @@
 *.test
 *.out
 /bin/
+/goal
 # Self-host bootstrap + fixpoint artifacts (rebuild with `task bootstrap`/`task fixpoint`)
 /_bootstrap/
 # goreleaser output (rebuild with `task release-snapshot`)
 /dist/
-# Compiled reference transpilers (rebuild with `go build` in each dir)
-features/*/transpiler/transpiler
-features/_cut/*/transpiler/transpiler
 
 # Editor / OS
 .DS_Store

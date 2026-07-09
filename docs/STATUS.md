@@ -1,7 +1,7 @@
 # goal — current language status (verified 2026-07)
 
 > **Authoritative, empirically-verified snapshot.** The older planning docs
-> (`ROADMAP_TO_GOAL.md`, `TODO.md`) are **token-splice-era history** and understate
+> (`archive/ROADMAP_TO_GOAL.md`, `archive/TODO.md`) are **token-splice-era history** and understate
 > how complete the language is. This file is the live picture. Every claim below is
 > backed by a `go run ./cmd/goalc <probe>.goal` result or a source `file:line`.
 > Scope: the Go-transpile path (`goalc`/`goal`); the `goscript` interpreter is separate.
@@ -12,7 +12,7 @@ A real AST front-end: `internal/lexer` → `internal/parser` → `internal/sema`
 checker) → `internal/backend` (lowering to Go). A typed depth stage,
 `internal/typecheck`, runs `go/types` over the **lowered** Go for the checks the lexical
 stage must defer. (This supersedes the retired "no new parser / lexer-only" plan the old
-roadmap still describes — see `REWRITE-ARCHITECTURE.md`.)
+roadmap still describes — see `archive/REWRITE-ARCHITECTURE.md`.)
 
 ## (a) Complete / working
 
