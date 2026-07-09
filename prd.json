@@ -91,7 +91,7 @@
         "Test: a tree containing one goal-generated .go and one hand-written .go — `goal clean` removes only the goal-generated file, and `goal clean -n` removes nothing."
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Distinct from the existing Taskfile `clean` target (which removes bin/_bootstrap/dist). Matcher-based tree scan so it works as an escape hatch even without a manifest. Depends on US-002."
     }
   ]

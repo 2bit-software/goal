@@ -15,6 +15,31 @@
   `goalGeneratedMarker` in cmd/goal/main.go; reuse `IsGoalGenerated` rather than
   re-deriving the marker. Refactoring an emitted literal into a same-valued
   constant keeps `verify-generated` green with zero regen (no internal/ churn).
+- Adding/removing a subcommand or flag in `guideCommands` (cmd/goal/main.go)
+  changes the AI guide output, so `TestBootstrapGoldenMatches` fails until you
+  regenerate: `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`.
+
+## [2026-07-09T06:14:33Z] - US-006
+- Added the `goal clean [-n] [path]` subcommand: a pure tree scan
+  (`filepath.WalkDir`) that removes every `*.go` file passing the shared
+  `IsGoalGenerated` matcher and nothing else — a co-located protoc-marked .go
+  and a hand-written .go are left untouched. `-n` is a dry run (prints
+  `would remove <p>`, deletes nothing); a per-file remove failure warns to
+  stderr but does not abort the walk or change the exit status (clean exits 0 on
+  success). Matcher-scoped (no manifest), so it works as an escape hatch anywhere.
+- New `parseCleanFlags` (mirrors parseFmtFlags: `-n`/`--dry-run` + single path)
+  and `cmdClean`; a `case "clean":` in run() dispatch; a `clean` entry in
+  `guideCommands` (adds `-n`). Added `io/fs` import for the WalkDir callback.
+- Added `TestParseCleanFlags` and `TestCmdCleanRemovesOnlyGoalGenerated`
+  (removal + dry-run cases over a goal-gen/hand-written/protoc tree).
+- Files changed: cmd/goal/main.go, cmd/goal/main_test.go, AI-KNOWLEDGE-BOOTSTRAP.md.
+  Commit 2461282.
+- Verified: `task check` exit 0 (drift gate green — clean is command-only, no emit
+  output changed, so zero internal/**/*.go churn).
+- Learnings for future iterations:
+  - This closes the emit-lifecycle PRD (US-001..US-006 all pass). prune (US-005)
+    and clean (US-006) share `IsGoalGenerated`; clean is the manifest-free tree
+    scan, prune is the manifest-driven orphan delete.
 
 ## [2026-07-09T06:02:00Z] - US-005
 - `goal build --emit --prune` now DELETES the orphan set US-004 only warned
