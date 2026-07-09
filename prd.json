@@ -76,7 +76,7 @@
         "Test: an orphaned goal-generated file is removed, while a protoc-marked orphan and a hand-written .go in the same tree are untouched."
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-004. Prune is opt-in; default remains warn."
     },
     {

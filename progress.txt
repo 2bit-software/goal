@@ -16,6 +16,36 @@
   re-deriving the marker. Refactoring an emitted literal into a same-valued
   constant keeps `verify-generated` green with zero regen (no internal/ churn).
 
+## [2026-07-09T06:02:00Z] - US-005
+- `goal build --emit --prune` now DELETES the orphan set US-004 only warned
+  about, scoped strictly by `IsGoalGenerated`: a goal-generated orphan is
+  removed, a co-located protoc-marked orphan and a hand-written .go (even when
+  named by a stale manifest) are left on disk. Build still exits 0; a per-file
+  delete failure warns but does not abort.
+- Factored the orphan computation out of `warnOrphanedFiles` into shared
+  `orphanedFiles(root, current) []string`; both warn and the new
+  `pruneOrphanedFiles(root, current, out, errOut)` consume it so they can never
+  disagree. `emitFiles` gained a `prune bool` param (prune-or-warn switch);
+  `cmdBuild` threads it, `cmdRun` passes false (run is out of scope). `parseFlags`
+  parses `--prune`; dispatch guards: build errors on `--prune` without `--emit`,
+  check/test reject `--prune` (no silent no-op).
+- Added `TestEmitPruneDeletesOrphans` and `TestBuildPruneRequiresEmit`; updated
+  `TestParseFlags`/`TestParseFlagsUnknownFlag` for the new 6-value return.
+- Files changed: cmd/goal/main.go, cmd/goal/main_test.go, AI-KNOWLEDGE-BOOTSTRAP.md.
+  Commit b04fb59.
+- Verified: `task check` exit 0.
+- Learnings for future iterations:
+  - Adding a `guide.Flag` to a command's descriptor changes the AI guide output,
+    so `TestBootstrapGoldenMatches` fails until you run
+    `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`. Regenerate it whenever you
+    add/rename a subcommand or flag (this is the two-verifier golden from memory).
+  - `parseFlags` is shared by build/check/test; when adding an emit-only flag,
+    guard it in each command's dispatch so it can't silently no-op elsewhere.
+  - US-006 (goal clean) reuses `IsGoalGenerated` + `os.Remove`; it needs a tree
+    scan (no manifest) rather than `orphanedFiles`, but the same ownership-scoped
+    delete-only-goal-files discipline applies.
+---
+
 ## [2026-07-09T05:45:14Z] - US-004
 - `goal build --emit` (and `goal run --emit`) now warns to stderr about orphaned
   goal-generated files: a path in the PRIOR emit manifest that still exists on
