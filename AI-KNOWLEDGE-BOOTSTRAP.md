@@ -64,8 +64,9 @@ message:
 
 **Commands:**
 
-- `goal build [--emit[=dir]] [path]` — transpile and `go build` the package(s)
+- `goal build [--emit[=dir]] [--prune] [path]` — transpile and `go build` the package(s)
     - `--emit[=dir]` — also write generated .go beside each .goal (or under dir)
+    - `--prune` — with --emit, delete orphaned goal-generated .go files (ones a prior emit produced but this run did not); only files goal generated are removed
 - `goal run [--engine=ast|interp] [--emit[=dir]] [path] [args...]` — transpile and `go run` the sole main package
     - `--engine=ast|interp` — ast (default) transpiles and `go run`s; interp runs a single .goal file under the goscript tree-walking interpreter
     - `--emit[=dir]` — also write generated .go beside each .goal (or under dir)

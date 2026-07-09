@@ -2,7 +2,7 @@
 // packages under a path, transpiles them with the AST front-end, and drives the Go
 // toolchain over the result.
 //
-//	goal build [--emit[=dir]] [path]        transpile and `go build` (default ./.)
+//	goal build [--emit[=dir]] [--prune] [path] transpile and `go build` (default ./.)
 //	goal run   [--engine=ast|interp] [path] transpile and `go run` the main package (or interpret a file)
 //	goal check [path]                       run the static checker over the package(s)
 //	goal test  [path]                       transpile and `go test` the package's doctests
@@ -15,7 +15,10 @@
 // By default build/run are ephemeral: the generated Go is mapped into the module with
 // `go build -overlay`, so nothing is written to the source tree and module/stdlib
 // imports still resolve. --emit instead writes the generated .go beside each .goal (or
-// into dir) for tooling and inspection. goalc remains the single-file primitive.
+// into dir) for tooling and inspection; by default it warns about orphaned generated
+// files (ones a prior emit produced but this run did not), and `build --emit --prune`
+// deletes those orphans, but only files goal itself generated. goalc remains the
+// single-file primitive.
 package main
 
 import (
@@ -52,9 +55,10 @@ var guideCommands = []guide.Command{
 	{
 		Name:    "build",
 		Summary: "transpile and `go build` the package(s)",
-		Usage:   "goal build [--emit[=dir]] [path]",
+		Usage:   "goal build [--emit[=dir]] [--prune] [path]",
 		Flags: []guide.Flag{
 			{Name: "--emit[=dir]", Summary: "also write generated .go beside each .goal (or under dir)"},
+			{Name: "--prune", Summary: "with --emit, delete orphaned goal-generated .go files (ones a prior emit produced but this run did not); only files goal generated are removed"},
 		},
 	},
 	{
@@ -217,21 +221,25 @@ func run(args []string, out, errOut io.Writer) error {
 		}
 		return cmdRun(root, emit, emitDir, progArgs, out, errOut)
 	case "test":
-		emit, jsonOut, _, root, err := parseFlags(rest)
+		emit, jsonOut, prune, _, root, err := parseFlags(rest)
 		if err != nil {
 			return usageErr(err)
 		}
-		// `goal test` is deliberately ephemeral: --emit (write files to the tree)
-		// and --json (a check-only diagnostics mode) both contradict it.
+		// `goal test` is deliberately ephemeral: --emit (write files to the tree),
+		// --json (a check-only diagnostics mode), and --prune (an --emit modifier)
+		// all contradict it.
 		if emit {
 			return usageErr(fmt.Errorf("unknown flag %q", "--emit"))
 		}
 		if jsonOut {
 			return usageErr(fmt.Errorf("unknown flag %q", "--json"))
 		}
+		if prune {
+			return usageErr(fmt.Errorf("unknown flag %q", "--prune"))
+		}
 		return cmdTest(root, out, errOut)
 	case "build", "check":
-		emit, jsonOut, emitDir, root, err := parseFlags(rest)
+		emit, jsonOut, prune, emitDir, root, err := parseFlags(rest)
 		if err != nil {
 			return usageErr(err)
 		}
@@ -239,7 +247,16 @@ func run(args []string, out, errOut io.Writer) error {
 			if jsonOut {
 				return usageErr(fmt.Errorf("unknown flag %q", "--json"))
 			}
-			return cmdBuild(root, emit, emitDir, out, errOut)
+			// --prune only makes sense alongside --emit (it deletes orphaned
+			// generated files); without --emit it would silently do nothing.
+			if prune && !emit {
+				return usageErr(fmt.Errorf("--prune requires --emit"))
+			}
+			return cmdBuild(root, emit, emitDir, prune, out, errOut)
+		}
+		// `goal check` never emits, so --prune has nothing to act on.
+		if prune {
+			return usageErr(fmt.Errorf("unknown flag %q", "--prune"))
 		}
 		return cmdCheck(root, jsonOut, out, errOut)
 	default:
@@ -281,11 +298,13 @@ func cmdCategory(args []string, out io.Writer) error {
 	}
 }
 
-// parseFlags pulls --emit[=dir], --json, and a single optional path argument out
-// of args. The path defaults to "." and a trailing "/..." (or bare "...") is
-// stripped, since discovery is already recursive. --json is meaningful only for
-// `check` (machine-readable diagnostics); `build`'s dispatch rejects it.
-func parseFlags(args []string) (emit, jsonOut bool, emitDir, root string, err error) {
+// parseFlags pulls --emit[=dir], --prune, --json, and a single optional path
+// argument out of args. The path defaults to "." and a trailing "/..." (or bare
+// "...") is stripped, since discovery is already recursive. --json is meaningful
+// only for `check` (machine-readable diagnostics); --prune only for `build --emit`
+// (delete orphaned generated files, US-005); each caller's dispatch rejects the
+// flags that do not apply to it.
+func parseFlags(args []string) (emit, jsonOut, prune bool, emitDir, root string, err error) {
 	root = "."
 	gotPath := false
 	for _, a := range args {
@@ -294,13 +313,15 @@ func parseFlags(args []string) (emit, jsonOut bool, emitDir, root string, err er
 			emit = true
 		case strings.HasPrefix(a, "--emit="):
 			emit, emitDir = true, strings.TrimPrefix(a, "--emit=")
+		case a == "--prune":
+			prune = true
 		case a == "--json":
 			jsonOut = true
 		case strings.HasPrefix(a, "-"):
-			return false, false, "", "", fmt.Errorf("unknown flag %q", a)
+			return false, false, false, "", "", fmt.Errorf("unknown flag %q", a)
 		default:
 			if gotPath {
-				return false, false, "", "", fmt.Errorf("expected a single path, got extra %q", a)
+				return false, false, false, "", "", fmt.Errorf("expected a single path, got extra %q", a)
 			}
 			root, gotPath = a, true
 		}
@@ -309,7 +330,7 @@ func parseFlags(args []string) (emit, jsonOut bool, emitDir, root string, err er
 	if root == "" {
 		root = "."
 	}
-	return emit, jsonOut, emitDir, root, nil
+	return emit, jsonOut, prune, emitDir, root, nil
 }
 
 // Engine names select which back-end `goal run` uses. ast (the default)
@@ -814,7 +835,7 @@ func reportWarnings(ts []transpiled, errOut io.Writer) {
 	}
 }
 
-func cmdBuild(root string, emit bool, emitDir string, out, errOut io.Writer) error {
+func cmdBuild(root string, emit bool, emitDir string, prune bool, out, errOut io.Writer) error {
 	// A syntax error is reported in the shared `file:line:col: error: [syntax] message`
 	// format before the Go toolchain runs, so build parse errors parse with the same
 	// regex as check diagnostics (rather than the backend's bare "parse:" wrapper).
@@ -846,7 +867,7 @@ func cmdBuild(root string, emit bool, emitDir string, out, errOut io.Writer) err
 	}
 	reportWarnings(ts, errOut)
 	if emit {
-		return emitFiles(ts, emitDir, out, errOut)
+		return emitFiles(ts, emitDir, prune, out, errOut)
 	}
 	return goToolchain(root, ts, out, errOut, "build", "./...")
 }
@@ -876,7 +897,9 @@ func cmdRun(root string, emit bool, emitDir string, progArgs []string, out, errO
 	}
 	reportWarnings(ts, errOut)
 	if emit {
-		if err := emitFiles(ts, emitDir, out, errOut); err != nil {
+		// `goal run` does not expose --prune (US-005 is scoped to `build`), so it
+		// always takes the default warn-not-delete orphan handling.
+		if err := emitFiles(ts, emitDir, false, out, errOut); err != nil {
 			return err
 		}
 	}
@@ -1473,10 +1496,12 @@ func loadEmitManifest(path string) (*emitManifest, error) {
 // emitFiles writes the generated Go to disk: beside each .goal by default, or mirrored
 // under emitDir when given. Test sidecars are written too so doctests can run. Every
 // file is prefixed with the goal-generated header (see goalGeneratedHeader). After a
-// successful run it warns (to errOut) about any orphaned generated files (see
-// warnOrphanedFiles) and writes an emit manifest (goalManifestName) at the emit root
-// recording every .go path produced, so a later build can detect orphaned output.
-func emitFiles(ts []transpiled, emitDir string, out, errOut io.Writer) error {
+// successful run it handles orphaned generated files — deleting them when prune is set
+// (pruneOrphanedFiles) or otherwise only warning (warnOrphanedFiles) — and writes an
+// emit manifest (goalManifestName) at the emit root recording every .go path produced,
+// so the manifest always reflects exactly the current emit set and a later build can
+// detect orphaned output.
+func emitFiles(ts []transpiled, emitDir string, prune bool, out, errOut io.Writer) error {
 	header := goalGeneratedHeader(version)
 	var emitted []string
 	for _, t := range ts {
@@ -1498,31 +1523,37 @@ func emitFiles(ts []transpiled, emitDir string, out, errOut io.Writer) error {
 	}
 	root := emitManifestRoot(ts, emitDir)
 	current := manifestRelPaths(root, emitted)
-	// Warn about orphans BEFORE overwriting the prior manifest — the diff needs
-	// the previous run's file set, which writeEmitManifest is about to replace.
-	warnOrphanedFiles(root, current, errOut)
+	// Handle orphans BEFORE overwriting the prior manifest — the diff needs the
+	// previous run's file set, which writeEmitManifest is about to replace.
+	if prune {
+		pruneOrphanedFiles(root, current, out, errOut)
+	} else {
+		warnOrphanedFiles(root, current, errOut)
+	}
 	return writeEmitManifest(root, current)
 }
 
-// warnOrphanedFiles reports, to errOut, any goal-generated .go file that a prior
-// emit produced but this run did not (an orphan): its source is gone, so the
-// stale .go would silently break the later Go build. An orphan is a path in the
-// prior manifest that (a) is absent from the current emit set, (b) still exists
-// on disk, and (c) still passes the goal ownership matcher (IsGoalGenerated) — a
-// file whose header a user removed by hand is no longer goal-owned and is left
-// alone. This is detect-and-surface only: nothing is ever deleted, and the
-// absence of a prior manifest (first emit) yields no warnings and no error, so
-// the build's exit status is unaffected either way. Deletion is the opt-in job
-// of `--prune` (US-005) and `goal clean` (US-006).
-func warnOrphanedFiles(root string, current []string, errOut io.Writer) {
+// orphanedFiles returns the on-disk paths of goal-generated .go files that a
+// prior emit produced but this run did not (the orphan set). An orphan is a path
+// in the prior manifest that (a) is absent from the current emit set, (b) still
+// exists on disk, and (c) still passes the goal ownership matcher
+// (IsGoalGenerated) — a file whose header a user removed by hand, a co-located
+// file bearing a non-goal generator header, and a hand-written .go are all
+// excluded, so nothing goal did not generate is ever in the set. The absence of
+// a prior manifest (first emit, or an unreadable one) yields an empty set. This
+// is the single definition both `--emit`'s warning (warnOrphanedFiles) and
+// `--emit --prune`'s deletion (pruneOrphanedFiles) consume, so they can never
+// disagree about what counts as an orphan.
+func orphanedFiles(root string, current []string) []string {
 	prior, err := loadEmitManifest(filepath.Join(root, goalManifestName))
 	if err != nil {
-		return // no prior manifest (or unreadable) — nothing to compare against
+		return nil // no prior manifest (or unreadable) — nothing to compare against
 	}
 	inCurrent := make(map[string]bool, len(current))
 	for _, rel := range current {
 		inCurrent[rel] = true
 	}
+	var orphans []string
 	for _, rel := range prior.Files {
 		if inCurrent[rel] {
 			continue
@@ -1533,9 +1564,37 @@ func warnOrphanedFiles(root string, current []string, errOut io.Writer) {
 			continue // orphan candidate no longer on disk
 		}
 		if !IsGoalGenerated(content) {
-			continue // header removed by hand — not goal-owned anymore
+			continue // header removed by hand (or never goal's) — not goal-owned
 		}
+		orphans = append(orphans, p)
+	}
+	return orphans
+}
+
+// warnOrphanedFiles reports, to errOut, each goal-generated orphan (see
+// orphanedFiles): its source is gone, so the stale .go would silently break the
+// later Go build. This is detect-and-surface only — nothing is ever deleted and
+// the build's exit status is unaffected. Deletion is the opt-in job of `--prune`
+// (US-005, pruneOrphanedFiles) and `goal clean` (US-006).
+func warnOrphanedFiles(root string, current []string, errOut io.Writer) {
+	for _, p := range orphanedFiles(root, current) {
 		fmt.Fprintln(errOut, "warning: orphaned generated file "+p)
+	}
+}
+
+// pruneOrphanedFiles deletes each goal-generated orphan (see orphanedFiles) that
+// warnOrphanedFiles would otherwise only report, announcing each removal to out.
+// It shares orphanedFiles' ownership scope, so only files passing IsGoalGenerated
+// are ever removed — a co-located protoc-marked orphan or a hand-written .go is
+// left untouched. A per-file delete failure is reported to errOut but does not
+// abort the build or change its exit status. Invoked only under `--emit --prune`.
+func pruneOrphanedFiles(root string, current []string, out, errOut io.Writer) {
+	for _, p := range orphanedFiles(root, current) {
+		if err := os.Remove(p); err != nil {
+			fmt.Fprintln(errOut, "warning: could not prune orphaned generated file "+p+": "+err.Error())
+			continue
+		}
+		fmt.Fprintln(out, "pruned", p)
 	}
 }
 
