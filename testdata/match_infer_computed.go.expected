@@ -1,0 +1,75 @@
+package app
+
+import "fmt"
+
+type Value interface{ isValue() }
+
+type Value_Str struct {
+	S string
+}
+type Value_Int struct {
+	N int64
+}
+type Value_List struct {
+	Items []Value
+}
+
+func (Value_Str) isValue()  {}
+func (Value_Int) isValue()  {}
+func (Value_List) isValue() {}
+
+func boolLabel(b bool) string {
+	if b {
+		return "t"
+	}
+	return "f"
+}
+
+func ident(v Value) Value {
+	return v
+}
+
+func arity(v Value) int64 {
+	var x int64
+	switch v1 := v.(type) {
+	case Value_Str:
+		x = 1
+	case Value_Int:
+		x = 1
+	case Value_List:
+		x = int64(len(v1.Items))
+	default:
+		panic("unreachable: non-exhaustive Value (compiler invariant violated)")
+	}
+	return x
+}
+
+func render(v Value) string {
+	var x string
+	switch v1 := v.(type) {
+	case Value_Str:
+		x = fmt.Sprintf("%q", v1.S)
+	case Value_Int:
+		x = fmt.Sprint(v1.N)
+	case Value_List:
+		x = boolLabel(len(v1.Items) == 0)
+	default:
+		panic("unreachable: non-exhaustive Value (compiler invariant violated)")
+	}
+	return x
+}
+
+func passthru(v Value) Value {
+	var x Value
+	switch v.(type) {
+	case Value_Str:
+		x = ident(v)
+	case Value_Int:
+		x = v
+	case Value_List:
+		x = v
+	default:
+		panic("unreachable: non-exhaustive Value (compiler invariant violated)")
+	}
+	return x
+}

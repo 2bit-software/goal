@@ -1,0 +1,100 @@
+package backend
+
+// matchprobe.goal resolves the result type of a value-position `name := match` whose
+// arms the AST alone cannot type (a stdlib/method call, an arbitrary expression). The
+// package driver first emits a *probe* form of the package (emitFileProbe, probeMode)
+// in which each such match's unknown arms are captured as typed temporaries; this file
+// type-checks that probe Go with go/types and reads the temporaries' types back, so
+// the driver can re-emit the match with a real `var name T`. It reuses the same source
+// importer the arity resolver does and mirrors internal/typecheck.Load's go/types
+// setup — the type is always *derived* from the checked probe, never guessed.
+
+import (
+	goast "go/ast"
+	"go/importer"
+	"go/parser"
+	"go/token"
+	"go/types"
+	"strings"
+
+	"goal/internal/pipeline"
+)
+
+// resolveMatchProbes type-checks the probe-form Go (goFiles, the whole package or a
+// single self-contained file) and recovers, for each recorded value-position match,
+// the Go type shared by its unknown arms. It returns a map from each match's
+// capture-var prefix to that type, but only when every captured arm agrees; a match
+// whose arms disagree, or whose captures did not type-check, is absent, so the final
+// emit keeps its located deferral. Best-effort: a parse or importer failure yields
+// whatever prefixes it did resolve.
+func resolveMatchProbes(pkgName string, goFiles []pipeline.GoFile, unresolved []matchProbe) map[string]string {
+	fset := token.NewFileSet()
+	var files []*goast.File
+	for _, gf := range goFiles {
+		f, err := parser.ParseFile(fset, gf.Name, gf.Go, parser.SkipObjectResolution)
+		if err != nil {
+			return map[string]string{} // probe Go did not parse — resolve nothing
+		}
+		files = append(files, f)
+	}
+
+	info := &types.Info{Defs: map[*goast.Ident]types.Object{}}
+	conf := types.Config{
+		Importer: importer.ForCompiler(fset, "source", nil),
+		// Tolerate the probe's expected type errors (a `var name any` sink, an
+		// unresolved sibling symbol): go/types keeps filling Defs past them.
+		Error: func(err error) {},
+	}
+	typesPkg, _ := conf.Check(pkgName, fset, files, info)
+
+	capTypes := captureVarTypes(info, typesPkg)
+	resolved := map[string]string{}
+	for _, mp := range unresolved {
+		if t, ok := agreedCaptureType(capTypes, mp.prefix); ok {
+			resolved[mp.prefix] = t
+		}
+	}
+	return resolved
+}
+
+// captureVarTypes maps every probe capture variable's name to its checked Go type,
+// rendered without the package's own qualifier (`Value`, not `pkg.Value`) so it emits
+// verbatim as a `var name T` type. Only `__goalmatch_`-prefixed locals are kept.
+func captureVarTypes(info *types.Info, typesPkg *types.Package) map[string]string {
+	qualifier := types.Qualifier(nil)
+	if typesPkg != nil {
+		qualifier = types.RelativeTo(typesPkg)
+	}
+	out := map[string]string{}
+	for id, obj := range info.Defs {
+		if obj == nil || !strings.HasPrefix(id.Name, "__goalmatch_") {
+			continue
+		}
+		if v, ok := obj.(*types.Var); ok {
+			out[id.Name] = types.TypeString(v.Type(), qualifier)
+		}
+	}
+	return out
+}
+
+// agreedCaptureType returns the common type of every capture variable sharing prefix,
+// or false when there is none or they disagree — the guard that keeps a genuinely
+// heterogeneous match deferred rather than adopting one arm's type.
+func agreedCaptureType(capTypes map[string]string, prefix string) (string, bool) {
+	agreed := ""
+	found := false
+	for name, typ := range capTypes {
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		if typ == "" {
+			return "", false
+		}
+		if !found {
+			agreed, found = typ, true
+		} else if agreed != typ {
+			return "", false
+		}
+	}
+	return agreed, found
+}

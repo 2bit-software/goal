@@ -361,16 +361,16 @@
       "normalize": "gofmt"
     },
     {
-      "id": "features-11-doctests-examples-add-doctest",
-      "kind": "doctest",
+      "id": "features-11-doctests-examples-add",
+      "kind": "transpile",
       "input": "features/11-doctests/examples/add.goal",
       "expected": "features/11-doctests/examples/add.go.expected",
       "mode": "file",
       "normalize": "gofmt"
     },
     {
-      "id": "features-11-doctests-examples-add",
-      "kind": "transpile",
+      "id": "features-11-doctests-examples-add-doctest",
+      "kind": "doctest",
       "input": "features/11-doctests/examples/add.goal",
       "expected": "features/11-doctests/examples/add.go.expected",
       "mode": "file",
@@ -409,16 +409,16 @@
       "normalize": "gofmt"
     },
     {
-      "id": "features-11-doctests-examples-multi-doctest",
-      "kind": "doctest",
+      "id": "features-11-doctests-examples-multi",
+      "kind": "transpile",
       "input": "features/11-doctests/examples/multi.goal",
       "expected": "features/11-doctests/examples/multi.go.expected",
       "mode": "file",
       "normalize": "gofmt"
     },
     {
-      "id": "features-11-doctests-examples-multi",
-      "kind": "transpile",
+      "id": "features-11-doctests-examples-multi-doctest",
+      "kind": "doctest",
       "input": "features/11-doctests/examples/multi.goal",
       "expected": "features/11-doctests/examples/multi.go.expected",
       "mode": "file",
@@ -1105,6 +1105,14 @@
       "normalize": "gofmt"
     },
     {
+      "id": "testdata-match_infer_computed",
+      "kind": "transpile",
+      "input": "testdata/match_infer_computed.goal",
+      "expected": "testdata/match_infer_computed.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
       "id": "testdata-match_infer_value",
       "kind": "transpile",
       "input": "testdata/match_infer_value.goal",
@@ -1129,16 +1137,16 @@
       "normalize": "gofmt"
     },
     {
-      "id": "testdata-option_some_copy-doctest",
-      "kind": "doctest",
+      "id": "testdata-option_some_copy",
+      "kind": "transpile",
       "input": "testdata/option_some_copy.goal",
       "expected": "testdata/option_some_copy.go.expected",
       "mode": "file",
       "normalize": "gofmt"
     },
     {
-      "id": "testdata-option_some_copy",
-      "kind": "transpile",
+      "id": "testdata-option_some_copy-doctest",
+      "kind": "doctest",
       "input": "testdata/option_some_copy.goal",
       "expected": "testdata/option_some_copy.go.expected",
       "mode": "file",
@@ -1177,16 +1185,16 @@
       }
     },
     {
-      "id": "testdata-qprop_assign_eq-doctest",
-      "kind": "doctest",
+      "id": "testdata-qprop_assign_eq",
+      "kind": "transpile",
       "input": "testdata/qprop_assign_eq.goal",
       "expected": "testdata/qprop_assign_eq.go.expected",
       "mode": "file",
       "normalize": "gofmt"
     },
     {
-      "id": "testdata-qprop_assign_eq",
-      "kind": "transpile",
+      "id": "testdata-qprop_assign_eq-doctest",
+      "kind": "doctest",
       "input": "testdata/qprop_assign_eq.goal",
       "expected": "testdata/qprop_assign_eq.go.expected",
       "mode": "file",

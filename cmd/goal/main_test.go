@@ -495,6 +495,38 @@ func TestCheckDepthNoteOmitsGeneratedDump(t *testing.T) {
 	}
 }
 
+// A directory (full-package) check has every sibling file, so a depth-stage transpile
+// failure is a genuine compile error and must hard-fail — `check` may not report `ok`
+// for source that cannot build. The full "--- generated ---" dump stays reserved for
+// `goal build`.
+func TestCheckDirectoryHardFailsOnTranspileError(t *testing.T) {
+	dir := goalModule(t, map[string]string{
+		"bad.goal": "package demo\n\n" +
+			"enum Value {\n\tStr { s: string }\n\tInt { n: int64 }\n}\n\n" +
+			"func bad(v Value) string {\n" +
+			"\tx := match v {\n" +
+			"\t\tValue.Str(a) => a.s\n" +
+			"\t\tValue.Int(a) => int64(a.n)\n" +
+			"\t}\n" +
+			"\treturn x\n}\n",
+	})
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"check", dir}, &out, &errOut)
+	if err == nil {
+		t.Fatalf("directory check should hard-fail on a non-transpiling package\nstdout: %s\nstderr: %s", out.String(), errOut.String())
+	}
+	if strings.Contains(out.String(), "ok") {
+		t.Errorf("a hard-failing check must not print ok:\nstdout: %s", out.String())
+	}
+	if !strings.Contains(errOut.String(), "depth-transpile") {
+		t.Errorf("expected the depth-transpile error diagnostic, got:\n%s", errOut.String())
+	}
+	if strings.Contains(errOut.String(), "--- generated ---") {
+		t.Errorf("the hard-fail diagnostic leaked the generated-Go dump:\n%s", errOut.String())
+	}
+}
+
 func TestParseFlags(t *testing.T) {
 	emit, jsonOut, emitDir, root, err := parseFlags([]string{"--emit=out", "./pkg/..."})
 	if err != nil {
@@ -1145,10 +1177,13 @@ func TestRunValueMatchInfersBoolArms(t *testing.T) {
 	}
 }
 
-// arithmeticArmMatchGoal is a value-position `x := match` whose arms are
-// arithmetic expressions, whose result type is NOT syntactically known. The
-// emitter must still refuse to infer it (unchanged behaviour) rather than guess.
+// arithmeticArmMatchGoal is a value-position `x := match` whose arms are arithmetic
+// over typed operands. The result type is not syntactically a literal/enum, but it is
+// derivable from the operands' checked types — the go/types probe (Option B) recovers
+// it as `int`, so this now infers rather than requiring an explicit annotation.
 const arithmeticArmMatchGoal = `package main
+
+import "fmt"
 
 enum Color {
     Red
@@ -1162,23 +1197,23 @@ func total(c Color, a int, b int) int {
     }
     return x
 }
+
+func main() { fmt.Println(total(Color.Red, 3, 4)) }
 `
 
-// TestBuildRefusesArithmeticArmValueMatch pins the negative case: an
-// arithmetic-arm value-position match is still rejected with the
-// inferable-result-type diagnostic, so the boolean widening did not leak into
-// operators whose result type is not syntactically recoverable.
-func TestBuildRefusesArithmeticArmValueMatch(t *testing.T) {
-	dir := goalModule(t, map[string]string{"x.goal": arithmeticArmMatchGoal})
+// TestRunInfersArithmeticArmValueMatch pins that a value-position `x := match` whose
+// arms are arithmetic over typed operands now infers its result type through the
+// go/types probe (Option B) and builds+runs — the type is derived from the checked
+// operands, not guessed.
+func TestRunInfersArithmeticArmValueMatch(t *testing.T) {
+	dir := goalModule(t, map[string]string{"main.goal": arithmeticArmMatchGoal})
 
 	var out, errOut bytes.Buffer
-	err := run([]string{"build", dir}, &out, &errOut)
-	if err == nil {
-		t.Fatalf("expected build to refuse the arithmetic-arm value-position match\nstdout: %s\nstderr: %s", out.String(), errOut.String())
+	if err := run([]string{"run", dir}, &out, &errOut); err != nil {
+		t.Fatalf("expected the arithmetic-arm value-position match to build and run: %v\nstderr: %s", err, errOut.String())
 	}
-	msg := err.Error() + errOut.String()
-	if !strings.Contains(msg, "needs an inferable result type") {
-		t.Errorf("refusal diagnostic not surfaced:\nerr: %v\nstderr: %s", err, errOut.String())
+	if got := strings.TrimSpace(out.String()); got != "7" {
+		t.Errorf("total(Red, 3, 4) = %q, want %q\nstderr: %s", got, "7", errOut.String())
 	}
 }
 

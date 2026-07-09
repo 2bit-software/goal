@@ -114,6 +114,45 @@ type emitter struct {
 	// (`tmp := <operand>`) — to its temp name, so expr() emits the temp in place of
 	// the original node. Keyed by node identity. SPIKE: inline-`?` hoisting.
 	hoisted map[ast.Expr]string
+	// probeMode makes a value-position `name := match` whose result type is not
+	// derivable syntactically emit a type-check *probe* (each arm captured as
+	// `<probeVar> := <body>`) instead of the located deferral, and record the match
+	// on unresolvedMatches. The package driver (TranspilePackage) type-checks the
+	// probe output, resolves each arm's exact Go type, then re-emits with probeMode
+	// off and resolvedMatchTypes populated. False for the ordinary (and final) emit.
+	probeMode bool
+	// fileTag disambiguates probe-var names across the package's files (a token
+	// offset is only unique within one file). Set per file by the package driver;
+	// empty for single-file emit, which never probes.
+	fileTag string
+	// unresolvedMatches records, in probe mode, each value-position match whose type
+	// the probe must resolve. Threaded out through emitFileWith like warns.
+	unresolvedMatches []matchProbe
+	// resolvedMatchTypes maps a match probe prefix (matchProbePrefix) to the Go type
+	// text the probe type-check recovered for that match's unknown arms. Consulted by
+	// classifyArm on the final emit; nil on the probe pass and for single-file emit.
+	resolvedMatchTypes map[string]string
+	// curMatchProbe is the capture state for the value-position match currently
+	// emitting in probe mode; zero (inactive) otherwise.
+	curMatchProbe matchProbeState
+}
+
+// matchProbe records one value-position match awaiting probe type-resolution: the
+// shared prefix of every capture variable the probe emitted for the match's unknown
+// arms. The driver reads those variables' types back by prefix and, when they all
+// agree, resolves the match's result type.
+type matchProbe struct {
+	prefix string
+}
+
+// matchProbeState is the in-flight capture state for the match currently emitting in
+// probe mode: prefix names its capture variables and count mints a unique one per
+// unknown arm. active is false outside a probed match (and saved/restored around a
+// nested one).
+type matchProbeState struct {
+	active bool
+	prefix string
+	count  int
 }
 
 // emitFileWith is emitFile with the prelude-suppression knob the package driver
@@ -125,13 +164,28 @@ type emitter struct {
 // name used for the per-statement /*line*/ directives (US-013); empty suppresses
 // them (single-file emit and the doctest sidecar pass "").
 func emitFileWith(f *ast.File, info *sema.Info, suppressPrelude bool, srcFile string) (src string, usedOption bool, warns []pipeline.Warning, err error) {
+	src, usedOption, warns, _, err = emitFileProbe(f, info, suppressPrelude, srcFile, "", false, nil)
+	return src, usedOption, warns, err
+}
+
+// emitFileProbe is emitFileWith plus the value-position-match type-resolution seam.
+// probeMode=true emits the type-check probe form for any match whose result type is
+// not derivable from the AST + resolved facts, returning each match's capture-var
+// prefix in unresolved so the driver can read the types back; probeMode=false is the
+// ordinary (and final) emit, which consults resolved for the previously-unknown arms
+// and keeps the located deferral for any still unresolved. fileTag disambiguates
+// probe-var names across the package's files.
+func emitFileProbe(f *ast.File, info *sema.Info, suppressPrelude bool, srcFile, fileTag string, probeMode bool, resolved map[string]string) (src string, usedOption bool, warns []pipeline.Warning, unresolved []matchProbe, err error) {
 	e := emitter{
-		info:            info,
-		pointerRecv:     pointerReceiverSet(f),
-		enumMethods:     buildEnumMethods(f, info),
-		fileIdents:      fileIdentSet(f),
-		suppressPrelude: suppressPrelude,
-		srcFile:         srcFile,
+		info:               info,
+		pointerRecv:        pointerReceiverSet(f),
+		enumMethods:        buildEnumMethods(f, info),
+		fileIdents:         fileIdentSet(f),
+		suppressPrelude:    suppressPrelude,
+		srcFile:            srcFile,
+		fileTag:            fileTag,
+		probeMode:          probeMode,
+		resolvedMatchTypes: resolved,
 		// Map fields set explicitly at construction so the literal carries no
 		// unsafe nil map (a nil map panics on write). renames/armFields/taken/
 		// recvTypes/curParams start empty and are (re)seeded per funcDecl or per
@@ -149,9 +203,9 @@ func emitFileWith(f *ast.File, info *sema.Info, suppressPrelude bool, srcFile st
 	e.typeDecls = e.buildTypeDecls(f)
 	e.file(f)
 	if e.err != nil {
-		return "", false, nil, e.err
+		return "", false, nil, nil, e.err
 	}
-	return e.b.String(), e.usedOptionHelper, e.warns, nil
+	return e.b.String(), e.usedOptionHelper, e.warns, e.unresolvedMatches, nil
 }
 
 // gensym returns a fresh identifier built from want that collides with no name in
@@ -2303,106 +2357,218 @@ func (e *emitter) tryAssignMatch(s *ast.AssignStmt) bool {
 		return false
 	}
 	typ, ok := e.inferMatchType(m)
-	if !ok {
-		e.fail("value-position `%s := match` needs an inferable result type (arms are not all one enum, string, or bool); annotate it as `var %s T = match ...` or use `return match ...`", id.Name, id.Name)
+	if ok {
+		e.p("var " + id.Name + " " + typ + "\n")
+		e.matchValue(m, q, posVar, id.Name)
 		return true
 	}
-	e.p("var " + id.Name + " " + typ + "\n")
-	e.matchValue(m, q, posVar, id.Name)
+	if e.probeMode {
+		e.emitProbeMatch(m, q, id.Name)
+		return true
+	}
+	e.fail("value-position `%s := match` needs an inferable result type (arms are not all one enum, string, or bool); annotate it as `var %s T = match ...` or use `return match ...`", id.Name, id.Name)
 	return true
 }
 
-// inferMatchType infers the result type of a value-position `name := match` from
-// its arm bodies, for the bounded set of shapes whose type is recoverable
-// structurally: every arm (rest included) must be a string literal, a bool
-// literal, or a construction of one and the same enum, and all arms must agree.
-// It returns ("", false) for anything else so the caller keeps the located
-// deferral rather than guess. Mirrors internal/pass.inferMatchType over the AST.
-func (e *emitter) inferMatchType(m *ast.MatchExpr) (string, bool) {
-	inferred := ""
-	for _, arm := range m.Arms {
-		kind, ok := e.armBodyType(arm.Body)
-		if !ok {
-			return "", false
-		}
-		switch {
-		case inferred == "":
-			inferred = kind
-		case inferred != kind:
-			return "", false
-		}
-	}
-	return inferred, inferred != ""
+// emitProbeMatch emits the type-check probe form of an un-inferable value-position
+// match: `var name any` (which accepts any arm value without a declared type), then
+// the switch with each unknown arm captured as `<prefix><n> := <body>` so the driver
+// can recover its Go type. It records the match's prefix on unresolvedMatches. It
+// never fails — the probe pass must produce parseable output for the whole package so
+// the driver can resolve every match; a still-unresolvable one fails later on the
+// final (non-probe) emit.
+func (e *emitter) emitProbeMatch(m *ast.MatchExpr, q, name string) {
+	prefix := matchProbePrefix(e.fileTag, m.Pos())
+	e.unresolvedMatches = append(e.unresolvedMatches, matchProbe{prefix: prefix})
+	prev := e.curMatchProbe
+	e.curMatchProbe = matchProbeState{active: true, prefix: prefix}
+	e.p("var " + name + " any\n")
+	e.matchValue(m, q, posVar, name)
+	e.p("\n_ = " + name)
+	e.curMatchProbe = prev
 }
 
-// armBodyType classifies one match arm body into a result type, for the inferable
-// shapes only: a lone string literal -> "string", a lone true/false -> "bool", a
-// syntactically boolean-valued expression (a comparison/logical BinaryExpr, a `!`
-// UnaryExpr, or a ParenExpr wrapping one) -> "bool", and a whole-body enum
-// construction (`Enum.Variant` SelectorExpr or `Enum.Variant(…)` VariantLit of a
-// resolved enum) -> the enum's name. Any other body (numeric, identifier, call,
-// arithmetic/bitwise expression) is not inferable.
-func (e *emitter) armBodyType(body ast.Node) (string, bool) {
+// armClass grades how recoverable a match arm's result type is.
+type armClass int
+
+const (
+	// armUnknown: the type is not derivable from the AST + sema facts (a stdlib or
+	// method call, an arbitrary expression). The probe (go/types) resolves it, or
+	// the caller keeps the located deferral.
+	armUnknown armClass = iota
+	// armConcrete: the arm's exact result type is known and returned.
+	armConcrete
+	// armFlexible: an untyped numeric/char constant (or constant arithmetic of such).
+	// It carries no type of its own; it coerces to whatever builtin-numeric concrete
+	// type the other arms agree on, exactly as Go coerces an untyped constant.
+	armFlexible
+)
+
+// inferMatchType infers the result type of a value-position `name := match` from
+// its arm bodies. Every non-flexible arm must agree on one concrete type; untyped
+// constant arms coerce to it when it is a builtin numeric. It returns ("", false)
+// when an arm is unknown, when concrete arms disagree, or when the only concrete
+// signal is a constant (ambiguous default) — so the caller keeps the located
+// deferral rather than guess. A wrong guess would silently miscompile; every type
+// returned here is *derived* from declared/checked facts, never guessed.
+func (e *emitter) inferMatchType(m *ast.MatchExpr) (string, bool) {
+	concrete := ""
+	sawFlexible := false
+	for _, arm := range m.Arms {
+		typ, class := e.classifyArm(m, arm.Body)
+		switch class {
+		case armUnknown:
+			return "", false
+		case armFlexible:
+			sawFlexible = true
+		case armConcrete:
+			if concrete == "" {
+				concrete = typ
+			} else if concrete != typ {
+				return "", false
+			}
+		}
+	}
+	if concrete == "" {
+		return "", false // all arms flexible: the default type is ambiguous
+	}
+	if sawFlexible && !isBuiltinNumericType(concrete) {
+		return "", false // a numeric constant cannot be a string/bool/enum
+	}
+	return concrete, true
+}
+
+// classifyArm grades one arm, consulting the probe's resolved types first: on the
+// final emit an arm the AST could not place (armUnknown) becomes concrete once the
+// probe has recovered the match's result type. On the probe pass (resolvedMatchTypes
+// nil) it is exactly armBodyType.
+func (e *emitter) classifyArm(m *ast.MatchExpr, body ast.Node) (string, armClass) {
+	typ, class := e.armBodyType(body)
+	if class == armUnknown && e.resolvedMatchTypes != nil {
+		if t, ok := e.resolvedMatchTypes[matchProbePrefix(e.fileTag, m.Pos())]; ok && t != "" {
+			return t, armConcrete
+		}
+	}
+	return typ, class
+}
+
+// armBodyType classifies one match arm body structurally: a string literal ->
+// "string"; a bool literal or syntactically boolean expr -> "bool"; a whole-body
+// enum construction -> the enum name; a param identifier -> its declared type; a
+// local single-return call -> the callee's result type; a builtin type-conversion
+// `T(x)` -> T; an untyped numeric/char constant -> armFlexible. Anything else is
+// armUnknown, left for the probe.
+func (e *emitter) armBodyType(body ast.Node) (string, armClass) {
 	match body {
 		*ast.BasicLit(b) => {
-			if b.Kind == token.STRING {
-				return "string", true
+			switch b.Kind {
+			case token.STRING:
+				return "string", armConcrete
+			case token.INT, token.FLOAT, token.CHAR, token.IMAG:
+				return "", armFlexible
 			}
 		}
 		*ast.Ident(b) => {
 			if b.Name == "true" || b.Name == "false" {
-				return "bool", true
+				return "bool", armConcrete
+			}
+			// A pass-through parameter (`v`) resolves to its declared type text.
+			if t, ok := e.paramType(b.Name); ok && t != "" {
+				return t, armConcrete
 			}
 		}
 		*ast.ParenExpr(b) => {
-			// `(a == b)` infers exactly as its inner expression does.
+			// `(expr)` classifies exactly as its inner expression does.
 			return e.armBodyType(b.X)
 		}
 		*ast.UnaryExpr(b) => {
-			// `!x` is boolean; other unary ops (-, *, &, <-, unwrap) are not
-			// syntactically typed.
+			// `!x` is boolean; a sign/complement of an untyped constant stays a
+			// flexible constant; other unary ops (*, &, <-, unwrap) are not typed.
 			if b.Op == token.NOT {
-				return "bool", true
+				return "bool", armConcrete
+			}
+			switch b.Op {
+			case token.SUB, token.ADD, token.XOR:
+				if _, class := e.armBodyType(b.X); class == armFlexible {
+					return "", armFlexible
+				}
 			}
 		}
 		*ast.BinaryExpr(b) => {
-			// Comparison and logical operators yield bool regardless of operand
-			// types; arithmetic/bitwise operators fall through (their result type
-			// is not syntactically known).
+			// Comparison/logical operators yield bool regardless of operands.
+			// Arithmetic/bitwise of two untyped constants stays a flexible constant;
+			// otherwise its result type is not syntactically known.
 			switch b.Op {
 			case token.EQL, token.NEQ, token.LSS, token.LEQ, token.GTR, token.GEQ, token.LAND, token.LOR:
-				return "bool", true
+				return "bool", armConcrete
+			case token.ADD, token.SUB, token.MUL, token.QUO, token.REM,
+				token.AND, token.OR, token.XOR, token.SHL, token.SHR, token.AND_NOT:
+				_, lc := e.armBodyType(b.X)
+				_, rc := e.armBodyType(b.Y)
+				if lc == armFlexible && rc == armFlexible {
+					return "", armFlexible
+				}
 			}
 		}
 		*ast.SelectorExpr(b) => {
 			// A data-less variant reference `Enum.Variant` or `pkg.Enum.Variant`.
 			if key, ok := enumRef(b.X); ok && b.Sel != nil {
 				if en := enumOf(e.info, key); en != nil && en.VSet[b.Sel.Name] {
-					return key, true
+					return key, armConcrete
 				}
 			}
 		}
 		*ast.VariantLit(b) => {
 			// A payload variant construction `Enum.Variant(field: v)` or `pkg.Enum.Variant(...)`.
 			if key, ok := enumRef(b.Enum); ok && enumOf(e.info, key) != nil {
-				return key, true
+				return key, armConcrete
 			}
 		}
 		*ast.CallExpr(b) => {
-			// A whole-body call `f(...)` infers to f's declared sole result type,
-			// resolved through the file's function signatures. Only a locally-known
-			// single-return function is inferable; a method value (`recv.M(...)`), a
-			// package-qualified call, or a void/multi-value function is not — those
-			// keep the located deferral rather than guess.
-			if id, ok := b.Fun.(*ast.Ident); ok && e.info != nil && e.info.FuncSignatures != nil {
-				if sig, ok := e.info.FuncSignatures[id.Name]; ok && sig.RetType != "" {
-					return sig.RetType, true
+			if id, ok := b.Fun.(*ast.Ident); ok {
+				// A local single-return function call -> its declared result type.
+				if e.info != nil && e.info.FuncSignatures != nil {
+					if sig, ok := e.info.FuncSignatures[id.Name]; ok && sig.RetType != "" {
+						return sig.RetType, armConcrete
+					}
+				}
+				// A builtin type-conversion `int64(x)` / `string(x)` -> the target
+				// type. Restricted to the builtin set: a named-type conversion is
+				// indistinguishable from an out-of-file call, so it stays unknown.
+				if len(b.Args) == 1 && isBuiltinConvType(id.Name) {
+					return id.Name, armConcrete
 				}
 			}
 		}
 		_ => {}
 	}
-	return "", false
+	return "", armUnknown
+}
+
+// isBuiltinNumericType reports whether name is a predeclared numeric type, the set
+// an untyped constant arm may coerce to.
+func isBuiltinNumericType(name string) bool {
+	switch name {
+	case "int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
+		"byte", "rune", "float32", "float64", "complex64", "complex128":
+		return true
+	}
+	return false
+}
+
+// isBuiltinConvType reports whether name is a predeclared type usable as a
+// whole-body conversion whose result type is exactly name.
+func isBuiltinConvType(name string) bool {
+	return name == "string" || isBuiltinNumericType(name)
+}
+
+// matchProbePrefix is the shared name prefix of the capture variables the probe
+// emits for the unknown arms of the value-position match at pos. The probe emit mints
+// `<prefix><n>` per unknown arm and the driver reads them back by this prefix, so the
+// two must agree. fileTag disambiguates the token offset across the package's files.
+func matchProbePrefix(fileTag string, pos token.Pos) string {
+	return fmt.Sprintf("__goalmatch_%s_%d_", fileTag, pos.Offset)
 }
 
 // emitResultReturn lowers `return Result.Ok(X)` -> `return X, nil` and
@@ -3034,11 +3200,32 @@ func (e *emitter) armWrap(body ast.Node, pos matchPos, name string) {
 		e.p("return ")
 		e.armBody(body)
 	case posVar:
+		if e.probeMode && e.curMatchProbe.active && e.captureProbeArm(body) {
+			return
+		}
 		e.p(name + " = ")
 		e.armBody(body)
 	default:
 		e.armBody(body)
 	}
+}
+
+// captureProbeArm emits a value-position arm as a probe capture `<prefix><n> :=
+// <body>; _ = <prefix><n>` when the arm's type is not derivable from the AST (so the
+// driver's type-check recovers it). An arm the AST already places (concrete or an
+// untyped-constant flexible) is emitted normally by the caller, so its assignment to
+// the `var name any` sink neither needs nor perturbs a capture. Reports whether it
+// captured.
+func (e *emitter) captureProbeArm(body ast.Node) bool {
+	if _, class := e.armBodyType(body); class != armUnknown {
+		return false
+	}
+	cap := fmt.Sprintf("%s%d", e.curMatchProbe.prefix, e.curMatchProbe.count)
+	e.curMatchProbe.count++
+	e.p(cap + " := ")
+	e.armBody(body)
+	e.p("\n_ = " + cap)
+	return true
 }
 
 // sealedMatch lowers a `match` over a sealed-interface scrutinee to a Go

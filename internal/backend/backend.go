@@ -37,7 +37,7 @@ type goBackend struct {
 
 //line backend.goal:57
 func (goBackend) Emit(file *ast.File, info *sema.Info) (pipeline.Output, error) {
-	/*line backend.goal:58*/ src, _, warns, err := emitFileWith(file, info, false, "")
+	/*line backend.goal:58*/ src, _, warns, err := emitFileMaybeProbe(file, info)
 	/*line backend.goal:59*/ if err != nil {
 		/*line backend.goal:60*/ return pipeline.Output{}, err
 	}
@@ -48,27 +48,45 @@ func (goBackend) Emit(file *ast.File, info *sema.Info) (pipeline.Output, error) 
 	/*line backend.goal:68*/ return pipeline.Output{Go: src, Test: test, Warnings: warns}, nil
 }
 
-//line backend.goal:80
+//line backend.goal:79
+func emitFileMaybeProbe(file *ast.File, info *sema.Info) (string, bool, []pipeline.Warning, error) {
+	/*line backend.goal:80*/ src, usedOption, warns, unresolved, err := emitFileProbe(file, info, false, "", "f0", true, nil)
+	/*line backend.goal:81*/ if err != nil {
+		/*line backend.goal:82*/ return "", false, nil, err
+	}
+	/*line backend.goal:84*/ if len(unresolved) == 0 {
+		/*line backend.goal:85*/ return src, usedOption, warns, nil
+	}
+	/*line backend.goal:87*/ pkgName := ""
+	/*line backend.goal:88*/ if file.Name != nil {
+		/*line backend.goal:89*/ pkgName = file.Name.Name
+	}
+	/*line backend.goal:91*/ resolved := resolveMatchProbes(pkgName, []pipeline.GoFile{{Name: "probe.go", Go: src}}, unresolved)
+	/*line backend.goal:92*/ fsrc, fusedOption, fwarns, _, ferr := emitFileProbe(file, info, false, "", "f0", false, resolved)
+	/*line backend.goal:93*/ return fsrc, fusedOption, fwarns, ferr
+}
+
+//line backend.goal:105
 func Transpile(src string) (pipeline.Output, error) {
-	/*line backend.goal:81*/ file, err := parser.ParseFile(src)
-	/*line backend.goal:82*/ if err != nil {
-		/*line backend.goal:83*/ return pipeline.Output{}, fmt.Errorf("parse: %w", err)
+	/*line backend.goal:106*/ file, err := parser.ParseFile(src)
+	/*line backend.goal:107*/ if err != nil {
+		/*line backend.goal:108*/ return pipeline.Output{}, fmt.Errorf("parse: %w", err)
 	}
-	/*line backend.goal:85*/ out, err := goBackend{}.Emit(file, sema.Resolve(file))
-	/*line backend.goal:86*/ if err != nil {
-		/*line backend.goal:87*/ return pipeline.Output{}, err
+	/*line backend.goal:110*/ out, err := goBackend{}.Emit(file, sema.Resolve(file))
+	/*line backend.goal:111*/ if err != nil {
+		/*line backend.goal:112*/ return pipeline.Output{}, err
 	}
-	/*line backend.goal:89*/ formatted, err := GoFormatter{}.Format([]byte(out.Go))
-	/*line backend.goal:90*/ if err != nil {
-		/*line backend.goal:91*/ return pipeline.Output{}, fmt.Errorf("generated Go did not parse: %w\n--- generated ---\n%s", err, out.Go)
+	/*line backend.goal:114*/ formatted, err := GoFormatter{}.Format([]byte(out.Go))
+	/*line backend.goal:115*/ if err != nil {
+		/*line backend.goal:116*/ return pipeline.Output{}, fmt.Errorf("generated Go did not parse: %w\n--- generated ---\n%s", err, out.Go)
 	}
-	/*line backend.goal:93*/ out.Go = string(formatted)
-	/*line backend.goal:94*/ if out.Test != "" {
-		/*line backend.goal:95*/ formattedTest, err := GoFormatter{}.Format([]byte(out.Test))
-		/*line backend.goal:96*/ if err != nil {
-			/*line backend.goal:97*/ return pipeline.Output{}, fmt.Errorf("generated test did not parse: %w\n--- generated ---\n%s", err, out.Test)
+	/*line backend.goal:118*/ out.Go = string(formatted)
+	/*line backend.goal:119*/ if out.Test != "" {
+		/*line backend.goal:120*/ formattedTest, err := GoFormatter{}.Format([]byte(out.Test))
+		/*line backend.goal:121*/ if err != nil {
+			/*line backend.goal:122*/ return pipeline.Output{}, fmt.Errorf("generated test did not parse: %w\n--- generated ---\n%s", err, out.Test)
 		}
-		/*line backend.goal:99*/ out.Test = string(formattedTest)
+		/*line backend.goal:124*/ out.Test = string(formattedTest)
 	}
-	/*line backend.goal:101*/ return out, nil
+	/*line backend.goal:126*/ return out, nil
 }

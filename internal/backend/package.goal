@@ -18,6 +18,7 @@ package backend
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"goal/internal/ast"
@@ -46,18 +47,51 @@ func TranspilePackage(pkg *project.Package) (pipeline.PackageOutput, error) {
 	info := sema.ResolvePackage(files)
 	enrichForeign(info, files, pkg.Dir)
 
+	// Phase 1: emit in probe mode. Any value-position `name := match` whose result
+	// type is not derivable from the AST emits a type-check probe instead of failing,
+	// and is reported in unresolved. With none, the probe output is already the final
+	// output (probe mode is transparent for inferable matches) — the fast path.
+	out, unresolved, err := emitPackage(pkg, files, info, true, nil)
+	if err != nil {
+		return pipeline.PackageOutput{}, err
+	}
+	if len(unresolved) == 0 {
+		return out, nil
+	}
+
+	// Phase 2: type-check the probe output to recover each match's arm types, then
+	// re-emit with those resolved so the un-inferable matches lower to `var name T`.
+	// A match the probe still could not resolve keeps its located deferral, surfaced
+	// as the emit error from this final pass.
+	resolved := resolveMatchProbes(pkg.Name, out.Files, unresolved)
+	final, _, err := emitPackage(pkg, files, info, false, resolved)
+	if err != nil {
+		return pipeline.PackageOutput{}, err
+	}
+	return final, nil
+}
+
+// emitPackage lowers every file of the package and appends the shared prelude/Option
+// helper, returning the assembled Go. probeMode/resolved thread the value-position
+// match type-resolution seam (see emitFileProbe); in probe mode it also returns every
+// un-inferable match's capture-var prefix. fileTag is the file's index, a valid-ident
+// disambiguator for probe-var names across the package.
+func emitPackage(pkg *project.Package, files []*ast.File, info *sema.Info, probeMode bool, resolved map[string]string) (pipeline.PackageOutput, []matchProbe, error) {
 	var out pipeline.PackageOutput
 	var usedOption bool
+	var unresolved []matchProbe
 	for i, f := range pkg.Files {
-		goSrc, fileUsedOption, fileWarns, err := emitFileWith(files[i], info, true, f.Name)
+		fileTag := "f" + strconv.Itoa(i)
+		goSrc, fileUsedOption, fileWarns, fileUnresolved, err := emitFileProbe(files[i], info, true, f.Name, fileTag, probeMode, resolved)
 		if err != nil {
-			return pipeline.PackageOutput{}, fmt.Errorf("%s: %w", f.Name, err)
+			return pipeline.PackageOutput{}, nil, fmt.Errorf("%s: %w", f.Name, err)
 		}
 		usedOption = usedOption || fileUsedOption
+		unresolved = append(unresolved, fileUnresolved...)
 		out.Warnings = append(out.Warnings, fileWarns...)
 		formatted, err := GoFormatter{}.Format([]byte(goSrc))
 		if err != nil {
-			return pipeline.PackageOutput{}, fmt.Errorf("%s: generated Go did not parse: %w\n--- generated ---\n%s", f.Name, err, goSrc)
+			return pipeline.PackageOutput{}, nil, fmt.Errorf("%s: generated Go did not parse: %w\n--- generated ---\n%s", f.Name, err, goSrc)
 		}
 		// Anchor generated decls back to the .goal file (by name) so toolchain build
 		// errors land on source positions, matching the splice engine. The shared
@@ -65,19 +99,19 @@ func TranspilePackage(pkg *project.Package) (pipeline.PackageOutput, error) {
 		gen := goName(f.Name)
 		mapped, err := pipeline.AddLineDirectives(f.Src, string(formatted), f.Name, gen)
 		if err != nil {
-			return pipeline.PackageOutput{}, fmt.Errorf("%s: line directives: %w", f.Name, err)
+			return pipeline.PackageOutput{}, nil, fmt.Errorf("%s: line directives: %w", f.Name, err)
 		}
 		out.Files = append(out.Files, pipeline.GoFile{Name: gen, Go: mapped})
 
 		testSrc, testUsedOption, err := emitDoctests(files[i], info, true, f.Name)
 		if err != nil {
-			return pipeline.PackageOutput{}, fmt.Errorf("%s: doctests: %w", f.Name, err)
+			return pipeline.PackageOutput{}, nil, fmt.Errorf("%s: doctests: %w", f.Name, err)
 		}
 		usedOption = usedOption || testUsedOption
 		if testSrc != "" {
 			ft, err := GoFormatter{}.Format([]byte(testSrc))
 			if err != nil {
-				return pipeline.PackageOutput{}, fmt.Errorf("%s: generated test did not parse: %w\n--- generated ---\n%s", f.Name, err, testSrc)
+				return pipeline.PackageOutput{}, nil, fmt.Errorf("%s: generated test did not parse: %w\n--- generated ---\n%s", f.Name, err, testSrc)
 			}
 			out.Tests = append(out.Tests, pipeline.GoFile{Name: testName(f.Name), Go: string(ft)})
 		}
@@ -86,7 +120,7 @@ func TranspilePackage(pkg *project.Package) (pipeline.PackageOutput, error) {
 	if needsResultPrelude(info) {
 		preludeGo, err := GoFormatter{}.Format([]byte("package " + pkg.Name + "\n\n" + resultPrelude + "\n"))
 		if err != nil {
-			return pipeline.PackageOutput{}, fmt.Errorf("prelude: %w", err)
+			return pipeline.PackageOutput{}, nil, fmt.Errorf("prelude: %w", err)
 		}
 		out.Files = append(out.Files, pipeline.GoFile{Name: "goal_prelude.go", Go: string(preludeGo)})
 	}
@@ -95,11 +129,11 @@ func TranspilePackage(pkg *project.Package) (pipeline.PackageOutput, error) {
 	if usedOption {
 		optionGo, err := GoFormatter{}.Format([]byte("package " + pkg.Name + "\n\n" + optionPrelude + "\n"))
 		if err != nil {
-			return pipeline.PackageOutput{}, fmt.Errorf("option prelude: %w", err)
+			return pipeline.PackageOutput{}, nil, fmt.Errorf("option prelude: %w", err)
 		}
 		out.Files = append(out.Files, pipeline.GoFile{Name: "goal_options.go", Go: string(optionGo)})
 	}
-	return out, nil
+	return out, unresolved, nil
 }
 
 // enrichForeign folds the struct field sets and method/function signatures of the

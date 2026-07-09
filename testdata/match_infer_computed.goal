@@ -1,0 +1,52 @@
+package app
+
+import "fmt"
+
+enum Value {
+    Str { s: string }
+    Int { n: int64 }
+    List { items: []Value }
+}
+
+func boolLabel(b bool) string {
+    if b {
+        return "t"
+    }
+    return "f"
+}
+
+func ident(v Value) Value { return v }
+
+// arity infers int64 for a value-position `x := match` whose arms mix untyped
+// integer literals with an int64 conversion — the literals coerce to the
+// conversion's type (no probe needed).
+func arity(v Value) int64 {
+    x := match v {
+        Value.Str(a) => 1
+        Value.Int(a) => 1
+        Value.List(a) => int64(len(a.items))
+    }
+    return x
+}
+
+// render infers string for arms that are stdlib calls (fmt.Sprintf / fmt.Sprint)
+// and a local call — types the AST cannot see, recovered by the go/types probe.
+func render(v Value) string {
+    x := match v {
+        Value.Str(a) => fmt.Sprintf("%q", a.s)
+        Value.Int(a) => fmt.Sprint(a.n)
+        Value.List(a) => boolLabel(len(a.items) == 0)
+    }
+    return x
+}
+
+// passthru infers the enum Value for arms that are a local call and a pass-through
+// parameter identifier.
+func passthru(v Value) Value {
+    x := match v {
+        Value.Str(a) => ident(v)
+        Value.Int(a) => v
+        Value.List(a) => v
+    }
+    return x
+}

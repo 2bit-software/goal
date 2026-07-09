@@ -10,91 +10,114 @@ import (
 	"goal/internal/pipeline"
 	"goal/internal/project"
 	"goal/internal/sema"
+	"strconv"
 	"strings"
 )
 
-//line package.goal:36
+//line package.goal:37
 func TranspilePackage(pkg *project.Package) (pipeline.PackageOutput, error) {
-	/*line package.goal:37*/ files := make([]*ast.File, len(pkg.Files))
-	/*line package.goal:38*/ for i, f := range pkg.Files {
-		/*line package.goal:39*/ parsed, err := parser.ParseFile(f.Src)
-		/*line package.goal:40*/ if err != nil {
-			/*line package.goal:41*/ return pipeline.PackageOutput{}, fmt.Errorf("%s: parse: %w", f.Name, err)
+	/*line package.goal:38*/ files := make([]*ast.File, len(pkg.Files))
+	/*line package.goal:39*/ for i, f := range pkg.Files {
+		/*line package.goal:40*/ parsed, err := parser.ParseFile(f.Src)
+		/*line package.goal:41*/ if err != nil {
+			/*line package.goal:42*/ return pipeline.PackageOutput{}, fmt.Errorf("%s: parse: %w", f.Name, err)
 		}
-		/*line package.goal:43*/ files[i] = parsed
+		/*line package.goal:44*/ files[i] = parsed
 	}
-	/*line package.goal:46*/ info := sema.ResolvePackage(files)
-	/*line package.goal:47*/ enrichForeign(info, files, pkg.Dir)
-	/*line package.goal:49*/ var out pipeline.PackageOutput
+	/*line package.goal:47*/ info := sema.ResolvePackage(files)
+	/*line package.goal:48*/ enrichForeign(info, files, pkg.Dir)
+	/*line package.goal:54*/ out, unresolved, err := emitPackage(pkg, files, info, true, nil)
+	/*line package.goal:55*/ if err != nil {
+		/*line package.goal:56*/ return pipeline.PackageOutput{}, err
+	}
+	/*line package.goal:58*/ if len(unresolved) == 0 {
+		/*line package.goal:59*/ return out, nil
+	}
+	/*line package.goal:66*/ resolved := resolveMatchProbes(pkg.Name, out.Files, unresolved)
+	/*line package.goal:67*/ final, _, err := emitPackage(pkg, files, info, false, resolved)
+	/*line package.goal:68*/ if err != nil {
+		/*line package.goal:69*/ return pipeline.PackageOutput{}, err
+	}
+	/*line package.goal:71*/ return final, nil
+}
 
-	/*line package.goal:50*/
+//line package.goal:79
+func emitPackage(pkg *project.Package, files []*ast.File, info *sema.Info, probeMode bool, resolved map[string]string) (pipeline.PackageOutput, []matchProbe, error) {
+	/*line package.goal:80*/ var out pipeline.PackageOutput
+
+	/*line package.goal:81*/
 	var usedOption bool
 
-	/*line package.goal:51*/
+	/*line package.goal:82*/
+	var unresolved []matchProbe
+
+	/*line package.goal:83*/
 	for i, f := range pkg.Files {
-		/*line package.goal:52*/ goSrc, fileUsedOption, fileWarns, err := emitFileWith(files[i], info, true, f.Name)
-		/*line package.goal:53*/ if err != nil {
-			/*line package.goal:54*/ return pipeline.PackageOutput{}, fmt.Errorf("%s: %w", f.Name, err)
+		/*line package.goal:84*/ fileTag := "f" + strconv.Itoa(i)
+		/*line package.goal:85*/ goSrc, fileUsedOption, fileWarns, fileUnresolved, err := emitFileProbe(files[i], info, true, f.Name, fileTag, probeMode, resolved)
+		/*line package.goal:86*/ if err != nil {
+			/*line package.goal:87*/ return pipeline.PackageOutput{}, nil, fmt.Errorf("%s: %w", f.Name, err)
 		}
-		/*line package.goal:56*/ usedOption = usedOption || fileUsedOption
-		/*line package.goal:57*/ out.Warnings = append(out.Warnings, fileWarns...)
-		/*line package.goal:58*/ formatted, err := GoFormatter{}.Format([]byte(goSrc))
-		/*line package.goal:59*/ if err != nil {
-			/*line package.goal:60*/ return pipeline.PackageOutput{}, fmt.Errorf("%s: generated Go did not parse: %w\n--- generated ---\n%s", f.Name, err, goSrc)
+		/*line package.goal:89*/ usedOption = usedOption || fileUsedOption
+		/*line package.goal:90*/ unresolved = append(unresolved, fileUnresolved...)
+		/*line package.goal:91*/ out.Warnings = append(out.Warnings, fileWarns...)
+		/*line package.goal:92*/ formatted, err := GoFormatter{}.Format([]byte(goSrc))
+		/*line package.goal:93*/ if err != nil {
+			/*line package.goal:94*/ return pipeline.PackageOutput{}, nil, fmt.Errorf("%s: generated Go did not parse: %w\n--- generated ---\n%s", f.Name, err, goSrc)
 		}
-		/*line package.goal:65*/ gen := goName(f.Name)
-		/*line package.goal:66*/ mapped, err := pipeline.AddLineDirectives(f.Src, string(formatted), f.Name, gen)
-		/*line package.goal:67*/ if err != nil {
-			/*line package.goal:68*/ return pipeline.PackageOutput{}, fmt.Errorf("%s: line directives: %w", f.Name, err)
+		/*line package.goal:99*/ gen := goName(f.Name)
+		/*line package.goal:100*/ mapped, err := pipeline.AddLineDirectives(f.Src, string(formatted), f.Name, gen)
+		/*line package.goal:101*/ if err != nil {
+			/*line package.goal:102*/ return pipeline.PackageOutput{}, nil, fmt.Errorf("%s: line directives: %w", f.Name, err)
 		}
-		/*line package.goal:70*/ out.Files = append(out.Files, pipeline.GoFile{Name: gen, Go: mapped})
-		/*line package.goal:72*/ testSrc, testUsedOption, err := emitDoctests(files[i], info, true, f.Name)
-		/*line package.goal:73*/ if err != nil {
-			/*line package.goal:74*/ return pipeline.PackageOutput{}, fmt.Errorf("%s: doctests: %w", f.Name, err)
+		/*line package.goal:104*/ out.Files = append(out.Files, pipeline.GoFile{Name: gen, Go: mapped})
+		/*line package.goal:106*/ testSrc, testUsedOption, err := emitDoctests(files[i], info, true, f.Name)
+		/*line package.goal:107*/ if err != nil {
+			/*line package.goal:108*/ return pipeline.PackageOutput{}, nil, fmt.Errorf("%s: doctests: %w", f.Name, err)
 		}
-		/*line package.goal:76*/ usedOption = usedOption || testUsedOption
-		/*line package.goal:77*/ if testSrc != "" {
-			/*line package.goal:78*/ ft, err := GoFormatter{}.Format([]byte(testSrc))
-			/*line package.goal:79*/ if err != nil {
-				/*line package.goal:80*/ return pipeline.PackageOutput{}, fmt.Errorf("%s: generated test did not parse: %w\n--- generated ---\n%s", f.Name, err, testSrc)
+		/*line package.goal:110*/ usedOption = usedOption || testUsedOption
+		/*line package.goal:111*/ if testSrc != "" {
+			/*line package.goal:112*/ ft, err := GoFormatter{}.Format([]byte(testSrc))
+			/*line package.goal:113*/ if err != nil {
+				/*line package.goal:114*/ return pipeline.PackageOutput{}, nil, fmt.Errorf("%s: generated test did not parse: %w\n--- generated ---\n%s", f.Name, err, testSrc)
 			}
-			/*line package.goal:82*/ out.Tests = append(out.Tests, pipeline.GoFile{Name: testName(f.Name), Go: string(ft)})
+			/*line package.goal:116*/ out.Tests = append(out.Tests, pipeline.GoFile{Name: testName(f.Name), Go: string(ft)})
 		}
 	}
-	/*line package.goal:86*/ if needsResultPrelude(info) {
-		/*line package.goal:87*/ preludeGo, err := GoFormatter{}.Format([]byte("package " + pkg.Name + "\n\n" + resultPrelude + "\n"))
-		/*line package.goal:88*/ if err != nil {
-			/*line package.goal:89*/ return pipeline.PackageOutput{}, fmt.Errorf("prelude: %w", err)
+	/*line package.goal:120*/ if needsResultPrelude(info) {
+		/*line package.goal:121*/ preludeGo, err := GoFormatter{}.Format([]byte("package " + pkg.Name + "\n\n" + resultPrelude + "\n"))
+		/*line package.goal:122*/ if err != nil {
+			/*line package.goal:123*/ return pipeline.PackageOutput{}, nil, fmt.Errorf("prelude: %w", err)
 		}
-		/*line package.goal:91*/ out.Files = append(out.Files, pipeline.GoFile{Name: "goal_prelude.go", Go: string(preludeGo)})
+		/*line package.goal:125*/ out.Files = append(out.Files, pipeline.GoFile{Name: "goal_prelude.go", Go: string(preludeGo)})
 	}
-	/*line package.goal:95*/ if usedOption {
-		/*line package.goal:96*/ optionGo, err := GoFormatter{}.Format([]byte("package " + pkg.Name + "\n\n" + optionPrelude + "\n"))
-		/*line package.goal:97*/ if err != nil {
-			/*line package.goal:98*/ return pipeline.PackageOutput{}, fmt.Errorf("option prelude: %w", err)
+	/*line package.goal:129*/ if usedOption {
+		/*line package.goal:130*/ optionGo, err := GoFormatter{}.Format([]byte("package " + pkg.Name + "\n\n" + optionPrelude + "\n"))
+		/*line package.goal:131*/ if err != nil {
+			/*line package.goal:132*/ return pipeline.PackageOutput{}, nil, fmt.Errorf("option prelude: %w", err)
 		}
-		/*line package.goal:100*/ out.Files = append(out.Files, pipeline.GoFile{Name: "goal_options.go", Go: string(optionGo)})
+		/*line package.goal:134*/ out.Files = append(out.Files, pipeline.GoFile{Name: "goal_options.go", Go: string(optionGo)})
 	}
-	/*line package.goal:102*/ return out, nil
+	/*line package.goal:136*/ return out, unresolved, nil
 }
 
-//line package.goal:115
+//line package.goal:149
 func enrichForeign(info *sema.Info, files []*ast.File, dir string) {
-	/*line package.goal:116*/ var imports []*ast.ImportSpec
+	/*line package.goal:150*/ var imports []*ast.ImportSpec
 
-	/*line package.goal:117*/
+	/*line package.goal:151*/
 	for _, f := range files {
-		/*line package.goal:118*/ imports = append(imports, f.Imports...)
+		/*line package.goal:152*/ imports = append(imports, f.Imports...)
 	}
-	/*line package.goal:120*/ sema.EnrichForeign(info, imports, dir, nil)
+	/*line package.goal:154*/ sema.EnrichForeign(info, imports, dir, nil)
 }
 
-//line package.goal:124
+//line package.goal:158
 func goName(goalName string) string {
-	/*line package.goal:125*/ return strings.TrimSuffix(goalName, project.Ext) + ".go"
+	/*line package.goal:159*/ return strings.TrimSuffix(goalName, project.Ext) + ".go"
 }
 
-//line package.goal:129
+//line package.goal:163
 func testName(goalName string) string {
-	/*line package.goal:130*/ return strings.TrimSuffix(goalName, project.Ext) + "_test.go"
+	/*line package.goal:164*/ return strings.TrimSuffix(goalName, project.Ext) + "_test.go"
 }

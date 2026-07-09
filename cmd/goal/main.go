@@ -902,6 +902,16 @@ func cmdCheck(root string, jsonMode bool, out, errOut io.Writer) error {
 	if len(pkgs) == 0 {
 		return fmt.Errorf("no .goal packages found under %s", root)
 	}
+	// A directory/package target is checked in full — every sibling file is present,
+	// so a depth-stage transpile failure is a genuine compile error and hard-fails
+	// (below). A single-file target is an incomplete unit (a referenced sibling may be
+	// out of view), so its transpile failure stays the soft "depth stage unavailable"
+	// note. os.Stat failure (e.g. a `./...` pattern already trimmed to a dir) defaults
+	// to the strict, directory reading.
+	strict := true
+	if fi, err := os.Stat(root); err == nil && !fi.IsDir() {
+		strict = false
+	}
 	// One source importer, shared across every package's depth stage: it type-checks each
 	// dependency (stdlib and sibling goal packages) from source once and caches it, so an
 	// N-package run does not re-type-check every shared sibling ~N times.
@@ -911,7 +921,7 @@ func cmdCheck(root string, jsonMode bool, out, errOut io.Writer) error {
 	// both modes render in one stable order.
 	var all []checkDiag
 	for _, pkg := range pkgs {
-		diags, err := checkPackage(pkg, shared, errOut)
+		diags, err := checkPackage(pkg, shared, strict, errOut)
 		if err != nil {
 			return fmt.Errorf("check %s: %w", pkg.Dir, err)
 		}
@@ -964,7 +974,7 @@ func cmdCheck(root string, jsonMode bool, out, errOut io.Writer) error {
 // composite literal, an outright misfire. A depth-stage load failure (the program does
 // not transpile) is reported as a note and the AST findings still stand; goal build is
 // the gate that hard-fails on non-transpiling source.
-func checkPackage(pkg *project.Package, shared *typecheck.Importers, errOut io.Writer) ([]checkDiag, error) {
+func checkPackage(pkg *project.Package, shared *typecheck.Importers, strict bool, errOut io.Writer) ([]checkDiag, error) {
 	// A file that fails to parse has no meaningful AST facts (and AnalyzePackageInDir
 	// would bail on the whole package), so a syntax error short-circuits the sema and
 	// depth stages: report it in the shared diagnostic format and stop here.
@@ -982,8 +992,20 @@ func checkPackage(pkg *project.Package, shared *typecheck.Importers, errOut io.W
 	}
 
 	depth, derr := runDepthChecks(pkg, shared)
+	var depthDiags []checkDiag
 	if derr != nil {
 		fmt.Fprintf(errOut, "goal check: depth stage unavailable for %s: %v\n", pkg.Dir, briefDepthErr(derr))
+		// A full-package check has every sibling file, so a transpile failure is a real
+		// compile error: surface it as a hard error so `check` never reports `ok` for
+		// source that cannot build. A single-file check may fail only because a sibling
+		// is out of view, so it keeps just the soft note above. The full `--- generated
+		// ---` dump stays reserved for `goal build`.
+		if strict {
+			depthDiags = append(depthDiags, checkDiag{
+				checkTargetFile(pkg), 1, 1, sema.Severity(sema.Severity_Error{}),
+				"depth-transpile", briefDepthErr(derr), nil,
+			})
+		}
 	}
 
 	// A type-backed finding suppresses a lexical one for the same construct. Key on the
@@ -1015,7 +1037,17 @@ func checkPackage(pkg *project.Package, shared *typecheck.Importers, errOut io.W
 			sema.Severity(d.Severity), d.Code, d.Message, nil,
 		})
 	}
-	return diags, nil
+	return append(diags, depthDiags...), nil
+}
+
+// checkTargetFile is the file a package-level transpile failure is attributed to: the
+// package's first source file (a transpile error carries no reliable position, and
+// within-package basenames are unique). Falls back to the package directory.
+func checkTargetFile(pkg *project.Package) string {
+	if len(pkg.Files) > 0 {
+		return pkg.Files[0].Path
+	}
+	return pkg.Dir
 }
 
 // briefDepthErr renders a depth-stage failure for the non-fatal `check` note: it drops the

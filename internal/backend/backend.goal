@@ -55,7 +55,7 @@ type goBackend struct{}
 // Emit renders file to Go source, lowering goal-specific constructs through the
 // resolved semantic facts in info (enums, sealed interfaces, methods).
 func (goBackend) Emit(file *ast.File, info *sema.Info) (pipeline.Output, error) {
-	src, _, warns, err := emitFileWith(file, info, false, "")
+	src, _, warns, err := emitFileMaybeProbe(file, info)
 	if err != nil {
 		return pipeline.Output{}, err
 	}
@@ -66,6 +66,31 @@ func (goBackend) Emit(file *ast.File, info *sema.Info) (pipeline.Output, error) 
 		return pipeline.Output{}, fmt.Errorf("doctests: %w", err)
 	}
 	return pipeline.Output{Go: src, Test: test, Warnings: warns}, nil
+}
+
+// emitFileMaybeProbe is the single-file counterpart of TranspilePackage's two-phase
+// emit: it emits in probe mode, and if any value-position `name := match` type could
+// not be derived from the AST, type-checks the self-contained probe Go (the inline
+// prelude makes one file a complete unit) to recover the arms' types, then re-emits
+// with them resolved. With no such match, probe mode is transparent and its output is
+// already final. A single-file check thus resolves a stdlib/call-arm match the same
+// way a package build does — with the caveat that an arm calling into another package
+// is only resolvable when that package is importable from source.
+func emitFileMaybeProbe(file *ast.File, info *sema.Info) (string, bool, []pipeline.Warning, error) {
+	src, usedOption, warns, unresolved, err := emitFileProbe(file, info, false, "", "f0", true, nil)
+	if err != nil {
+		return "", false, nil, err
+	}
+	if len(unresolved) == 0 {
+		return src, usedOption, warns, nil
+	}
+	pkgName := ""
+	if file.Name != nil {
+		pkgName = file.Name.Name
+	}
+	resolved := resolveMatchProbes(pkgName, []pipeline.GoFile{{Name: "probe.go", Go: src}}, unresolved)
+	fsrc, fusedOption, fwarns, _, ferr := emitFileProbe(file, info, false, "", "f0", false, resolved)
+	return fsrc, fusedOption, fwarns, ferr
 }
 
 // Transpile is the AST engine entry point: it parses goal source to an *ast.File,
