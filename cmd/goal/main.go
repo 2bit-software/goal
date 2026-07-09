@@ -1383,11 +1383,101 @@ func IsGoalGenerated(content []byte) bool {
 	return string(firstLine) == goalGeneratedMarker
 }
 
+// goalManifestName is the fixed basename of the emit manifest goal writes at the
+// emit root after a successful `goal build --emit`. It records which .go files
+// goal produced so a later build can detect orphaned generated files even when
+// their source package is gone (US-004 warn / US-005 prune consume it). It is
+// not itself a .go file, so it never appears in its own file list.
+const goalManifestName = ".goal-manifest.json"
+
+// emitManifest is the on-disk record of one `goal build --emit` run: the
+// generator name, the build version, and the module-relative paths of every .go
+// file emitted in that run (sorted and deduped, so the file is deterministic).
+type emitManifest struct {
+	Generator string   `json:"generator"`
+	Version   string   `json:"version"`
+	Files     []string `json:"files"`
+}
+
+// emitManifestRoot is the directory the manifest is written under, and the base
+// the manifest's paths are relative to: the emit target dir when `--emit=dir`
+// was given, else the enclosing Go module root (so paths are module-relative),
+// falling back to the first package's dir when no module is found.
+func emitManifestRoot(ts []transpiled, emitDir string) string {
+	if emitDir != "" {
+		return emitDir
+	}
+	if len(ts) > 0 {
+		if modDir, _, ok := moduleInfo(ts[0].pkg.Dir); ok {
+			return modDir
+		}
+		return ts[0].pkg.Dir
+	}
+	return "."
+}
+
+// manifestRelPaths turns the absolute-ish emitted paths into root-relative,
+// slash-separated paths, deduped and sorted for deterministic manifest output.
+func manifestRelPaths(root string, emitted []string) []string {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		absRoot = root
+	}
+	seen := map[string]bool{}
+	rels := make([]string, 0, len(emitted))
+	for _, p := range emitted {
+		absP, err := filepath.Abs(p)
+		if err != nil {
+			absP = p
+		}
+		rel, err := filepath.Rel(absRoot, absP)
+		if err != nil {
+			rel = p
+		}
+		rel = filepath.ToSlash(rel)
+		if !seen[rel] {
+			seen[rel] = true
+			rels = append(rels, rel)
+		}
+	}
+	sort.Strings(rels)
+	return rels
+}
+
+// writeEmitManifest writes the emit manifest (goalManifestName) at root, recording
+// the goal generator, the build version, and the given module-relative file set.
+func writeEmitManifest(root string, files []string) error {
+	m := emitManifest{Generator: "goal", Version: version, Files: files}
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return os.WriteFile(filepath.Join(root, goalManifestName), data, 0o644)
+}
+
+// loadEmitManifest reads and parses an emit manifest from path, so a later build
+// (or a test) can round-trip the recorded file set.
+func loadEmitManifest(path string) (*emitManifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var m emitManifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
 // emitFiles writes the generated Go to disk: beside each .goal by default, or mirrored
 // under emitDir when given. Test sidecars are written too so doctests can run. Every
-// file is prefixed with the goal-generated header (see goalGeneratedHeader).
+// file is prefixed with the goal-generated header (see goalGeneratedHeader). After a
+// successful run it writes an emit manifest (goalManifestName) at the emit root
+// recording every .go path produced, so a later build can detect orphaned output.
 func emitFiles(ts []transpiled, emitDir string, out io.Writer) error {
 	header := goalGeneratedHeader(version)
+	var emitted []string
 	for _, t := range ts {
 		dir := t.pkg.Dir
 		if emitDir != "" {
@@ -1402,9 +1492,11 @@ func emitFiles(ts []transpiled, emitDir string, out io.Writer) error {
 				return err
 			}
 			fmt.Fprintln(out, "emitted", p)
+			emitted = append(emitted, p)
 		}
 	}
-	return nil
+	root := emitManifestRoot(ts, emitDir)
+	return writeEmitManifest(root, manifestRelPaths(root, emitted))
 }
 
 // soleMainDir returns the directory of the one `package main` among the transpiled

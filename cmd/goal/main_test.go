@@ -276,6 +276,86 @@ func TestEmitResolvesSiblingImportClosure(t *testing.T) {
 	}
 }
 
+// TestEmitWritesManifest proves `goal build --emit` records the .go files it
+// produced in an emit manifest at a single documented path (US-003): the
+// manifest's file set equals exactly the set of emitted .go paths (no missing,
+// no extra), it names the goal generator plus the build version, and it
+// round-trips through loadEmitManifest.
+func TestEmitWritesManifest(t *testing.T) {
+	dir := goalModule(t, multiPkgFiles())
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"build", "--emit", dir}, &out, &errOut); err != nil {
+		t.Fatalf("emit build failed: %v\nstderr: %s", err, errOut.String())
+	}
+
+	// The set of .go files actually written under the module, module-relative.
+	want := map[string]bool{}
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".go") {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		want[filepath.ToSlash(rel)] = true
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking emitted tree: %v", err)
+	}
+	if len(want) == 0 {
+		t.Fatal("no .go files were emitted; test cannot be meaningful")
+	}
+
+	manifestPath := filepath.Join(dir, ".goal-manifest.json")
+	m, err := loadEmitManifest(manifestPath)
+	if err != nil {
+		t.Fatalf("loading manifest: %v", err)
+	}
+	if m.Generator != "goal" {
+		t.Errorf("manifest generator = %q; want %q", m.Generator, "goal")
+	}
+	if m.Version == "" {
+		t.Errorf("manifest version is empty; want the build version")
+	}
+
+	got := map[string]bool{}
+	for _, f := range m.Files {
+		got[f] = true
+	}
+	// The manifest must never list itself (it is not a .go file).
+	if got[".goal-manifest.json"] {
+		t.Errorf("manifest lists itself among generated files")
+	}
+	if len(got) != len(want) {
+		t.Errorf("manifest file count = %d; want %d\n got: %v\nwant: %v", len(got), len(want), m.Files, want)
+	}
+	for f := range want {
+		if !got[f] {
+			t.Errorf("manifest missing emitted file %q", f)
+		}
+	}
+	for f := range got {
+		if !want[f] {
+			t.Errorf("manifest lists non-emitted file %q", f)
+		}
+	}
+
+	// Round-trip: reloading the manifest yields the identical file set.
+	m2, err := loadEmitManifest(manifestPath)
+	if err != nil {
+		t.Fatalf("reloading manifest: %v", err)
+	}
+	if !slices.Equal(m.Files, m2.Files) {
+		t.Errorf("manifest did not round-trip: %v vs %v", m.Files, m2.Files)
+	}
+}
+
 // goal check runs BOTH stages: the depth (go/types) stage catches an elided composite
 // literal that omits a field whose zero is UNSAFE — a safety-only feature-08 violation the
 // lexical stage cannot see on an elided literal. Omitting the nil-map field `m` (whose zero
