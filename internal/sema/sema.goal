@@ -37,6 +37,12 @@ type FuncSig struct {
 	// EndsInError reports whether the function's last result is a failure a `?`
 	// can propagate: a Result, a `func(…) error`, or a tuple ending in error.
 	EndsInError bool
+	// RetType is the sole declared result type text of a single-value, unnamed,
+	// plain-return function (Mode ModeNone) — e.g. "J", "string", "[]string".
+	// Empty for void, multi-value, named-result, and Result/Option functions.
+	// A value-position `x := match` whose arm is a whole-body call to such a
+	// function infers the arm's type from it.
+	RetType string
 }
 
 // Field is one variant or struct field: the goal field name and its type

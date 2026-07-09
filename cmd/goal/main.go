@@ -581,11 +581,15 @@ type transpiled struct {
 	out pipeline.PackageOutput
 }
 
-// transpileAll discovers and transpiles every package under root through the AST
-// backend: backend.TranspilePackage performs the cross-file fact merge plus a
-// single shared prelude per package.
+// transpileAll discovers and transpiles the package(s) at root plus the transitive
+// closure of the module-local .goal packages they import, through the AST backend:
+// backend.TranspilePackage performs the cross-file fact merge plus a single shared
+// prelude per package. Building/emitting a sub-package therefore also transpiles the
+// sibling packages it depends on, so the overlay build and the emitted tree both see
+// Go source for the whole dependency graph rather than a .goal-only sibling the Go
+// toolchain reports as missing.
 func transpileAll(root string) ([]transpiled, error) {
-	pkgs, err := project.Discover(root)
+	pkgs, err := discoverClosure(root)
 	if err != nil {
 		return nil, err
 	}
@@ -601,6 +605,201 @@ func transpileAll(root string) ([]transpiled, error) {
 		ts = append(ts, transpiled{pkg: pkg, out: out})
 	}
 	return ts, nil
+}
+
+// discoverClosure discovers the .goal packages under root, then expands the set with
+// the transitive closure of their module-local imports. A build/emit that names a
+// sub-package (e.g. ./cmd/app) thereby also transpiles the sibling .goal packages it
+// depends on, so the overlay build and the emitted tree both see Go source for the
+// whole dependency graph. Resolution is targeted: each module-local import is mapped
+// straight to its directory and that one directory is read — no module-wide walk —
+// so an import to a Go-only sibling (no .goal source) resolves to nothing, an
+// import satisfied by a seed dedups away, and a whole-module `.`/`./...` build adds
+// no packages and keeps its prior emit layout byte-for-byte. When root is not inside
+// a Go module, the seed set is returned unchanged.
+func discoverClosure(root string) ([]*project.Package, error) {
+	seeds, err := project.Discover(root)
+	if err != nil {
+		return nil, err
+	}
+	modDir, modPath, ok := moduleInfo(root)
+	if !ok {
+		return seeds, nil
+	}
+
+	closure := map[string]*project.Package{} // import path -> package
+	var order, queue []*project.Package
+	enqueue := func(p *project.Package) {
+		ip := pkgImportPath(modPath, modDir, p.Dir)
+		if closure[ip] != nil {
+			return
+		}
+		closure[ip] = p
+		order = append(order, p)
+		queue = append(queue, p)
+	}
+	for _, s := range seeds {
+		enqueue(s)
+	}
+	for len(queue) > 0 {
+		p := queue[0]
+		queue = queue[1:]
+		for _, imp := range packageImports(p) {
+			if !isModuleLocal(modPath, imp) || closure[imp] != nil {
+				continue
+			}
+			dep, err := resolveLocalImport(root, modDir, modPath, imp)
+			if err != nil {
+				return nil, err
+			}
+			if dep != nil {
+				enqueue(dep)
+			}
+		}
+	}
+	sort.Slice(order, func(a, b int) bool { return order[a].Dir < order[b].Dir })
+	return order, nil
+}
+
+// resolveLocalImport maps a module-local import path to the .goal package in its
+// directory, or nil when that directory has no .goal source (a Go-only sibling the
+// Go toolchain resolves on its own) or does not exist. The returned package's Dir is
+// expressed in root's coordinate system (absolute for an absolute root, else
+// relative to the working directory) so it resolves through filepath.Abs exactly as
+// a plain project.Discover would.
+func resolveLocalImport(root, modDir, modPath, imp string) (*project.Package, error) {
+	sub := strings.TrimPrefix(strings.TrimPrefix(imp, modPath), "/")
+	absDir := modDir
+	if sub != "" {
+		absDir = filepath.Join(modDir, filepath.FromSlash(sub))
+	}
+	dir := absDir
+	if !filepath.IsAbs(root) {
+		if cwd, err := os.Getwd(); err == nil {
+			if rel, err := filepath.Rel(cwd, absDir); err == nil {
+				dir = rel
+			}
+		}
+	}
+	return readPackageDir(dir)
+}
+
+// readPackageDir reads exactly the .goal files directly in dir (non-recursively) as
+// one package, mirroring what project.Discover produces for a single directory. It
+// returns nil when dir has no .goal files or does not exist — the two cases a
+// module-local import need not (or cannot) transpile. Reading only the named
+// directory avoids walking sibling trees, so a directory of intentionally
+// conflicting example packages elsewhere in the module never derails resolution.
+func readPackageDir(dir string) (*project.Package, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, nil
+	}
+	name := ""
+	var files []project.File
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), project.Ext) {
+			continue
+		}
+		p := filepath.Join(dir, e.Name())
+		src, err := os.ReadFile(p)
+		if err != nil {
+			return nil, err
+		}
+		clause := project.PackageClause(string(src))
+		if clause == "" {
+			continue
+		}
+		if name == "" {
+			name = clause
+		}
+		files = append(files, project.File{Path: p, Name: e.Name(), Src: string(src)})
+	}
+	if len(files) == 0 {
+		return nil, nil
+	}
+	sort.Slice(files, func(a, b int) bool { return files[a].Path < files[b].Path })
+	return &project.Package{Dir: dir, Name: name, Files: files}, nil
+}
+
+// moduleInfo locates the enclosing Go module of dir: the nearest ancestor holding a
+// go.mod, as an absolute path, plus that file's declared module path. It reports
+// ok=false when no go.mod is found, so callers fall back to path-scoped discovery.
+func moduleInfo(dir string) (modDir, modPath string, ok bool) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", "", false
+	}
+	for {
+		if data, err := os.ReadFile(filepath.Join(abs, "go.mod")); err == nil {
+			if mp := modulePathFromGoMod(string(data)); mp != "" {
+				return abs, mp, true
+			}
+			return "", "", false
+		}
+		parent := filepath.Dir(abs)
+		if parent == abs {
+			return "", "", false
+		}
+		abs = parent
+	}
+}
+
+// modulePathFromGoMod returns the path from a go.mod's `module` directive, or "".
+func modulePathFromGoMod(src string) string {
+	for _, line := range strings.Split(src, "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
+}
+
+// pkgImportPath is the Go import path of a package: the module path joined with the
+// package directory's path relative to the module root. It resolves both dirs to
+// absolute form first, so it is independent of the coordinate system pkgDir is
+// expressed in. The module-root package itself maps to the bare module path.
+func pkgImportPath(modPath, absModDir, pkgDir string) string {
+	abs, err := filepath.Abs(pkgDir)
+	if err != nil {
+		return modPath
+	}
+	rel, err := filepath.Rel(absModDir, abs)
+	if err != nil || rel == "." {
+		return modPath
+	}
+	return modPath + "/" + filepath.ToSlash(rel)
+}
+
+// isModuleLocal reports whether import path imp resolves inside the module modPath.
+func isModuleLocal(modPath, imp string) bool {
+	return imp == modPath || strings.HasPrefix(imp, modPath+"/")
+}
+
+// packageImports returns the distinct import paths declared across a package's files,
+// parsed from source (a file that fails to parse contributes none — a genuine syntax
+// error surfaces later in the shared syntax-diagnostic pass).
+func packageImports(p *project.Package) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, f := range p.Files {
+		file, err := parser.ParseFile(f.Src)
+		if err != nil || file == nil {
+			continue
+		}
+		for _, is := range file.Imports {
+			if is.Path == nil {
+				continue
+			}
+			path, err := strconv.Unquote(is.Path.Value)
+			if err != nil || seen[path] {
+				continue
+			}
+			seen[path] = true
+			out = append(out, path)
+		}
+	}
+	return out
 }
 
 // reportWarnings prints each package's out-of-band front-end warnings (e.g. `?`

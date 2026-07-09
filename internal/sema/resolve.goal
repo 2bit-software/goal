@@ -411,6 +411,14 @@ func funcSig(name string, t *ast.FuncType) FuncSig {
 		Mode.ModeNone => sig.EndsInError
 	}
 	sig.Arity, sig.EndsInError = arity, endsInError
+	// A plain-return function with a single unnamed result records its sole result
+	// type so a value-position `x := match` arm that is a whole-body call to it can
+	// infer the arm's type from the callee's signature rather than defer.
+	if sig.Mode == Mode.ModeNone {
+		if fields := resultFields(t.Results); len(fields) == 1 && len(fields[0].Names) == 0 {
+			sig.RetType = typeString(fields[0].Type)
+		}
+	}
 	return sig
 }
 

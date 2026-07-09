@@ -2388,6 +2388,18 @@ func (e *emitter) armBodyType(body ast.Node) (string, bool) {
 				return key, true
 			}
 		}
+		*ast.CallExpr(b) => {
+			// A whole-body call `f(...)` infers to f's declared sole result type,
+			// resolved through the file's function signatures. Only a locally-known
+			// single-return function is inferable; a method value (`recv.M(...)`), a
+			// package-qualified call, or a void/multi-value function is not — those
+			// keep the located deferral rather than guess.
+			if id, ok := b.Fun.(*ast.Ident); ok && e.info != nil && e.info.FuncSignatures != nil {
+				if sig, ok := e.info.FuncSignatures[id.Name]; ok && sig.RetType != "" {
+					return sig.RetType, true
+				}
+			}
+		}
 		_ => {}
 	}
 	return "", false

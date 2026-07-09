@@ -339,200 +339,205 @@ func funcSig(name string, t *ast.FuncType) FuncSig {
 		panic("unreachable: non-exhaustive Mode (compiler invariant violated)")
 	}
 	/*line resolve.goal:413*/ sig.Arity, sig.EndsInError = arity, endsInError
-	/*line resolve.goal:414*/ return sig
+	/*line resolve.goal:417*/ if sig.Mode == Mode(Mode_ModeNone{}) {
+		/*line resolve.goal:418*/ if fields := resultFields(t.Results); len(fields) == 1 && len(fields[0].Names) == 0 {
+			/*line resolve.goal:419*/ sig.RetType = typeString(fields[0].Type)
+		}
+	}
+	/*line resolve.goal:422*/ return sig
 }
 
-//line resolve.goal:420
+//line resolve.goal:428
 func resultGeneric(fl *ast.FieldList) (head string, args []string) {
-	/*line resolve.goal:421*/ if fl == nil || len(fl.List) != 1 {
-		/*line resolve.goal:422*/ return "", nil
+	/*line resolve.goal:429*/ if fl == nil || len(fl.List) != 1 {
+		/*line resolve.goal:430*/ return "", nil
 	}
-	/*line resolve.goal:424*/ f := fl.List[0]
-	/*line resolve.goal:425*/ if len(f.Names) != 0 {
-		/*line resolve.goal:426*/ return "", nil
+	/*line resolve.goal:432*/ f := fl.List[0]
+	/*line resolve.goal:433*/ if len(f.Names) != 0 {
+		/*line resolve.goal:434*/ return "", nil
 	}
-	/*line resolve.goal:428*/ switch v1 := f.Type.(type) {
+	/*line resolve.goal:436*/ switch v1 := f.Type.(type) {
 	case *ast.IndexExpr:
 		{
-			/*line resolve.goal:430*/ if id, ok := v1.X.(*ast.Ident); ok {
-				/*line resolve.goal:431*/ return id.Name, []string{typeString(v1.Index)}
+			/*line resolve.goal:438*/ if id, ok := v1.X.(*ast.Ident); ok {
+				/*line resolve.goal:439*/ return id.Name, []string{typeString(v1.Index)}
 			}
 		}
 	case *ast.IndexListExpr:
 		{
-			/*line resolve.goal:435*/ if id, ok := v1.X.(*ast.Ident); ok {
-				/*line resolve.goal:436*/ out := make([]string, 0, len(v1.Indices))
-				/*line resolve.goal:437*/ for _, idx := range v1.Indices {
-					/*line resolve.goal:438*/ out = append(out, typeString(idx))
+			/*line resolve.goal:443*/ if id, ok := v1.X.(*ast.Ident); ok {
+				/*line resolve.goal:444*/ out := make([]string, 0, len(v1.Indices))
+				/*line resolve.goal:445*/ for _, idx := range v1.Indices {
+					/*line resolve.goal:446*/ out = append(out, typeString(idx))
 				}
-				/*line resolve.goal:440*/ return id.Name, out
+				/*line resolve.goal:448*/ return id.Name, out
 			}
 		}
 	default:
 		{
 		}
 	}
-	/*line resolve.goal:445*/ return "", nil
+	/*line resolve.goal:453*/ return "", nil
 }
 
-//line resolve.goal:451
+//line resolve.goal:459
 func resultTarget(fl *ast.FieldList) (tgt string, fallible bool) {
-	/*line resolve.goal:452*/ fields := resultFields(fl)
-	/*line resolve.goal:453*/ if len(fields) == 0 {
-		/*line resolve.goal:454*/ return "", false
+	/*line resolve.goal:460*/ fields := resultFields(fl)
+	/*line resolve.goal:461*/ if len(fields) == 0 {
+		/*line resolve.goal:462*/ return "", false
 	}
-	/*line resolve.goal:456*/ if len(fields) > 1 {
-		/*line resolve.goal:457*/ return typeString(fields[0].Type), true
+	/*line resolve.goal:464*/ if len(fields) > 1 {
+		/*line resolve.goal:465*/ return typeString(fields[0].Type), true
 	}
-	/*line resolve.goal:459*/ return typeString(fields[0].Type), false
+	/*line resolve.goal:467*/ return typeString(fields[0].Type), false
 }
 
-//line resolve.goal:464
+//line resolve.goal:472
 func resultArity(fl *ast.FieldList) int {
-	/*line resolve.goal:465*/ n := 0
-	/*line resolve.goal:466*/ for _, f := range resultFields(fl) {
-		/*line resolve.goal:467*/ if c := len(f.Names); c > 0 {
-			/*line resolve.goal:468*/ n += c
+	/*line resolve.goal:473*/ n := 0
+	/*line resolve.goal:474*/ for _, f := range resultFields(fl) {
+		/*line resolve.goal:475*/ if c := len(f.Names); c > 0 {
+			/*line resolve.goal:476*/ n += c
 		} else {
-			/*line resolve.goal:470*/ n++
+			/*line resolve.goal:478*/ n++
 		}
 	}
-	/*line resolve.goal:473*/ return n
+	/*line resolve.goal:481*/ return n
 }
 
-//line resolve.goal:477
+//line resolve.goal:485
 func resultEndsInError(fl *ast.FieldList) bool {
-	/*line resolve.goal:478*/ fields := resultFields(fl)
-	/*line resolve.goal:479*/ if len(fields) == 0 {
-		/*line resolve.goal:480*/ return false
+	/*line resolve.goal:486*/ fields := resultFields(fl)
+	/*line resolve.goal:487*/ if len(fields) == 0 {
+		/*line resolve.goal:488*/ return false
 	}
-	/*line resolve.goal:482*/ return typeString(fields[len(fields)-1].Type) == "error"
+	/*line resolve.goal:490*/ return typeString(fields[len(fields)-1].Type) == "error"
 }
 
-//line resolve.goal:486
+//line resolve.goal:494
 func resultFields(fl *ast.FieldList) []*ast.Field {
-	/*line resolve.goal:487*/ if fl == nil {
-		/*line resolve.goal:488*/ return nil
+	/*line resolve.goal:495*/ if fl == nil {
+		/*line resolve.goal:496*/ return nil
 	}
-	/*line resolve.goal:490*/ return fl.List
+	/*line resolve.goal:498*/ return fl.List
 }
 
-//line resolve.goal:495
+//line resolve.goal:503
 func firstParamType(fl *ast.FieldList) string {
-	/*line resolve.goal:496*/ if fl == nil || len(fl.List) == 0 {
-		/*line resolve.goal:497*/ return ""
+	/*line resolve.goal:504*/ if fl == nil || len(fl.List) == 0 {
+		/*line resolve.goal:505*/ return ""
 	}
-	/*line resolve.goal:499*/ return typeString(fl.List[0].Type)
+	/*line resolve.goal:507*/ return typeString(fl.List[0].Type)
 }
 
-//line resolve.goal:504
+//line resolve.goal:512
 func paramTypeList(fields []*ast.Field) []string {
-	/*line resolve.goal:505*/ var out []string
+	/*line resolve.goal:513*/ var out []string
 
-	/*line resolve.goal:506*/
+	/*line resolve.goal:514*/
 	for _, f := range fields {
-		/*line resolve.goal:507*/ typ := typeString(f.Type)
-		/*line resolve.goal:508*/ if c := len(f.Names); c > 0 {
-			/*line resolve.goal:509*/ for range f.Names {
-				/*line resolve.goal:510*/ out = append(out, typ)
+		/*line resolve.goal:515*/ typ := typeString(f.Type)
+		/*line resolve.goal:516*/ if c := len(f.Names); c > 0 {
+			/*line resolve.goal:517*/ for range f.Names {
+				/*line resolve.goal:518*/ out = append(out, typ)
 			}
 		} else {
-			/*line resolve.goal:513*/ out = append(out, typ)
+			/*line resolve.goal:521*/ out = append(out, typ)
 		}
 	}
-	/*line resolve.goal:516*/ return out
+	/*line resolve.goal:524*/ return out
 }
 
-//line resolve.goal:519
+//line resolve.goal:527
 func paramTypeListFL(fl *ast.FieldList) []string {
-	/*line resolve.goal:520*/ if fl == nil {
-		/*line resolve.goal:521*/ return nil
+	/*line resolve.goal:528*/ if fl == nil {
+		/*line resolve.goal:529*/ return nil
 	}
-	/*line resolve.goal:523*/ return paramTypeList(fl.List)
+	/*line resolve.goal:531*/ return paramTypeList(fl.List)
 }
 
-//line resolve.goal:526
+//line resolve.goal:534
 func joinTypes(types []string) string {
-	/*line resolve.goal:526*/ return strings.Join(types, ",")
+	/*line resolve.goal:534*/ return strings.Join(types, ",")
 }
 
-//line resolve.goal:533
+//line resolve.goal:541
 func receiverType(fl *ast.FieldList) string {
-	/*line resolve.goal:534*/ if fl == nil || len(fl.List) == 0 {
-		/*line resolve.goal:535*/ return ""
+	/*line resolve.goal:542*/ if fl == nil || len(fl.List) == 0 {
+		/*line resolve.goal:543*/ return ""
 	}
-	/*line resolve.goal:537*/ expr := fl.List[0].Type
-	/*line resolve.goal:538*/ if star, ok := expr.(*ast.StarExpr); ok {
-		/*line resolve.goal:539*/ expr = star.X
+	/*line resolve.goal:545*/ expr := fl.List[0].Type
+	/*line resolve.goal:546*/ if star, ok := expr.(*ast.StarExpr); ok {
+		/*line resolve.goal:547*/ expr = star.X
 	}
-	/*line resolve.goal:541*/ switch e := expr.(type) {
+	/*line resolve.goal:549*/ switch e := expr.(type) {
 	case *ast.IndexExpr:
 		expr = e.X
 	case *ast.IndexListExpr:
 		expr = e.X
 	}
-	/*line resolve.goal:547*/ return strings.TrimPrefix(typeString(expr), "*")
+	/*line resolve.goal:555*/ return strings.TrimPrefix(typeString(expr), "*")
 }
 
-//line resolve.goal:553
+//line resolve.goal:561
 func typeString(x ast.Expr) string {
-	/*line resolve.goal:556*/ if x == nil {
-		/*line resolve.goal:557*/ return ""
+	/*line resolve.goal:564*/ if x == nil {
+		/*line resolve.goal:565*/ return ""
 	}
-	/*line resolve.goal:559*/ switch v1 := x.(type) {
+	/*line resolve.goal:567*/ switch v1 := x.(type) {
 	case *ast.Ident:
 		{
-			/*line resolve.goal:561*/ return v1.Name
+			/*line resolve.goal:569*/ return v1.Name
 		}
 	case *ast.BasicLit:
 		{
-			/*line resolve.goal:564*/ return v1.Value
+			/*line resolve.goal:572*/ return v1.Value
 		}
 	case *ast.SelectorExpr:
 		{
-			/*line resolve.goal:567*/ return typeString(v1.X) + "." + selName(v1.Sel)
+			/*line resolve.goal:575*/ return typeString(v1.X) + "." + selName(v1.Sel)
 		}
 	case *ast.StarExpr:
 		{
-			/*line resolve.goal:570*/ return "*" + typeString(v1.X)
+			/*line resolve.goal:578*/ return "*" + typeString(v1.X)
 		}
 	case *ast.ParenExpr:
 		{
-			/*line resolve.goal:573*/ return "(" + typeString(v1.X) + ")"
+			/*line resolve.goal:581*/ return "(" + typeString(v1.X) + ")"
 		}
 	case *ast.ArrayType:
 		{
-			/*line resolve.goal:576*/ if v1.Len != nil {
-				/*line resolve.goal:577*/ return "[" + typeString(v1.Len) + "]" + typeString(v1.Elt)
+			/*line resolve.goal:584*/ if v1.Len != nil {
+				/*line resolve.goal:585*/ return "[" + typeString(v1.Len) + "]" + typeString(v1.Elt)
 			}
-			/*line resolve.goal:579*/ return "[]" + typeString(v1.Elt)
+			/*line resolve.goal:587*/ return "[]" + typeString(v1.Elt)
 		}
 	case *ast.MapType:
 		{
-			/*line resolve.goal:582*/ return "map[" + typeString(v1.Key) + "]" + typeString(v1.Value)
+			/*line resolve.goal:590*/ return "map[" + typeString(v1.Key) + "]" + typeString(v1.Value)
 		}
 	case *ast.IndexExpr:
 		{
-			/*line resolve.goal:585*/ return typeString(v1.X) + "[" + typeString(v1.Index) + "]"
+			/*line resolve.goal:593*/ return typeString(v1.X) + "[" + typeString(v1.Index) + "]"
 		}
 	case *ast.IndexListExpr:
 		{
-			/*line resolve.goal:588*/ parts := make([]string, 0, len(v1.Indices))
-			/*line resolve.goal:589*/ for _, idx := range v1.Indices {
-				/*line resolve.goal:590*/ parts = append(parts, typeString(idx))
+			/*line resolve.goal:596*/ parts := make([]string, 0, len(v1.Indices))
+			/*line resolve.goal:597*/ for _, idx := range v1.Indices {
+				/*line resolve.goal:598*/ parts = append(parts, typeString(idx))
 			}
-			/*line resolve.goal:592*/ return typeString(v1.X) + "[" + strings.Join(parts, ", ") + "]"
+			/*line resolve.goal:600*/ return typeString(v1.X) + "[" + strings.Join(parts, ", ") + "]"
 		}
 	case *ast.Ellipsis:
 		{
-			/*line resolve.goal:595*/ if v1.Elt != nil {
-				/*line resolve.goal:596*/ return "..." + typeString(v1.Elt)
+			/*line resolve.goal:603*/ if v1.Elt != nil {
+				/*line resolve.goal:604*/ return "..." + typeString(v1.Elt)
 			}
-			/*line resolve.goal:598*/ return "..."
+			/*line resolve.goal:606*/ return "..."
 		}
 	case *ast.ChanType:
 		{
-			/*line resolve.goal:601*/ switch v1.Dir.(type) {
+			/*line resolve.goal:609*/ switch v1.Dir.(type) {
 			case ast.ChanDir_RecvOnly:
 				return "<-chan " + typeString(v1.Value)
 			case ast.ChanDir_SendOnly:
@@ -545,76 +550,76 @@ func typeString(x ast.Expr) string {
 		}
 	case *ast.FuncType:
 		{
-			/*line resolve.goal:608*/ return "func" + funcTypeString(v1)
+			/*line resolve.goal:616*/ return "func" + funcTypeString(v1)
 		}
 	case *ast.InterfaceType:
 		{
-			/*line resolve.goal:611*/ if v1.Methods == nil || len(v1.Methods.List) == 0 {
-				/*line resolve.goal:612*/ return "interface{}"
+			/*line resolve.goal:619*/ if v1.Methods == nil || len(v1.Methods.List) == 0 {
+				/*line resolve.goal:620*/ return "interface{}"
 			}
-			/*line resolve.goal:614*/ return "interface{ ... }"
+			/*line resolve.goal:622*/ return "interface{ ... }"
 		}
 	case *ast.StructType:
 		{
-			/*line resolve.goal:617*/ if v1.Fields == nil || len(v1.Fields.List) == 0 {
-				/*line resolve.goal:618*/ return "struct{}"
+			/*line resolve.goal:625*/ if v1.Fields == nil || len(v1.Fields.List) == 0 {
+				/*line resolve.goal:626*/ return "struct{}"
 			}
-			/*line resolve.goal:620*/ return "struct{ ... }"
+			/*line resolve.goal:628*/ return "struct{ ... }"
 		}
 	default:
 		{
-			/*line resolve.goal:623*/ return ""
+			/*line resolve.goal:631*/ return ""
 		}
 	}
 }
 
-//line resolve.goal:629
+//line resolve.goal:637
 func funcTypeString(t *ast.FuncType) string {
-	/*line resolve.goal:630*/ var b strings.Builder
+	/*line resolve.goal:638*/ var b strings.Builder
 
-	/*line resolve.goal:631*/
+	/*line resolve.goal:639*/
 	b.WriteString("(")
-	/*line resolve.goal:632*/ b.WriteString(strings.Join(fieldTypes(t.Params), ", "))
-	/*line resolve.goal:633*/ b.WriteString(")")
-	/*line resolve.goal:634*/ if t.Results != nil && len(t.Results.List) > 0 {
-		/*line resolve.goal:635*/ res := fieldTypes(t.Results)
-		/*line resolve.goal:636*/ if len(t.Results.List) > 1 || len(t.Results.List[0].Names) > 0 {
-			/*line resolve.goal:637*/ b.WriteString(" (")
-			/*line resolve.goal:638*/ b.WriteString(strings.Join(res, ", "))
-			/*line resolve.goal:639*/ b.WriteString(")")
+	/*line resolve.goal:640*/ b.WriteString(strings.Join(fieldTypes(t.Params), ", "))
+	/*line resolve.goal:641*/ b.WriteString(")")
+	/*line resolve.goal:642*/ if t.Results != nil && len(t.Results.List) > 0 {
+		/*line resolve.goal:643*/ res := fieldTypes(t.Results)
+		/*line resolve.goal:644*/ if len(t.Results.List) > 1 || len(t.Results.List[0].Names) > 0 {
+			/*line resolve.goal:645*/ b.WriteString(" (")
+			/*line resolve.goal:646*/ b.WriteString(strings.Join(res, ", "))
+			/*line resolve.goal:647*/ b.WriteString(")")
 		} else {
-			/*line resolve.goal:641*/ b.WriteString(" ")
-			/*line resolve.goal:642*/ b.WriteString(res[0])
+			/*line resolve.goal:649*/ b.WriteString(" ")
+			/*line resolve.goal:650*/ b.WriteString(res[0])
 		}
 	}
-	/*line resolve.goal:645*/ return b.String()
+	/*line resolve.goal:653*/ return b.String()
 }
 
-//line resolve.goal:650
+//line resolve.goal:658
 func fieldTypes(fl *ast.FieldList) []string {
-	/*line resolve.goal:651*/ if fl == nil {
-		/*line resolve.goal:652*/ return nil
+	/*line resolve.goal:659*/ if fl == nil {
+		/*line resolve.goal:660*/ return nil
 	}
-	/*line resolve.goal:654*/ out := make([]string, 0, len(fl.List))
-	/*line resolve.goal:655*/ for _, f := range fl.List {
-		/*line resolve.goal:656*/ typ := typeString(f.Type)
-		/*line resolve.goal:657*/ if len(f.Names) > 0 {
-			/*line resolve.goal:658*/ names := make([]string, 0, len(f.Names))
-			/*line resolve.goal:659*/ for _, n := range f.Names {
-				/*line resolve.goal:660*/ names = append(names, n.Name)
+	/*line resolve.goal:662*/ out := make([]string, 0, len(fl.List))
+	/*line resolve.goal:663*/ for _, f := range fl.List {
+		/*line resolve.goal:664*/ typ := typeString(f.Type)
+		/*line resolve.goal:665*/ if len(f.Names) > 0 {
+			/*line resolve.goal:666*/ names := make([]string, 0, len(f.Names))
+			/*line resolve.goal:667*/ for _, n := range f.Names {
+				/*line resolve.goal:668*/ names = append(names, n.Name)
 			}
-			/*line resolve.goal:662*/ out = append(out, strings.Join(names, ", ")+" "+typ)
+			/*line resolve.goal:670*/ out = append(out, strings.Join(names, ", ")+" "+typ)
 		} else {
-			/*line resolve.goal:664*/ out = append(out, typ)
+			/*line resolve.goal:672*/ out = append(out, typ)
 		}
 	}
-	/*line resolve.goal:667*/ return out
+	/*line resolve.goal:675*/ return out
 }
 
-//line resolve.goal:670
+//line resolve.goal:678
 func selName(id *ast.Ident) string {
-	/*line resolve.goal:671*/ if id == nil {
-		/*line resolve.goal:672*/ return ""
+	/*line resolve.goal:679*/ if id == nil {
+		/*line resolve.goal:680*/ return ""
 	}
-	/*line resolve.goal:674*/ return id.Name
+	/*line resolve.goal:682*/ return id.Name
 }

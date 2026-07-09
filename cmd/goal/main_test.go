@@ -145,6 +145,59 @@ func TestEmitWritesSiblingGo(t *testing.T) {
 	}
 }
 
+// multiPkgFiles models a module whose main package imports a sibling internal
+// package, both written in goal. Building or emitting the main package alone must
+// transpile the imported sibling too (the import closure) — otherwise the Go
+// toolchain sees internal/foo as a .goal-only package with no Go source and fails
+// with a misleading "package is not in std" / "no required module provides" error.
+func multiPkgFiles() map[string]string {
+	return map[string]string{
+		"cmd/app/main.goal": `package main
+
+import (
+	"fmt"
+	"demo/internal/foo"
+)
+
+func main() { fmt.Println(foo.Hello()) }
+`,
+		"internal/foo/foo.goal": `package foo
+
+func Hello() string { return "hello from foo" }
+`,
+	}
+}
+
+// TestBuildResolvesSiblingImportClosure proves `goal build ./cmd/app` transpiles
+// the imported sibling internal/foo (a .goal-only package outside the named path)
+// so the overlay build finds Go source for every dependency.
+func TestBuildResolvesSiblingImportClosure(t *testing.T) {
+	dir := goalModule(t, multiPkgFiles())
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"build", filepath.Join(dir, "cmd", "app")}, &out, &errOut); err != nil {
+		t.Fatalf("build of sub-package failed to resolve its sibling import: %v\nstderr: %s", err, errOut.String())
+	}
+}
+
+// TestEmitResolvesSiblingImportClosure proves `--emit ./cmd/app` also writes the
+// imported sibling internal/foo's Go beside its source, so a separate `go build`
+// over the emitted tree finds Go source for the whole dependency closure.
+func TestEmitResolvesSiblingImportClosure(t *testing.T) {
+	dir := goalModule(t, multiPkgFiles())
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"build", "--emit", filepath.Join(dir, "cmd", "app")}, &out, &errOut); err != nil {
+		t.Fatalf("emit build failed: %v\nstderr: %s", err, errOut.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "cmd", "app", "main.go")); err != nil {
+		t.Errorf("--emit did not write the named package's main.go: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "internal", "foo", "foo.go")); err != nil {
+		t.Errorf("--emit did not transpile the imported sibling internal/foo: %v", err)
+	}
+}
+
 // goal check runs BOTH stages: the depth (go/types) stage catches an elided composite
 // literal that omits a field whose zero is UNSAFE — a safety-only feature-08 violation the
 // lexical stage cannot see on an elided literal. Omitting the nil-map field `m` (whose zero
@@ -1126,5 +1179,102 @@ func TestBuildRefusesArithmeticArmValueMatch(t *testing.T) {
 	msg := err.Error() + errOut.String()
 	if !strings.Contains(msg, "needs an inferable result type") {
 		t.Errorf("refusal diagnostic not surfaced:\nerr: %v\nstderr: %s", err, errOut.String())
+	}
+}
+
+// trailingCommentGoal places a trailing `//` comment on both a `?` line and an
+// `assert` line — the two statement forms whose lowering reflows one source
+// statement into several Go lines. A trailing comment on these lines once broke
+// lowering ("generated Go did not parse"); this pins that it builds and runs
+// clean so the fix cannot regress.
+const trailingCommentGoal = `package main
+
+import "fmt"
+
+func f(s string) Result[string, error] {
+	if s == "" {
+		return Result.Err(fmt.Errorf("empty"))
+	}
+	return Result.Ok(s)
+}
+
+func g(s string) Result[string, error] {
+	v := f(s)? // trailing comment on a ? line
+	return Result.Ok(v)
+}
+
+func sq(x int) int {
+	assert x >= 0, "neg: %d", x // trailing comment on an assert line
+	return x * x
+}
+
+func main() {
+	match g("hi") {
+		Result.Ok(v) => fmt.Println(v, sq(3))
+		Result.Err(e) => fmt.Println("err", e)
+	}
+}
+`
+
+// TestRunTrailingCommentOnQuestionAndAssert proves a trailing `//` comment on a
+// `?` line and an `assert` line lowers to Go that parses, builds, and runs.
+func TestRunTrailingCommentOnQuestionAndAssert(t *testing.T) {
+	dir := goalModule(t, map[string]string{"main.goal": trailingCommentGoal})
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"run", dir}, &out, &errOut); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, errOut.String())
+	}
+	if got := strings.TrimSpace(out.String()); got != "hi 9" {
+		t.Errorf("program output = %q, want %q\nstderr: %s", got, "hi 9", errOut.String())
+	}
+}
+
+// callArmMatchGoal exercises a value-position `x := match` whose arms are a
+// function call and a bare enum constructor, both statically typed `J`. The
+// call arm's type is not syntactically a literal/enum, so it needs the emitter
+// to resolve the callee's declared single return type to infer `J`; this shape
+// previously required an explicit `var x J = match ...` annotation.
+const callArmMatchGoal = `package main
+
+import "fmt"
+
+enum J {
+	JNull
+	JStr { s: string }
+}
+
+func fromList(xs []string) J {
+	return J.JStr(s: "x")
+}
+
+func conv(o Option[[]string]) J {
+	x := match o {
+		Option.Some(xs) => fromList(xs)
+		Option.None     => J.JNull
+	}
+	return x
+}
+
+func main() {
+	fmt.Println(conv(Option.Some([]string{"a"})))
+	fmt.Println(conv(Option.None))
+}
+`
+
+// TestRunValueMatchInfersCallArm proves an `x := match` whose arms are a
+// function call and an enum constructor (both statically `J`) builds and runs,
+// inferring `var x J` from the callee's declared return type rather than
+// refusing with the inferable-result-type diagnostic.
+func TestRunValueMatchInfersCallArm(t *testing.T) {
+	dir := goalModule(t, map[string]string{"main.goal": callArmMatchGoal})
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"run", dir}, &out, &errOut); err != nil {
+		t.Fatalf("run failed: %v\nstderr: %s", err, errOut.String())
+	}
+	// Some(["a"]) => fromList(["a"]) => J.JStr{s:"x"} prints {x}; None => J.JNull prints {}.
+	if got := strings.TrimSpace(out.String()); got != "{x}\n{}" {
+		t.Errorf("program output = %q, want %q\nstderr: %s", got, "{x}\n{}", errOut.String())
 	}
 }

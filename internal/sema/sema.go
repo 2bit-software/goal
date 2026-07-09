@@ -31,21 +31,22 @@ type FuncSig struct {
 	E           string
 	Arity       int
 	EndsInError bool
+	RetType     string
 }
 
-//line sema.goal:44
+//line sema.goal:50
 type Field struct {
 	Name string
 	Type string
 }
 
-//line sema.goal:50
+//line sema.goal:56
 type Variant struct {
 	Name   string
 	Fields []Field
 }
 
-//line sema.goal:57
+//line sema.goal:63
 type Enum struct {
 	Name     string
 	Variants []Variant
@@ -53,13 +54,13 @@ type Enum struct {
 	FieldSet map[string]map[string]bool
 }
 
-//line sema.goal:66
+//line sema.goal:72
 type ConvEntry struct {
 	Name     string
 	Fallible bool
 }
 
-//line sema.goal:74
+//line sema.goal:80
 type Method struct {
 	Name        string
 	Sig         string
@@ -69,7 +70,7 @@ type Method struct {
 	Return      FuncSig
 }
 
-//line sema.goal:91
+//line sema.goal:97
 type Info struct {
 	FuncSignatures map[string]FuncSig
 	Enums          map[string]*Enum
@@ -83,7 +84,7 @@ type Info struct {
 	EmbeddedIfaces map[string][]string
 }
 
-//line sema.goal:137
+//line sema.goal:143
 func New() *Info {
-	/*line sema.goal:138*/ return &Info{FuncSignatures: map[string]FuncSig{}, Enums: map[string]*Enum{}, Sealed: map[string]bool{}, SealedImpls: map[string][]string{}, Structs: map[string][]Field{}, FromRegistry: map[[2]string]ConvEntry{}, Methods: map[string][]Method{}, ForeignMethods: map[string]FuncSig{}, Interfaces: map[string][]Method{}, EmbeddedIfaces: map[string][]string{}}
+	/*line sema.goal:144*/ return &Info{FuncSignatures: map[string]FuncSig{}, Enums: map[string]*Enum{}, Sealed: map[string]bool{}, SealedImpls: map[string][]string{}, Structs: map[string][]Field{}, FromRegistry: map[[2]string]ConvEntry{}, Methods: map[string][]Method{}, ForeignMethods: map[string]FuncSig{}, Interfaces: map[string][]Method{}, EmbeddedIfaces: map[string][]string{}}
 }
