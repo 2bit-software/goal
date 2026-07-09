@@ -61,7 +61,7 @@
         "Test: seed a manifest with an extra file not in the current source, run emit, and assert the warning is printed and the orphan file still exists on disk (warn, not delete)."
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Default-safe behavior: detect and surface, never delete. Depends on US-002 (matcher) and US-003 (manifest)."
     },
     {

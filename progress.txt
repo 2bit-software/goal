@@ -16,6 +16,30 @@
   re-deriving the marker. Refactoring an emitted literal into a same-valued
   constant keeps `verify-generated` green with zero regen (no internal/ churn).
 
+## [2026-07-09T05:45:14Z] - US-004
+- `goal build --emit` (and `goal run --emit`) now warns to stderr about orphaned
+  goal-generated files: a path in the PRIOR emit manifest that still exists on
+  disk, still passes `IsGoalGenerated`, and is absent from the current emit set
+  is reported as `warning: orphaned generated file <path>`. Warn-not-delete:
+  nothing is removed, exit status is unchanged (build still exits 0). A prior
+  path whose header was hand-removed is skipped (not goal-owned).
+- Added helper `warnOrphanedFiles(root, current, errOut)`; `emitFiles` now takes
+  an `errOut io.Writer` and calls it BEFORE `writeEmitManifest` overwrites the
+  prior manifest. Both call sites (`cmdBuild`, `cmdRun`) already had errOut.
+- Added `TestEmitOrphanWarning` (cmd/goal/main_test.go): seeds a real emit, then
+  rewrites the manifest with a goal-headered orphan (warned) and a header-
+  stripped file (not warned), re-emits, and asserts the warning text, the
+  non-warning, exit 0, and that both files still exist on disk.
+- Files changed: cmd/goal/main.go, cmd/goal/main_test.go. Commit 467be7b.
+- Verified: `task check` exit 0 (drift gate green — no manifest-format or emit-
+  output change, so zero internal/**/*.go churn).
+- Learnings for future iterations:
+  - US-005 (prune) reuses this exact orphan set: it deletes what US-004 warns
+    about. Factor the orphan computation out of `warnOrphanedFiles` if prune
+    needs the list rather than just the side-effecting warn.
+  - Read the prior manifest BEFORE `writeEmitManifest` runs — it overwrites it.
+---
+
 ## [2026-07-09T05:33:20Z] - US-003
 - `goal build --emit` now writes an emit manifest (.goal-manifest.json) at the
   emit root after a successful run: JSON `{generator:"goal", version, files}`
