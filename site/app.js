@@ -24,7 +24,7 @@ const state = {
   byId: new Map(), // anchor -> card
   drift: [],
 
-  view: "feature", // "feature" | "playground" | "overview" | "about"
+  view: "about", // "feature" | "playground" | "overview" | "about"
   currentId: null, // active idea (primary) anchor
   mode: "valid", // "valid" | "error"
   exampleIdx: 0, // which example, when an idea has more than one
