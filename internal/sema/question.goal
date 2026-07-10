@@ -183,6 +183,58 @@ func questionAssignFormDiags(body *ast.BlockStmt, nativeMulti bool) []Diagnostic
 	return diags
 }
 
+// CheckMultiFailureResult rejects a signature that carries MORE THAN ONE
+// failure-typed result slot (`error` / `Option[…]` / `Result[…]`). `?` propagates a
+// single trailing failure, so a signature may carry at most one failure-typed slot and
+// it must be the last result: the valid single-trailing-error shape `(A, B, error)` and
+// a single whole-return `Result[T, E]` / `Option[T]` are fine, but `(error, error)`,
+// `(Option[A], error)`, and `(Result[A, error], error)` are genuinely ambiguous — there
+// is no single slot `?` can unambiguously propagate. This is the US-004 companion to
+// US-003's trailing-error loosening: US-003 accepts the one-failure-slot shape as
+// failure-carrying, this locates and rejects the multi-failure shapes it deliberately
+// left out (a non-last failure slot). Reuses isFailureType so the two stay in lockstep.
+func CheckMultiFailureResult(file *ast.File, info *Info) []Diagnostic {
+	var diags []Diagnostic
+	if file == nil {
+		return diags
+	}
+	for _, d := range plainResultFuncs(file) {
+		diags = append(diags, multiFailureResultDiags(d.fn)...)
+	}
+	return diags
+}
+
+// multiFailureResultDiags reports the ambiguous-multi-failure diagnostic for fn when its
+// result list holds two or more failure-typed slots. A named-result group `(a, b error)`
+// counts once per declared name. The diagnostic is located at the SECOND failure slot —
+// the one that makes the signature ambiguous — so its source position falls on the
+// offending signature line.
+func multiFailureResultDiags(fn *ast.FuncDecl) []Diagnostic {
+	t := fn.Type
+	if t == nil || t.Results == nil {
+		return nil
+	}
+	var failSlots []ast.Expr
+	for _, f := range t.Results.List {
+		if !isFailureType(f.Type) {
+			continue
+		}
+		n := len(f.Names)
+		if n == 0 {
+			n = 1
+		}
+		for i := 0; i < n; i++ {
+			failSlots = append(failSlots, f.Type)
+		}
+	}
+	if len(failSlots) < 2 {
+		return nil
+	}
+	return []Diagnostic{{Pos: failSlots[1].Pos(), Severity: Severity.Error, Feature: "05-question-prop",
+		Code: "multi-failure-result",
+		Message: fmt.Sprintf("function `%s` has %d failure-typed results (`error`/`Option`/`Result`), but `?` propagates a single failure: a signature may carry at most one failure-typed slot and it must be the last result — keep a single trailing `error` (or one whole-return `Result`/`Option`) and make the other results plain values", fn.Name.Name, len(failSlots))}}
+}
+
 // trailingErrorMultiReturn reports whether t's result list is the native
 // trailing-error shape that carries a failure for `?`: an all-unnamed result list
 // ending in `error`, that is not itself a single whole-return Result/Option, and

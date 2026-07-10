@@ -43,6 +43,7 @@ var diagnosticCatalog = []diagDoc{
 	{"question-arity-fallback", "05-question-prop", "warning", "a package-qualified `?` callee's package could not be imported during arity resolution, so the destructure arity fell back to the curated stdlib table or the two-value `(T, error)` default; generated code may differ on a machine where the import resolves."},
 	{"question-outside-result", "05-question-prop", "error", "`?` is used in a function whose return type is neither a `Result` nor an `Option`, so there is no failure channel to carry the propagated `Err`/`None`."},
 	{"question-assign-unsupported", "05-question-prop", "error", "a `?` on an assignment right-hand side targets something other than a single simple variable (e.g. `obj.f = f()?` or `a, b = f()?`), which would otherwise silently discard the unwrapped value; bind to one variable with `x := f()?` or `x = f()?`."},
+	{"multi-failure-result", "05-question-prop", "error", "a signature carries more than one failure-typed result (`error`/`Option`/`Result`), e.g. `(error, error)`, `(Option[A], error)`, or `(Result[A, error], error)`; `?` propagates a single failure, so keep at most one failure-typed slot and make it the last result."},
 	// 06-error-e (closed-E Result)
 	{"missing-from-conversion", "06-error-e", "error", "`?` bridges two error enums but no `from func` conversion is registered."},
 	{"err-outside-closed-enum", "06-error-e", "error", "`Result.Err(...)` is used with a value outside the declared error enum."},

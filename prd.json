@@ -60,7 +60,7 @@
         "Regenerated; task check green."
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Supersedes the previously-planned blanket 'Result mixed into a tuple' refusal (features/03-result/SYNTAX.md:152): we now allow the trailing-error tuple and refuse only the genuinely ambiguous multi-failure shapes. Rule: at most one failure-typed (error/Option/Result) slot, and it must be last."
     },
     {

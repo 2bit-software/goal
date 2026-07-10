@@ -1,0 +1,35 @@
+package qprop
+
+// twoErrors returns two `error` results — two failure-typed slots, so `?` cannot tell
+// which failure to propagate. Rejected as ambiguous.
+func twoErrors() (error, error) { // want "at most one failure-typed slot"
+	return nil, nil
+}
+
+// optionThenError has a non-last `Option` failure slot ahead of the trailing `error` —
+// two failure-typed slots. Rejected.
+func optionThenError() (Option[int], error) { // want "at most one failure-typed slot"
+	return Option.None, nil
+}
+
+// resultThenError nests a whole `Result` failure ahead of a trailing `error` — two
+// failure-typed slots. Rejected.
+func resultThenError() (Result[int, error], error) { // want "at most one failure-typed slot"
+	return Result.Ok(0), nil
+}
+
+// trailingOK is the valid single-trailing-error shape: one failure-typed slot, and it is
+// last. NOT flagged — this is the shape `?` propagates against.
+func trailingOK() (int, string, error) {
+	return 0, "", nil
+}
+
+// wholeResult is a single whole-return `Result` — one failure-typed slot. NOT flagged.
+func wholeResult() Result[int, error] {
+	return Result.Ok(0)
+}
+
+// wholeOption is a single whole-return `Option` — one failure-typed slot. NOT flagged.
+func wholeOption() Option[int] {
+	return Option.None
+}

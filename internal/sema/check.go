@@ -65,50 +65,51 @@ func Check(file *ast.File, info *Info) []Diagnostic {
 	/*line check.goal:82*/ diags = append(diags, CheckQuestion(file, info)...)
 	/*line check.goal:83*/ diags = append(diags, CheckQuestionOutsideResult(file, info)...)
 	/*line check.goal:84*/ diags = append(diags, CheckQuestionAssignForm(file, info)...)
-	/*line check.goal:85*/ diags = append(diags, CheckClosed(file, info)...)
-	/*line check.goal:86*/ diags = append(diags, CheckAssert(file, info)...)
-	/*line check.goal:87*/ diags = append(diags, CheckConvert(file, info)...)
-	/*line check.goal:88*/ return diags
+	/*line check.goal:85*/ diags = append(diags, CheckMultiFailureResult(file, info)...)
+	/*line check.goal:86*/ diags = append(diags, CheckClosed(file, info)...)
+	/*line check.goal:87*/ diags = append(diags, CheckAssert(file, info)...)
+	/*line check.goal:88*/ diags = append(diags, CheckConvert(file, info)...)
+	/*line check.goal:89*/ return diags
 }
 
-//line check.goal:107
+//line check.goal:108
 func CheckExhaustive(file *ast.File, info *Info) []Diagnostic {
-	/*line check.goal:108*/ var diags []Diagnostic
+	/*line check.goal:109*/ var diags []Diagnostic
 
-	/*line check.goal:109*/
+	/*line check.goal:110*/
 	for _, m := range collectMatches(file) {
-		/*line check.goal:110*/ diags = append(diags, checkOneMatch(m, info)...)
+		/*line check.goal:111*/ diags = append(diags, checkOneMatch(m, info)...)
 	}
-	/*line check.goal:112*/ return diags
+	/*line check.goal:113*/ return diags
 }
 
-//line check.goal:119
+//line check.goal:120
 func checkOneMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
-	/*line check.goal:120*/ for _, arm := range m.Arms {
-		/*line check.goal:121*/ if _, ok := arm.Pattern.(*ast.TypePattern); ok {
-			/*line check.goal:122*/ return checkOneSealedMatch(m, info)
+	/*line check.goal:121*/ for _, arm := range m.Arms {
+		/*line check.goal:122*/ if _, ok := arm.Pattern.(*ast.TypePattern); ok {
+			/*line check.goal:123*/ return checkOneSealedMatch(m, info)
 		}
 	}
-	/*line check.goal:126*/ enumName := ""
-	/*line check.goal:127*/ covered := map[string]bool{}
-	/*line check.goal:128*/ hasRest := false
-	/*line check.goal:129*/ for _, arm := range m.Arms {
-		/*line check.goal:130*/ switch v1 := arm.Pattern.(type) {
+	/*line check.goal:127*/ enumName := ""
+	/*line check.goal:128*/ covered := map[string]bool{}
+	/*line check.goal:129*/ hasRest := false
+	/*line check.goal:130*/ for _, arm := range m.Arms {
+		/*line check.goal:131*/ switch v1 := arm.Pattern.(type) {
 		case *ast.RestPattern:
 			{
-				/*line check.goal:132*/ hasRest = true
+				/*line check.goal:133*/ hasRest = true
 			}
 		case *ast.VariantPattern:
 			{
-				/*line check.goal:135*/ qual := patternEnumName(v1)
-				/*line check.goal:136*/ if qual == "" || v1.Variant == nil {
-					/*line check.goal:137*/ continue
+				/*line check.goal:136*/ qual := patternEnumName(v1)
+				/*line check.goal:137*/ if qual == "" || v1.Variant == nil {
+					/*line check.goal:138*/ continue
 				}
-				/*line check.goal:139*/ if enumName == "" {
-					/*line check.goal:140*/ enumName = qual
+				/*line check.goal:140*/ if enumName == "" {
+					/*line check.goal:141*/ enumName = qual
 				}
-				/*line check.goal:142*/ if qual == enumName {
-					/*line check.goal:143*/ covered[v1.Variant.Name] = true
+				/*line check.goal:143*/ if qual == enumName {
+					/*line check.goal:144*/ covered[v1.Variant.Name] = true
 				}
 			}
 		default:
@@ -116,227 +117,227 @@ func checkOneMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
 			}
 		}
 	}
-	/*line check.goal:151*/ if enumName == "" {
-		/*line check.goal:152*/ return nil
+	/*line check.goal:152*/ if enumName == "" {
+		/*line check.goal:153*/ return nil
 	}
-	/*line check.goal:158*/ if enumName == "Result" || enumName == "Option" {
-		/*line check.goal:159*/ return nil
+	/*line check.goal:159*/ if enumName == "Result" || enumName == "Option" {
+		/*line check.goal:160*/ return nil
 	}
-	/*line check.goal:162*/ enumDecl := info.Enums[enumName]
-	/*line check.goal:163*/ if enumDecl == nil {
-		/*line check.goal:167*/ return []Diagnostic{{Pos: m.Match, Severity: Severity(Severity_Warning{}), Feature: "02-match", Code: "unresolved-match-enum", Message: fmt.Sprintf("cannot verify exhaustiveness of `match` on `%s`: enum `%s` is not declared in this file — exhaustiveness deferred", enumName, enumName)}}
+	/*line check.goal:163*/ enumDecl := info.Enums[enumName]
+	/*line check.goal:164*/ if enumDecl == nil {
+		/*line check.goal:168*/ return []Diagnostic{{Pos: m.Match, Severity: Severity(Severity_Warning{}), Feature: "02-match", Code: "unresolved-match-enum", Message: fmt.Sprintf("cannot verify exhaustiveness of `match` on `%s`: enum `%s` is not declared in this file — exhaustiveness deferred", enumName, enumName)}}
 	}
-	/*line check.goal:178*/ if hasRest {
-		/*line check.goal:179*/ return nil
+	/*line check.goal:179*/ if hasRest {
+		/*line check.goal:180*/ return nil
 	}
-	/*line check.goal:182*/ missing := missingVariants(enumDecl, covered)
-	/*line check.goal:183*/ if len(missing) == 0 {
-		/*line check.goal:184*/ return nil
+	/*line check.goal:183*/ missing := missingVariants(enumDecl, covered)
+	/*line check.goal:184*/ if len(missing) == 0 {
+		/*line check.goal:185*/ return nil
 	}
-	/*line check.goal:186*/ return []Diagnostic{{Pos: m.Match, Severity: Severity(Severity_Error{}), Feature: "02-match", Code: "non-exhaustive-match", Message: fmt.Sprintf("non-exhaustive `match` on enum `%s`: missing variant%s %s — handle %s, or add a `_` rest-arm to dismiss the rest", enumDecl.Name, plural(len(missing)), quoteVariants(enumDecl.Name, missing), pronoun(len(missing))), Fix: exhaustiveFix(enumDecl.Name, missing, m)}}
+	/*line check.goal:187*/ return []Diagnostic{{Pos: m.Match, Severity: Severity(Severity_Error{}), Feature: "02-match", Code: "non-exhaustive-match", Message: fmt.Sprintf("non-exhaustive `match` on enum `%s`: missing variant%s %s — handle %s, or add a `_` rest-arm to dismiss the rest", enumDecl.Name, plural(len(missing)), quoteVariants(enumDecl.Name, missing), pronoun(len(missing))), Fix: exhaustiveFix(enumDecl.Name, missing, m)}}
 }
 
-//line check.goal:203
+//line check.goal:204
 func exhaustiveFix(enumName string, missing []string, m *ast.MatchExpr) *SuggestedFix {
-	/*line check.goal:204*/ if len(missing) == 0 || m.Rbrace == (token.Pos{}) {
-		/*line check.goal:205*/ return nil
+	/*line check.goal:205*/ if len(missing) == 0 || m.Rbrace == (token.Pos{}) {
+		/*line check.goal:206*/ return nil
 	}
-	/*line check.goal:207*/ text := ""
-	/*line check.goal:208*/ for _, v := range missing {
-		/*line check.goal:209*/ text += "\n\t\t" + enumName + "." + v + ` => panic("TODO")`
+	/*line check.goal:208*/ text := ""
+	/*line check.goal:209*/ for _, v := range missing {
+		/*line check.goal:210*/ text += "\n\t\t" + enumName + "." + v + ` => panic("TODO")`
 	}
-	/*line check.goal:211*/ some := SuggestedFix{Pos: m.Rbrace, NewText: text}
+	/*line check.goal:212*/ some := SuggestedFix{Pos: m.Rbrace, NewText: text}
 	return &some
 }
 
-//line check.goal:223
+//line check.goal:224
 func checkOneSealedMatch(m *ast.MatchExpr, info *Info) []Diagnostic {
-	/*line check.goal:224*/ covered := map[string]bool{}
-	/*line check.goal:225*/ hasRest := false
-	/*line check.goal:226*/ firstType := ""
-	/*line check.goal:227*/ for _, arm := range m.Arms {
-		/*line check.goal:228*/ switch v1 := arm.Pattern.(type) {
+	/*line check.goal:225*/ covered := map[string]bool{}
+	/*line check.goal:226*/ hasRest := false
+	/*line check.goal:227*/ firstType := ""
+	/*line check.goal:228*/ for _, arm := range m.Arms {
+		/*line check.goal:229*/ switch v1 := arm.Pattern.(type) {
 		case *ast.RestPattern:
 			{
-				/*line check.goal:230*/ hasRest = true
+				/*line check.goal:231*/ hasRest = true
 			}
 		case *ast.TypePattern:
 			{
-				/*line check.goal:233*/ name := typeString(v1.Type)
-				/*line check.goal:234*/ if name == "" {
-					/*line check.goal:235*/ continue
+				/*line check.goal:234*/ name := typeString(v1.Type)
+				/*line check.goal:235*/ if name == "" {
+					/*line check.goal:236*/ continue
 				}
-				/*line check.goal:237*/ if firstType == "" {
-					/*line check.goal:238*/ firstType = name
+				/*line check.goal:238*/ if firstType == "" {
+					/*line check.goal:239*/ firstType = name
 				}
-				/*line check.goal:240*/ covered[name] = true
+				/*line check.goal:241*/ covered[name] = true
 			}
 		default:
 			{
 			}
 		}
 	}
-	/*line check.goal:245*/ if firstType == "" {
-		/*line check.goal:246*/ return nil
+	/*line check.goal:246*/ if firstType == "" {
+		/*line check.goal:247*/ return nil
 	}
-	/*line check.goal:249*/ iface := sealedInterfaceOf(info, covered)
-	/*line check.goal:250*/ if iface == "" {
-		/*line check.goal:251*/ return []Diagnostic{{Pos: m.Match, Severity: Severity(Severity_Warning{}), Feature: "02-match", Code: "unresolved-match-sealed", Message: fmt.Sprintf("cannot verify exhaustiveness of `match` on `%s`: no same-package sealed interface declares it as an implementor — exhaustiveness deferred", firstType)}}
+	/*line check.goal:250*/ iface := sealedInterfaceOf(info, covered)
+	/*line check.goal:251*/ if iface == "" {
+		/*line check.goal:252*/ return []Diagnostic{{Pos: m.Match, Severity: Severity(Severity_Warning{}), Feature: "02-match", Code: "unresolved-match-sealed", Message: fmt.Sprintf("cannot verify exhaustiveness of `match` on `%s`: no same-package sealed interface declares it as an implementor — exhaustiveness deferred", firstType)}}
 	}
-	/*line check.goal:262*/ if hasRest {
-		/*line check.goal:263*/ return nil
+	/*line check.goal:263*/ if hasRest {
+		/*line check.goal:264*/ return nil
 	}
-	/*line check.goal:266*/ missing := missingImplementors(info.SealedImpls[iface], covered)
-	/*line check.goal:267*/ if len(missing) == 0 {
-		/*line check.goal:268*/ return nil
+	/*line check.goal:267*/ missing := missingImplementors(info.SealedImpls[iface], covered)
+	/*line check.goal:268*/ if len(missing) == 0 {
+		/*line check.goal:269*/ return nil
 	}
-	/*line check.goal:270*/ return []Diagnostic{{Pos: m.Match, Severity: Severity(Severity_Error{}), Feature: "02-match", Code: "non-exhaustive-match", Message: fmt.Sprintf("non-exhaustive `match` on sealed interface `%s`: missing implementor%s %s — handle %s, or add a `_` rest-arm to dismiss the rest", iface, plural(len(missing)), quoteImplementors(missing), pronoun(len(missing)))}}
+	/*line check.goal:271*/ return []Diagnostic{{Pos: m.Match, Severity: Severity(Severity_Error{}), Feature: "02-match", Code: "non-exhaustive-match", Message: fmt.Sprintf("non-exhaustive `match` on sealed interface `%s`: missing implementor%s %s — handle %s, or add a `_` rest-arm to dismiss the rest", iface, plural(len(missing)), quoteImplementors(missing), pronoun(len(missing)))}}
 }
 
-//line check.goal:294
+//line check.goal:295
 func sealedInterfaceOf(info *Info, covered map[string]bool) string {
-	/*line check.goal:295*/ if info == nil || info.SealedImpls == nil {
-		/*line check.goal:296*/ return ""
+	/*line check.goal:296*/ if info == nil || info.SealedImpls == nil {
+		/*line check.goal:297*/ return ""
 	}
-	/*line check.goal:298*/ best := ""
-	/*line check.goal:299*/ bestSize := 0
-	/*line check.goal:300*/ for iface, impls := range info.SealedImpls {
-		/*line check.goal:301*/ if !info.Sealed[iface] {
-			/*line check.goal:302*/ continue
+	/*line check.goal:299*/ best := ""
+	/*line check.goal:300*/ bestSize := 0
+	/*line check.goal:301*/ for iface, impls := range info.SealedImpls {
+		/*line check.goal:302*/ if !info.Sealed[iface] {
+			/*line check.goal:303*/ continue
 		}
-		/*line check.goal:304*/ set := map[string]bool{}
-		/*line check.goal:305*/ for _, t := range impls {
-			/*line check.goal:306*/ set[t] = true
+		/*line check.goal:305*/ set := map[string]bool{}
+		/*line check.goal:306*/ for _, t := range impls {
+			/*line check.goal:307*/ set[t] = true
 		}
-		/*line check.goal:308*/ containsAll := true
-		/*line check.goal:309*/ for c := range covered {
-			/*line check.goal:310*/ if !set[c] {
-				/*line check.goal:311*/ containsAll = false
-				/*line check.goal:312*/ break
+		/*line check.goal:309*/ containsAll := true
+		/*line check.goal:310*/ for c := range covered {
+			/*line check.goal:311*/ if !set[c] {
+				/*line check.goal:312*/ containsAll = false
+				/*line check.goal:313*/ break
 			}
 		}
-		/*line check.goal:315*/ if !containsAll {
-			/*line check.goal:316*/ continue
+		/*line check.goal:316*/ if !containsAll {
+			/*line check.goal:317*/ continue
 		}
-		/*line check.goal:318*/ if best == "" || len(impls) < bestSize || (len(impls) == bestSize && iface < best) {
-			/*line check.goal:319*/ best = iface
-			/*line check.goal:320*/ bestSize = len(impls)
+		/*line check.goal:319*/ if best == "" || len(impls) < bestSize || (len(impls) == bestSize && iface < best) {
+			/*line check.goal:320*/ best = iface
+			/*line check.goal:321*/ bestSize = len(impls)
 		}
 	}
-	/*line check.goal:323*/ return best
+	/*line check.goal:324*/ return best
 }
 
-//line check.goal:328
+//line check.goal:329
 func missingImplementors(impls []string, covered map[string]bool) []string {
-	/*line check.goal:329*/ var missing []string
+	/*line check.goal:330*/ var missing []string
 
-	/*line check.goal:330*/
+	/*line check.goal:331*/
 	for _, t := range impls {
-		/*line check.goal:331*/ if !covered[t] {
-			/*line check.goal:332*/ missing = append(missing, t)
+		/*line check.goal:332*/ if !covered[t] {
+			/*line check.goal:333*/ missing = append(missing, t)
 		}
 	}
-	/*line check.goal:335*/ return missing
+	/*line check.goal:336*/ return missing
 }
 
-//line check.goal:340
+//line check.goal:341
 func quoteImplementors(types []string) string {
-	/*line check.goal:341*/ quoted := make([]string, len(types))
-	/*line check.goal:342*/ for i, t := range types {
-		/*line check.goal:343*/ quoted[i] = "`" + t + "`"
+	/*line check.goal:342*/ quoted := make([]string, len(types))
+	/*line check.goal:343*/ for i, t := range types {
+		/*line check.goal:344*/ quoted[i] = "`" + t + "`"
 	}
-	/*line check.goal:345*/ return strings.Join(quoted, ", ")
+	/*line check.goal:346*/ return strings.Join(quoted, ", ")
 }
 
-//line check.goal:349
+//line check.goal:350
 func collectMatches(file *ast.File) []*ast.MatchExpr {
-	/*line check.goal:350*/ var matches []*ast.MatchExpr
+	/*line check.goal:351*/ var matches []*ast.MatchExpr
 
-	/*line check.goal:351*/
+	/*line check.goal:352*/
 	ast.Walk(visitorFunc(func(n ast.Node) bool {
-		/*line check.goal:352*/ if m, ok := n.(*ast.MatchExpr); ok {
-			/*line check.goal:353*/ matches = append(matches, m)
+		/*line check.goal:353*/ if m, ok := n.(*ast.MatchExpr); ok {
+			/*line check.goal:354*/ matches = append(matches, m)
 		}
-		/*line check.goal:355*/ return true
+		/*line check.goal:356*/ return true
 	}), file)
-	/*line check.goal:357*/ return matches
+	/*line check.goal:358*/ return matches
 }
 
-//line check.goal:362
+//line check.goal:363
 type visitorFunc func(ast.Node) bool
 
-//line check.goal:364
+//line check.goal:365
 func (f visitorFunc) Visit(n ast.Node) ast.Visitor {
-	/*line check.goal:365*/ if n == nil {
-		/*line check.goal:366*/ return nil
+	/*line check.goal:366*/ if n == nil {
+		/*line check.goal:367*/ return nil
 	}
-	/*line check.goal:368*/ if f(n) {
-		/*line check.goal:369*/ return f
+	/*line check.goal:369*/ if f(n) {
+		/*line check.goal:370*/ return f
 	}
-	/*line check.goal:371*/ return nil
+	/*line check.goal:372*/ return nil
 }
 
-//line check.goal:377
+//line check.goal:378
 func patternEnumName(p *ast.VariantPattern) string {
-	/*line check.goal:378*/ return exprName(p.Enum)
+	/*line check.goal:379*/ return exprName(p.Enum)
 }
 
-//line check.goal:383
+//line check.goal:384
 func exprName(e ast.Expr) string {
-	/*line check.goal:384*/ switch v1 := e.(type) {
+	/*line check.goal:385*/ switch v1 := e.(type) {
 	case *ast.Ident:
 		{
-			/*line check.goal:386*/ return v1.Name
+			/*line check.goal:387*/ return v1.Name
 		}
 	case *ast.SelectorExpr:
 		{
-			/*line check.goal:389*/ base := exprName(v1.X)
-			/*line check.goal:390*/ if base == "" || v1.Sel == nil {
-				/*line check.goal:391*/ return ""
+			/*line check.goal:390*/ base := exprName(v1.X)
+			/*line check.goal:391*/ if base == "" || v1.Sel == nil {
+				/*line check.goal:392*/ return ""
 			}
-			/*line check.goal:393*/ return base + "." + v1.Sel.Name
+			/*line check.goal:394*/ return base + "." + v1.Sel.Name
 		}
 	default:
 		{
-			/*line check.goal:396*/ return ""
+			/*line check.goal:397*/ return ""
 		}
 	}
 }
 
-//line check.goal:403
+//line check.goal:404
 func missingVariants(enumDecl *Enum, covered map[string]bool) []string {
-	/*line check.goal:404*/ var missing []string
+	/*line check.goal:405*/ var missing []string
 
-	/*line check.goal:405*/
+	/*line check.goal:406*/
 	for _, v := range enumDecl.Variants {
-		/*line check.goal:406*/ if !covered[v.Name] {
-			/*line check.goal:407*/ missing = append(missing, v.Name)
+		/*line check.goal:407*/ if !covered[v.Name] {
+			/*line check.goal:408*/ missing = append(missing, v.Name)
 		}
 	}
-	/*line check.goal:410*/ return missing
+	/*line check.goal:411*/ return missing
 }
 
-//line check.goal:415
+//line check.goal:416
 func quoteVariants(enumName string, variants []string) string {
-	/*line check.goal:416*/ qualified := make([]string, len(variants))
-	/*line check.goal:417*/ for i, v := range variants {
-		/*line check.goal:418*/ qualified[i] = "`" + enumName + "." + v + "`"
+	/*line check.goal:417*/ qualified := make([]string, len(variants))
+	/*line check.goal:418*/ for i, v := range variants {
+		/*line check.goal:419*/ qualified[i] = "`" + enumName + "." + v + "`"
 	}
-	/*line check.goal:420*/ return strings.Join(qualified, ", ")
+	/*line check.goal:421*/ return strings.Join(qualified, ", ")
 }
 
-//line check.goal:424
+//line check.goal:425
 func plural(n int) string {
-	/*line check.goal:425*/ if n == 1 {
-		/*line check.goal:426*/ return ""
+	/*line check.goal:426*/ if n == 1 {
+		/*line check.goal:427*/ return ""
 	}
-	/*line check.goal:428*/ return "s"
+	/*line check.goal:429*/ return "s"
 }
 
-//line check.goal:432
+//line check.goal:433
 func pronoun(n int) string {
-	/*line check.goal:433*/ if n == 1 {
-		/*line check.goal:434*/ return "it"
+	/*line check.goal:434*/ if n == 1 {
+		/*line check.goal:435*/ return "it"
 	}
-	/*line check.goal:436*/ return "them"
+	/*line check.goal:437*/ return "them"
 }

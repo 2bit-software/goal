@@ -32,6 +32,37 @@
   -update-goldens` to fill the golden, and bump the hardcoded transpile count in
   internal/corpus/generate_test.go (TestGenerateCounts).
 
+## [2026-07-09T20:10:00Z] - US-004
+- Added a new sema checker CheckMultiFailureResult (internal/sema/question.goal,
+  regenerated to question.go) that rejects a signature carrying MORE THAN ONE
+  failure-typed result slot (error/Option[…]/Result[…]) with a distinct located
+  code `[multi-failure-result]`. Rule: at most one failure-typed slot, and it
+  must be last. Reuses the US-003 isFailureType helper so the accept/reject sets
+  stay in lockstep. Located at the SECOND failure slot's Pos() so the diagnostic
+  lands on the offending signature line.
+- Flags `(error, error)`, `(Option[A], error)`, `(Result[A, error], error)`;
+  does NOT flag the valid single-trailing-error `(A, B, error)` nor a single
+  whole-return Result[T,E]/Option[T] (one failure slot => not flagged). Counts
+  named-result groups once per declared name.
+- Wired into Check() in internal/sema/check.goal after CheckQuestionAssignForm.
+- Files changed: internal/sema/question.goal + .go, internal/sema/check.goal +
+  .go, internal/guide/catalog.goal + .go (new diagDoc entry — see gotcha below),
+  corpus/manifest.json, internal/corpus/generate_test.go (check count 69->70),
+  testdata/check/05-question-prop/multi_failure_result.goal (new: 3 rejected
+  shapes with // want markers + 3 accepted shapes asserting ABSENT).
+- Verified: `task generate` + `task check` exit 0.
+- Learnings for future iterations:
+  - GOTCHA: every emitted diagnostic Code MUST have a matching diagDoc entry in
+    internal/guide/catalog.goal or TestDiagnosticCatalogMatchesSource
+    (internal/guidetest) fails. Add the {code, feature, severity, blurb} tuple,
+    regenerate catalog.go. The bootstrap AI doc does NOT embed these codes, so no
+    AI-KNOWLEDGE-BOOTSTRAP regen was needed here.
+  - A check fixture's Error diagnostics must each have a `// want` marker on the
+    SAME source line as the diagnostic's Pos (line-based match in check_runner.go);
+    an unclaimed Error fails the case. Placing the diagnostic at the offending
+    slot's Pos() keeps it on the signature line where the marker sits.
+---
+
 ## [2026-07-09T19:05:00Z] - US-003
 - Loosened the two open-E `?` checkers in internal/sema/question.goal
   (regenerated to question.go) to accept a native trailing-error multi-return
