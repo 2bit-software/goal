@@ -88,7 +88,7 @@
         "Regenerated; task check green."
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "The spike handled unnamed result lists only. If the team prefers, this can be dropped as an explicit non-goal — but it is a natural completeness gap; sequence it after the core (US-002..US-005) lands."
     },
     {

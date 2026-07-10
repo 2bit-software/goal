@@ -32,6 +32,52 @@
   -update-goldens` to fill the golden, and bump the hardcoded transpile count in
   internal/corpus/generate_test.go (TestGenerateCounts).
 
+## [2026-07-10T02:10:00Z] - US-006
+- Extended the native trailing-error `?` lowering (US-002) and the sema
+  recognizer (US-003) to NAMED result lists like `(a int, err error)`: `?` now
+  reuses the author's declared result names for the failure-path zero-fill and
+  error propagation instead of minting gensyms. `func f() (n int, err error) {
+  v := lookup()?; return v+1, nil }` emits `v, err := lookup(); if err != nil {
+  return n, err }` — declared `n`/`err`, no gensym.
+- Backend (internal/backend/emit.goal): new `nativeTrailingErrorNamed(t)`
+  recognizer (fully-named result list ending in `error`, not a Result/Option;
+  flattens multi-name groups; returns declared leading names + err name). A
+  third funcDecl branch sets nativeErr/leadNames/errName from the DECLARED names
+  and registers them in `e.taken` so a bare-`?` discard's fresh err gensym can't
+  collide with the declared `err`. funcResults needs NO change: the special
+  gensym-signature branch keys on `nativeTrailingError` which still rejects named
+  lists, so a named signature falls through to the normal field-list rendering
+  and is emitted verbatim.
+- Sema (internal/sema/question.goal): `trailingErrorMultiReturn` dropped its
+  all-unnamed rejection loop — it now keys on slot TYPES only, so named and
+  unnamed forms are accepted identically by CheckQuestionOutsideResult and
+  CheckQuestionAssignForm (LSP inherits via shared sema). No new diagnostic code,
+  so no catalog/bootstrap regen.
+- Tests: corpus pair testdata/native_trailing_named.{goal,go.expected} (single-
+  leading `v := lookup()?` and two-leading `a, b := pair()?` named binds, auto
+  compiled+vetted), plus TestNativeTrailingErrorNamedRuntime in
+  internal/backendtest/native_trailing_error_test.go (build+`go run` of a named
+  `(a int, b string, err error)` shape asserting the declared-name signature,
+  `return a, b, err` failure path, zero-fill + propagated error, and success
+  values). Transpile count 79->80 in internal/corpus/generate_test.go.
+- Files changed: internal/backend/emit.goal (+.go), internal/sema/question.goal
+  (+.go), internal/backendtest/native_trailing_error_test.go,
+  internal/corpus/generate_test.go, corpus/manifest.json,
+  testdata/native_trailing_named.{goal,go.expected}. Commit b24d94c.
+- Verified: `task generate` + `task check` exit 0; `goal check` on a named
+  `(a int, err error)` `?` reports no diagnostics; a named non-fallible
+  `(a int, b int)` with `?` is STILL rejected [question-outside-result].
+- Learnings for future iterations:
+  - funcResults' native-signature branch keys on `nativeTrailingError` (unnamed
+    only). Keeping named lists OUT of that recognizer is deliberate: it lets the
+    normal field-list path emit the author's declared named signature verbatim
+    while a SEPARATE `nativeTrailingErrorNamed` drives only the body's leadNames/
+    errName. Don't merge the two recognizers.
+  - Declared result names are NOT in `e.taken` (newScope seeds only fileIdents),
+    so reusing a source name for gensym-adjacent emit (the discard-path fresh
+    err) requires manually registering it — otherwise gensym("err") collides
+    with the named `err` return and Go rejects the `:=`.
+
 ## [2026-07-10T00:54:00Z] - US-005
 - Extended the AST must-use checker (internal/sema/mustuse.goal, regenerated to
   mustuse.go) with `trailingErrorDiscard`: an assignment
