@@ -32,7 +32,7 @@
         "New backendtest/corpus cases cover at least five varieties including a two-leading-slot zero-fill and a struct or slice leading slot; task check is green."
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "This is the proven spike: ~60 lines adding a nativeErr/leadNames path (nativeTrailingError detector, unwrapNative emit, funcResults named returns, bodyHasUnwrap gate, routing in stmt + unwrap). EDIT emit.goal and regenerate — do NOT hand-edit emit.go. Build path does not gate on sema, so this story's build/run tests pass before US-003 loosens the checker. Named-return zero-fill generalizes the existing `return ok,err` trick to N slots."
     },
     {

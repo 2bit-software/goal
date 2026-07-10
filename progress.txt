@@ -18,6 +18,58 @@
 - Adding/removing a subcommand or flag in `guideCommands` (cmd/goal/main.go)
   changes the AI guide output, so `TestBootstrapGoldenMatches` fails until you
   regenerate: `go run ./cmd/goal ai > AI-KNOWLEDGE-BOOTSTRAP.md`.
+- Every top-level `testdata/*.goal` transpile pair is auto-COMPILED+VETTED by
+  the corpus behavioral tier (internal/corpus/behavior_runner.go RunCompile,
+  driven by TestCompileRunner): the generated Go is written into an isolated
+  temp module and `go build`+`go vet` run against it. So a testdata pair must be
+  a complete, self-contained, vet-clean program (all callees/types defined
+  in-file). This gives free "the emitted Go compiles" coverage for new goldens;
+  for actual runtime-value assertions, build+`go run` a `package main` fixture
+  in a backendtest (see internal/backendtest/native_trailing_error_test.go).
+- To add a testdata transpile pair: write `testdata/<n>.goal`, seed an EMPTY
+  `testdata/<n>.go.expected`, `go run ./cmd/corpus-gen` (pairs it into the
+  manifest), then `go test ./internal/corpus -run TestUpdateGoldens
+  -update-goldens` to fill the golden, and bump the hardcoded transpile count in
+  internal/corpus/generate_test.go (TestGenerateCounts).
+
+## [2026-07-09T18:20:00Z] - US-002
+- Ported the proven spike into internal/backend/emit.goal (regenerated to
+  emit.go): a native trailing-error `(T1, …, Tn, error)` function that hosts a
+  `?` now binds the leading values and propagates the trailing error. On the
+  failure path it `return`s gensym'd zero-valued named leading returns plus the
+  error — the N-slot generalization of the open-E `return ok, err` trick.
+- Pieces: emitter fields `nativeErr bool` / `leadNames []string`; funcDecl
+  detects the shape via `nativeTrailingError(d.Type)` and gates on
+  `bodyHasUnwrap(d.Body)` (an ast.Walk/identFinder scan for any *ast.UnwrapExpr),
+  minting one `v` gensym per leading slot + one `err`; funcResults emits the
+  named-return signature only when nativeErr; stmt routes an assign/multi-LHS
+  `a, b := g()?` and unwrap routes a bare/`name :=` `?` into the new
+  `unwrapNative`. All state is saved/restored around funcDecl so nested/sibling
+  funcs don't leak it.
+- Engagement is gated on bodyHasUnwrap, so a `?`-free error-returning function
+  lowers byte-for-byte unchanged (no golden churn — verify-generated stayed
+  green with zero internal/ diff beyond emit.go itself).
+- Tests: five corpus varieties in testdata/native_trailing_*.goal
+  (two-leading zero-fill, struct leading, slice leading, bare discard,
+  Result[T,error] callee) — each auto-compiled+vetted by the corpus behavioral
+  tier — plus internal/backendtest/native_trailing_error_test.go which
+  build+`go run`s the (int, string, error) shape to prove failure zero-fill
+  (`0`, `""`) + propagated error and success computed values, and asserts a
+  `?`-free error function keeps its `(int, error)` signature.
+- Files changed: internal/backend/emit.goal, internal/backend/emit.go,
+  internal/backendtest/native_trailing_error_test.go,
+  internal/corpus/generate_test.go (transpile count 74->79),
+  corpus/manifest.json, testdata/native_trailing_*.{goal,go.expected} (10).
+  Commit 4d42281.
+- Verified: `task generate` + `task check` exit 0 (drift gate green, all tests).
+- Learnings for future iterations:
+  - Callee arity for a `?` is only consulted for a BARE discard (unwrapNative's
+    `n`); a value-binding `?` trusts the source LHS count + appended err, so
+    arity-resolution gaps for in-file native-error callees don't break binds.
+  - US-003 loosens the sema checker for exactly this shape; the build path here
+    does NOT gate on sema, so these build/run tests already pass pre-US-003.
+    nativeTrailingError already excludes a single Result/Option result and any
+    non-last failure slot is out of its concern until US-004.
 
 ## [2026-07-09T00:00:00Z] - US-001
 - Fixed nameThenType in internal/parser/parser.goal so an unnamed generic type
