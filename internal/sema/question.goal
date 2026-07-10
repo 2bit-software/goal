@@ -96,7 +96,13 @@ func CheckQuestionOutsideResult(file *ast.File, info *Info) []Diagnostic {
 			Mode.ModeOption => true
 			Mode.ModeNone => false
 		}
-		if carriesFailure {
+		// A native trailing-error multi-return `(…, error)` carries its failure in
+		// the trailing `error` slot (the shape the backend lowers `?` against), so
+		// `?` inside it is valid even though its Mode is ModeNone. Only the
+		// permissive-but-safe shape (all-unnamed, no non-last failure slot) is
+		// accepted here; the ambiguous multi-failure shapes stay rejected and get
+		// their located diagnostics in US-004.
+		if carriesFailure || trailingErrorMultiReturn(d.fn.Type) {
 			continue
 		}
 		ret := funcReturnText(d.fn.Type)
@@ -122,14 +128,19 @@ func CheckQuestionAssignForm(file *ast.File, info *Info) []Diagnostic {
 		return diags
 	}
 	for _, d := range plainResultFuncs(file) {
-		diags = append(diags, questionAssignFormDiags(d.fn.Body)...)
+		nativeMulti := trailingErrorMultiReturn(d.fn.Type)
+		diags = append(diags, questionAssignFormDiags(d.fn.Body, nativeMulti)...)
 	}
 	return diags
 }
 
 // questionAssignFormDiags walks a function body and flags every `?`-carrying assignment
-// whose left-hand side is not a single simple variable.
-func questionAssignFormDiags(body *ast.BlockStmt) []Diagnostic {
+// whose left-hand side is not a single simple variable. When nativeMulti is true the
+// enclosing function is a native trailing-error `(…, error)` multi-return, so a single
+// `?` binding several leading values (`a, b := g()?`) is the supported multi-return
+// bind rather than an arity mismatch: the count check is relaxed for it, and each
+// left-hand target is still required to be a simple variable.
+func questionAssignFormDiags(body *ast.BlockStmt, nativeMulti bool) []Diagnostic {
 	var diags []Diagnostic
 	if body == nil {
 		return diags
@@ -143,6 +154,18 @@ func questionAssignFormDiags(body *ast.BlockStmt) []Diagnostic {
 						continue
 					}
 					if len(s.Lhs) != len(s.Rhs) {
+						// A native trailing-error multi-return binds N leading
+						// values from a single `?`; accept the mismatch but still
+						// require each target to be a simple variable.
+						if nativeMulti && len(s.Rhs) == 1 {
+							for _, lhs := range s.Lhs {
+								if !isSimpleAssignTarget(lhs) {
+									diags = append(diags, questionAssignUnsupported(u.Question,
+										"`?` can only assign to a simple variable or `_`, not through a field, index, or other expression"))
+								}
+							}
+							continue
+						}
 						diags = append(diags, questionAssignUnsupported(u.Question,
 							"the left-hand side has a different number of variables than the `?` results on the right"))
 						continue
@@ -158,6 +181,79 @@ func questionAssignFormDiags(body *ast.BlockStmt) []Diagnostic {
 		return true
 	}), body)
 	return diags
+}
+
+// trailingErrorMultiReturn reports whether t's result list is the native
+// trailing-error shape that carries a failure for `?`: an all-unnamed result list
+// ending in `error`, that is not itself a single whole-return Result/Option, and
+// whose non-last slots are none of them failure-typed (error/Option/Result). The
+// genuinely ambiguous multi-failure shapes (a non-last error/Option/Result slot)
+// are deliberately excluded here so they stay rejected — US-004 adds their located
+// diagnostics. This mirrors the backend's nativeTrailingError lowering gate plus the
+// extra permissive-but-safe non-last-failure exclusion.
+func trailingErrorMultiReturn(t *ast.FuncType) bool {
+	if t == nil || t.Results == nil {
+		return false
+	}
+	list := t.Results.List
+	if len(list) == 0 {
+		return false
+	}
+	// A single whole-return Result[T, error]/Option[T] is its own failure channel,
+	// handled by CheckQuestion/CheckClosed — not a native trailing-error tuple.
+	if head, _ := resultGeneric(t.Results); head == "Result" || head == "Option" {
+		return false
+	}
+	for _, f := range list {
+		if len(f.Names) != 0 {
+			return false
+		}
+	}
+	if !isErrorType(list[len(list)-1].Type) {
+		return false
+	}
+	for _, f := range list[:len(list)-1] {
+		if isFailureType(f.Type) {
+			return false
+		}
+	}
+	return true
+}
+
+// isErrorType reports whether e is the builtin `error` type name.
+func isErrorType(e ast.Expr) bool {
+	id, ok := e.(*ast.Ident)
+	return ok && id.Name == "error"
+}
+
+// isFailureType reports whether e is a failure-carrying slot type: the builtin
+// `error`, or a generic `Option[…]`/`Result[…]`. Used to exclude the ambiguous
+// multi-failure signatures from the trailing-error loosening.
+func isFailureType(e ast.Expr) bool {
+	if isErrorType(e) {
+		return true
+	}
+	head := genericHead(e)
+	return head == "Option" || head == "Result"
+}
+
+// genericHead returns the head type name of a generic instantiation `Head[…]`
+// (`Option[int]` -> "Option"), or "" when e is not an Ident-headed generic.
+func genericHead(e ast.Expr) string {
+	match e {
+		*ast.IndexExpr(x) => {
+			if id, ok := x.X.(*ast.Ident); ok {
+				return id.Name
+			}
+		}
+		*ast.IndexListExpr(x) => {
+			if id, ok := x.X.(*ast.Ident); ok {
+				return id.Name
+			}
+		}
+		_ => {}
+	}
+	return ""
 }
 
 // isSimpleAssignTarget reports whether e is a bare identifier (including `_`), the only

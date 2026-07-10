@@ -32,6 +32,46 @@
   -update-goldens` to fill the golden, and bump the hardcoded transpile count in
   internal/corpus/generate_test.go (TestGenerateCounts).
 
+## [2026-07-09T19:05:00Z] - US-003
+- Loosened the two open-E `?` checkers in internal/sema/question.goal
+  (regenerated to question.go) to accept a native trailing-error multi-return
+  `(…, error)` as failure-carrying, so `goal check`/LSP now agree with the
+  US-002 backend lowering. CheckQuestionOutsideResult skips such a function
+  (`carriesFailure || trailingErrorMultiReturn(type)`); CheckQuestionAssignForm
+  threads a `nativeMulti` flag so a single `?` binding N leading values
+  (`a, b := g()?`) is accepted instead of flagged as an arity mismatch (each LHS
+  target is still required to be a simple variable).
+- New recognizer `trailingErrorMultiReturn(t)`: all-unnamed result list, ends in
+  `error`, NOT a single whole-return Result/Option (via resultGeneric), and NO
+  non-last slot itself failure-typed. Helpers isErrorType/isFailureType/
+  genericHead classify a slot as error / Option[…] / Result[…]. The ambiguous
+  multi-failure shapes (a non-last failure slot) stay rejected by the existing
+  outside-result path — US-004 adds their located diagnostics; none added here.
+- Tests: two corpus check fixtures under testdata/check/05-question-prop/ driven
+  by TestSemaQuestionImplementsRunner (SemaCheck front-end, same // want markers
+  as the lexical checker): native_trailing_ok.goal asserts diagnostics ABSENT
+  for `(int, error)` single-bind `v := g()?` and `(int, string, error)`
+  multi-bind `a, b := g()?`; native_trailing_nonfallible.goal asserts the
+  question-outside-result diagnostic STILL PRESENT for a non-fallible
+  `func () (int, int)` using `?`.
+- Files changed: internal/sema/question.goal, internal/sema/question.go
+  (regenerated), corpus/manifest.json, internal/corpus/generate_test.go
+  (check count 67->69), testdata/check/05-question-prop/native_trailing_{ok,
+  nonfallible}.goal.
+- Verified: `task generate` + `task check` exit 0 (verify-generated green, all
+  tests incl. corpus + lsptest — LSP inherits the loosening via shared sema with
+  no regression).
+- Learnings for future iterations:
+  - sema check cases are corpus testdata under testdata/check/<feature>/ with
+    inline `// want "substring"` markers, NOT Go _test.go files (the sema package
+    ships none). Add a .goal fixture, `go run ./cmd/corpus-gen`, bump the check
+    count in internal/corpus/generate_test.go (TestGenerateCounts). An ABSENT
+    assertion is a fixture with zero want markers that must emit zero Errors.
+  - trailingErrorMultiReturn mirrors backend nativeTrailingError but ADDS the
+    non-last-failure-slot exclusion US-003 requires; US-004 should reuse the same
+    failure-slot notion (isFailureType) when it locates the ambiguous shapes.
+---
+
 ## [2026-07-09T18:20:00Z] - US-002
 - Ported the proven spike into internal/backend/emit.goal (regenerated to
   emit.go): a native trailing-error `(T1, …, Tn, error)` function that hosts a

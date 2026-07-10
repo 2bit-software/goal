@@ -46,7 +46,7 @@
         "Regenerated; task check green (build and check now agree on the same multi-return inputs)."
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Recognition should be permissive-but-safe: accept a trailing-error result only when NO non-last slot is itself error/Option/Result-typed, so the ambiguous shapes are excluded here and US-004 only adds their located diagnostics. LSP inherits the loosening via shared sema — verify no lsptest regressions."
     },
     {

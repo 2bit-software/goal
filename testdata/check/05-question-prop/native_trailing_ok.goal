@@ -1,0 +1,27 @@
+package qprop
+
+// lead returns a native trailing-error pair — a valid multi-return `?` callee.
+func lead() (int, error) {
+	return 1, nil
+}
+
+// pair returns two leading values plus a trailing error.
+func pair() (int, string, error) {
+	return 1, "", nil
+}
+
+// singleBind binds one leading value from a native trailing-error callee inside a
+// native trailing-error `(int, error)` function. `?` propagates the trailing error;
+// the checker accepts it — no question-outside-result, no assignment-form rejection.
+func singleBind() (int, error) {
+	v := lead()?
+	return v, nil
+}
+
+// multiBind binds two leading values from a `(int, string, error)` callee via a
+// single `?`. The multi-value left-hand side against one `?` is the native
+// multi-return bind, accepted here rather than rejected as an arity mismatch.
+func multiBind() (int, string, error) {
+	a, b := pair()?
+	return a, b, nil
+}

@@ -1,0 +1,15 @@
+package qprop
+
+// lead returns a native trailing-error pair.
+func lead() (int, error) {
+	return 1, nil
+}
+
+// twoInts returns `(int, int)`: its last result is not `error`, so it has no
+// failure channel to carry a propagated error. A `?` inside it is still rejected as
+// outside-result — the trailing-error loosening applies only to an error-ending
+// result list, not to an arbitrary multi-return.
+func twoInts() (int, int) {
+	v := lead()? // want "neither a `Result` nor an `Option`"
+	return v, 0
+}
