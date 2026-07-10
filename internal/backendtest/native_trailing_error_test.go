@@ -96,3 +96,78 @@ func main() {
 		t.Errorf("failure path (zero-fill + propagated error): want %q in output, got:\n%s", wantFail, text)
 	}
 }
+
+// TestNativeTrailingErrorNamedRuntime proves the US-006 contract: a NAMED
+// trailing-error result list `(a int, b string, err error)` hosting `a, b := g()?`
+// reuses the author's declared result names — the failure path returns the
+// zero-valued named results plus g's error (reusing the declared `err`), and the
+// success path returns the computed values. The transpiled program is built and run
+// in an isolated temp module and its stdout is asserted.
+func TestNativeTrailingErrorNamedRuntime(t *testing.T) {
+	if testing.Short() {
+		t.Skip("spawns the go toolchain")
+	}
+	src := `package main
+
+import "errors"
+import "fmt"
+
+func g(fail bool) (int, string, error) {
+	if fail {
+		return 0, "", errors.New("boom")
+	}
+	return 7, "ok", nil
+}
+
+func f(fail bool) (a int, b string, err error) {
+	a, b = g(fail)?
+	return a * 2, b + "!", nil
+}
+
+func main() {
+	a, b, err := f(false)
+	fmt.Printf("ok=%d|%s|%v\n", a, b, err)
+	a2, b2, err2 := f(true)
+	fmt.Printf("fail=%d|%q|%v\n", a2, b2, err2)
+}
+`
+	out, err := backend.Transpile(src)
+	if err != nil {
+		t.Fatalf("transpile: %v", err)
+	}
+
+	// The rewrite must reuse the declared result names, not mint gensyms: the failure
+	// path returns the named `a`/`b`/`err`, and the signature is emitted as declared.
+	if !strings.Contains(out.Go, "func f(fail bool) (a int, b string, err error)") {
+		t.Errorf("named result signature was rewritten with gensyms; got:\n%s", out.Go)
+	}
+	if !strings.Contains(out.Go, "return a, b, err") {
+		t.Errorf("failure path did not reuse declared named returns; got:\n%s", out.Go)
+	}
+
+	tmp := t.TempDir()
+	const goMod = "module goaltest\n\ngo 1.26\n"
+	if err := os.WriteFile(filepath.Join(tmp, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "main.go"), []byte(out.Go), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+
+	cmd := exec.Command("go", "run", ".")
+	cmd.Dir = tmp
+	got, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go run failed: %v\noutput:\n%s\ngenerated:\n%s", err, got, out.Go)
+	}
+
+	wantOK := "ok=14|ok!|<nil>"
+	wantFail := `fail=0|""|boom`
+	text := string(got)
+	if !strings.Contains(text, wantOK) {
+		t.Errorf("success path: want %q in output, got:\n%s", wantOK, text)
+	}
+	if !strings.Contains(text, wantFail) {
+		t.Errorf("failure path (named zero-fill + propagated error): want %q in output, got:\n%s", wantFail, text)
+	}
+}

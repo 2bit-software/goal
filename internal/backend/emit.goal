@@ -571,6 +571,21 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 			e.leadNames[i] = e.gensym("v")
 		}
 		e.errName = e.gensym("err")
+	} else if names, errn, ok := nativeTrailingErrorNamed(d.Type); ok && bodyHasUnwrap(d.Body) {
+		// A NAMED trailing-error multi-return `(a int, err error)` that propagates a
+		// `?`: reuse the author's declared result names instead of minting gensyms —
+		// the leading names are the failure-path zero-fill targets and the trailing name
+		// receives (and propagates) the error. The declared signature is emitted as-is
+		// (nativeTrailingError rejects named lists, so funcResults falls through to the
+		// normal field-list rendering). Register the declared names as taken so a bare
+		// `?` discard's fresh err gensym cannot collide with the named `err` return.
+		e.nativeErr = true
+		e.leadNames = names
+		e.errName = errn
+		for _, nm := range names {
+			e.taken[nm] = true
+		}
+		e.taken[errn] = true
 	}
 	defer func() {
 		e.fnKind, e.okName, e.errName, e.taken = prevKind, prevOk, prevErr, prevTaken
@@ -2885,6 +2900,49 @@ func nativeTrailingError(t *ast.FuncType) ([]ast.Expr, bool) {
 		lead = append(lead, f.Type)
 	}
 	return lead, true
+}
+
+// nativeTrailingErrorNamed is the named-result counterpart of nativeTrailingError:
+// it reports whether t is a fully NAMED result list `(a int, err error)` ending in
+// `error` (and not itself a Result/Option), the shape that hosts multi-return `?`
+// under the trailing-error convention with author-declared names. It returns the
+// declared leading value-slot names (everything before the trailing error) and the
+// trailing error name, so the `?` lowering can reuse the author's names for the
+// failure-path zero-fill instead of gensyms. A mixed or all-unnamed list is rejected
+// here (nativeTrailingError handles the all-unnamed form).
+func nativeTrailingErrorNamed(t *ast.FuncType) ([]string, string, bool) {
+	if t == nil || t.Results == nil {
+		return nil, "", false
+	}
+	list := t.Results.List
+	if len(list) == 0 {
+		return nil, "", false
+	}
+	// A single Result[T, error]/Option[T] result is its own lowering, not a native
+	// trailing-error tuple, so exclude it up front.
+	if k, _ := resultOptionKind(t); k != roNone {
+		return nil, "", false
+	}
+	// Every field must be named; flatten each field's names (a `(a, b int, …)` group
+	// declares two leading slots) into a single ordered list of declared names.
+	var names []string
+	for _, f := range list {
+		if len(f.Names) == 0 {
+			return nil, "", false
+		}
+		for _, nm := range f.Names {
+			names = append(names, nm.Name)
+		}
+	}
+	last := list[len(list)-1]
+	id, isId := last.Type.(*ast.Ident)
+	if !isId || id.Name != "error" {
+		return nil, "", false
+	}
+	if len(names) == 0 {
+		return nil, "", false
+	}
+	return names[:len(names)-1], names[len(names)-1], true
 }
 
 // unwrapNative lowers a `?` inside a native trailing-error `(…, error)` function. It

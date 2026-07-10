@@ -1,0 +1,25 @@
+package p
+
+func lookup() (int, error) {
+	return 7, nil
+}
+
+func pair() (int, int, error) {
+	return 3, 4, nil
+}
+
+func fetch() (n int, err error) {
+	v, err := lookup()
+	if err != nil {
+		return n, err
+	}
+	return v + 1, nil
+}
+
+func combine() (sum int, err error) {
+	a, b, err := pair()
+	if err != nil {
+		return sum, err
+	}
+	return a + b, nil
+}

@@ -1089,16 +1089,16 @@
       "normalize": "gofmt"
     },
     {
-      "id": "testdata-derive_exact_case-doctest",
-      "kind": "doctest",
+      "id": "testdata-derive_exact_case",
+      "kind": "transpile",
       "input": "testdata/derive_exact_case.goal",
       "expected": "testdata/derive_exact_case.go.expected",
       "mode": "file",
       "normalize": "gofmt"
     },
     {
-      "id": "testdata-derive_exact_case",
-      "kind": "transpile",
+      "id": "testdata-derive_exact_case-doctest",
+      "kind": "doctest",
       "input": "testdata/derive_exact_case.goal",
       "expected": "testdata/derive_exact_case.go.expected",
       "mode": "file",
@@ -1165,6 +1165,14 @@
       "kind": "transpile",
       "input": "testdata/native_trailing_bare_discard.goal",
       "expected": "testdata/native_trailing_bare_discard.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-native_trailing_named",
+      "kind": "transpile",
+      "input": "testdata/native_trailing_named.goal",
+      "expected": "testdata/native_trailing_named.go.expected",
       "mode": "file",
       "normalize": "gofmt"
     },

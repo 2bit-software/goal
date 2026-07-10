@@ -1,0 +1,27 @@
+package p
+
+// lookup is the fallible callee: a plain single-leading trailing-error function.
+func lookup() (int, error) {
+	return 7, nil
+}
+
+// pair is a two-leading fallible callee.
+func pair() (int, int, error) {
+	return 3, 4, nil
+}
+
+// fetch has a NAMED trailing-error result list `(n int, err error)` and hosts a
+// `?`: the `?` binds the leading value and, on failure, zero-fills the declared
+// named return `n` and reuses the declared `err` rather than a gensym.
+func fetch() (n int, err error) {
+	v := lookup()?
+	return v + 1, nil
+}
+
+// combine has a NAMED trailing-error result list `(sum int, err error)` and binds
+// two leading values from pair via a single `?`; on failure it zero-fills the
+// declared `sum` and reuses the declared `err`.
+func combine() (sum int, err error) {
+	a, b := pair()?
+	return a + b, nil
+}

@@ -236,13 +236,15 @@ func multiFailureResultDiags(fn *ast.FuncDecl) []Diagnostic {
 }
 
 // trailingErrorMultiReturn reports whether t's result list is the native
-// trailing-error shape that carries a failure for `?`: an all-unnamed result list
-// ending in `error`, that is not itself a single whole-return Result/Option, and
-// whose non-last slots are none of them failure-typed (error/Option/Result). The
-// genuinely ambiguous multi-failure shapes (a non-last error/Option/Result slot)
-// are deliberately excluded here so they stay rejected — US-004 adds their located
-// diagnostics. This mirrors the backend's nativeTrailingError lowering gate plus the
-// extra permissive-but-safe non-last-failure exclusion.
+// trailing-error shape that carries a failure for `?`: a result list (named
+// `(a int, err error)` or unnamed `(int, error)`) ending in `error`, that is not
+// itself a single whole-return Result/Option, and whose non-last slots are none of
+// them failure-typed (error/Option/Result). The genuinely ambiguous multi-failure
+// shapes (a non-last error/Option/Result slot) are deliberately excluded here so
+// they stay rejected — US-004 adds their located diagnostics. Recognition keys on
+// the slot TYPES, so the named and unnamed forms are accepted identically. This
+// mirrors the backend's nativeTrailingError/nativeTrailingErrorNamed lowering gate
+// plus the extra permissive-but-safe non-last-failure exclusion.
 func trailingErrorMultiReturn(t *ast.FuncType) bool {
 	if t == nil || t.Results == nil {
 		return false
@@ -255,11 +257,6 @@ func trailingErrorMultiReturn(t *ast.FuncType) bool {
 	// handled by CheckQuestion/CheckClosed — not a native trailing-error tuple.
 	if head, _ := resultGeneric(t.Results); head == "Result" || head == "Option" {
 		return false
-	}
-	for _, f := range list {
-		if len(f.Names) != 0 {
-			return false
-		}
 	}
 	if !isErrorType(list[len(list)-1].Type) {
 		return false

@@ -196,106 +196,101 @@ func multiFailureResultDiags(fn *ast.FuncDecl) []Diagnostic {
 	/*line question.goal:233*/ return []Diagnostic{{Pos: failSlots[1].Pos(), Severity: Severity(Severity_Error{}), Feature: "05-question-prop", Code: "multi-failure-result", Message: fmt.Sprintf("function `%s` has %d failure-typed results (`error`/`Option`/`Result`), but `?` propagates a single failure: a signature may carry at most one failure-typed slot and it must be the last result — keep a single trailing `error` (or one whole-return `Result`/`Option`) and make the other results plain values", fn.Name.Name, len(failSlots))}}
 }
 
-//line question.goal:246
+//line question.goal:248
 func trailingErrorMultiReturn(t *ast.FuncType) bool {
-	/*line question.goal:247*/ if t == nil || t.Results == nil {
-		/*line question.goal:248*/ return false
+	/*line question.goal:249*/ if t == nil || t.Results == nil {
+		/*line question.goal:250*/ return false
 	}
-	/*line question.goal:250*/ list := t.Results.List
-	/*line question.goal:251*/ if len(list) == 0 {
-		/*line question.goal:252*/ return false
+	/*line question.goal:252*/ list := t.Results.List
+	/*line question.goal:253*/ if len(list) == 0 {
+		/*line question.goal:254*/ return false
 	}
-	/*line question.goal:256*/ if head, _ := resultGeneric(t.Results); head == "Result" || head == "Option" {
-		/*line question.goal:257*/ return false
+	/*line question.goal:258*/ if head, _ := resultGeneric(t.Results); head == "Result" || head == "Option" {
+		/*line question.goal:259*/ return false
 	}
-	/*line question.goal:259*/ for _, f := range list {
-		/*line question.goal:260*/ if len(f.Names) != 0 {
-			/*line question.goal:261*/ return false
+	/*line question.goal:261*/ if !isErrorType(list[len(list)-1].Type) {
+		/*line question.goal:262*/ return false
+	}
+	/*line question.goal:264*/ for _, f := range list[:len(list)-1] {
+		/*line question.goal:265*/ if isFailureType(f.Type) {
+			/*line question.goal:266*/ return false
 		}
 	}
-	/*line question.goal:264*/ if !isErrorType(list[len(list)-1].Type) {
-		/*line question.goal:265*/ return false
-	}
-	/*line question.goal:267*/ for _, f := range list[:len(list)-1] {
-		/*line question.goal:268*/ if isFailureType(f.Type) {
-			/*line question.goal:269*/ return false
-		}
-	}
-	/*line question.goal:272*/ return true
+	/*line question.goal:269*/ return true
 }
 
-//line question.goal:276
+//line question.goal:273
 func isErrorType(e ast.Expr) bool {
-	/*line question.goal:277*/ id, ok := e.(*ast.Ident)
-	/*line question.goal:278*/ return ok && id.Name == "error"
+	/*line question.goal:274*/ id, ok := e.(*ast.Ident)
+	/*line question.goal:275*/ return ok && id.Name == "error"
 }
 
-//line question.goal:284
+//line question.goal:281
 func isFailureType(e ast.Expr) bool {
-	/*line question.goal:285*/ if isErrorType(e) {
-		/*line question.goal:286*/ return true
+	/*line question.goal:282*/ if isErrorType(e) {
+		/*line question.goal:283*/ return true
 	}
-	/*line question.goal:288*/ head := genericHead(e)
-	/*line question.goal:289*/ return head == "Option" || head == "Result"
+	/*line question.goal:285*/ head := genericHead(e)
+	/*line question.goal:286*/ return head == "Option" || head == "Result"
 }
 
-//line question.goal:294
+//line question.goal:291
 func genericHead(e ast.Expr) string {
-	/*line question.goal:295*/ switch v1 := e.(type) {
+	/*line question.goal:292*/ switch v1 := e.(type) {
 	case *ast.IndexExpr:
 		{
-			/*line question.goal:297*/ if id, ok := v1.X.(*ast.Ident); ok {
-				/*line question.goal:298*/ return id.Name
+			/*line question.goal:294*/ if id, ok := v1.X.(*ast.Ident); ok {
+				/*line question.goal:295*/ return id.Name
 			}
 		}
 	case *ast.IndexListExpr:
 		{
-			/*line question.goal:302*/ if id, ok := v1.X.(*ast.Ident); ok {
-				/*line question.goal:303*/ return id.Name
+			/*line question.goal:299*/ if id, ok := v1.X.(*ast.Ident); ok {
+				/*line question.goal:300*/ return id.Name
 			}
 		}
 	default:
 		{
 		}
 	}
-	/*line question.goal:308*/ return ""
+	/*line question.goal:305*/ return ""
 }
 
-//line question.goal:313
+//line question.goal:310
 func isSimpleAssignTarget(e ast.Expr) bool {
-	/*line question.goal:314*/ _, ok := e.(*ast.Ident)
-	/*line question.goal:315*/ return ok
+	/*line question.goal:311*/ _, ok := e.(*ast.Ident)
+	/*line question.goal:312*/ return ok
 }
 
-//line question.goal:320
+//line question.goal:317
 func questionAssignUnsupported(p token.Pos, detail string) Diagnostic {
-	/*line question.goal:321*/ return Diagnostic{Pos: p, Severity: Severity(Severity_Error{}), Feature: "05-question-prop", Code: "question-assign-unsupported", Message: fmt.Sprintf("`?` assignment is unsupported here: %s; bind with `x := f()?` or `x = f()?` where `x` is a single variable", detail)}
+	/*line question.goal:318*/ return Diagnostic{Pos: p, Severity: Severity(Severity_Error{}), Feature: "05-question-prop", Code: "question-assign-unsupported", Message: fmt.Sprintf("`?` assignment is unsupported here: %s; bind with `x := f()?` or `x = f()?` where `x` is a single variable", detail)}
 }
 
-//line question.goal:329
+//line question.goal:326
 func funcReturnText(t *ast.FuncType) string {
-	/*line question.goal:330*/ if t == nil || t.Results == nil || len(t.Results.List) == 0 {
-		/*line question.goal:331*/ return "no value"
+	/*line question.goal:327*/ if t == nil || t.Results == nil || len(t.Results.List) == 0 {
+		/*line question.goal:328*/ return "no value"
 	}
-	/*line question.goal:333*/ var parts []string
+	/*line question.goal:330*/ var parts []string
 
-	/*line question.goal:334*/
+	/*line question.goal:331*/
 	for _, f := range t.Results.List {
-		/*line question.goal:335*/ ts := typeString(f.Type)
-		/*line question.goal:336*/ n := 1
-		/*line question.goal:337*/ if len(f.Names) > 0 {
-			/*line question.goal:338*/ n = len(f.Names)
+		/*line question.goal:332*/ ts := typeString(f.Type)
+		/*line question.goal:333*/ n := 1
+		/*line question.goal:334*/ if len(f.Names) > 0 {
+			/*line question.goal:335*/ n = len(f.Names)
 		}
-		/*line question.goal:340*/ for i := 0; i < n; i++ {
-			/*line question.goal:341*/ parts = append(parts, ts)
+		/*line question.goal:337*/ for i := 0; i < n; i++ {
+			/*line question.goal:338*/ parts = append(parts, ts)
 		}
 	}
-	/*line question.goal:344*/ return "`(" + strings.Join(parts, ", ") + ")`"
+	/*line question.goal:341*/ return "`(" + strings.Join(parts, ", ") + ")`"
 }
 
-//line question.goal:348
+//line question.goal:345
 func appendQuestionResolved(diags []Diagnostic, p token.Pos, key string, csig FuncSig, discard bool) []Diagnostic {
-	/*line question.goal:349*/ var isOpenResult bool
+	/*line question.goal:346*/ var isOpenResult bool
 	switch csig.Mode.(type) {
 	case Mode_ModeResult:
 		isOpenResult = true
@@ -308,7 +303,7 @@ func appendQuestionResolved(diags []Diagnostic, p token.Pos, key string, csig Fu
 	default:
 		panic("unreachable: non-exhaustive Mode (compiler invariant violated)")
 	}
-	/*line question.goal:355*/ var isOption bool
+	/*line question.goal:352*/ var isOption bool
 	switch csig.Mode.(type) {
 	case Mode_ModeOption:
 		isOption = true
@@ -321,7 +316,7 @@ func appendQuestionResolved(diags []Diagnostic, p token.Pos, key string, csig Fu
 	default:
 		panic("unreachable: non-exhaustive Mode (compiler invariant violated)")
 	}
-	/*line question.goal:361*/ var isClosed bool
+	/*line question.goal:358*/ var isClosed bool
 	switch csig.Mode.(type) {
 	case Mode_ModeResultClosed:
 		isClosed = true
@@ -334,7 +329,7 @@ func appendQuestionResolved(diags []Diagnostic, p token.Pos, key string, csig Fu
 	default:
 		panic("unreachable: non-exhaustive Mode (compiler invariant violated)")
 	}
-	/*line question.goal:367*/ switch {
+	/*line question.goal:364*/ switch {
 	case isOpenResult:
 	case isOption:
 		diags = append(diags, Diagnostic{Pos: p, Severity: Severity(Severity_Error{}), Feature: "05-question-prop", Code: "question-callee-no-error", Message: fmt.Sprintf("`?` in a `Result[_, error]` function propagates an `error`, but `%s` returns an `Option`; map its `None` to an error first", key)})
@@ -347,20 +342,20 @@ func appendQuestionResolved(diags []Diagnostic, p token.Pos, key string, csig Fu
 	case !discard && csig.Arity != 2:
 		diags = append(diags, Diagnostic{Pos: p, Severity: Severity(Severity_Error{}), Feature: "05-question-prop", Code: "question-binds-nonvalue", Message: fmt.Sprintf("`?` binds a value but `%s` returns %d value(s); write a bare `…?` to propagate only the error", key, csig.Arity)})
 	}
-	/*line question.goal:391*/ return diags
+	/*line question.goal:388*/ return diags
 }
 
-//line question.goal:398
+//line question.goal:395
 func CheckClosed(file *ast.File, info *Info) []Diagnostic {
-	/*line question.goal:399*/ var diags []Diagnostic
+	/*line question.goal:396*/ var diags []Diagnostic
 
-	/*line question.goal:400*/
+	/*line question.goal:397*/
 	if file == nil {
-		/*line question.goal:401*/ return diags
+		/*line question.goal:398*/ return diags
 	}
-	/*line question.goal:403*/ for _, d := range plainResultFuncs(file) {
-		/*line question.goal:404*/ caller := funcSig(d.fn.Name.Name, d.fn.Type)
-		/*line question.goal:405*/ var callerIsClosed bool
+	/*line question.goal:400*/ for _, d := range plainResultFuncs(file) {
+		/*line question.goal:401*/ caller := funcSig(d.fn.Name.Name, d.fn.Type)
+		/*line question.goal:402*/ var callerIsClosed bool
 		switch caller.Mode.(type) {
 		case Mode_ModeResultClosed:
 			callerIsClosed = true
@@ -373,69 +368,69 @@ func CheckClosed(file *ast.File, info *Info) []Diagnostic {
 		default:
 			panic("unreachable: non-exhaustive Mode (compiler invariant violated)")
 		}
-		/*line question.goal:411*/ if !callerIsClosed {
-			/*line question.goal:412*/ continue
+		/*line question.goal:408*/ if !callerIsClosed {
+			/*line question.goal:409*/ continue
 		}
-		/*line question.goal:414*/ diags = append(diags, closedQuestionDiags(d.fn.Body, caller, info)...)
-		/*line question.goal:415*/ diags = append(diags, closedErrDiags(d.fn.Body, caller, info)...)
+		/*line question.goal:411*/ diags = append(diags, closedQuestionDiags(d.fn.Body, caller, info)...)
+		/*line question.goal:412*/ diags = append(diags, closedErrDiags(d.fn.Body, caller, info)...)
 	}
-	/*line question.goal:417*/ return diags
+	/*line question.goal:414*/ return diags
 }
 
-//line question.goal:423
+//line question.goal:420
 func closedQuestionDiags(body *ast.BlockStmt, caller FuncSig, info *Info) []Diagnostic {
-	/*line question.goal:424*/ var diags []Diagnostic
+	/*line question.goal:421*/ var diags []Diagnostic
 
-	/*line question.goal:425*/
+	/*line question.goal:422*/
 	for _, site := range collectQuestionSites(body) {
-		/*line question.goal:426*/ csig, key, known := resolveQuestionCallee(site.unwrap, info)
-		/*line question.goal:427*/ p := site.unwrap.Question
-		/*line question.goal:429*/ var calleeIsClosed bool
+		/*line question.goal:423*/ csig, key, known := resolveQuestionCallee(site.unwrap, info)
+		/*line question.goal:424*/ p := site.unwrap.Question
+		/*line question.goal:426*/ var calleeIsClosed bool
 		switch csig.Mode.(type) {
 		case Mode_ModeResultClosed:
 			calleeIsClosed = true
 		default:
 			calleeIsClosed = false
 		}
-		/*line question.goal:433*/ if !known || !calleeIsClosed {
-			/*line question.goal:434*/ label := key
-			/*line question.goal:435*/ if label == "" {
-				/*line question.goal:436*/ label = "the `?` callee"
+		/*line question.goal:430*/ if !known || !calleeIsClosed {
+			/*line question.goal:431*/ label := key
+			/*line question.goal:432*/ if label == "" {
+				/*line question.goal:433*/ label = "the `?` callee"
 			}
-			/*line question.goal:438*/ diags = append(diags, Diagnostic{Pos: p, Severity: Severity(Severity_Warning{}), Feature: "06-error-e", Code: "unresolved-question-error", Message: fmt.Sprintf("cannot verify the `?` error conversion: callee `%s` is not an in-file closed-E `Result`-returning function (its error type is unresolvable here) — From-totality deferred", label)})
+			/*line question.goal:435*/ diags = append(diags, Diagnostic{Pos: p, Severity: Severity(Severity_Warning{}), Feature: "06-error-e", Code: "unresolved-question-error", Message: fmt.Sprintf("cannot verify the `?` error conversion: callee `%s` is not an in-file closed-E `Result`-returning function (its error type is unresolvable here) — From-totality deferred", label)})
+			/*line question.goal:438*/ continue
+		}
+		/*line question.goal:440*/ if csig.E == caller.E {
 			/*line question.goal:441*/ continue
 		}
-		/*line question.goal:443*/ if csig.E == caller.E {
-			/*line question.goal:444*/ continue
-		}
-		/*line question.goal:446*/ if _, found := info.FromRegistry[[2]string{csig.E, caller.E}]; !found {
-			/*line question.goal:447*/ diags = append(diags, Diagnostic{Pos: p, Severity: Severity(Severity_Error{}), Feature: "06-error-e", Code: "missing-from-conversion", Message: fmt.Sprintf("`?` propagates `%s` into a `Result[_, %s]` function but no `from func` converts `%s` to `%s` — declare `from func name(e %s) %s { … }`", csig.E, caller.E, csig.E, caller.E, csig.E, caller.E)})
+		/*line question.goal:443*/ if _, found := info.FromRegistry[[2]string{csig.E, caller.E}]; !found {
+			/*line question.goal:444*/ diags = append(diags, Diagnostic{Pos: p, Severity: Severity(Severity_Error{}), Feature: "06-error-e", Code: "missing-from-conversion", Message: fmt.Sprintf("`?` propagates `%s` into a `Result[_, %s]` function but no `from func` converts `%s` to `%s` — declare `from func name(e %s) %s { … }`", csig.E, caller.E, csig.E, caller.E, csig.E, caller.E)})
 		}
 	}
-	/*line question.goal:453*/ return diags
+	/*line question.goal:450*/ return diags
 }
 
-//line question.goal:461
+//line question.goal:458
 func closedErrDiags(body *ast.BlockStmt, caller FuncSig, info *Info) []Diagnostic {
-	/*line question.goal:462*/ var diags []Diagnostic
+	/*line question.goal:459*/ var diags []Diagnostic
 
-	/*line question.goal:463*/
+	/*line question.goal:460*/
 	if body == nil {
-		/*line question.goal:464*/ return diags
+		/*line question.goal:461*/ return diags
 	}
-	/*line question.goal:466*/ ast.Walk(visitorFunc(func(n ast.Node) bool {
-		/*line question.goal:467*/ call, ok := n.(*ast.CallExpr)
-		/*line question.goal:468*/ if !ok || !isResultErr(call.Fun) || len(call.Args) != 1 {
-			/*line question.goal:469*/ return true
+	/*line question.goal:463*/ ast.Walk(visitorFunc(func(n ast.Node) bool {
+		/*line question.goal:464*/ call, ok := n.(*ast.CallExpr)
+		/*line question.goal:465*/ if !ok || !isResultErr(call.Fun) || len(call.Args) != 1 {
+			/*line question.goal:466*/ return true
 		}
-		/*line question.goal:471*/ pos := call.Pos()
-		/*line question.goal:472*/ enumDecl := info.Enums[caller.E]
-		/*line question.goal:473*/ if enumDecl == nil {
-			/*line question.goal:474*/ diags = append(diags, Diagnostic{Pos: pos, Severity: Severity(Severity_Warning{}), Feature: "06-error-e", Code: "unresolved-error-enum", Message: fmt.Sprintf("cannot verify closedness of `Result.Err` in a `Result[_, %s]` function: enum `%s` is not declared in this file — closedness deferred", caller.E, caller.E)})
-			/*line question.goal:478*/ return true
+		/*line question.goal:468*/ pos := call.Pos()
+		/*line question.goal:469*/ enumDecl := info.Enums[caller.E]
+		/*line question.goal:470*/ if enumDecl == nil {
+			/*line question.goal:471*/ diags = append(diags, Diagnostic{Pos: pos, Severity: Severity(Severity_Warning{}), Feature: "06-error-e", Code: "unresolved-error-enum", Message: fmt.Sprintf("cannot verify closedness of `Result.Err` in a `Result[_, %s]` function: enum `%s` is not declared in this file — closedness deferred", caller.E, caller.E)})
+			/*line question.goal:475*/ return true
 		}
-		/*line question.goal:480*/ qual, variant, isVariant := errVariantArg(call.Args[0])
-		/*line question.goal:481*/ switch {
+		/*line question.goal:477*/ qual, variant, isVariant := errVariantArg(call.Args[0])
+		/*line question.goal:478*/ switch {
 		case !isVariant:
 			diags = append(diags, Diagnostic{Pos: pos, Severity: Severity(Severity_Warning{}), Feature: "06-error-e", Code: "unresolved-err-value", Message: fmt.Sprintf("cannot verify the `Result.Err` value is a variant of `%s`: its argument is not a lexically-resolvable `%s.Variant` construction — closedness deferred", caller.E, caller.E)})
 		case qual != caller.E:
@@ -443,27 +438,27 @@ func closedErrDiags(body *ast.BlockStmt, caller FuncSig, info *Info) []Diagnosti
 		case !enumDecl.VSet[variant]:
 			diags = append(diags, Diagnostic{Pos: pos, Severity: Severity(Severity_Error{}), Feature: "06-error-e", Code: "unknown-error-variant", Message: fmt.Sprintf("`Result.Err(%s.%s)` names `%s`, which is not a variant of enum `%s` — its variants are %s", qual, variant, variant, caller.E, semaVariantList(enumDecl))})
 		}
-		/*line question.goal:498*/ return true
+		/*line question.goal:495*/ return true
 	}), body)
-	/*line question.goal:500*/ return diags
+	/*line question.goal:497*/ return diags
 }
 
-//line question.goal:505
+//line question.goal:502
 type plainFunc struct {
 	fn *ast.FuncDecl
 }
 
-//line question.goal:509
+//line question.goal:506
 func plainResultFuncs(file *ast.File) []plainFunc {
-	/*line question.goal:510*/ var out []plainFunc
+	/*line question.goal:507*/ var out []plainFunc
 
-	/*line question.goal:511*/
+	/*line question.goal:508*/
 	for _, d := range file.Decls {
-		/*line question.goal:512*/ fn, ok := d.(*ast.FuncDecl)
-		/*line question.goal:513*/ if !ok {
-			/*line question.goal:514*/ continue
+		/*line question.goal:509*/ fn, ok := d.(*ast.FuncDecl)
+		/*line question.goal:510*/ if !ok {
+			/*line question.goal:511*/ continue
 		}
-		/*line question.goal:516*/ var plain bool
+		/*line question.goal:513*/ var plain bool
 		switch fn.Mod.(type) {
 		case ast.FuncMod_FuncPlain:
 			plain = true
@@ -474,144 +469,144 @@ func plainResultFuncs(file *ast.File) []plainFunc {
 		default:
 			panic("unreachable: non-exhaustive ast.FuncMod (compiler invariant violated)")
 		}
-		/*line question.goal:521*/ if !plain || fn.Recv != nil || fn.Name == nil || fn.Type == nil || fn.Body == nil {
-			/*line question.goal:522*/ continue
+		/*line question.goal:518*/ if !plain || fn.Recv != nil || fn.Name == nil || fn.Type == nil || fn.Body == nil {
+			/*line question.goal:519*/ continue
 		}
-		/*line question.goal:524*/ out = append(out, plainFunc{fn: fn})
+		/*line question.goal:521*/ out = append(out, plainFunc{fn: fn})
 	}
-	/*line question.goal:526*/ return out
+	/*line question.goal:523*/ return out
 }
 
-//line question.goal:533
+//line question.goal:530
 func collectQuestionSites(body *ast.BlockStmt) []qsite {
-	/*line question.goal:534*/ var sites []qsite
+	/*line question.goal:531*/ var sites []qsite
 
-	/*line question.goal:535*/
+	/*line question.goal:532*/
 	if body == nil {
-		/*line question.goal:536*/ return sites
+		/*line question.goal:533*/ return sites
 	}
-	/*line question.goal:538*/ ast.Walk(visitorFunc(func(n ast.Node) bool {
-		/*line question.goal:539*/ switch v1 := n.(type) {
+	/*line question.goal:535*/ ast.Walk(visitorFunc(func(n ast.Node) bool {
+		/*line question.goal:536*/ switch v1 := n.(type) {
 		case *ast.AssignStmt:
 			{
-				/*line question.goal:541*/ for i, rhs := range v1.Rhs {
-					/*line question.goal:542*/ if u, ok := rhs.(*ast.UnwrapExpr); ok {
-						/*line question.goal:543*/ discard := i < len(v1.Lhs) && isBlank(v1.Lhs[i])
-						/*line question.goal:544*/ sites = append(sites, qsite{unwrap: u, discard: discard})
+				/*line question.goal:538*/ for i, rhs := range v1.Rhs {
+					/*line question.goal:539*/ if u, ok := rhs.(*ast.UnwrapExpr); ok {
+						/*line question.goal:540*/ discard := i < len(v1.Lhs) && isBlank(v1.Lhs[i])
+						/*line question.goal:541*/ sites = append(sites, qsite{unwrap: u, discard: discard})
 					}
 				}
 			}
 		case *ast.ExprStmt:
 			{
-				/*line question.goal:549*/ if u, ok := v1.X.(*ast.UnwrapExpr); ok {
-					/*line question.goal:550*/ sites = append(sites, qsite{unwrap: u, discard: true})
+				/*line question.goal:546*/ if u, ok := v1.X.(*ast.UnwrapExpr); ok {
+					/*line question.goal:547*/ sites = append(sites, qsite{unwrap: u, discard: true})
 				}
 			}
 		default:
 			{
 			}
 		}
-		/*line question.goal:555*/ return true
+		/*line question.goal:552*/ return true
 	}), body)
-	/*line question.goal:557*/ return sites
+	/*line question.goal:554*/ return sites
 }
 
-//line question.goal:564
+//line question.goal:561
 func resolveQuestionCallee(u *ast.UnwrapExpr, info *Info) (sig FuncSig, key string, known bool) {
-	/*line question.goal:565*/ call, ok := u.X.(*ast.CallExpr)
-	/*line question.goal:566*/ if !ok {
-		/*line question.goal:567*/ return FuncSig{Mode: Mode(Mode_ModeNone{})}, "", false
+	/*line question.goal:562*/ call, ok := u.X.(*ast.CallExpr)
+	/*line question.goal:563*/ if !ok {
+		/*line question.goal:564*/ return FuncSig{Mode: Mode(Mode_ModeNone{})}, "", false
 	}
-	/*line question.goal:569*/ switch v1 := call.Fun.(type) {
+	/*line question.goal:566*/ switch v1 := call.Fun.(type) {
 	case *ast.Ident:
 		{
-			/*line question.goal:571*/ s, ok := info.FuncSignatures[v1.Name]
-			/*line question.goal:572*/ return s, v1.Name, ok
+			/*line question.goal:568*/ s, ok := info.FuncSignatures[v1.Name]
+			/*line question.goal:569*/ return s, v1.Name, ok
 		}
 	case *ast.SelectorExpr:
 		{
-			/*line question.goal:581*/ key := exprName(v1)
-			/*line question.goal:582*/ s, ok := info.FuncSignatures[key]
-			/*line question.goal:583*/ return s, key, ok
+			/*line question.goal:578*/ key := exprName(v1)
+			/*line question.goal:579*/ s, ok := info.FuncSignatures[key]
+			/*line question.goal:580*/ return s, key, ok
 		}
 	default:
 		{
-			/*line question.goal:586*/ return FuncSig{Mode: Mode(Mode_ModeNone{})}, "", false
+			/*line question.goal:583*/ return FuncSig{Mode: Mode(Mode_ModeNone{})}, "", false
 		}
 	}
 }
 
-//line question.goal:592
+//line question.goal:589
 func isResultErr(fun ast.Expr) bool {
-	/*line question.goal:593*/ sel, ok := fun.(*ast.SelectorExpr)
-	/*line question.goal:594*/ if !ok || sel.Sel == nil || sel.Sel.Name != "Err" {
-		/*line question.goal:595*/ return false
+	/*line question.goal:590*/ sel, ok := fun.(*ast.SelectorExpr)
+	/*line question.goal:591*/ if !ok || sel.Sel == nil || sel.Sel.Name != "Err" {
+		/*line question.goal:592*/ return false
 	}
-	/*line question.goal:597*/ id, ok := sel.X.(*ast.Ident)
-	/*line question.goal:598*/ return ok && id.Name == "Result"
+	/*line question.goal:594*/ id, ok := sel.X.(*ast.Ident)
+	/*line question.goal:595*/ return ok && id.Name == "Result"
 }
 
-//line question.goal:605
+//line question.goal:602
 func errVariantArg(arg ast.Expr) (qual, variant string, ok bool) {
-	/*line question.goal:606*/ switch v1 := arg.(type) {
+	/*line question.goal:603*/ switch v1 := arg.(type) {
 	case *ast.SelectorExpr:
 		{
-			/*line question.goal:608*/ base := exprName(v1.X)
-			/*line question.goal:609*/ if base == "" || v1.Sel == nil {
-				/*line question.goal:610*/ return "", "", false
+			/*line question.goal:605*/ base := exprName(v1.X)
+			/*line question.goal:606*/ if base == "" || v1.Sel == nil {
+				/*line question.goal:607*/ return "", "", false
 			}
-			/*line question.goal:612*/ return base, v1.Sel.Name, true
+			/*line question.goal:609*/ return base, v1.Sel.Name, true
 		}
 	case *ast.VariantLit:
 		{
-			/*line question.goal:615*/ base := exprName(v1.Enum)
-			/*line question.goal:616*/ if base == "" || v1.Variant == nil {
-				/*line question.goal:617*/ return "", "", false
+			/*line question.goal:612*/ base := exprName(v1.Enum)
+			/*line question.goal:613*/ if base == "" || v1.Variant == nil {
+				/*line question.goal:614*/ return "", "", false
 			}
-			/*line question.goal:619*/ return base, v1.Variant.Name, true
+			/*line question.goal:616*/ return base, v1.Variant.Name, true
 		}
 	default:
 		{
-			/*line question.goal:622*/ return "", "", false
+			/*line question.goal:619*/ return "", "", false
 		}
 	}
 }
 
-//line question.goal:629
+//line question.goal:626
 func semaVariantList(enumDecl *Enum) string {
-	/*line question.goal:630*/ names := make([]string, len(enumDecl.Variants))
-	/*line question.goal:631*/ for i, v := range enumDecl.Variants {
-		/*line question.goal:632*/ names[i] = "`" + enumDecl.Name + "." + v.Name + "`"
+	/*line question.goal:627*/ names := make([]string, len(enumDecl.Variants))
+	/*line question.goal:628*/ for i, v := range enumDecl.Variants {
+		/*line question.goal:629*/ names[i] = "`" + enumDecl.Name + "." + v.Name + "`"
 	}
-	/*line question.goal:634*/ return strings.Join(names, ", ")
+	/*line question.goal:631*/ return strings.Join(names, ", ")
 }
 
-//line question.goal:639
+//line question.goal:636
 func importAliases(file *ast.File) map[string]bool {
-	/*line question.goal:640*/ out := map[string]bool{}
-	/*line question.goal:641*/ for _, imp := range file.Imports {
-		/*line question.goal:642*/ if imp == nil || imp.Path == nil {
-			/*line question.goal:643*/ continue
+	/*line question.goal:637*/ out := map[string]bool{}
+	/*line question.goal:638*/ for _, imp := range file.Imports {
+		/*line question.goal:639*/ if imp == nil || imp.Path == nil {
+			/*line question.goal:640*/ continue
 		}
-		/*line question.goal:645*/ alias := ""
-		/*line question.goal:646*/ if imp.Name != nil {
-			/*line question.goal:647*/ alias = imp.Name.Name
+		/*line question.goal:642*/ alias := ""
+		/*line question.goal:643*/ if imp.Name != nil {
+			/*line question.goal:644*/ alias = imp.Name.Name
 		} else {
-			/*line question.goal:649*/ path := strings.Trim(imp.Path.Value, "\"`")
-			/*line question.goal:650*/ if i := strings.LastIndexByte(path, '/'); i >= 0 {
-				/*line question.goal:651*/ path = path[i+1:]
+			/*line question.goal:646*/ path := strings.Trim(imp.Path.Value, "\"`")
+			/*line question.goal:647*/ if i := strings.LastIndexByte(path, '/'); i >= 0 {
+				/*line question.goal:648*/ path = path[i+1:]
 			}
-			/*line question.goal:653*/ alias = path
+			/*line question.goal:650*/ alias = path
 		}
-		/*line question.goal:655*/ if alias != "" && alias != "_" && alias != "." {
-			/*line question.goal:656*/ out[alias] = true
+		/*line question.goal:652*/ if alias != "" && alias != "_" && alias != "." {
+			/*line question.goal:653*/ out[alias] = true
 		}
 	}
-	/*line question.goal:659*/ return out
+	/*line question.goal:656*/ return out
 }
 
-//line question.goal:664
+//line question.goal:661
 func isImportedCall(key string, imports map[string]bool) bool {
-	/*line question.goal:665*/ pkg, _, ok := strings.Cut(key, ".")
-	/*line question.goal:666*/ return ok && imports[pkg]
+	/*line question.goal:662*/ pkg, _, ok := strings.Cut(key, ".")
+	/*line question.goal:663*/ return ok && imports[pkg]
 }
