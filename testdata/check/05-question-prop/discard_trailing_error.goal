@@ -1,0 +1,43 @@
+package qprop
+
+// f is a native trailing-error pair `(int, error)`.
+func f() (int, error) {
+	return 1, nil
+}
+
+// g is a native trailing-error triple `(int, string, error)`.
+func g() (int, string, error) {
+	return 1, "", nil
+}
+
+// discardErr blank-discards the trailing `error` of native trailing-error calls: the
+// failure slot is silently dropped, so each is a must-use rejection.
+func discardErr() {
+	x, _ := f() // want "discarded with"
+	_ = x
+	a, b, _ := g() // want "discarded with"
+	_, _ = a, b
+}
+
+// propagate uses `?` — the error is propagated, not discarded — so nothing is flagged.
+func propagate() (int, error) {
+	x := f()?
+	return x, nil
+}
+
+// bindErr binds the error to a named variable and inspects it — accepted, not flagged.
+func bindErr() error {
+	x, err := f()
+	if err != nil {
+		return err
+	}
+	_ = x
+	return nil
+}
+
+// discardValue drops a leading VALUE slot (not the trailing error) with `_` while binding
+// the error to `err`; the failure is still handled, so this is not flagged.
+func discardValue() error {
+	_, err := f()
+	return err
+}

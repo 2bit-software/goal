@@ -33,6 +33,7 @@ var diagnosticCatalog = []diagDoc{
 	// 03-result
 	{"dropped-result", "03-result", "error", "a `Result`-returning call's value is discarded instead of handled or propagated."},
 	{"discarded-result-error", "03-result", "error", "the error arm of a `Result` is dropped (typed stage)."},
+	{"discarded-trailing-error", "03-result", "error", "the trailing `error` of a native trailing-error multi-return call is blank-discarded (`x, _ := f()`); propagate it with `?` or bind and inspect it."},
 	{"dropped-stored-result", "03-result", "error", "a `Result` is stored as a plain value, defeating must-use handling."},
 	{"unresolved-result-discard", "03-result", "warning", "a possible `Result` discard can't be resolved lexically; deferred."},
 	{"unresolved-dropped-field", "03-result", "warning", "a possibly-dropped stored `Result` field can't be resolved lexically; deferred."},

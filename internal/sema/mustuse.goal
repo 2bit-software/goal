@@ -48,6 +48,9 @@ func CheckMustUse(file *ast.File, info *Info) []Diagnostic {
 				if d, ok := underscoreDiscard(s, info); ok {
 					diags = append(diags, d)
 				}
+				if d, ok := trailingErrorDiscard(s, info); ok {
+					diags = append(diags, d)
+				}
 			}
 			_ => {}
 		}
@@ -107,6 +110,81 @@ func droppedResult(pos token.Pos, callee string) Diagnostic {
 		Code:     "dropped-result",
 		Message: fmt.Sprintf("the `Result` returned by `%s(…)` is dropped: a `Result` must be used — consume it with `match %s(…) { Result.Ok(v) => … Result.Err(e) => … }`, propagate it with `%s(…)?`, or bind it with `x := %s(…)`",
 			callee, callee, callee, callee),
+	}
+}
+
+// trailingErrorDiscard reports the must-use Error when assignment s destructures a native
+// trailing-error multi-return call `v1, …, v_{n-1}, _ := f()` (or `=`) and drops the
+// trailing `error` slot with `_`. The unignorability that single-channel `Result` gave
+// structurally must survive the move to native trailing-error tuples: a blank-discarded
+// trailing error is a silently-dropped failure and is rejected. The blank must align with
+// the trailing error slot — a full destructure binds exactly `Arity` targets, so `_` at
+// the LAST position is the error. A named `err` binding (`x, err := f()`) is not blank, so
+// it is not flagged here (Go's own unused-variable rule governs a later-unused `err`); a
+// `?` propagation is an UnwrapExpr RHS, not a plain call, so it never reaches this rule.
+// Only a bare-ident in-file callee resolves; a selector/method callee (`pkg.Fn`, `recv.M`)
+// is left alone, matching the IDENT-callee must-use boundary.
+func trailingErrorDiscard(s *ast.AssignStmt, info *Info) (Diagnostic, bool) {
+	if len(s.Rhs) != 1 || len(s.Lhs) < 2 {
+		return Diagnostic{Severity: Severity.Error}, false
+	}
+	last := s.Lhs[len(s.Lhs)-1]
+	if !isBlank(last) {
+		return Diagnostic{Severity: Severity.Error}, false
+	}
+	name, sig, ok := trailingErrorCall(s.Rhs[0], info)
+	if !ok || len(s.Lhs) != sig.Arity {
+		return Diagnostic{Severity: Severity.Error}, false
+	}
+	return discardedTrailingError(last.Pos(), name), true
+}
+
+// trailingErrorCall resolves e as a direct call `f(...)` whose Fun is a bare identifier
+// naming an in-file native trailing-error multi-return function, returning the callee name
+// and its signature. A selector/method call, a conversion, or a non-trailing-error callee
+// yields ok=false — those carry no in-file discard obligation here.
+func trailingErrorCall(e ast.Expr, info *Info) (name string, sig FuncSig, ok bool) {
+	call, isCall := e.(*ast.CallExpr)
+	if !isCall {
+		return "", FuncSig{Mode: Mode.ModeNone}, false
+	}
+	id, isID := call.Fun.(*ast.Ident)
+	if !isID {
+		return "", FuncSig{Mode: Mode.ModeNone}, false
+	}
+	s, found := info.FuncSignatures[id.Name]
+	if !found || !isTrailingErrorSig(s) {
+		return "", FuncSig{Mode: Mode.ModeNone}, false
+	}
+	return id.Name, s, true
+}
+
+// isTrailingErrorSig reports whether sig is a native trailing-error multi-return: a plain
+// (Mode.ModeNone) function returning at least two values whose last result is an `error`.
+// A Result/Option function has its own failure channel (Mode set) and is handled by the
+// Result must-use rules, not this one — so only a ModeNone signature qualifies here. This
+// is the FuncSig-level mirror of question.goal's trailingErrorMultiReturn AST recognizer.
+func isTrailingErrorSig(sig FuncSig) bool {
+	plain := match sig.Mode {
+		Mode.ModeNone => true
+		Mode.ModeResult => false
+		Mode.ModeResultClosed => false
+		Mode.ModeOption => false
+	}
+	return plain && sig.Arity >= 2 && sig.EndsInError
+}
+
+// discardedTrailingError builds the Error for a blank-discarded trailing error of a native
+// trailing-error multi-return call. The message directs the author to the two sanctioned
+// dispositions: propagate the failure with `?`, or bind and inspect the error.
+func discardedTrailingError(pos token.Pos, callee string) Diagnostic {
+	return Diagnostic{
+		Pos:      pos,
+		Severity: Severity.Error,
+		Feature:  "03-result",
+		Code:     "discarded-trailing-error",
+		Message: fmt.Sprintf("the trailing `error` returned by `%s(…)` is discarded with `_`: a trailing-error multi-return must not drop its failure — propagate it with `x := %s(…)?`, or bind and inspect it with `x, err := %s(…)`",
+			callee, callee, callee),
 	}
 }
 

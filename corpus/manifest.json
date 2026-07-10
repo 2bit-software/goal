@@ -361,16 +361,16 @@
       "normalize": "gofmt"
     },
     {
-      "id": "features-11-doctests-examples-add",
-      "kind": "transpile",
+      "id": "features-11-doctests-examples-add-doctest",
+      "kind": "doctest",
       "input": "features/11-doctests/examples/add.goal",
       "expected": "features/11-doctests/examples/add.go.expected",
       "mode": "file",
       "normalize": "gofmt"
     },
     {
-      "id": "features-11-doctests-examples-add-doctest",
-      "kind": "doctest",
+      "id": "features-11-doctests-examples-add",
+      "kind": "transpile",
       "input": "features/11-doctests/examples/add.goal",
       "expected": "features/11-doctests/examples/add.go.expected",
       "mode": "file",
@@ -652,6 +652,14 @@
       "id": "testdata-check-05-question-prop-callee_no_error",
       "kind": "check",
       "input": "testdata/check/05-question-prop/callee_no_error.goal",
+      "expected": "",
+      "mode": "file",
+      "normalize": "none"
+    },
+    {
+      "id": "testdata-check-05-question-prop-discard_trailing_error",
+      "kind": "check",
+      "input": "testdata/check/05-question-prop/discard_trailing_error.goal",
       "expected": "",
       "mode": "file",
       "normalize": "none"

@@ -28,56 +28,115 @@ func CheckMustUse(file *ast.File, info *Info) []Diagnostic {
 				/*line mustuse.goal:48*/ if d, ok := underscoreDiscard(v, info); ok {
 					/*line mustuse.goal:49*/ diags = append(diags, d)
 				}
+				/*line mustuse.goal:51*/ if d, ok := trailingErrorDiscard(v, info); ok {
+					/*line mustuse.goal:52*/ diags = append(diags, d)
+				}
 			}
 		default:
 			{
 			}
 		}
-		/*line mustuse.goal:54*/ return true
+		/*line mustuse.goal:57*/ return true
 	}), file)
-	/*line mustuse.goal:56*/ return diags
+	/*line mustuse.goal:59*/ return diags
 }
 
-//line mustuse.goal:63
+//line mustuse.goal:66
 func resultCallName(e ast.Expr, info *Info) (string, bool) {
-	/*line mustuse.goal:64*/ call, ok := e.(*ast.CallExpr)
-	/*line mustuse.goal:65*/ if !ok {
-		/*line mustuse.goal:66*/ return "", false
+	/*line mustuse.goal:67*/ call, ok := e.(*ast.CallExpr)
+	/*line mustuse.goal:68*/ if !ok {
+		/*line mustuse.goal:69*/ return "", false
 	}
-	/*line mustuse.goal:68*/ id, ok := call.Fun.(*ast.Ident)
-	/*line mustuse.goal:69*/ if !ok {
-		/*line mustuse.goal:70*/ return "", false
+	/*line mustuse.goal:71*/ id, ok := call.Fun.(*ast.Ident)
+	/*line mustuse.goal:72*/ if !ok {
+		/*line mustuse.goal:73*/ return "", false
 	}
-	/*line mustuse.goal:72*/ if isResultFunc(info, id.Name) {
-		/*line mustuse.goal:73*/ return id.Name, true
+	/*line mustuse.goal:75*/ if isResultFunc(info, id.Name) {
+		/*line mustuse.goal:76*/ return id.Name, true
 	}
-	/*line mustuse.goal:75*/ return "", false
+	/*line mustuse.goal:78*/ return "", false
 }
 
-//line mustuse.goal:82
+//line mustuse.goal:85
 func underscoreDiscard(s *ast.AssignStmt, info *Info) (Diagnostic, bool) {
-	/*line mustuse.goal:83*/ if len(s.Lhs) != 1 || len(s.Rhs) != 1 || !isBlank(s.Lhs[0]) {
-		/*line mustuse.goal:84*/ return Diagnostic{Severity: Severity(Severity_Error{})}, false
+	/*line mustuse.goal:86*/ if len(s.Lhs) != 1 || len(s.Rhs) != 1 || !isBlank(s.Lhs[0]) {
+		/*line mustuse.goal:87*/ return Diagnostic{Severity: Severity(Severity_Error{})}, false
 	}
-	/*line mustuse.goal:86*/ name, ok := resultCallName(s.Rhs[0], info)
-	/*line mustuse.goal:87*/ if !ok {
-		/*line mustuse.goal:88*/ return Diagnostic{Severity: Severity(Severity_Error{})}, false
+	/*line mustuse.goal:89*/ name, ok := resultCallName(s.Rhs[0], info)
+	/*line mustuse.goal:90*/ if !ok {
+		/*line mustuse.goal:91*/ return Diagnostic{Severity: Severity(Severity_Error{})}, false
 	}
-	/*line mustuse.goal:90*/ return Diagnostic{Pos: s.Rhs[0].Pos(), Severity: Severity(Severity_Warning{}), Feature: "03-result", Code: "unresolved-result-discard", Message: fmt.Sprintf("cannot verify the `Result` from `%s(…)` is handled: it is discarded with `_ :=`, but the sanctioned explicit-discard surface for a `Result` is not yet defined — must-use deferred", name)}, true
+	/*line mustuse.goal:93*/ return Diagnostic{Pos: s.Rhs[0].Pos(), Severity: Severity(Severity_Warning{}), Feature: "03-result", Code: "unresolved-result-discard", Message: fmt.Sprintf("cannot verify the `Result` from `%s(…)` is handled: it is discarded with `_ :=`, but the sanctioned explicit-discard surface for a `Result` is not yet defined — must-use deferred", name)}, true
 }
 
-//line mustuse.goal:102
+//line mustuse.goal:105
 func droppedResult(pos token.Pos, callee string) Diagnostic {
-	/*line mustuse.goal:103*/ return Diagnostic{Pos: pos, Severity: Severity(Severity_Error{}), Feature: "03-result", Code: "dropped-result", Message: fmt.Sprintf("the `Result` returned by `%s(…)` is dropped: a `Result` must be used — consume it with `match %s(…) { Result.Ok(v) => … Result.Err(e) => … }`, propagate it with `%s(…)?`, or bind it with `x := %s(…)`", callee, callee, callee, callee)}
+	/*line mustuse.goal:106*/ return Diagnostic{Pos: pos, Severity: Severity(Severity_Error{}), Feature: "03-result", Code: "dropped-result", Message: fmt.Sprintf("the `Result` returned by `%s(…)` is dropped: a `Result` must be used — consume it with `match %s(…) { Result.Ok(v) => … Result.Err(e) => … }`, propagate it with `%s(…)?`, or bind it with `x := %s(…)`", callee, callee, callee, callee)}
 }
 
-//line mustuse.goal:115
-func isResultFunc(info *Info, name string) bool {
-	/*line mustuse.goal:116*/ sig, ok := info.FuncSignatures[name]
-	/*line mustuse.goal:117*/ if !ok {
-		/*line mustuse.goal:118*/ return false
+//line mustuse.goal:127
+func trailingErrorDiscard(s *ast.AssignStmt, info *Info) (Diagnostic, bool) {
+	/*line mustuse.goal:128*/ if len(s.Rhs) != 1 || len(s.Lhs) < 2 {
+		/*line mustuse.goal:129*/ return Diagnostic{Severity: Severity(Severity_Error{})}, false
 	}
-	/*line mustuse.goal:120*/ switch sig.Mode.(type) {
+	/*line mustuse.goal:131*/ last := s.Lhs[len(s.Lhs)-1]
+	/*line mustuse.goal:132*/ if !isBlank(last) {
+		/*line mustuse.goal:133*/ return Diagnostic{Severity: Severity(Severity_Error{})}, false
+	}
+	/*line mustuse.goal:135*/ name, sig, ok := trailingErrorCall(s.Rhs[0], info)
+	/*line mustuse.goal:136*/ if !ok || len(s.Lhs) != sig.Arity {
+		/*line mustuse.goal:137*/ return Diagnostic{Severity: Severity(Severity_Error{})}, false
+	}
+	/*line mustuse.goal:139*/ return discardedTrailingError(last.Pos(), name), true
+}
+
+//line mustuse.goal:146
+func trailingErrorCall(e ast.Expr, info *Info) (name string, sig FuncSig, ok bool) {
+	/*line mustuse.goal:147*/ call, isCall := e.(*ast.CallExpr)
+	/*line mustuse.goal:148*/ if !isCall {
+		/*line mustuse.goal:149*/ return "", FuncSig{Mode: Mode(Mode_ModeNone{})}, false
+	}
+	/*line mustuse.goal:151*/ id, isID := call.Fun.(*ast.Ident)
+	/*line mustuse.goal:152*/ if !isID {
+		/*line mustuse.goal:153*/ return "", FuncSig{Mode: Mode(Mode_ModeNone{})}, false
+	}
+	/*line mustuse.goal:155*/ s, found := info.FuncSignatures[id.Name]
+	/*line mustuse.goal:156*/ if !found || !isTrailingErrorSig(s) {
+		/*line mustuse.goal:157*/ return "", FuncSig{Mode: Mode(Mode_ModeNone{})}, false
+	}
+	/*line mustuse.goal:159*/ return id.Name, s, true
+}
+
+//line mustuse.goal:167
+func isTrailingErrorSig(sig FuncSig) bool {
+	/*line mustuse.goal:168*/ var plain bool
+	switch sig.Mode.(type) {
+	case Mode_ModeNone:
+		plain = true
+	case Mode_ModeResult:
+		plain = false
+	case Mode_ModeResultClosed:
+		plain = false
+	case Mode_ModeOption:
+		plain = false
+	default:
+		panic("unreachable: non-exhaustive Mode (compiler invariant violated)")
+	}
+	/*line mustuse.goal:174*/ return plain && sig.Arity >= 2 && sig.EndsInError
+}
+
+//line mustuse.goal:180
+func discardedTrailingError(pos token.Pos, callee string) Diagnostic {
+	/*line mustuse.goal:181*/ return Diagnostic{Pos: pos, Severity: Severity(Severity_Error{}), Feature: "03-result", Code: "discarded-trailing-error", Message: fmt.Sprintf("the trailing `error` returned by `%s(…)` is discarded with `_`: a trailing-error multi-return must not drop its failure — propagate it with `x := %s(…)?`, or bind and inspect it with `x, err := %s(…)`", callee, callee, callee)}
+}
+
+//line mustuse.goal:193
+func isResultFunc(info *Info, name string) bool {
+	/*line mustuse.goal:194*/ sig, ok := info.FuncSignatures[name]
+	/*line mustuse.goal:195*/ if !ok {
+		/*line mustuse.goal:196*/ return false
+	}
+	/*line mustuse.goal:198*/ switch sig.Mode.(type) {
 	case Mode_ModeResult:
 		return true
 	case Mode_ModeResultClosed:
@@ -91,8 +150,8 @@ func isResultFunc(info *Info, name string) bool {
 	}
 }
 
-//line mustuse.goal:129
+//line mustuse.goal:207
 func isBlank(e ast.Expr) bool {
-	/*line mustuse.goal:130*/ id, ok := e.(*ast.Ident)
-	/*line mustuse.goal:131*/ return ok && id.Name == "_"
+	/*line mustuse.goal:208*/ id, ok := e.(*ast.Ident)
+	/*line mustuse.goal:209*/ return ok && id.Name == "_"
 }

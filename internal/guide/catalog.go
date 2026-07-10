@@ -15,72 +15,72 @@ type diagDoc struct {
 }
 
 //line catalog.goal:20
-var diagnosticCatalog = []diagDoc{{"unterminated-string", "00-lex", "error", "an interpreted `\"...\"` string literal reaches end-of-line or end-of-input without a closing quote."}, {"unterminated-raw-string", "00-lex", "error", "a raw `` `...` `` string literal reaches end-of-input without a closing backtick."}, {"unterminated-rune", "00-lex", "error", "a `'...'` rune literal reaches end-of-line or end-of-input without a closing quote."}, {"invalid-number-literal", "00-lex", "error", "a numeric literal has a digit outside its radix (e.g. `0o889`, `0b77`) or no digits after its `0x`/`0o`/`0b` prefix."}, {"unknown-variant", "01-enums", "error", "constructing an enum variant the enum doesn't declare (its closed set is enforced at construction, not only at `match`)."}, {"sum-type-pointer-receiver", "01-enums", "error", "a method's receiver is a pointer to a sum type (an `enum` or `sealed interface`), which lowers to a Go interface and cannot carry a pointer receiver; declare the method with a value receiver."}, {"non-exhaustive-match", "02-match", "error", "a `match` on an enum omits a variant and has no `_` rest-arm."}, {"unresolved-match-enum", "02-match", "warning", "the matched value's enum type can't be resolved lexically; deferred to the typed stage."}, {"unresolved-match-sealed", "02-match", "warning", "a type-pattern `match` names a concrete type no same-package sealed interface registers as an implementor; exhaustiveness deferred."}, {"dropped-result", "03-result", "error", "a `Result`-returning call's value is discarded instead of handled or propagated."}, {"discarded-result-error", "03-result", "error", "the error arm of a `Result` is dropped (typed stage)."}, {"dropped-stored-result", "03-result", "error", "a `Result` is stored as a plain value, defeating must-use handling."}, {"unresolved-result-discard", "03-result", "warning", "a possible `Result` discard can't be resolved lexically; deferred."}, {"unresolved-dropped-field", "03-result", "warning", "a possibly-dropped stored `Result` field can't be resolved lexically; deferred."}, {"question-callee-no-error", "05-question-prop", "error", "in a `Result[_, error]` function, a `?` callee yields no `error` to propagate — it returns nothing, a non-error type, an `Option`, or a closed-E `Result`."}, {"question-binds-nonvalue", "05-question-prop", "error", "`name := expr?` binds a value but the callee doesn't return exactly `(value, error)`."}, {"question-callee-unresolved", "05-question-prop", "warning", "a discarding `?` callee's arity can't be resolved lexically; the two-value form is assumed."}, {"question-arity-fallback", "05-question-prop", "warning", "a package-qualified `?` callee's package could not be imported during arity resolution, so the destructure arity fell back to the curated stdlib table or the two-value `(T, error)` default; generated code may differ on a machine where the import resolves."}, {"question-outside-result", "05-question-prop", "error", "`?` is used in a function whose return type is neither a `Result` nor an `Option`, so there is no failure channel to carry the propagated `Err`/`None`."}, {"question-assign-unsupported", "05-question-prop", "error", "a `?` on an assignment right-hand side targets something other than a single simple variable (e.g. `obj.f = f()?` or `a, b = f()?`), which would otherwise silently discard the unwrapped value; bind to one variable with `x := f()?` or `x = f()?`."}, {"multi-failure-result", "05-question-prop", "error", "a signature carries more than one failure-typed result (`error`/`Option`/`Result`), e.g. `(error, error)`, `(Option[A], error)`, or `(Result[A, error], error)`; `?` propagates a single failure, so keep at most one failure-typed slot and make it the last result."}, {"missing-from-conversion", "06-error-e", "error", "`?` bridges two error enums but no `from func` conversion is registered."}, {"err-outside-closed-enum", "06-error-e", "error", "`Result.Err(...)` is used with a value outside the declared error enum."}, {"unknown-error-variant", "06-error-e", "error", "a closed-E `Result` references an error variant the enum doesn't declare."}, {"unresolved-error-enum", "06-error-e", "warning", "the error enum of a closed-E `Result` can't be resolved lexically; deferred."}, {"unresolved-err-value", "06-error-e", "warning", "an `Err` value's type can't be resolved lexically; deferred."}, {"unresolved-question-error", "06-error-e", "warning", "a `?` site's error type can't be resolved lexically; deferred."}, {"go-type-error", "go-types", "error", "the lowered Go fails go/types type-checking (e.g. a type mismatch like `int + string`, or a call to an undefined function); the typed depth stage surfaces the go/types error at its `.goal` position so `ok` means the package actually compiles."}, {"unimplemented-method", "07-implements", "error", "a `struct implements I` is missing a method required by interface `I`."}, {"method-signature-mismatch", "07-implements", "error", "a method exists but its signature doesn't satisfy the declared interface."}, {"unresolved-interface", "07-implements", "warning", "the named interface of an `implements` clause can't be resolved lexically; deferred."}, {"unsafe-zero", "08-no-zero-value", "error", "a struct or variant literal (including an elided or generic one, caught at the typed stage) omits a field whose zero is unsafe (nil pointer/map/chan/func, method-bearing interface, or sum type); safe-zero omissions default silently."}, {"unresolved-literal-type", "08-no-zero-value", "warning", "a struct literal's type can't be resolved lexically; deferred to the typed stage."}, {"unsafe-default", "08-no-zero-value", "error", "a `...defaults` literal omits a field whose zero is unsafe (nil pointer/map/chan/func, method-bearing interface, or sum type)."}, {"assert-always-false", "10-assert", "error", "an `assert` condition is constantly false — it would always panic."}, {"assert-always-true", "10-assert", "warning", "an `assert` condition is constantly true — the assert is dead."}, {"unsourced-field", "12-derive-convert", "error", "a `derive func` target field has no source (registry leaf, recursion, expr, or `_`)."}, {"unbridged-field", "12-derive-convert", "error", "a `derive func` field needs a conversion that isn't in the `from func` registry."}, {"fallible-in-total-derive", "12-derive-convert", "error", "a total `derive func` sources a field from a fallible conversion."}, {"unresolved-derive-type", "12-derive-convert", "warning", "a `derive func` type pair can't be resolved lexically; deferred to the typed stage."}, {"unresolved-derive-field", "12-derive-convert", "warning", "a `derive func` target field can't be resolved lexically; deferred."}}
+var diagnosticCatalog = []diagDoc{{"unterminated-string", "00-lex", "error", "an interpreted `\"...\"` string literal reaches end-of-line or end-of-input without a closing quote."}, {"unterminated-raw-string", "00-lex", "error", "a raw `` `...` `` string literal reaches end-of-input without a closing backtick."}, {"unterminated-rune", "00-lex", "error", "a `'...'` rune literal reaches end-of-line or end-of-input without a closing quote."}, {"invalid-number-literal", "00-lex", "error", "a numeric literal has a digit outside its radix (e.g. `0o889`, `0b77`) or no digits after its `0x`/`0o`/`0b` prefix."}, {"unknown-variant", "01-enums", "error", "constructing an enum variant the enum doesn't declare (its closed set is enforced at construction, not only at `match`)."}, {"sum-type-pointer-receiver", "01-enums", "error", "a method's receiver is a pointer to a sum type (an `enum` or `sealed interface`), which lowers to a Go interface and cannot carry a pointer receiver; declare the method with a value receiver."}, {"non-exhaustive-match", "02-match", "error", "a `match` on an enum omits a variant and has no `_` rest-arm."}, {"unresolved-match-enum", "02-match", "warning", "the matched value's enum type can't be resolved lexically; deferred to the typed stage."}, {"unresolved-match-sealed", "02-match", "warning", "a type-pattern `match` names a concrete type no same-package sealed interface registers as an implementor; exhaustiveness deferred."}, {"dropped-result", "03-result", "error", "a `Result`-returning call's value is discarded instead of handled or propagated."}, {"discarded-result-error", "03-result", "error", "the error arm of a `Result` is dropped (typed stage)."}, {"discarded-trailing-error", "03-result", "error", "the trailing `error` of a native trailing-error multi-return call is blank-discarded (`x, _ := f()`); propagate it with `?` or bind and inspect it."}, {"dropped-stored-result", "03-result", "error", "a `Result` is stored as a plain value, defeating must-use handling."}, {"unresolved-result-discard", "03-result", "warning", "a possible `Result` discard can't be resolved lexically; deferred."}, {"unresolved-dropped-field", "03-result", "warning", "a possibly-dropped stored `Result` field can't be resolved lexically; deferred."}, {"question-callee-no-error", "05-question-prop", "error", "in a `Result[_, error]` function, a `?` callee yields no `error` to propagate — it returns nothing, a non-error type, an `Option`, or a closed-E `Result`."}, {"question-binds-nonvalue", "05-question-prop", "error", "`name := expr?` binds a value but the callee doesn't return exactly `(value, error)`."}, {"question-callee-unresolved", "05-question-prop", "warning", "a discarding `?` callee's arity can't be resolved lexically; the two-value form is assumed."}, {"question-arity-fallback", "05-question-prop", "warning", "a package-qualified `?` callee's package could not be imported during arity resolution, so the destructure arity fell back to the curated stdlib table or the two-value `(T, error)` default; generated code may differ on a machine where the import resolves."}, {"question-outside-result", "05-question-prop", "error", "`?` is used in a function whose return type is neither a `Result` nor an `Option`, so there is no failure channel to carry the propagated `Err`/`None`."}, {"question-assign-unsupported", "05-question-prop", "error", "a `?` on an assignment right-hand side targets something other than a single simple variable (e.g. `obj.f = f()?` or `a, b = f()?`), which would otherwise silently discard the unwrapped value; bind to one variable with `x := f()?` or `x = f()?`."}, {"multi-failure-result", "05-question-prop", "error", "a signature carries more than one failure-typed result (`error`/`Option`/`Result`), e.g. `(error, error)`, `(Option[A], error)`, or `(Result[A, error], error)`; `?` propagates a single failure, so keep at most one failure-typed slot and make it the last result."}, {"missing-from-conversion", "06-error-e", "error", "`?` bridges two error enums but no `from func` conversion is registered."}, {"err-outside-closed-enum", "06-error-e", "error", "`Result.Err(...)` is used with a value outside the declared error enum."}, {"unknown-error-variant", "06-error-e", "error", "a closed-E `Result` references an error variant the enum doesn't declare."}, {"unresolved-error-enum", "06-error-e", "warning", "the error enum of a closed-E `Result` can't be resolved lexically; deferred."}, {"unresolved-err-value", "06-error-e", "warning", "an `Err` value's type can't be resolved lexically; deferred."}, {"unresolved-question-error", "06-error-e", "warning", "a `?` site's error type can't be resolved lexically; deferred."}, {"go-type-error", "go-types", "error", "the lowered Go fails go/types type-checking (e.g. a type mismatch like `int + string`, or a call to an undefined function); the typed depth stage surfaces the go/types error at its `.goal` position so `ok` means the package actually compiles."}, {"unimplemented-method", "07-implements", "error", "a `struct implements I` is missing a method required by interface `I`."}, {"method-signature-mismatch", "07-implements", "error", "a method exists but its signature doesn't satisfy the declared interface."}, {"unresolved-interface", "07-implements", "warning", "the named interface of an `implements` clause can't be resolved lexically; deferred."}, {"unsafe-zero", "08-no-zero-value", "error", "a struct or variant literal (including an elided or generic one, caught at the typed stage) omits a field whose zero is unsafe (nil pointer/map/chan/func, method-bearing interface, or sum type); safe-zero omissions default silently."}, {"unresolved-literal-type", "08-no-zero-value", "warning", "a struct literal's type can't be resolved lexically; deferred to the typed stage."}, {"unsafe-default", "08-no-zero-value", "error", "a `...defaults` literal omits a field whose zero is unsafe (nil pointer/map/chan/func, method-bearing interface, or sum type)."}, {"assert-always-false", "10-assert", "error", "an `assert` condition is constantly false — it would always panic."}, {"assert-always-true", "10-assert", "warning", "an `assert` condition is constantly true — the assert is dead."}, {"unsourced-field", "12-derive-convert", "error", "a `derive func` target field has no source (registry leaf, recursion, expr, or `_`)."}, {"unbridged-field", "12-derive-convert", "error", "a `derive func` field needs a conversion that isn't in the `from func` registry."}, {"fallible-in-total-derive", "12-derive-convert", "error", "a total `derive func` sources a field from a fallible conversion."}, {"unresolved-derive-type", "12-derive-convert", "warning", "a `derive func` type pair can't be resolved lexically; deferred to the typed stage."}, {"unresolved-derive-field", "12-derive-convert", "warning", "a `derive func` target field can't be resolved lexically; deferred."}}
 
-//line catalog.goal:77
+//line catalog.goal:78
 func catalogByFeature() []struct {
 	Feature string
 	Codes   []diagDoc
 } {
-	/*line catalog.goal:81*/ order := []string{}
-	/*line catalog.goal:82*/ seen := map[string]bool{}
-	/*line catalog.goal:83*/ byFeat := map[string][]diagDoc{}
-	/*line catalog.goal:84*/ for _, d := range diagnosticCatalog {
-		/*line catalog.goal:85*/ if !seen[d.Feature] {
-			/*line catalog.goal:86*/ seen[d.Feature] = true
-			/*line catalog.goal:87*/ order = append(order, d.Feature)
+	/*line catalog.goal:82*/ order := []string{}
+	/*line catalog.goal:83*/ seen := map[string]bool{}
+	/*line catalog.goal:84*/ byFeat := map[string][]diagDoc{}
+	/*line catalog.goal:85*/ for _, d := range diagnosticCatalog {
+		/*line catalog.goal:86*/ if !seen[d.Feature] {
+			/*line catalog.goal:87*/ seen[d.Feature] = true
+			/*line catalog.goal:88*/ order = append(order, d.Feature)
 		}
-		/*line catalog.goal:89*/ byFeat[d.Feature] = append(byFeat[d.Feature], d)
+		/*line catalog.goal:90*/ byFeat[d.Feature] = append(byFeat[d.Feature], d)
 	}
-	/*line catalog.goal:91*/ sort.Strings(order)
-	/*line catalog.goal:92*/ var out []struct {
+	/*line catalog.goal:92*/ sort.Strings(order)
+	/*line catalog.goal:93*/ var out []struct {
 		Feature string
 		Codes   []diagDoc
 	}
 
-	/*line catalog.goal:96*/
+	/*line catalog.goal:97*/
 	for _, f := range order {
-		/*line catalog.goal:97*/ codes := byFeat[f]
-		/*line catalog.goal:98*/ sort.Slice(codes, func(i, j int) bool {
-			/*line catalog.goal:98*/ return codes[i].Code < codes[j].Code
+		/*line catalog.goal:98*/ codes := byFeat[f]
+		/*line catalog.goal:99*/ sort.Slice(codes, func(i, j int) bool {
+			/*line catalog.goal:99*/ return codes[i].Code < codes[j].Code
 		})
-		/*line catalog.goal:99*/ out = append(out, struct {
+		/*line catalog.goal:100*/ out = append(out, struct {
 			Feature string
 			Codes   []diagDoc
 		}{f, codes})
 	}
-	/*line catalog.goal:104*/ return out
+	/*line catalog.goal:105*/ return out
 }
 
-//line catalog.goal:110
+//line catalog.goal:111
 func catalogCodesForFeature(key string) []diagDoc {
-	/*line catalog.goal:111*/ if key == "" {
-		/*line catalog.goal:112*/ return nil
+	/*line catalog.goal:112*/ if key == "" {
+		/*line catalog.goal:113*/ return nil
 	}
-	/*line catalog.goal:114*/ var codes []diagDoc
+	/*line catalog.goal:115*/ var codes []diagDoc
 
-	/*line catalog.goal:115*/
+	/*line catalog.goal:116*/
 	for _, d := range diagnosticCatalog {
-		/*line catalog.goal:116*/ if d.Feature == key {
-			/*line catalog.goal:117*/ codes = append(codes, d)
+		/*line catalog.goal:117*/ if d.Feature == key {
+			/*line catalog.goal:118*/ codes = append(codes, d)
 		}
 	}
-	/*line catalog.goal:120*/ sort.Slice(codes, func(i, j int) bool {
-		/*line catalog.goal:120*/ return codes[i].Code < codes[j].Code
+	/*line catalog.goal:121*/ sort.Slice(codes, func(i, j int) bool {
+		/*line catalog.goal:121*/ return codes[i].Code < codes[j].Code
 	})
-	/*line catalog.goal:121*/ return codes
+	/*line catalog.goal:122*/ return codes
 }
 
-//line catalog.goal:125
+//line catalog.goal:126
 func catalogCodes() map[string]bool {
-	/*line catalog.goal:126*/ out := make(map[string]bool, len(diagnosticCatalog))
-	/*line catalog.goal:127*/ for _, d := range diagnosticCatalog {
-		/*line catalog.goal:128*/ out[d.Code] = true
+	/*line catalog.goal:127*/ out := make(map[string]bool, len(diagnosticCatalog))
+	/*line catalog.goal:128*/ for _, d := range diagnosticCatalog {
+		/*line catalog.goal:129*/ out[d.Code] = true
 	}
-	/*line catalog.goal:130*/ return out
+	/*line catalog.goal:131*/ return out
 }
 
-//line catalog.goal:137
+//line catalog.goal:138
 func CatalogCodes() map[string]bool {
-	/*line catalog.goal:138*/ return catalogCodes()
+	/*line catalog.goal:139*/ return catalogCodes()
 }
