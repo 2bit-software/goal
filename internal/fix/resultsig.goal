@@ -131,6 +131,16 @@ func classifyResultSig(src string, d ast.Decl, info *sema.Info, decls map[string
 	if identName(types[len(types)-1]) != "error" {
 		return nil, nil // not error-terminated — not the shape fix targets
 	}
+	// A non-last result that is itself error-typed (e.g. `(error, error)`) carries no
+	// single success value: neither error is a value to wrap, so there is no `T` to lift
+	// into `Result[T, error]`. Like the other multi-non-error shapes it is out of scope —
+	// refuse it here, before `error` would be mistaken for the success type T below.
+	for _, t := range types[:len(types)-1] {
+		if identName(t) == "error" {
+			return nil, &Report{nameLine, Skip, "result-sig",
+				"`" + fn.Name.Name + "` has an error-typed value before the trailing error; not auto-converted to Result"}
+		}
+	}
 	if len(types) > 2 {
 		return nil, &Report{nameLine, Skip, "result-sig",
 			"`" + fn.Name.Name + "` returns multiple non-error values; not auto-converted to Result"}

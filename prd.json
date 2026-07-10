@@ -116,7 +116,7 @@
         "Regenerated; task check green."
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Latent migration-only bug found during the spike research (resultsig.goal ~L124: gate is `len(types) > 2` + last-is-error, but never checks types[0] isn't error-like). Independent of the runtime feature; shares the 'one failure slot' intuition with US-004 — reuse a helper if natural."
     }
   ]

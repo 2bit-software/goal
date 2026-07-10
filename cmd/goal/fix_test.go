@@ -163,6 +163,52 @@ Outer:
 	}
 }
 
+// A `(error, error)` function has no success value to lift into a Result — neither error
+// is a value to wrap — so `goal fix` must leave it unchanged and report it out of scope,
+// exactly like the other multi-non-error shapes, while a normal `(T, error)` in the same
+// file still converts to `Result[T, error]`.
+func TestFixSkipsErrorErrorButConvertsTError(t *testing.T) {
+	const mixed = `package app
+
+func pair(k string) (error, error) {
+	a, err := probe(k)
+	if err != nil {
+		return nil, err
+	}
+	return a, nil
+}
+
+func load(p string) ([]byte, error) {
+	f, err := read(p)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+`
+	dir := goalModule(t, map[string]string{"app/load.goal": mixed})
+	file := filepath.Join(dir, "app", "load.goal")
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"fix", file}, &out, &errOut); err != nil {
+		t.Fatalf("fix failed: %v\n%s", err, errOut.String())
+	}
+
+	// `pair` must NOT be rewritten to a Result and must be reported out of scope.
+	if strings.Contains(out.String(), "Result[error") {
+		t.Fatalf("(error, error) must not be converted to a Result, but output has it:\n%s", out.String())
+	}
+	if !strings.Contains(errOut.String(), "pair") ||
+		!strings.Contains(errOut.String(), "not auto-converted to Result") {
+		t.Fatalf("expected an out-of-scope skip for pair on stderr, got:\n%s", errOut.String())
+	}
+
+	// The ordinary `(T, error)` shape still converts, proving the guard is narrow.
+	if !strings.Contains(out.String(), "Result[[]byte, error]") || !strings.Contains(out.String(), "read(p)?") {
+		t.Fatalf("normal (T, error) conversion regressed:\n%s", out.String())
+	}
+}
+
 // A non-existent path is an operational error.
 func TestFixBadPath(t *testing.T) {
 	var out, errOut bytes.Buffer

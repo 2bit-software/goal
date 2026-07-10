@@ -32,6 +32,37 @@
   -update-goldens` to fill the golden, and bump the hardcoded transpile count in
   internal/corpus/generate_test.go (TestGenerateCounts).
 
+## [2026-07-10T04:20:00Z] - US-008
+- Fixed a latent `goal fix` misconversion: a `(error, error)` function (and any
+  parenthesized result list whose non-last slot is itself error-typed) was being
+  rewritten to `Result[error, error]`, treating the leading `error` as the success
+  type T. Neither error is a value to lift into a Result, so the shape must be left
+  unchanged and reported out of scope like the other multi-non-error tuples.
+- Root cause was in classifyResultSig (internal/fix/resultsig.goal): the gate was
+  `len(types) > 2` + last-is-error, which never checked that a NON-LAST result
+  isn't itself `error`. For `(error, error)` len==2 so `len(types) > 2` is false;
+  it fell through and picked successT="error".
+- Fix: after confirming the list is error-terminated, scan `types[:len-1]` and, if
+  any non-last slot is `error`-typed, return a `[result-sig]` Skip
+  ("has an error-typed value before the trailing error; not auto-converted to
+  Result") before successT is computed. Placed before the `len(types) > 2` check.
+- Test: TestFixSkipsErrorErrorButConvertsTError (cmd/goal/fix_test.go) — a file with
+  a propagation-shaped `func pair(k string) (error, error)` (which the OLD code
+  WOULD have converted to Result.Ok) that must stay unconverted + reported, and a
+  normal `func load(p string) ([]byte, error)` in the same file that must still
+  convert to `Result[[]byte, error]` with `read(p)?`. Proves the guard is narrow.
+- Files changed: internal/fix/resultsig.goal (+ .go regenerated), cmd/goal/fix_test.go,
+  prd.json, progress.txt.
+- Verified: `task generate` rc=0, `task check` rc=0 (drift gate green).
+- Learnings for future iterations:
+  - `goal fix` golden/behavior tests live in cmd/goal/fix_test.go as Go tests over
+    `run([]string{"fix", ...})` with inline source constants — NOT corpus fixtures.
+    No internal/corpus/generate_test.go count bump is needed for a new fix test.
+  - To exercise a fix MISconversion, the fixture body must be one the OLD classifier
+    would have CONVERTED (conforming success + bare-propagation returns), not one it
+    already skips for another reason (e.g. a non-propagating `return a, b`).
+---
+
 ## [2026-07-10T02:55:00Z] - US-007
 - Docs-only reconciliation: the design spec and the 03-result feature doc now match
   the shipped native trailing-error multi-return support (US-002..US-006).

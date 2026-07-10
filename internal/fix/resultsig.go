@@ -99,130 +99,135 @@ func classifyResultSig(src string, d ast.Decl, info *sema.Info, decls map[string
 	/*line resultsig.goal:131*/ if identName(types[len(types)-1]) != "error" {
 		/*line resultsig.goal:132*/ return nil, nil
 	}
-	/*line resultsig.goal:134*/ if len(types) > 2 {
-		/*line resultsig.goal:135*/ return nil, &Report{nameLine, Skip, "result-sig", "`" + fn.Name.Name + "` returns multiple non-error values; not auto-converted to Result"}
+	/*line resultsig.goal:138*/ for _, t := range types[:len(types)-1] {
+		/*line resultsig.goal:139*/ if identName(t) == "error" {
+			/*line resultsig.goal:140*/ return nil, &Report{nameLine, Skip, "result-sig", "`" + fn.Name.Name + "` has an error-typed value before the trailing error; not auto-converted to Result"}
+		}
 	}
-	/*line resultsig.goal:138*/ successT := nodeText(src, types[0])
-	/*line resultsig.goal:142*/ successReps, conforms, badLine := classifyReturns(src, fn, successT, decls)
-	/*line resultsig.goal:143*/ if !conforms {
-		/*line resultsig.goal:144*/ return nil, &Report{badLine, Skip, "result-sig", "`" + fn.Name.Name + "` has a non-propagating return; not auto-converted to Result"}
+	/*line resultsig.goal:144*/ if len(types) > 2 {
+		/*line resultsig.goal:145*/ return nil, &Report{nameLine, Skip, "result-sig", "`" + fn.Name.Name + "` returns multiple non-error values; not auto-converted to Result"}
 	}
-	/*line resultsig.goal:147*/ return &sigCand{fn: fn, nameLine: nameLine, successT: successT, res: res, successReps: successReps}, nil
+	/*line resultsig.goal:148*/ successT := nodeText(src, types[0])
+	/*line resultsig.goal:152*/ successReps, conforms, badLine := classifyReturns(src, fn, successT, decls)
+	/*line resultsig.goal:153*/ if !conforms {
+		/*line resultsig.goal:154*/ return nil, &Report{badLine, Skip, "result-sig", "`" + fn.Name.Name + "` has a non-propagating return; not auto-converted to Result"}
+	}
+	/*line resultsig.goal:157*/ return &sigCand{fn: fn, nameLine: nameLine, successT: successT, res: res, successReps: successReps}, nil
 }
 
-//line resultsig.goal:155
+//line resultsig.goal:165
 func safeLocalPropagationCalls(src string, file *ast.File, info *sema.Info, decls map[string]string, successTOf map[string]string, willResult func(string) bool) map[int]bool {
-	/*line resultsig.goal:156*/ safe := map[int]bool{}
-	/*line resultsig.goal:157*/ for _, d := range file.Decls {
-		/*line resultsig.goal:158*/ fn, ok := d.(*ast.FuncDecl)
-		/*line resultsig.goal:159*/ if !ok || fn.Name == nil || fn.Body == nil || !willResult(fn.Name.Name) {
-			/*line resultsig.goal:160*/ continue
+	/*line resultsig.goal:166*/ safe := map[int]bool{}
+	/*line resultsig.goal:167*/ for _, d := range file.Decls {
+		/*line resultsig.goal:168*/ fn, ok := d.(*ast.FuncDecl)
+		/*line resultsig.goal:169*/ if !ok || fn.Name == nil || fn.Body == nil || !willResult(fn.Name.Name) {
+			/*line resultsig.goal:170*/ continue
 		}
-		/*line resultsig.goal:164*/ sigT := successTOf[fn.Name.Name]
-		/*line resultsig.goal:165*/ if sigT == "" {
-			/*line resultsig.goal:166*/ sigT = info.FuncSignatures[fn.Name.Name].T
+		/*line resultsig.goal:174*/ sigT := successTOf[fn.Name.Name]
+		/*line resultsig.goal:175*/ if sigT == "" {
+			/*line resultsig.goal:176*/ sigT = info.FuncSignatures[fn.Name.Name].T
 		}
-		/*line resultsig.goal:168*/ forEachBlock(fn.Body, func(list []ast.Stmt) {
-			/*line resultsig.goal:169*/ for i := 0; i+1 < len(list); i++ {
-				/*line resultsig.goal:170*/ as, ok := list[i].(*ast.AssignStmt)
-				/*line resultsig.goal:171*/ if !ok || as.Tok != token.DEFINE || len(as.Rhs) != 1 {
-					/*line resultsig.goal:172*/ continue
+		/*line resultsig.goal:178*/ forEachBlock(fn.Body, func(list []ast.Stmt) {
+			/*line resultsig.goal:179*/ for i := 0; i+1 < len(list); i++ {
+				/*line resultsig.goal:180*/ as, ok := list[i].(*ast.AssignStmt)
+				/*line resultsig.goal:181*/ if !ok || as.Tok != token.DEFINE || len(as.Rhs) != 1 {
+					/*line resultsig.goal:182*/ continue
 				}
-				/*line resultsig.goal:174*/ ifs, ok := list[i+1].(*ast.IfStmt)
-				/*line resultsig.goal:175*/ if !ok || ifs.Init != nil || ifs.Else != nil {
-					/*line resultsig.goal:176*/ continue
-				}
-				/*line resultsig.goal:178*/ condVar, ok := nilGuardVar(ifs.Cond, true)
-				/*line resultsig.goal:179*/ if !ok {
-					/*line resultsig.goal:180*/ continue
-				}
-				/*line resultsig.goal:182*/ if _, ok := propagationLHS(as, condVar, true); !ok {
-					/*line resultsig.goal:183*/ continue
-				}
-				/*line resultsig.goal:185*/ if ifs.Body == nil || len(ifs.Body.List) != 1 {
+				/*line resultsig.goal:184*/ ifs, ok := list[i+1].(*ast.IfStmt)
+				/*line resultsig.goal:185*/ if !ok || ifs.Init != nil || ifs.Else != nil {
 					/*line resultsig.goal:186*/ continue
 				}
-				/*line resultsig.goal:188*/ ret, ok := ifs.Body.List[0].(*ast.ReturnStmt)
-				/*line resultsig.goal:189*/ if !ok || !validPropagationReturn(src, ret, true, condVar, sigT, decls) {
+				/*line resultsig.goal:188*/ condVar, ok := nilGuardVar(ifs.Cond, true)
+				/*line resultsig.goal:189*/ if !ok {
 					/*line resultsig.goal:190*/ continue
 				}
-				/*line resultsig.goal:192*/ if !adjacentSingleLine(src, as, ifs) {
+				/*line resultsig.goal:192*/ if _, ok := propagationLHS(as, condVar, true); !ok {
 					/*line resultsig.goal:193*/ continue
 				}
-				/*line resultsig.goal:195*/ if call, ok := as.Rhs[0].(*ast.CallExpr); ok {
-					/*line resultsig.goal:196*/ if id, ok := call.Fun.(*ast.Ident); ok {
-						/*line resultsig.goal:197*/ safe[id.Pos().Offset] = true
+				/*line resultsig.goal:195*/ if ifs.Body == nil || len(ifs.Body.List) != 1 {
+					/*line resultsig.goal:196*/ continue
+				}
+				/*line resultsig.goal:198*/ ret, ok := ifs.Body.List[0].(*ast.ReturnStmt)
+				/*line resultsig.goal:199*/ if !ok || !validPropagationReturn(src, ret, true, condVar, sigT, decls) {
+					/*line resultsig.goal:200*/ continue
+				}
+				/*line resultsig.goal:202*/ if !adjacentSingleLine(src, as, ifs) {
+					/*line resultsig.goal:203*/ continue
+				}
+				/*line resultsig.goal:205*/ if call, ok := as.Rhs[0].(*ast.CallExpr); ok {
+					/*line resultsig.goal:206*/ if id, ok := call.Fun.(*ast.Ident); ok {
+						/*line resultsig.goal:207*/ safe[id.Pos().Offset] = true
 					}
 				}
 			}
 		})
 	}
-	/*line resultsig.goal:203*/ return safe
+	/*line resultsig.goal:213*/ return safe
 }
 
-//line resultsig.goal:209
+//line resultsig.goal:219
 func unsafeRefOffset(file *ast.File, name string, safe map[int]bool) (int, bool) {
-	/*line resultsig.goal:210*/ declOff := map[int]bool{}
-	/*line resultsig.goal:211*/ for _, d := range file.Decls {
-		/*line resultsig.goal:212*/ if fn, ok := d.(*ast.FuncDecl); ok && fn.Name != nil && fn.Name.Name == name {
-			/*line resultsig.goal:213*/ declOff[fn.Name.Pos().Offset] = true
+	/*line resultsig.goal:220*/ declOff := map[int]bool{}
+	/*line resultsig.goal:221*/ for _, d := range file.Decls {
+		/*line resultsig.goal:222*/ if fn, ok := d.(*ast.FuncDecl); ok && fn.Name != nil && fn.Name.Name == name {
+			/*line resultsig.goal:223*/ declOff[fn.Name.Pos().Offset] = true
 		}
 	}
-	/*line resultsig.goal:216*/ bad, found := 0, false
-	/*line resultsig.goal:217*/ ast.Walk(visitFn(func(n ast.Node) bool {
-		/*line resultsig.goal:218*/ if found {
-			/*line resultsig.goal:219*/ return false
+	/*line resultsig.goal:226*/ bad, found := 0, false
+	/*line resultsig.goal:227*/ ast.Walk(visitFn(func(n ast.Node) bool {
+		/*line resultsig.goal:228*/ if found {
+			/*line resultsig.goal:229*/ return false
 		}
-		/*line resultsig.goal:221*/ if id, ok := n.(*ast.Ident); ok && id.Name == name {
-			/*line resultsig.goal:222*/ off := id.Pos().Offset
-			/*line resultsig.goal:223*/ if !declOff[off] && !safe[off] {
-				/*line resultsig.goal:224*/ bad, found = off, true
+		/*line resultsig.goal:231*/ if id, ok := n.(*ast.Ident); ok && id.Name == name {
+			/*line resultsig.goal:232*/ off := id.Pos().Offset
+			/*line resultsig.goal:233*/ if !declOff[off] && !safe[off] {
+				/*line resultsig.goal:234*/ bad, found = off, true
 			}
 		}
-		/*line resultsig.goal:227*/ return true
+		/*line resultsig.goal:237*/ return true
 	}), file)
-	/*line resultsig.goal:229*/ return bad, found
+	/*line resultsig.goal:239*/ return bad, found
 }
 
-//line resultsig.goal:234
+//line resultsig.goal:244
 func flattenResultTypes(fl *ast.FieldList) []ast.Expr {
-	/*line resultsig.goal:235*/ out := make([]ast.Expr, 0, len(fl.List))
-	/*line resultsig.goal:236*/ for _, f := range fl.List {
-		/*line resultsig.goal:237*/ if len(f.Names) > 0 || f.Type == nil {
-			/*line resultsig.goal:238*/ return nil
+	/*line resultsig.goal:245*/ out := make([]ast.Expr, 0, len(fl.List))
+	/*line resultsig.goal:246*/ for _, f := range fl.List {
+		/*line resultsig.goal:247*/ if len(f.Names) > 0 || f.Type == nil {
+			/*line resultsig.goal:248*/ return nil
 		}
-		/*line resultsig.goal:240*/ out = append(out, f.Type)
+		/*line resultsig.goal:250*/ out = append(out, f.Type)
 	}
-	/*line resultsig.goal:242*/ return out
+	/*line resultsig.goal:252*/ return out
 }
 
-//line resultsig.goal:249
+//line resultsig.goal:259
 func classifyReturns(src string, fn *ast.FuncDecl, successT string, decls map[string]string) (reps []textedit.Replacement, conforms bool, badLine int) {
-	/*line resultsig.goal:250*/ conforms = true
-	/*line resultsig.goal:251*/ walkReturns(fn.Body, func(ret *ast.ReturnStmt) {
-		/*line resultsig.goal:252*/ if !conforms {
-			/*line resultsig.goal:253*/ return
+	/*line resultsig.goal:260*/ conforms = true
+	/*line resultsig.goal:261*/ walkReturns(fn.Body, func(ret *ast.ReturnStmt) {
+		/*line resultsig.goal:262*/ if !conforms {
+			/*line resultsig.goal:263*/ return
 		}
-		/*line resultsig.goal:255*/ line := lineOf(src, ret.Return.Offset)
-		/*line resultsig.goal:256*/ ops := ret.Results
-		/*line resultsig.goal:257*/ if len(ops) == 0 {
-			/*line resultsig.goal:258*/ conforms, badLine = false, line
-			/*line resultsig.goal:259*/ return
+		/*line resultsig.goal:265*/ line := lineOf(src, ret.Return.Offset)
+		/*line resultsig.goal:266*/ ops := ret.Results
+		/*line resultsig.goal:267*/ if len(ops) == 0 {
+			/*line resultsig.goal:268*/ conforms, badLine = false, line
+			/*line resultsig.goal:269*/ return
 		}
-		/*line resultsig.goal:262*/ if len(ops) == 1 {
-			/*line resultsig.goal:263*/ if call, ok := ops[0].(*ast.CallExpr); ok && isSelector(call.Fun, "Result", "Err") {
-				/*line resultsig.goal:264*/ return
+		/*line resultsig.goal:272*/ if len(ops) == 1 {
+			/*line resultsig.goal:273*/ if call, ok := ops[0].(*ast.CallExpr); ok && isSelector(call.Fun, "Result", "Err") {
+				/*line resultsig.goal:274*/ return
 			}
-			/*line resultsig.goal:266*/ conforms, badLine = false, line
-			/*line resultsig.goal:267*/ return
+			/*line resultsig.goal:276*/ conforms, badLine = false, line
+			/*line resultsig.goal:277*/ return
 		}
-		/*line resultsig.goal:269*/ if len(ops) != 2 {
-			/*line resultsig.goal:270*/ conforms, badLine = false, line
-			/*line resultsig.goal:271*/ return
+		/*line resultsig.goal:279*/ if len(ops) != 2 {
+			/*line resultsig.goal:280*/ conforms, badLine = false, line
+			/*line resultsig.goal:281*/ return
 		}
-		/*line resultsig.goal:273*/ last := ops[1]
-		/*line resultsig.goal:274*/ value := nodeText(src, ops[0])
-		/*line resultsig.goal:275*/ switch {
+		/*line resultsig.goal:283*/ last := ops[1]
+		/*line resultsig.goal:284*/ value := nodeText(src, ops[0])
+		/*line resultsig.goal:285*/ switch {
 		case identName(last) == "nil":
 			reps = append(reps, textedit.Replacement{Start: ops[0].Pos().Offset, End: ops[1].End().Offset, Text: "Result.Ok(" + value + ")"})
 		case isIdentExpr(last) && value == textedit.ZeroLit(successT, decls, 0):
@@ -230,27 +235,27 @@ func classifyReturns(src string, fn *ast.FuncDecl, successT string, decls map[st
 			conforms, badLine = false, line
 		}
 	})
-	/*line resultsig.goal:287*/ return reps, conforms, badLine
-}
-
-//line resultsig.goal:291
-func isIdentExpr(e ast.Expr) bool {
-	/*line resultsig.goal:292*/ _, ok := e.(*ast.Ident)
-	/*line resultsig.goal:293*/ return ok
+	/*line resultsig.goal:297*/ return reps, conforms, badLine
 }
 
 //line resultsig.goal:301
+func isIdentExpr(e ast.Expr) bool {
+	/*line resultsig.goal:302*/ _, ok := e.(*ast.Ident)
+	/*line resultsig.goal:303*/ return ok
+}
+
+//line resultsig.goal:311
 func walkReturns(block *ast.BlockStmt, f func(*ast.ReturnStmt)) {
-	/*line resultsig.goal:302*/ if block == nil {
-		/*line resultsig.goal:303*/ return
+	/*line resultsig.goal:312*/ if block == nil {
+		/*line resultsig.goal:313*/ return
 	}
-	/*line resultsig.goal:305*/ ast.Walk(visitFn(func(n ast.Node) bool {
-		/*line resultsig.goal:306*/ if _, ok := n.(*ast.FuncLit); ok {
-			/*line resultsig.goal:307*/ return false
+	/*line resultsig.goal:315*/ ast.Walk(visitFn(func(n ast.Node) bool {
+		/*line resultsig.goal:316*/ if _, ok := n.(*ast.FuncLit); ok {
+			/*line resultsig.goal:317*/ return false
 		}
-		/*line resultsig.goal:309*/ if ret, ok := n.(*ast.ReturnStmt); ok {
-			/*line resultsig.goal:310*/ f(ret)
+		/*line resultsig.goal:319*/ if ret, ok := n.(*ast.ReturnStmt); ok {
+			/*line resultsig.goal:320*/ f(ret)
 		}
-		/*line resultsig.goal:312*/ return true
+		/*line resultsig.goal:322*/ return true
 	}), block)
 }
