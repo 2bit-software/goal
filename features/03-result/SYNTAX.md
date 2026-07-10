@@ -35,8 +35,10 @@ match parse(input) {
 - **`Result[T, E]`** — Go-generics bracket form, both type arguments **always explicit**. The open
   case is written `Result[T, error]`; there is no `Result[T]` shorthand (the error channel stays
   visible in every signature).
-- **`Result` is the whole return.** A fallible function returns exactly `Result[T, E]`, never a
-  tuple containing a `Result` (so it cannot be destructured around — §3.2).
+- **`Result` is the whole return (when used).** A fallible function that uses a `Result` returns
+  exactly `Result[T, E]`, never a tuple *containing* a `Result` (so it cannot be destructured
+  around — §3.2). The native trailing-error tuple `(T.., error)` is the other supported fallible
+  shape; what is refused is a failure slot buried mid-tuple (§1.1).
 - **Construction is qualified**: `Result.Ok(v)` / `Result.Err(e)` — same `Type.Variant(...)`
   qualification as 01-enums construction (`Status.Active(...)`). `Ok`/`Err` remain the
   conventional variant names (§7); only the qualification is added, for one uniform sum-type
@@ -44,16 +46,24 @@ match parse(input) {
 - **Consumed via `match`** (feature 02): arms `Result.Ok(binding)` / `Result.Err(binding)` bind the
   success value / the error (bind-the-value, the 02 binding form).
 
-### 1.1 The `Result`-as-whole-return rule
+### 1.1 The at-most-one-failure-slot rule
 
 ```goal
-func parse(s string) Result[Config, error]        // OK — Result is the entire return
-func parse(s string) (Result[Config, error], int) // REJECTED — Result mixed into a tuple
-func dims() (int, int)                             // OK — genuine multi-infallible return, no Result
+func parse(s string) Result[Config, error]         // OK — Result is the entire return
+func lookup() (int, string, error)                 // OK — trailing-error tuple; `?` propagates the last error
+func parse2(s string) (Result[Config, error], int) // REJECTED — failure slot (Result) is not last
+func find() (error, error)                          // REJECTED — more than one failure-typed slot
+func dims() (int, int)                              // OK — genuine multi-infallible return, no failure slot
 ```
 
-Mixing a `Result` into a tuple is refused (§3.2): the moment fallibility is one slot in a tuple,
-it can be destructured around, back to Go's ignored-error problem. (Checker-enforced; see §5.)
+A signature may carry **at most one** failure-typed slot (`error` / `Option[T]` / `Result[T,E]`),
+and it must be the **last** slot (§3.2). Two shapes are therefore fallible: a whole-return
+`Result[T, E]`, and the **trailing-error** tuple `(T.., error)` consumed with `?` (the §8.3
+native-`(T, error)` keystone, generalized to N leading values). What is refused
+(`[multi-failure-result]`) is *ambiguity* — a failure slot buried mid-tuple, or more than one
+failure-typed slot — because then fallibility could be destructured around, back to Go's
+ignored-error problem. The trailing `error` is still must-use: blank-discarding it
+(`v, _ := f()`) is a compile error. (Checker-enforced; see §5.)
 
 ---
 
@@ -149,8 +159,10 @@ func parsePositive(s string) Result[int, error] {
   a Result) is deferred to land together with must-use enforcement — it has no meaning until the
   check exists, and its lowering (a single-value `_ =` must become `_, _ =` over the native tuple)
   is best decided with that machinery. Noted here so the gap is deliberate.
-- **`Result`-as-whole-return enforcement.** Rejecting `Result` mixed into a tuple is a checker
-  rule; the transpiler simply only recognizes `Result` in whole-return position.
+- **At-most-one-failure-slot enforcement.** A signature with more than one failure-typed slot,
+  or a failure-typed slot that is not last, is rejected by the checker (`[multi-failure-result]`);
+  a whole-return `Result[T,E]` and a trailing-error `(T.., error)` tuple are both accepted, and
+  blank-discarding a trailing `error` is a must-use compile error.
 - **Open-vs-closed `E` policy.** Out of scope here (open-`E` only); the lint policy and the
   closed-`E` lowering are feature 06.
 

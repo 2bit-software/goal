@@ -32,6 +32,34 @@
   -update-goldens` to fill the golden, and bump the hardcoded transpile count in
   internal/corpus/generate_test.go (TestGenerateCounts).
 
+## [2026-07-10T02:55:00Z] - US-007
+- Docs-only reconciliation: the design spec and the 03-result feature doc now match
+  the shipped native trailing-error multi-return support (US-002..US-006).
+  - docs/goal-design-spec.md §3.2 "Refused / denied": replaced the blanket "Mixing
+    `Result` into a tuple ... Refused" bullet with the at-most-one-failure-slot rule
+    (at most one failure-typed slot — error/Option/Result — and it must be last;
+    `[multi-failure-result]`), plus the trailing-error convention `(T.., error)`
+    consumed with `?` (§8.3 keystone generalized to N leading values) and its
+    still-must-use trailing error.
+  - features/03-result/SYNTAX.md: renamed §1.1 to "The at-most-one-failure-slot rule",
+    added an OK `(int, string, error)` trailing-error example, kept
+    `(Result[Config,error], int)` and `(error, error)` as REJECTED, revised the §1
+    "Result is the whole return" bullet and the §5 checker-enforcement bullet.
+- Files changed: docs/goal-design-spec.md, features/03-result/SYNTAX.md, prd.json,
+  progress.txt.
+- Verified: `task generate` rc=0, `task check` rc=0 (byexample + guidetest — the
+  by-example/guide verifier — green; verify-generated clean since docs-only = zero
+  generated-Go drift).
+- Learnings for future iterations:
+  - The `features/*/SYNTAX.md` "// REJECTED" snippets are NOT machine-transpiled by
+    any Go test; the byexample verifier reads only docs/by-example.md (which has no
+    Result-in-tuple example), and AI-KNOWLEDGE-BOOTSTRAP.md does not embed the
+    tuple-mixing claim. So this story's gate was doc/behavior consistency + task check,
+    not an automated SYNTAX.md transpile. No BOOTSTRAP regen was needed.
+  - `features/03-result/SYNTAX.md` has no TOC and the §1.1 header is not cross-anchored,
+    so renaming the header is safe.
+---
+
 ## [2026-07-10T02:10:00Z] - US-006
 - Extended the native trailing-error `?` lowering (US-002) and the sema
   recognizer (US-003) to NAMED result lists like `(a int, err error)`: `?` now

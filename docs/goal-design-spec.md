@@ -261,10 +261,19 @@ The ignored-`err` class is eliminated. Fallibility is self-documenting in the ty
 
 #### Refused / denied
 
-- **Mixing `Result` into a tuple** (e.g. `(Result[T,E], Other)`). Refused — the moment
-  fallibility is one slot in a tuple, the model can destructure around it (back to Go's
-  problem). Fallible functions return `Result` as the *entire* return. (Genuine
-  multiple-infallible returns may still use Go-style multi-return — harmless, Go-familiar.)
+- **More than one failure-typed slot, or a failure-typed slot that is not last.** Refused
+  (`[multi-failure-result]`) — e.g. `(error, error)`, `(Option[A], error)`, or
+  `(Result[A,error], error)`. A signature may carry **at most one** failure-typed slot
+  (`error` / `Option[T]` / `Result[T,E]`), and it must be the **last** slot, so `?`
+  propagation stays unambiguous. The refusal is the *ambiguity*, not the tuple: a `Result`
+  buried mid-tuple, where fallibility could be destructured around, is what stays out.
+  **What is allowed** — besides the whole-return `Result[T,E]` above — is the **trailing-error
+  convention**: a native `(T1, .., Tn, error)` tuple whose single failure slot is the last
+  `error` is a first-class fallible shape, consumed with `?` (the §8.3 native-`(T, error)`
+  keystone, generalized to N leading values). Its trailing `error` is still must-use — blank-
+  discarding it (`v, _ := f()`) is a compile error — so unignorability survives the move off a
+  single whole-return `Result`. (Genuine multiple-infallible returns with no failure slot may
+  still use Go-style multi-return — harmless, Go-familiar.)
 - **Silent discard of a `Result`.** Refused — ignoring a `Result` is a compile error unless
   explicitly discarded (Rust `#[must_use]` / `let _ =` spirit). Must-use is what makes
   unignorability *complete*; without it the model can compute a `Result` and drop it.

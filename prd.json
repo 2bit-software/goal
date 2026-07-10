@@ -102,7 +102,7 @@
         "Regenerated (if any AI-KNOWLEDGE bootstrap doc is derived); task check green."
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Machine-gated via the byexample/guide verifier: any `// REJECTED` example in SYNTAX.md that now transpiles will fail that verifier until the doc is corrected, so keep doc and behavior in lockstep."
     },
     {
