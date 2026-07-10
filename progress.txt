@@ -32,6 +32,47 @@
   -update-goldens` to fill the golden, and bump the hardcoded transpile count in
   internal/corpus/generate_test.go (TestGenerateCounts).
 
+## [2026-07-10T00:54:00Z] - US-005
+- Extended the AST must-use checker (internal/sema/mustuse.goal, regenerated to
+  mustuse.go) with `trailingErrorDiscard`: an assignment
+  `v1, …, v_{n-1}, _ := f()` (or `=`) whose trailing blank aligns with the error
+  slot of an in-file native trailing-error multi-return callee is now a
+  `discarded-trailing-error` Error. Restores the unignorability single-channel
+  Result gave structurally, now that native `(A, …, error)` tuples reopened the
+  blank-discard hole. Wired as a second call in CheckMustUse's *ast.AssignStmt
+  arm — disjoint from `underscoreDiscard` (len(Lhs)==1) since it requires
+  len(Lhs)>=2 and len(Lhs)==sig.Arity.
+- Recognition keys on the RESOLVED FuncSig, not the AST type: a native
+  trailing-error sig is `Mode==ModeNone && Arity>=2 && EndsInError`
+  (`isTrailingErrorSig`), the signature-level mirror of question.goal's
+  trailingErrorMultiReturn. `trailingErrorCall` resolves only a bare-ident in-file
+  callee (selector/method/imported calls stay deferred, matching the existing
+  IDENT-callee must-use boundary) — so BLAST RADIUS WAS ZERO: no narrowing needed,
+  the compiler's own source and the corpus stayed green with no newly-flagged
+  discards. `x := f()?` (UnwrapExpr RHS, not a plain call) and named
+  `x, err := f()` are untouched; discarding a non-error slot (`_, err := f()`,
+  last LHS not blank) is not flagged.
+- Files changed: internal/sema/mustuse.goal (+ .go), internal/guide/catalog.goal
+  (+ .go — new diagDoc entry), corpus/manifest.json, internal/corpus/
+  generate_test.go (check count 70->71), testdata/check/05-question-prop/
+  discard_trailing_error.goal (new: 2 rejected `// want "discarded with"` lines +
+  3 accepted shapes asserting ABSENT). Commit c68b5e7.
+- Verified: `task generate` + `task check` exit 0.
+- Learnings for future iterations:
+  - The must-use family lives in internal/sema/mustuse.goal (AST) and
+    internal/typecheck/mustuse.goal (go/types depth). The depth
+    `checkDiscardedError` is scoped to open-E ModeResult (arity 2) only, so it did
+    NOT need extension for native tuples and does not conflict/double-report with
+    the new sema rule. Check corpus fixtures run the SemaCheck front-end, not the
+    depth path.
+  - RunCheck (internal/corpus/check_runner.go): only ERROR-severity diagnostics
+    must be claimed by a `// want` marker on their line; WARNINGS may go
+    unclaimed. So a single fixture can assert PRESENT (marked) and ABSENT (an
+    error-free function with zero markers) in one file.
+  - A native trailing-error callee is detectable from FuncSig alone
+    (Mode/Arity/EndsInError) — no need to carry the *ast.FuncType into mustuse.
+---
+
 ## [2026-07-09T20:10:00Z] - US-004
 - Added a new sema checker CheckMultiFailureResult (internal/sema/question.goal,
   regenerated to question.go) that rejects a signature carrying MORE THAN ONE

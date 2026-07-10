@@ -74,7 +74,7 @@
         "The goal compiler's own source and the corpus remain green under the new rule (any newly-flagged sanctioned discards are fixed or explicitly exempted); regenerated; task check green."
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "KEY DESIGN COST and BLAST-RADIUS RISK: this is the guarantee single-channel Result gave structurally. Extending must-use to native trailing-error tuples may newly flag existing `_`-discards across the self-hosted compiler source — assess scope first; if large, narrow the rule (e.g. only flag `_` on an error-typed trailing slot) and/or split the discard-site cleanup into a follow-up. May exceed one context window; re-split if so."
     },
     {
