@@ -1,0 +1,18 @@
+package p
+
+type Config struct {
+	Name string
+	Port int
+}
+
+func read() (Config, error) {
+	return Config{Name: "x", Port: 8080}, nil
+}
+
+func load() (v Config, err error) {
+	c, err := read()
+	if err != nil {
+		return v, err
+	}
+	return c, nil
+}

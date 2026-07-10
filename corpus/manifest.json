@@ -1129,6 +1129,46 @@
       "normalize": "gofmt"
     },
     {
+      "id": "testdata-native_trailing_bare_discard",
+      "kind": "transpile",
+      "input": "testdata/native_trailing_bare_discard.goal",
+      "expected": "testdata/native_trailing_bare_discard.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-native_trailing_result_callee",
+      "kind": "transpile",
+      "input": "testdata/native_trailing_result_callee.goal",
+      "expected": "testdata/native_trailing_result_callee.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-native_trailing_slice_leading",
+      "kind": "transpile",
+      "input": "testdata/native_trailing_slice_leading.goal",
+      "expected": "testdata/native_trailing_slice_leading.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-native_trailing_struct_leading",
+      "kind": "transpile",
+      "input": "testdata/native_trailing_struct_leading.goal",
+      "expected": "testdata/native_trailing_struct_leading.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
+      "id": "testdata-native_trailing_two_leading",
+      "kind": "transpile",
+      "input": "testdata/native_trailing_two_leading.goal",
+      "expected": "testdata/native_trailing_two_leading.go.expected",
+      "mode": "file",
+      "normalize": "gofmt"
+    },
+    {
       "id": "testdata-open_closed_mix",
       "kind": "transpile",
       "input": "testdata/open_closed_mix.goal",

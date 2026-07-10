@@ -1,0 +1,13 @@
+package p
+
+// fetch is a native trailing-error multi-return whose leading slot is a slice.
+func fetch() ([]int, error) {
+	return []int{1, 2, 3}, nil
+}
+
+// items hosts a `?` whose leading value is a slice; the failure path zero-fills
+// the named slice return (nil).
+func items() ([]int, error) {
+	xs := fetch()?
+	return xs, nil
+}

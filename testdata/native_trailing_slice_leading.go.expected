@@ -1,0 +1,13 @@
+package p
+
+func fetch() ([]int, error) {
+	return []int{1, 2, 3}, nil
+}
+
+func items() (v []int, err error) {
+	xs, err := fetch()
+	if err != nil {
+		return v, err
+	}
+	return xs, nil
+}

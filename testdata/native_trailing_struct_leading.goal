@@ -1,0 +1,18 @@
+package p
+
+type Config struct {
+	Name string
+	Port int
+}
+
+// read is a native trailing-error multi-return whose leading slot is a struct.
+func read() (Config, error) {
+	return Config{Name: "x", Port: 8080}, nil
+}
+
+// load hosts a `?` whose leading value is a struct; the failure path zero-fills
+// the named struct return.
+func load() (Config, error) {
+	c := read()?
+	return c, nil
+}

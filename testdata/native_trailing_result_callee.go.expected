@@ -1,0 +1,13 @@
+package p
+
+func compute() (ok int, err error) {
+	return 5, nil
+}
+
+func wrap() (v1 int, err error) {
+	v, err := compute()
+	if err != nil {
+		return v1, err
+	}
+	return v, nil
+}

@@ -1,0 +1,13 @@
+package p
+
+func parse() (int, int, error) {
+	return 3, 4, nil
+}
+
+func split() (v int, v1 int, err error) {
+	a, b, err := parse()
+	if err != nil {
+		return v, v1, err
+	}
+	return a + 1, b + 1, nil
+}

@@ -1,0 +1,13 @@
+package p
+
+// parse is a native trailing-error multi-return with two leading value slots.
+func parse() (int, int, error) {
+	return 3, 4, nil
+}
+
+// split hosts a `?` on a two-leading-slot callee: the `?` binds both leading
+// values and, on failure, zero-fills the two named returns before the error.
+func split() (int, int, error) {
+	a, b := parse()?
+	return a + 1, b + 1, nil
+}

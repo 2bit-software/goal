@@ -62,6 +62,16 @@ type emitter struct {
 	// and error return names (scope-aware, no `__goal_` prefix). A Result `?` and a
 	// `return Result.Ok/Err` propagate through them; empty outside such a function.
 	okName, errName string
+	// nativeErr reports that the enclosing function is a native trailing-error
+	// multi-return `(T1, …, Tn, error)` that hosts a `?` site, so a `?` inside it
+	// lowers by binding the leading values and propagating the trailing error.
+	// leadNames holds the gensym'd named returns minted for the leading value slots,
+	// so a `?` failure early-returns their zero values plus the error (the N-slot
+	// generalization of the open-E `return ok, err` trick). Both are set by funcDecl
+	// ONLY when the body actually contains a `?`, and are empty/false otherwise — so a
+	// `?`-free error-returning function's signature and body are unchanged.
+	nativeErr bool
+	leadNames []string
 	// closedT / closedE are the current closed-E Result function's success and error
 	// type names (the T and E in Result[T, E], E != error). The closed-E sum
 	// constructors and `?` propagation render `Ok[closedT, closedE]{…}` /
@@ -541,12 +551,25 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 	prevClosedT, prevClosedE := e.closedT, e.closedE
 	prevRecvTypes := e.recvTypes
 	prevCurParams := e.curParams
+	prevNativeErr, prevLeadNames := e.nativeErr, e.leadNames
 	e.fnKind, e.taken, e.okName, e.errName = kind, e.newScope(), "", ""
 	e.closedT, e.closedE = closedT, closedE
 	e.recvTypes = e.buildRecvTypes(d)
 	e.curParams = buildCurParams(d)
+	e.nativeErr, e.leadNames = false, nil
 	if kind == roResultOpen {
 		e.okName = e.gensym("ok")
+		e.errName = e.gensym("err")
+	} else if lead, ok := nativeTrailingError(d.Type); ok && bodyHasUnwrap(d.Body) {
+		// A native trailing-error multi-return that actually propagates a `?`: mint a
+		// named return per leading value slot (for the failure-path zero-fill) plus the
+		// shared error name. The gate on bodyHasUnwrap keeps `?`-free error-returning
+		// functions byte-for-byte unchanged (no signature rewrite, no golden churn).
+		e.nativeErr = true
+		e.leadNames = make([]string, len(lead))
+		for i := range lead {
+			e.leadNames[i] = e.gensym("v")
+		}
 		e.errName = e.gensym("err")
 	}
 	defer func() {
@@ -554,6 +577,7 @@ func (e *emitter) funcDecl(d *ast.FuncDecl) {
 		e.closedT, e.closedE = prevClosedT, prevClosedE
 		e.recvTypes = prevRecvTypes
 		e.curParams = prevCurParams
+		e.nativeErr, e.leadNames = prevNativeErr, prevLeadNames
 	}()
 
 	// A value-receiver method on an enum (sum type) cannot lower to a Go method —
@@ -748,6 +772,21 @@ func (e *emitter) funcResults(t *ast.FuncType) {
 			e.p(", " + errn + " error)")
 			return
 		}
+		// A native trailing-error multi-return hosting a `?` renders named returns for
+		// every leading value slot, so an early `?` failure can `return <zeros>, err`
+		// without synthesizing type-specific zero literals — the N-slot generalization
+		// of the open-E `(ok T, err error)` form. Engages only when funcDecl set
+		// nativeErr (i.e. the body has a `?`), so `?`-free signatures are untouched.
+		if lead, ok := nativeTrailingError(t); ok && e.nativeErr {
+			e.p("(")
+			for i, typ := range lead {
+				e.p(e.leadNames[i] + " ")
+				e.expr(typ)
+				e.p(", ")
+			}
+			e.p(e.errName + " error)")
+			return
+		}
 		// Multiple results, or a single named result, need parentheses; a single
 		// unnamed result does not. gofmt will drop redundant parens, so we always
 		// parenthesize when there is more than one field or any field is named.
@@ -899,6 +938,14 @@ func (e *emitter) stmt(s ast.Stmt) {
 		// unwrapped value binds to name (or is discarded), the failure early-returns.
 		if len(s.Rhs) == 1 {
 			if u, ok := s.Rhs[0].(*ast.UnwrapExpr); ok {
+				// Inside a native trailing-error multi-return, `?` binds the leading
+				// value slots (a multi-value LHS is legal here) and propagates the
+				// trailing error, so route the whole LHS to unwrapNative before the
+				// single-value-LHS restriction below.
+				if e.nativeErr {
+					e.unwrapNative(s.Lhs, u, s.Tok.String())
+					return
+				}
 				// `?` at assignment position binds (or discards) exactly one value, so
 				// the left-hand side must be a single simple variable (or `_`). A
 				// multi-value LHS (`a, b = f()?`) or a non-identifier LHS
@@ -2720,6 +2767,18 @@ func (e *emitter) emitClosedResultReturn(x ast.Expr) bool {
 // early-returned (§3.7, §8.3). All temporaries are scope-aware gensyms — there is
 // no `__goal_` prefix (US-035).
 func (e *emitter) unwrap(name string, u *ast.UnwrapExpr, discard bool, tok string) {
+	// A native trailing-error multi-return hosts `?` outside the Result/Option
+	// fnKinds: a bare `expr?` (discard) propagates only the error, a `name := expr?`
+	// binds the single leading value. Route both to unwrapNative before the fnKind
+	// switch, which would otherwise reject a roNone function's `?`.
+	if e.nativeErr {
+		if discard {
+			e.unwrapNative(nil, u, tok)
+		} else {
+			e.unwrapNative([]ast.Expr{&ast.Ident{Name: name}}, u, tok)
+		}
+		return
+	}
 	switch e.fnKind {
 	case roResultOpen:
 		e.unwrapResult(name, u, discard, tok)
@@ -2774,6 +2833,90 @@ func (e *emitter) unwrapClosed(name string, u *ast.UnwrapExpr, discard bool, tok
 	e.p(fmt.Sprintf("case Ok[%s, %s]:\n%s = %s.Value\n", sig.T, sig.E, lhs, guard))
 	e.p(fmt.Sprintf("case Err[%s, %s]:\nreturn Err[%s, %s]{Value: %s}\n", sig.T, sig.E, e.closedT, e.closedE, errValue))
 	e.p(fmt.Sprintf("default:\npanic(%q)\n}", fmt.Sprintf("unreachable: non-exhaustive Result[%s, %s] (compiler invariant violated)", sig.T, sig.E)))
+}
+
+// bodyHasUnwrap reports whether a function body contains any `?` site, so the
+// native trailing-error rewrite only engages for functions that actually
+// propagate — leaving `?`-free error-returning signatures byte-for-byte unchanged.
+func bodyHasUnwrap(body *ast.BlockStmt) bool {
+	if body == nil {
+		return false
+	}
+	found := false
+	ast.Walk(identFinder(func(n ast.Node) bool {
+		if _, ok := n.(*ast.UnwrapExpr); ok {
+			found = true
+		}
+		return !found
+	}), body)
+	return found
+}
+
+// nativeTrailingError reports whether t is a plain (all-unnamed) result list that
+// ends in `error` and is not itself a Result/Option — the shape that hosts multi-
+// return `?` under the trailing-error convention. It returns the leading value-slot
+// types (everything before the trailing error); the returned slice is empty for a
+// bare `error` result (a zero-leading-slot trailing-error function).
+func nativeTrailingError(t *ast.FuncType) ([]ast.Expr, bool) {
+	if t == nil || t.Results == nil {
+		return nil, false
+	}
+	list := t.Results.List
+	if len(list) == 0 {
+		return nil, false
+	}
+	// A single Result[T, error]/Option[T] result is its own lowering, not a native
+	// trailing-error tuple, so exclude it up front.
+	if k, _ := resultOptionKind(t); k != roNone {
+		return nil, false
+	}
+	for _, f := range list {
+		if len(f.Names) != 0 {
+			return nil, false
+		}
+	}
+	last := list[len(list)-1]
+	id, isId := last.Type.(*ast.Ident)
+	if !isId || id.Name != "error" {
+		return nil, false
+	}
+	var lead []ast.Expr
+	for _, f := range list[:len(list)-1] {
+		lead = append(lead, f.Type)
+	}
+	return lead, true
+}
+
+// unwrapNative lowers a `?` inside a native trailing-error `(…, error)` function. It
+// binds the leading value slots to lhs (empty for a bare/discard `?`), routes the
+// callee's trailing error into the enclosing gensym'd err return, and on failure
+// returns the zero-valued leading named returns plus that error. The destructure
+// arity of a bare `?` follows the callee's lowered shape (via calleeSig) so an
+// error-only call is not over-destructured; an unresolved callee keeps two values.
+func (e *emitter) unwrapNative(lhs []ast.Expr, u *ast.UnwrapExpr, tok string) {
+	e.noteArityFallback(u)
+	n := 2
+	if sig, ok := e.calleeSig(u.X); ok && sig.EndsInError && sig.Arity >= 1 {
+		n = sig.Arity
+	}
+	retLead := strings.Join(e.leadNames, ", ")
+	if retLead != "" {
+		retLead += ", "
+	}
+	ret := "return " + retLead + e.errName
+
+	if len(lhs) == 0 {
+		// Bare `f()?` — discard the n-1 leading values, propagate only the error.
+		g := e.gensym("err")
+		e.p("if " + strings.Repeat("_, ", n-1) + g + " := ")
+		e.expr(u.X)
+		e.p("; " + g + " != nil {\nreturn " + retLead + g + "\n}")
+		return
+	}
+	e.exprList(lhs)
+	e.p(", " + e.errName + " " + tok + " ")
+	e.expr(u.X)
+	e.p("\nif " + e.errName + " != nil {\n" + ret + "\n}")
 }
 
 // unwrapResult lowers `?` in an open-E Result function: it destructures the

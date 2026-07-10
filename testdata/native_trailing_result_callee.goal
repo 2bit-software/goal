@@ -1,0 +1,13 @@
+package p
+
+// compute returns an open-E Result, which lowers to a native (int, error) pair.
+func compute() Result[int, error] {
+	return Result.Ok(5)
+}
+
+// wrap hosts a `?` on a Result[T, error] callee inside a native trailing-error
+// function: the Result destructures to (value, error) and the error propagates.
+func wrap() (int, error) {
+	v := compute()?
+	return v, nil
+}

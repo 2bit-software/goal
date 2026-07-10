@@ -1,0 +1,13 @@
+package p
+
+// probe is a native trailing-error multi-return used as a bare `?` scrutinee.
+func probe() (int, error) {
+	return 7, nil
+}
+
+// run discards the leading value with a bare `probe()?`, propagating only the
+// error and zero-filling its own named leading return on failure.
+func run() (int, error) {
+	probe()?
+	return 42, nil
+}

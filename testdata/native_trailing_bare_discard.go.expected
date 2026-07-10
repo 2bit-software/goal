@@ -1,0 +1,12 @@
+package p
+
+func probe() (int, error) {
+	return 7, nil
+}
+
+func run() (v int, err error) {
+	if _, err1 := probe(); err1 != nil {
+		return v, err1
+	}
+	return 42, nil
+}
